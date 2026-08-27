@@ -1,0 +1,125 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [8 0 R 10 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Times-Bold /Encoding /WinAnsiEncoding >>
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+6 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>
+endobj
+7 0 obj
+<< /Length 3781 >>
+stream
+0 0 0 rg BT /F3 7.3 Tf 1 0 0 1 48.00 750.00 Tm (PHASE TWO REPORT) Tj ET
+0 0 0 rg BT /F3 7.3 Tf 1 0 0 1 511.88 750.00 Tm (MEETING REPORT) Tj ET
+0 0 0 RG 0.65 w 48 742 m 564 742 l S
+0 0 0 RG 0.65 w 48 42 m 564 42 l S
+0 0 0 rg BT /F3 7.3 Tf 1 0 0 1 48.00 27.00 Tm (TAHIRELSHAZLI.COM) Tj ET
+0 0 0 rg BT /F3 7.3 Tf 1 0 0 1 523.05 27.00 Tm (PAGE 1 OF 2) Tj ET
+0 0 0 rg BT /F1 26 Tf 1 0 0 1 48.00 711.00 Tm (Website Prototype Review) Tj ET
+0 0 0 rg BT /F3 8.2 Tf 1 0 0 1 48.00 691.00 Tm (TAHIRELSHAZLI.COM PLATFORM) Tj ET
+0 0 0 rg BT /F2 9.2 Tf 1 0 0 1 48.00 650.00 Tm (Date:) Tj ET
+0 0 0 rg BT /F1 9.2 Tf 1 0 0 1 148.00 650.00 Tm (Thursday, 6 August 2026) Tj ET
+0 0 0 rg BT /F2 9.2 Tf 1 0 0 1 48.00 630.00 Tm (Meeting Type:) Tj ET
+0 0 0 rg BT /F1 9.2 Tf 1 0 0 1 148.00 630.00 Tm (Reviewing Website Prototype) Tj ET
+0 0 0 rg BT /F2 9.2 Tf 1 0 0 1 48.00 610.00 Tm (Prepared by:) Tj ET
+0 0 0 rg BT /F1 9.2 Tf 1 0 0 1 148.00 610.00 Tm (Ali Esam) Tj ET
+0 0 0 rg BT /F1 14.2 Tf 1 0 0 1 48.00 565.00 Tm (Overview) Tj ET
+0 0 0 RG 0.55 w 48 553 m 564 553 l S
+0 0 0 rg BT /F3 9.4 Tf 1 0 0 1 48.00 533.00 Tm (In this session, the full dynamic website prototype for Mr. Tahir Elshazli's learning management system was) Tj ET
+0 0 0 rg BT /F3 9.4 Tf 1 0 0 1 48.00 518.00 Tm (presented to Mr. Tahir Elshazli. The prototype demonstrates the future education platform and the main) Tj ET
+0 0 0 rg BT /F3 9.4 Tf 1 0 0 1 48.00 503.00 Tm (experiences for parents, students, teaching assistants, teachers, and visitors.) Tj ET
+0 0 0 rg BT /F1 14.2 Tf 1 0 0 1 48.00 476.00 Tm (Mr. Abdelrahman-Suggested Changes) Tj ET
+0 0 0 RG 0.55 w 48 464 m 564 464 l S
+0 0 0 rg BT /F3 9.4 Tf 1 0 0 1 48.00 444.00 Tm (Mr. Abdelrahman suggested the following changes:) Tj ET
+0 0 0 rg BT /F2 9.4 Tf 1 0 0 1 48.00 419.00 Tm (1. Certificate Availability) Tj ET
+0 0 0 rg BT /F3 9.25 Tf 1 0 0 1 48.00 399.00 Tm (Certificates should be issued at the end of a course. Mr. Tahir Elshazli, as the teacher, should control when) Tj ET
+0 0 0 rg BT /F3 9.25 Tf 1 0 0 1 48.00 384.50 Tm (the certificate becomes available for the student.) Tj ET
+0 0 0 rg BT /F2 9.4 Tf 1 0 0 1 48.00 356.00 Tm (2. Payment Gateways) Tj ET
+0 0 0 rg BT /F3 9.25 Tf 1 0 0 1 48.00 336.00 Tm (Begin the payment gateway implementation and add the selected payment flows to the website.) Tj ET
+0 0 0 rg BT /F1 14.2 Tf 1 0 0 1 48.00 307.50 Tm (Mr. Tahir-Suggested Changes) Tj ET
+0 0 0 RG 0.55 w 48 295.5 m 564 295.5 l S
+0 0 0 rg BT /F3 9.4 Tf 1 0 0 1 48.00 275.50 Tm (Mr. Tahir Elshazli suggested the following product and learning-experience updates:) Tj ET
+0 0 0 rg BT /F2 9.4 Tf 1 0 0 1 48.00 250.50 Tm (1. Course Progress and Student Performance) Tj ET
+0 0 0 rg BT /F3 9.25 Tf 1 0 0 1 48.00 230.50 Tm (In My Courses, show the student's course completion checkpoints separately from performance. For a student) Tj ET
+0 0 0 rg BT /F3 9.25 Tf 1 0 0 1 48.00 216.00 Tm (taking recorded classes, progress should represent how much of the course has been completed, such as the) Tj ET
+0 0 0 rg BT /F3 9.25 Tf 1 0 0 1 48.00 201.50 Tm (number of recorded videos watched or checkpoints completed. Performance should represent grades and) Tj ET
+0 0 0 rg BT /F3 9.25 Tf 1 0 0 1 48.00 187.00 Tm (achievement, not course completion.) Tj ET
+0 0 0 rg BT /F2 9.4 Tf 1 0 0 1 48.00 158.50 Tm (2. Different Student Learning Modes) Tj ET
+0 0 0 rg BT /F3 9.25 Tf 1 0 0 1 48.00 138.50 Tm (Support two student modes. Students subscribed to recorded classes need course-completion progress and) Tj ET
+0 0 0 rg BT /F3 9.25 Tf 1 0 0 1 48.00 124.00 Tm (checkpoints. Students participating through recorded or scheduled sessions need a timeline that reflects) Tj ET
+0 0 0 rg BT /F3 9.25 Tf 1 0 0 1 48.00 109.50 Tm (attendance, alongside their grades and other performance information.) Tj ET
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R /F4 6 0 R >> >> /Contents 7 0 R >>
+endobj
+9 0 obj
+<< /Length 2973 >>
+stream
+0 0 0 rg BT /F3 7.3 Tf 1 0 0 1 48.00 750.00 Tm (PHASE TWO REPORT) Tj ET
+0 0 0 rg BT /F3 7.3 Tf 1 0 0 1 511.88 750.00 Tm (MEETING REPORT) Tj ET
+0 0 0 RG 0.65 w 48 742 m 564 742 l S
+0 0 0 RG 0.65 w 48 42 m 564 42 l S
+0 0 0 rg BT /F3 7.3 Tf 1 0 0 1 48.00 27.00 Tm (TAHIRELSHAZLI.COM) Tj ET
+0 0 0 rg BT /F3 7.3 Tf 1 0 0 1 523.05 27.00 Tm (PAGE 2 OF 2) Tj ET
+0 0 0 rg BT /F1 14.2 Tf 1 0 0 1 48.00 711.00 Tm (Mr. Tahir-Suggested Changes \(continued\)) Tj ET
+0 0 0 RG 0.55 w 48 699 m 564 699 l S
+0 0 0 rg BT /F2 9.4 Tf 1 0 0 1 48.00 679.00 Tm (3. In-Platform PDF Assignment Correction) Tj ET
+0 0 0 rg BT /F3 9.25 Tf 1 0 0 1 48.00 659.00 Tm (When a student submits an assignment as a PDF, the teacher should be able to open and correct it directly in) Tj ET
+0 0 0 rg BT /F3 9.25 Tf 1 0 0 1 48.00 644.50 Tm (the platform. The teacher can mark incorrect words or sections and add edits without downloading the file.) Tj ET
+0 0 0 rg BT /F3 9.25 Tf 1 0 0 1 48.00 630.00 Tm (After saving, the corrected PDF should be automatically attached to the student's submission for review.) Tj ET
+0 0 0 rg BT /F2 9.4 Tf 1 0 0 1 48.00 601.50 Tm (4. Overall Grades for Assignments and Quizzes) Tj ET
+0 0 0 rg BT /F3 9.25 Tf 1 0 0 1 48.00 581.50 Tm (For every assignment and quiz, display the overall average grade across all students. This allows the teacher) Tj ET
+0 0 0 rg BT /F3 9.25 Tf 1 0 0 1 48.00 567.00 Tm (to understand whether a task is difficult or easy and to identify trends in student performance.) Tj ET
+0 0 0 rg BT /F2 9.4 Tf 1 0 0 1 48.00 538.50 Tm (5. Report Generation) Tj ET
+0 0 0 rg BT /F3 9.25 Tf 1 0 0 1 48.00 518.50 Tm (The teacher and the teaching assistant should be able to generate grades for students, as referenced by Mr.) Tj ET
+0 0 0 rg BT /F3 9.25 Tf 1 0 0 1 48.00 504.00 Tm (Tahir Elshazli.) Tj ET
+0 0 0 rg BT /F2 9.4 Tf 1 0 0 1 48.00 475.50 Tm (6. Flexible File Uploads) Tj ET
+0 0 0 rg BT /F3 9.25 Tf 1 0 0 1 48.00 455.50 Tm (Students should be able to submit assignments using the file types appropriate for the task. Teachers should) Tj ET
+0 0 0 rg BT /F3 9.25 Tf 1 0 0 1 48.00 441.00 Tm (also be able to upload the materials they need for quizzes, assignments, and lessons, including PDFs, text) Tj ET
+0 0 0 rg BT /F3 9.25 Tf 1 0 0 1 48.00 426.50 Tm (files, links, and other supported formats.) Tj ET
+0 0 0 rg BT /F1 14.2 Tf 1 0 0 1 48.00 398.00 Tm (Summary) Tj ET
+0 0 0 RG 0.55 w 48 386 m 564 386 l S
+0 0 0 rg BT /F3 9.4 Tf 1 0 0 1 48.00 366.00 Tm (The requested updates focus on making learning progress clearer, separating completion from performance and) Tj ET
+0 0 0 rg BT /F3 9.4 Tf 1 0 0 1 48.00 351.00 Tm (attendance, reducing manual file handling, and giving the teaching team better visibility into student) Tj ET
+0 0 0 rg BT /F3 9.4 Tf 1 0 0 1 48.00 336.00 Tm (outcomes. These changes should be incorporated into the dynamic website experience as the prototype moves) Tj ET
+0 0 0 rg BT /F3 9.4 Tf 1 0 0 1 48.00 321.00 Tm (toward implementation.) Tj ET
+endstream
+endobj
+10 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R /F4 6 0 R >> >> /Contents 9 0 R >>
+endobj
+11 0 obj
+<< /Title (Premium User Report - Mr. Tahir Elshazli) /Author (Ali Esam) /Subject (Website Prototype Meeting Report) >>
+endobj
+xref
+0 12
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000128 00000 n 
+0000000227 00000 n 
+0000000325 00000 n 
+0000000422 00000 n 
+0000000524 00000 n 
+0000004357 00000 n 
+0000004513 00000 n 
+0000007538 00000 n 
+0000007695 00000 n 
+trailer
+<< /Size 12 /Root 1 0 R /Info 11 0 R >>
+startxref
+7830
+%%EOF

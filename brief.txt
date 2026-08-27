@@ -1,0 +1,146 @@
+Goal: Initialize the full Tahirelshazli.com project scaffold with Next.js frontend and NestJS backend, database schema, and configuration.
+
+Current state:
+- Empty TahirElshazli directory
+- CLAUDE.md exists with project guidance
+- No code, no dependencies, no git repo yet
+
+Tech stack (from CLAUDE.md):
+- Frontend: Next.js (React) + TypeScript
+- Backend: NestJS (Node.js) + TypeScript
+- Database: PostgreSQL
+- Storage: Cloudflare R2
+- Video: Bunny Stream
+- Hosting: Hostinger VPS (Docker)
+
+What to do:
+
+1. INITIALIZE GIT REPO
+   - Run: git init
+   - Create .gitignore for Node.js, Next.js, NestJS, .env files
+   - Initial commit: "init: project scaffold"
+
+2. CREATE FRONTEND (Next.js)
+   - Directory: ./frontend
+   - npx create-next-app@latest frontend --typescript --tailwind --eslint
+   - Accept defaults except: use Tailwind CSS (yes), use app directory (yes), strict mode (yes)
+   - Configure tsconfig.json to strict: true
+   - Update tailwind.config.ts with color palette:
+     * black: #000000
+     * white: #FFFFFF
+     * dark-grey: #1A1A1A, #2D2D2D, #404040
+     * gold: #D4AF37, #E6C200
+   - Add .env.example:
+     NEXT_PUBLIC_API_URL=http://localhost:3001
+     NEXT_PUBLIC_VIDEO_CDN=https://bunny-stream-cdn.example.com
+     NEXT_PUBLIC_STORAGE_URL=https://r2-cdn.example.com
+   - Test: npm run build && npm run lint should pass
+
+3. CREATE BACKEND (NestJS)
+   - Directory: ./backend
+   - npm install -g @nestjs/cli
+   - nest new backend --package-manager npm
+   - Configure tsconfig.json to strict: true
+   - Create initial module structure:
+     * src/auth/ (authentication module)
+     * src/users/ (user management)
+     * src/courses/ (course management)
+     * src/assessments/ (assignments/quizzes)
+     * src/storage/ (file upload, R2 integration)
+     * src/video/ (Bunny Stream integration)
+     * src/payments/ (payment gateway)
+   - Add .env.example:
+     DATABASE_URL=postgresql://user:password@localhost:5432/tahirelshazli
+     JWT_SECRET=your-jwt-secret-here
+     JWT_EXPIRY=24h
+     CLOUDFLARE_R2_ACCOUNT_ID=your-account-id
+     CLOUDFLARE_R2_ACCESS_KEY=your-access-key
+     CLOUDFLARE_R2_SECRET_KEY=your-secret-key
+     CLOUDFLARE_R2_BUCKET=tahirelshazli
+     BUNNY_STREAM_API_KEY=your-bunny-api-key
+     BUNNY_STREAM_LIBRARY_ID=your-library-id
+   - Test: npm run build && npm run lint should pass
+
+4. DATABASE SETUP
+   - Directory: ./database/migrations
+   - Create schema outline (do NOT create full migrations yet; just structure):
+     * User (id, email, role, created_at, updated_at)
+     * StudentProfile, TeacherProfile, AssistantProfile
+     * Course, CourseModule, Lesson
+     * Assessment, AssessmentSubmission
+     * Recording, Material
+     * AuditLog (for TA activity tracking)
+   - Add script templates for:
+     * schema.sql (outline, not executable yet)
+     * seed.sql (placeholder for demo data)
+   - Create docker-compose.yml for local PostgreSQL development:
+     * PostgreSQL 15
+     * Port 5432 exposed to localhost
+     * Default username/password (dev only)
+
+5. DOCKER & DEPLOYMENT
+   - Create Dockerfile for frontend (Next.js)
+   - Create Dockerfile for backend (NestJS)
+   - Create docker-compose.yml for local dev (frontend + backend + postgres)
+   - Create .dockerignore files
+   - Add CI/CD placeholder (.github/workflows/ci.yml structure)
+
+6. ROOT CONFIGURATION
+   - Create package.json (workspace root) with scripts:
+     * npm run dev (start all services)
+     * npm run build (build frontend + backend)
+     * npm run test (run all tests)
+   - Add .env.example at root level (references frontend/.env.example and backend/.env.example)
+   - Add README.md with setup instructions for local development
+
+7. PROJECT STRUCTURE (final layout)
+   TahirElshazli/
+   ├── CLAUDE.md
+   ├── README.md
+   ├── package.json
+   ├── .env.example
+   ├── .gitignore
+   ├── docker-compose.yml
+   ├── .github/
+   │   └── workflows/
+   │       └── ci.yml
+   ├── frontend/
+   │   ├── app/
+   │   ├── components/
+   │   ├── lib/
+   │   ├── public/
+   │   ├── .env.example
+   │   ├── tsconfig.json
+   │   ├── tailwind.config.ts
+   │   └── package.json
+   ├── backend/
+   │   ├── src/
+   │   │   ├── auth/
+   │   │   ├── users/
+   │   │   ├── courses/
+   │   │   ├── assessments/
+   │   │   ├── storage/
+   │   │   ├── video/
+   │   │   ├── payments/
+   │   │   └── main.ts
+   │   ├── .env.example
+   │   ├── tsconfig.json
+   │   └── package.json
+   └── database/
+       ├── migrations/
+       ├── schema.sql
+       └── seed.sql
+
+Do NOT:
+- Commit changes (we will review and commit)
+- Install additional npm packages beyond what create-next-app and nest new provide
+- Generate actual database migrations (schema outline only)
+- Create API endpoints or routes yet
+- Modify CLAUDE.md
+- Create authentication logic (scaffolding only)
+
+Report when done with:
+- Which directories and files were created
+- Summary of TypeScript, build, and lint status for each package
+- Whether docker-compose.yml is ready to run
+- Any blockers or decisions that need review

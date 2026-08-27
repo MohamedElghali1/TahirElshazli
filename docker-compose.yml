@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: tahirelshazli-db
+    environment:
+      POSTGRES_DB: tahirelshazli
+      POSTGRES_USER: dev
+      POSTGRES_PASSWORD: devpassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tahirelshazli-api
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://dev:devpassword@postgres:5432/tahirelshazli
+      JWT_SECRET: dev-secret-key-change-in-production
+      JWT_EXPIRY: 24h
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend/src:/app/src
+    command: npm run start:dev
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: tahirelshazli-web
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+      NEXT_PUBLIC_VIDEO_CDN: https://bunny-stream-cdn.example.com
+      NEXT_PUBLIC_STORAGE_URL: https://r2-cdn.example.com
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend/app:/app/app
+      - ./frontend/components:/app/components
+
+volumes:
+  postgres_data:
