@@ -1,146 +1,82 @@
-Goal: Initialize the full Tahirelshazli.com project scaffold with Next.js frontend and NestJS backend, database schema, and configuration.
+<task>
+Build the student-facing backend for the Tahirelshazli.com LMS in the existing NestJS project at
+backend/. The scaffold already exists (backend/src/main.ts, app.module.ts, app.controller.ts,
+app.service.ts) - build on it, do not replace it.
 
-Current state:
-- Empty TahirElshazli directory
-- CLAUDE.md exists with project guidance
-- No code, no dependencies, no git repo yet
+Read backend/../CLAUDE.md first (project root) for full context: roles, security rules, and data
+model conventions. The load-bearing rules for this task:
+- Role is "student" for this slice; RBAC must still be enforced server-side on every endpoint (use a
+  simple JWT guard + roles decorator now - assume an `auth` module you create provides this).
+- Progress (course completion) and performance (grades) are separate concepts - never merge them into
+  one field or endpoint response.
+- An assessment's status (Locked/Available/Submitted/Corrected) must be computed server-side from
+  timestamps and submission state - never trust a client-supplied status field.
+- Money would be minor-unit integers and UTC timestamps if it appeared here, but payments are out of
+  scope for this task - do not touch or scaffold a payments module.
+- TypeScript strict mode, no `any` as a shortcut. Validate all input at the API boundary with DTOs and
+  class-validator (or the equivalent NestJS pipe pattern already idiomatic to the scaffold).
 
-Tech stack (from CLAUDE.md):
-- Frontend: Next.js (React) + TypeScript
-- Backend: NestJS (Node.js) + TypeScript
-- Database: PostgreSQL
-- Storage: Cloudflare R2
-- Video: Bunny Stream
-- Hosting: Hostinger VPS (Docker)
+Build these modules under backend/src/, each with a Nest module + controller + service + DTOs, and an
+in-memory or simple repository pattern (no real Postgres connection needed yet - stub the persistence
+layer behind an interface so a real TypeORM/Prisma repository can be dropped in later; TypeORM or
+Prisma setup itself is NOT in scope for this task):
 
-What to do:
+1. auth/ - JWT-based login endpoint (POST /auth/login) returning a token, a `JwtAuthGuard`, and a
+   `RolesGuard` + `@Roles()` decorator that other modules can use. Stub user lookup against a small
+   in-memory user list (do not wire a database).
 
-1. INITIALIZE GIT REPO
-   - Run: git init
-   - Create .gitignore for Node.js, Next.js, NestJS, .env files
-   - Initial commit: "init: project scaffold"
+2. students/ - GET /students/me/profile - returns the authenticated student's profile.
 
-2. CREATE FRONTEND (Next.js)
-   - Directory: ./frontend
-   - npx create-next-app@latest frontend --typescript --tailwind --eslint
-   - Accept defaults except: use Tailwind CSS (yes), use app directory (yes), strict mode (yes)
-   - Configure tsconfig.json to strict: true
-   - Update tailwind.config.ts with color palette:
-     * black: #000000
-     * white: #FFFFFF
-     * dark-grey: #1A1A1A, #2D2D2D, #404040
-     * gold: #D4AF37, #E6C200
-   - Add .env.example:
-     NEXT_PUBLIC_API_URL=http://localhost:3001
-     NEXT_PUBLIC_VIDEO_CDN=https://bunny-stream-cdn.example.com
-     NEXT_PUBLIC_STORAGE_URL=https://r2-cdn.example.com
-   - Test: npm run build && npm run lint should pass
+3. courses/ - GET /courses - list courses the authenticated student is enrolled in.
+   GET /courses/:id - course detail with modules and lessons.
+   Each enrollment carries a `learningMode` field ("recorded" | "live") per CLAUDE.md 5.2 - the
+   response shape must expose it, and recorded vs. live courses should expose different progress
+   shapes (completion checkpoints for recorded; attendance timeline for live) rather than one blended
+   shape.
 
-3. CREATE BACKEND (NestJS)
-   - Directory: ./backend
-   - npm install -g @nestjs/cli
-   - nest new backend --package-manager npm
-   - Configure tsconfig.json to strict: true
-   - Create initial module structure:
-     * src/auth/ (authentication module)
-     * src/users/ (user management)
-     * src/courses/ (course management)
-     * src/assessments/ (assignments/quizzes)
-     * src/storage/ (file upload, R2 integration)
-     * src/video/ (Bunny Stream integration)
-     * src/payments/ (payment gateway)
-   - Add .env.example:
-     DATABASE_URL=postgresql://user:password@localhost:5432/tahirelshazli
-     JWT_SECRET=your-jwt-secret-here
-     JWT_EXPIRY=24h
-     CLOUDFLARE_R2_ACCOUNT_ID=your-account-id
-     CLOUDFLARE_R2_ACCESS_KEY=your-access-key
-     CLOUDFLARE_R2_SECRET_KEY=your-secret-key
-     CLOUDFLARE_R2_BUCKET=tahirelshazli
-     BUNNY_STREAM_API_KEY=your-bunny-api-key
-     BUNNY_STREAM_LIBRARY_ID=your-library-id
-   - Test: npm run build && npm run lint should pass
+4. recordings/ - GET /courses/:id/recordings - list recordings for a course with per-student watch
+   progress. POST /recordings/:id/progress - update watched-seconds progress (idempotent upsert, not
+   duplicate-creating).
 
-4. DATABASE SETUP
-   - Directory: ./database/migrations
-   - Create schema outline (do NOT create full migrations yet; just structure):
-     * User (id, email, role, created_at, updated_at)
-     * StudentProfile, TeacherProfile, AssistantProfile
-     * Course, CourseModule, Lesson
-     * Assessment, AssessmentSubmission
-     * Recording, Material
-     * AuditLog (for TA activity tracking)
-   - Add script templates for:
-     * schema.sql (outline, not executable yet)
-     * seed.sql (placeholder for demo data)
-   - Create docker-compose.yml for local PostgreSQL development:
-     * PostgreSQL 15
-     * Port 5432 exposed to localhost
-     * Default username/password (dev only)
+5. materials/ - GET /courses/:id/materials - list materials by category (course_notes /
+   study_materials / important_files) per CLAUDE.md data model.
 
-5. DOCKER & DEPLOYMENT
-   - Create Dockerfile for frontend (Next.js)
-   - Create Dockerfile for backend (NestJS)
-   - Create docker-compose.yml for local dev (frontend + backend + postgres)
-   - Create .dockerignore files
-   - Add CI/CD placeholder (.github/workflows/ci.yml structure)
+6. assessments/ - GET /courses/:id/assessments - list assignments/homework/quizzes for a course, each
+   with a server-computed `status` (Locked/Available/Submitted/Corrected) derived from
+   available_from/available_to/due_at and submission state - never a client-supplied field.
+   GET /assessments/:id - single assessment detail.
+   POST /assessments/:id/submissions - submit a file reference + optional typed answer (accept a
+   `fileUrl` string and/or `answerText` string in the DTO; do not implement actual file upload/storage
+   - that's a separate module, out of scope here).
 
-6. ROOT CONFIGURATION
-   - Create package.json (workspace root) with scripts:
-     * npm run dev (start all services)
-     * npm run build (build frontend + backend)
-     * npm run test (run all tests)
-   - Add .env.example at root level (references frontend/.env.example and backend/.env.example)
-   - Add README.md with setup instructions for local development
+Use backend/src/app.module.ts to wire the new feature modules in. Keep the existing
+AppController/AppService as-is (health check root route) - do not delete them.
 
-7. PROJECT STRUCTURE (final layout)
-   TahirElshazli/
-   ├── CLAUDE.md
-   ├── README.md
-   ├── package.json
-   ├── .env.example
-   ├── .gitignore
-   ├── docker-compose.yml
-   ├── .github/
-   │   └── workflows/
-   │       └── ci.yml
-   ├── frontend/
-   │   ├── app/
-   │   ├── components/
-   │   ├── lib/
-   │   ├── public/
-   │   ├── .env.example
-   │   ├── tsconfig.json
-   │   ├── tailwind.config.ts
-   │   └── package.json
-   ├── backend/
-   │   ├── src/
-   │   │   ├── auth/
-   │   │   ├── users/
-   │   │   ├── courses/
-   │   │   ├── assessments/
-   │   │   ├── storage/
-   │   │   ├── video/
-   │   │   ├── payments/
-   │   │   └── main.ts
-   │   ├── .env.example
-   │   ├── tsconfig.json
-   │   └── package.json
-   └── database/
-       ├── migrations/
-       ├── schema.sql
-       └── seed.sql
+Do NOT: touch frontend/, touch database/schema.sql, add a real database connection, add payments,
+add TA/teacher-side endpoints (grading, corrections, admin CRUD) - this task is student read/submit
+endpoints only.
+</task>
 
-Do NOT:
-- Commit changes (we will review and commit)
-- Install additional npm packages beyond what create-next-app and nest new provide
-- Generate actual database migrations (schema outline only)
-- Create API endpoints or routes yet
-- Modify CLAUDE.md
-- Create authentication logic (scaffolding only)
+<verification_loop>
+Run these from backend/ and fix anything they surface, don't just report it:
+  npm run build
+  npm run lint
+  npm run test
+Confirm the working tree shows changes only under backend/src/ (new module folders) and
+backend/src/app.module.ts - nothing outside backend/.
+</verification_loop>
 
-Report when done with:
-- Which directories and files were created
-- Summary of TypeScript, build, and lint status for each package
-- Whether docker-compose.yml is ready to run
-- Any blockers or decisions that need review
+<action_safety>
+Keep changes scoped to the student backend modules listed above. No unrelated refactors of the
+existing scaffold files, no renames, no dependency upgrades. Do NOT run git add or git commit - the
+orchestrator commits after reviewing. Leave the work uncommitted in the working tree.
+</action_safety>
+
+<structured_output_contract>
+End with a report in this exact shape:
+  1. What was built, module by module, and why the persistence layer is stubbed the way it is
+  2. Files touched (full list)
+  3. Gate outcomes: npm run build / npm run lint / npm run test - paste pass/fail and counts
+  4. Anything you deviated on, left open, or want a decision on (e.g. DTO validation library choice,
+     in-memory store shape) - be explicit, don't silently choose and hide it
+</structured_output_contract>
