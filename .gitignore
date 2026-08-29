@@ -36,3 +36,11 @@ tmp/
 
 # Docker
 .docker/
+
+# Ruflo local secrets and runtime data
+.claude-flow/data/
+.claude-flow/logs/
+.claude-flow/sessions/
+.claude-flow/metrics/
+.claude-flow/security/audit-status.json
+.swarm/memory.db
