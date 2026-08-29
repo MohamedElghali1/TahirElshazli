@@ -224,6 +224,27 @@ audit log).
 Proposed posture, not yet ruled on: an unassigned course should 404 rather than 403 for a TA, the
 same way an unenrolled student already gets 404 — so a TA can't enumerate courses they don't hold.
 
+**Caching the assignment check.** Default is **no cache** — compute on read until measurement says
+otherwise, the same rule §6.1 sets for `QuizAnalyticsSnapshot`. When that day comes, the
+`CourseStaffAssignment` lookup may be cached only under *all* of:
+
+1. TTL ≤ 60s.
+2. Eviction on the unassign/reassign write is the **primary** mechanism; the TTL is a backstop for a
+   missed eviction, not the design.
+3. Mutating endpoints — grading, attendance marking, quiz edits, announcements — always re-check
+   uncached. A stale ALLOW that lets someone *look* is a different animal from one that lets them
+   *grade*.
+4. A DENY is never cached longer than an ALLOW, or a freshly-assigned TA is locked out and someone
+   "fixes" it by shortening the wrong TTL.
+5. A shared store, never per-process — eviction on replica A must not leave replica B still
+   granting. That is strictly worse than no cache, and it is the same defect the per-process token
+   denylist and rate limiter already have. One Redis introduction fixes all three; don't add a
+   fourth per-process security structure before it lands.
+
+The trade-off in one sentence: we accept up to 60 seconds of stale read access for a just-unassigned
+TA in exchange for removing a database round trip from every staff read, and we buy that risk back
+by evicting on the write itself — so the TTL only ever covers a *missed* eviction, never a normal one.
+
 ### 5.12 Payments — transitions and refunds
 
 The known transitions are `pending → paid`, `pending → failed`, `paid → refunded`. That list is not
@@ -353,15 +374,27 @@ Honest inventory, so nobody assumes a surface is there. Of the five roles in §2
 | **Teaching Assistant** | None. Enum entry only; no `CourseStaffAssignment` (§5.11). |
 | **Teacher / Admin** | None. Enum entry and a seed user; no admin surface. |
 
-**Persistence is entirely in-memory.** Eleven `InMemory*Repository` classes, zero
-real implementations, no Postgres driver in `backend/`. Every repository sits
-behind an interface and a `Symbol` token, so the swap is mechanical — but until
-it happens, all data is lost on restart and nothing survives a second replica.
+**Persistence is entirely in-memory.** Ten `InMemory*Repository` classes plus an
+in-process `InMemoryRateLimitStore`, zero real implementations, no Postgres
+driver in `backend/`. Every repository sits behind an interface and a `Symbol`
+token, so the swap is mechanical — but until it happens, all data is lost on
+restart and nothing survives a second replica.
 
 Known scaling debt to clear alongside that swap, none of it structural:
-N+1 reads in `assessments.service.ts` and `courses.service.ts`; no pagination on
-any list endpoint; the rate limiter and token denylist are per-process; and
-`JwtStrategy` does a user lookup per request that will need caching.
+two separate N+1 reads in `assessments.service.ts` (`:167-175` and `:274-290`)
+plus one in `courses.service.ts:126-135`; the dashboard runs `assertEnrolled`
+four times and `getProgress` twice per load; `CourseRepository` and
+`StudentRepository` expose no list or batch method, so there is nowhere to
+attach pagination; no count-only repository methods except
+`NotificationRepository.countUnread`, so badge integers fetch full rows; no
+pagination on any list endpoint, and notifications are append-only with no
+ceiling; the rate limiter and token denylist are per-process; and `JwtStrategy`
+does a user lookup per request that will need caching.
+
+The interface-shape items here — batch, list and count methods — are cheapest to
+fix **before** a Postgres implementation exists, not alongside it. Once a real
+repository and a second caller exist, adding a method is a breaking change to
+every implementor, and "the swap is mechanical" stops being true.
 
 ---
 
@@ -465,14 +498,22 @@ logs, future subscriptions. Designed so **additional gateways drop in later**.
 - Naming collisions to settle before the first migration: `Coupon` vs `DiscountCode`, and the
   generic `Post` vs the specific `BlogPost`/`VideoAsset`/`Testimonial`/`FAQ`/`MediaAsset` (§6.1).
   Carrying both spellings into schema is the failure mode; my recommendation is the specific ones.
-- Whether `Attendance` keys on `live_session_id` or a bare `session_date` (§6.1).
+- `Attendance` keying is **settled in the student build**: `AttendanceRecord` keys on `sessionId`
+  (`live-sessions/interfaces/live-session-repository.interface.ts:10-15`), matching §6.1's own
+  recommendation. Still open: the shipped record stores `attended: boolean`, which cannot encode
+  §6.1's `late`. Confirm whether `late` is a status Dr. Tahir will actually mark **before** the TA
+  roster and the admin Attendance Report (§5.15) are built on the boolean — after that there are
+  three read-sides and a data migration instead of one interface.
 - **What `due_at` actually does.** Submission is gated on `available_to` only, so a
   first submission 25 days past the due date is silently accepted (`assess-1` is due 5 Sep and
   open until 30 Sep). `is_overdue` labels it but nothing penalises it. Is `due_at` advisory, a
   hard cutoff, or a late-penalty trigger?
 - **No `missed` status.** §5.10's four states can't distinguish "window hasn't opened" from
-  "window closed, never submitted" — both render as `Locked`. A student sees the same badge for
-  work they can still do and work they have permanently lost.
+  "window closed, never submitted" — both return `locked` (`assessments.service.ts:114`). A student
+  sees the same badge for work they can still do and work they have permanently lost. This is no
+  longer only a badge: a closed-unsubmitted homework drops out of `dashboard.homeworkPending` and
+  silently lowers `reports.performance.homeworkSubmissionRate`, with no "N missed" surfaced
+  anywhere. Two numbers a student or parent reads as authoritative now depend on this being decided.
 
 ---
 
