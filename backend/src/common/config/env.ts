@@ -94,7 +94,10 @@ export function resolveJwtExpiry(
 ): `${number}${'s' | 'm' | 'h' | 'd'}` {
   const value = raw?.trim();
   if (!value) {
-    return '24h';
+    // The denylist is per-process, so a logout recorded on one replica is
+    // invisible to the others until the token expires naturally. That window is
+    // exactly this value, which is why the default is an hour and not a day.
+    return '1h';
   }
   if (!/^\d+[smhd]$/.test(value)) {
     throw new Error(
@@ -126,6 +129,24 @@ export function resolveTrustedProxyHops(
       `TRUSTED_PROXY_HOPS must be a non-negative integer (got "${value}"). ` +
         'A non-numeric value makes Express trust nothing and collapses every ' +
         'client into one rate-limit bucket.',
+    );
+  }
+  return Number(value);
+}
+
+/**
+ * The port the HTTP server binds to. Validated here with everything else so a
+ * non-numeric value fails at boot rather than surfacing as an opaque listen
+ * error, and so there is one convention in this file rather than two.
+ */
+export function resolvePort(raw = process.env.PORT): number {
+  const value = raw?.trim();
+  if (!value) {
+    return 3000;
+  }
+  if (!/^\d+$/.test(value) || Number(value) < 1 || Number(value) > 65535) {
+    throw new Error(
+      `PORT must be an integer between 1 and 65535 (got "${value}").`,
     );
   }
   return Number(value);

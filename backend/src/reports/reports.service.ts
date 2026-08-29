@@ -22,7 +22,14 @@ export interface TopicScore {
 export interface PerformanceSnapshot {
   quizAverage: number | null;
   assignmentAverage: number | null;
-  homeworkCompletion: number;
+  /**
+   * A submission *rate*, not a grade — the share of homework handed in at all.
+   * Named explicitly because it is the one completion figure living in this
+   * struct, and §5.1 is a direct client correction: progress and performance
+   * must never collapse into one number. It is deliberately excluded from
+   * `overallPercentage`, which averages graded scores only.
+   */
+  homeworkSubmissionRate: number;
   overallPercentage: number | null;
   gradedCount: number;
 }
@@ -116,7 +123,7 @@ export class ReportsService {
         assignmentAverage: this.averagePercentage(
           entries.filter((e) => e.type === 'assignment'),
         ),
-        homeworkCompletion:
+        homeworkSubmissionRate:
           homework.length === 0
             ? 0
             : Math.round((homeworkDone / homework.length) * 100),

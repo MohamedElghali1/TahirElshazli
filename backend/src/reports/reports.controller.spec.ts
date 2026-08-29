@@ -74,7 +74,7 @@ describe('ReportsController', () => {
     expect(summary.performance).toMatchObject({
       quizAverage: 75, // (18/20 + 12/20) / 2
       assignmentAverage: 86.3, // (35/40 + 34/40) / 2
-      homeworkCompletion: 67, // 2 of 3 homework tasks handed in
+      homeworkSubmissionRate: 67, // 2 of 3 homework tasks handed in
       overallPercentage: 80.5,
       gradedCount: 5,
     });
@@ -124,7 +124,7 @@ describe('ReportsController', () => {
       quizAverage: null,
       assignmentAverage: null,
       overallPercentage: null,
-      homeworkCompletion: 0,
+      homeworkSubmissionRate: 0,
       gradedCount: 0,
     });
     expect(summary.strongAreas).toEqual([]);

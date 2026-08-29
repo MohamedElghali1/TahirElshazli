@@ -2,7 +2,8 @@ import { Injectable } from '@nestjs/common';
 import bcrypt from 'bcryptjs';
 import type { PasswordHasher } from './interfaces/password-hasher.interface.js';
 
-const SALT_ROUNDS = 10;
+/** OWASP's current floor is 10; 12 is the recommendation for new builds. */
+const SALT_ROUNDS = 12;
 
 @Injectable()
 export class BcryptPasswordHasher implements PasswordHasher {

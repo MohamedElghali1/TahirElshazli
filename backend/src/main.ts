@@ -6,6 +6,7 @@ import { AppModule } from './app.module.js';
 import {
   resolveCorsOrigins,
   resolveNodeEnv,
+  resolvePort,
   resolveTrustedProxyHops,
 } from './common/config/env.js';
 
@@ -15,6 +16,7 @@ async function bootstrap() {
   const nodeEnv = resolveNodeEnv();
   const trustedProxyHops = resolveTrustedProxyHops();
   const corsOrigins = resolveCorsOrigins(nodeEnv);
+  const port = resolvePort();
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
@@ -38,6 +40,6 @@ async function bootstrap() {
   );
   app.enableCors({ origin: corsOrigins, credentials: true });
 
-  await app.listen(process.env.PORT ?? 3000);
+  await app.listen(port);
 }
 await bootstrap();

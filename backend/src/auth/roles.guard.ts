@@ -1,4 +1,9 @@
-import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Role } from './roles.enum.js';
 import { ROLES_KEY } from './roles.decorator.js';
@@ -19,7 +24,10 @@ export class RolesGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<{ user?: JwtPayload }>();
     const user = request.user;
     if (!user) {
-      return false;
+      // Unreachable while JwtAuthGuard runs first, but returning false here
+      // would report an unauthenticated request as 403 Forbidden, which is
+      // misleading in logs. Say what actually happened.
+      throw new UnauthorizedException();
     }
     return requiredRoles.some((role) => user.role === role);
   }
