@@ -1,21 +1,23 @@
 import {
+  Body,
   Controller,
   Get,
-  Post,
+  HttpCode,
+  HttpStatus,
   Param,
-  Body,
-  UseGuards,
+  Post,
+  Query,
   Request,
-  UsePipes,
-  ValidationPipe,
+  UseGuards,
 } from '@nestjs/common';
-import { RecordingsService } from './recordings.service.js';
+import { RecordingsService, RecordingListResponse } from './recordings.service.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { RolesGuard } from '../auth/roles.guard.js';
 import { Roles } from '../auth/roles.decorator.js';
 import { Role } from '../auth/roles.enum.js';
 import { UpdateProgressDto } from './dto/update-progress.dto.js';
-import type { RecordingWithProgress, RecordingProgress } from './interfaces/recording-repository.interface.js';
+import { ListRecordingsQueryDto } from './dto/list-recordings-query.dto.js';
+import type { RecordingProgress } from './interfaces/recording-repository.interface.js';
 import type { JwtPayload } from '../auth/jwt.strategy.js';
 
 @Controller()
@@ -27,13 +29,17 @@ export class RecordingsController {
   @Get('courses/:id/recordings')
   async listRecordings(
     @Param('id') courseId: string,
+    @Query() query: ListRecordingsQueryDto,
     @Request() req: { user: JwtPayload },
-  ): Promise<RecordingWithProgress[]> {
-    return this.recordingsService.getRecordingsForCourse(courseId, req.user.sub);
+  ): Promise<RecordingListResponse> {
+    return this.recordingsService.getRecordingsForCourse(courseId, req.user.sub, {
+      chapter: query.chapter,
+      topic: query.topic,
+    });
   }
 
   @Post('recordings/:id/progress')
-  @UsePipes(new ValidationPipe({ whitelist: true }))
+  @HttpCode(HttpStatus.OK)
   async updateProgress(
     @Param('id') recordingId: string,
     @Body() dto: UpdateProgressDto,

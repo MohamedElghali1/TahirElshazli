@@ -9,5 +9,9 @@ export default defineConfig({
     globals: true,
     root: './',
     include: ['**/*.spec.ts'],
+    // Each spec compiles a full Nest DI graph in beforeEach; on a cold Vite
+    // transform cache the heavier ones exceed the 10s default and fail as
+    // "Hook timed out" rather than for any real reason.
+    hookTimeout: 30_000,
   },
 });

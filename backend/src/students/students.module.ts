@@ -1,17 +1,13 @@
 import { Module } from '@nestjs/common';
 import { StudentsController } from './students.controller.js';
 import { StudentsService } from './students.service.js';
-import { STUDENT_REPOSITORY } from './interfaces/student-repository.interface.js';
-import { InMemoryStudentRepository } from './repositories/in-memory-student.repository.js';
+import { StudentRepositoryModule } from './student-repository.module.js';
+import { AuthModule } from '../auth/auth.module.js';
 
 @Module({
+  imports: [AuthModule, StudentRepositoryModule],
   controllers: [StudentsController],
-  providers: [
-    StudentsService,
-    {
-      provide: STUDENT_REPOSITORY,
-      useClass: InMemoryStudentRepository,
-    },
-  ],
+  providers: [StudentsService],
+  exports: [StudentsService],
 })
 export class StudentsModule {}

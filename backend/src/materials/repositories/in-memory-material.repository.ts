@@ -1,56 +1,132 @@
 import { Injectable } from '@nestjs/common';
-import type { MaterialRepository, Material } from '../interfaces/material-repository.interface.js';
+import type {
+  Material,
+  MaterialCategory,
+  MaterialRepository,
+} from '../interfaces/material-repository.interface.js';
 
 const STUB_MATERIALS: Material[] = [
   {
     id: 'mat-1',
     courseId: 'course-1',
     title: 'Chapter 1 Notes - Atomic Structure',
-    description: 'Comprehensive notes on atomic structure',
+    description: 'Full lecture notes covering subatomic particles and isotopes',
     category: 'course_notes',
-    fileUrl: 'https://storage.example.com/materials/chapter1-notes.pdf',
+    chapter: 'Chapter 1',
+    fileUrl: 'https://storage.example.com/materials/ch1-notes.pdf',
     fileType: 'application/pdf',
-    fileSizeBytes: 1048576,
-    uploadedAt: '2026-06-15T10:00:00Z',
+    fileSizeBytes: 1_048_576,
+    uploadedAt: '2026-02-02T10:00:00Z',
   },
   {
     id: 'mat-2',
     courseId: 'course-1',
-    title: 'Practice Problems Set 1',
-    description: 'Extra practice problems for revision',
-    category: 'study_materials',
-    fileUrl: 'https://storage.example.com/materials/practice-set1.pdf',
+    title: 'Chapter 2 Notes - Moles & Stoichiometry',
+    description: 'Worked examples for mole calculations and titrations',
+    category: 'course_notes',
+    chapter: 'Chapter 2',
+    fileUrl: 'https://storage.example.com/materials/ch2-notes.pdf',
     fileType: 'application/pdf',
-    fileSizeBytes: 524288,
-    uploadedAt: '2026-06-20T14:00:00Z',
+    fileSizeBytes: 1_310_720,
+    uploadedAt: '2026-03-02T10:00:00Z',
   },
   {
     id: 'mat-3',
     courseId: 'course-1',
-    title: 'IGCSE Syllabus 2026',
-    description: null,
-    category: 'important_files',
-    fileUrl: 'https://storage.example.com/materials/syllabus-2026.pdf',
+    title: 'Chapter 3 Notes - Organic Chemistry',
+    description: 'Functional groups, nomenclature and reaction mechanisms',
+    category: 'course_notes',
+    chapter: 'Chapter 3',
+    fileUrl: 'https://storage.example.com/materials/ch3-notes.pdf',
     fileType: 'application/pdf',
-    fileSizeBytes: 2097152,
-    uploadedAt: '2026-06-01T08:00:00Z',
+    fileSizeBytes: 1_572_864,
+    uploadedAt: '2026-04-06T10:00:00Z',
   },
   {
     id: 'mat-4',
+    courseId: 'course-1',
+    title: 'Practice Problems Set 1',
+    description: 'Extra practice on atomic structure and periodicity',
+    category: 'study_materials',
+    chapter: 'Chapter 1',
+    fileUrl: 'https://storage.example.com/materials/practice-set1.pdf',
+    fileType: 'application/pdf',
+    fileSizeBytes: 524_288,
+    uploadedAt: '2026-02-20T14:00:00Z',
+  },
+  {
+    id: 'mat-5',
+    courseId: 'course-1',
+    title: 'Past Paper Pack 2020-2025',
+    description: 'Compiled past papers with mark schemes',
+    category: 'study_materials',
+    chapter: null,
+    fileUrl: 'https://storage.example.com/materials/past-papers.pdf',
+    fileType: 'application/pdf',
+    fileSizeBytes: 6_291_456,
+    uploadedAt: '2026-05-10T14:00:00Z',
+  },
+  {
+    id: 'mat-6',
+    courseId: 'course-1',
+    title: 'Data Booklet',
+    description: 'Periodic table and constants sheet used in exams',
+    category: 'study_materials',
+    chapter: null,
+    fileUrl: 'https://storage.example.com/materials/data-booklet.pdf',
+    fileType: 'application/pdf',
+    fileSizeBytes: 409_600,
+    uploadedAt: '2026-01-25T14:00:00Z',
+  },
+  {
+    id: 'mat-7',
+    courseId: 'course-1',
+    title: 'AS Chemistry Syllabus 2026',
+    description: null,
+    category: 'important_files',
+    chapter: null,
+    fileUrl: 'https://storage.example.com/materials/syllabus-2026.pdf',
+    fileType: 'application/pdf',
+    fileSizeBytes: 2_097_152,
+    uploadedAt: '2026-01-20T08:00:00Z',
+  },
+  {
+    id: 'mat-8',
+    courseId: 'course-1',
+    title: 'Term 1 Timetable',
+    description: 'Live session schedule and submission deadlines',
+    category: 'important_files',
+    chapter: null,
+    fileUrl: 'https://storage.example.com/materials/term1-timetable.pdf',
+    fileType: 'application/pdf',
+    fileSizeBytes: 245_760,
+    uploadedAt: '2026-01-20T08:00:00Z',
+  },
+  {
+    id: 'mat-9',
     courseId: 'course-2',
     title: 'IELTS Speaking Tips',
-    description: 'Key tips for IELTS speaking section',
+    description: 'Key tips for the IELTS speaking section',
     category: 'course_notes',
+    chapter: 'Chapter 1',
     fileUrl: 'https://storage.example.com/materials/ielts-speaking-tips.pdf',
     fileType: 'application/pdf',
-    fileSizeBytes: 768000,
-    uploadedAt: '2026-07-01T09:00:00Z',
+    fileSizeBytes: 768_000,
+    uploadedAt: '2026-06-05T09:00:00Z',
   },
 ];
 
 @Injectable()
 export class InMemoryMaterialRepository implements MaterialRepository {
-  async findByCourse(courseId: string): Promise<Material[]> {
-    return STUB_MATERIALS.filter((m) => m.courseId === courseId);
+  async findByCourse(
+    courseId: string,
+    category?: MaterialCategory,
+  ): Promise<Material[]> {
+    return STUB_MATERIALS.filter((m) => m.courseId === courseId)
+      .filter((m) => !category || m.category === category)
+      .sort(
+        (a, b) =>
+          new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime(),
+      );
   }
 }
