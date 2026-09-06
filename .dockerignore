@@ -1,0 +1,56 @@
+# Build context hygiene. Without this file every `docker build` uploads the
+# whole working tree - including a ~500MB node_modules, the .git history, and
+# the client's PDFs under context/ - before the first instruction runs.
+#
+# Nothing here may exclude package.json, package-lock.json, or a workspace
+# manifest: the Dockerfiles copy those first and `npm ci` cannot run without
+# them.
+
+# Dependencies - reinstalled inside the image from the lockfile. Copying the
+# host's tree in would also drag in platform-specific binaries built for
+# Windows.
+node_modules
+**/node_modules
+
+# Build outputs - regenerated in the builder stage.
+.next
+**/.next
+dist
+**/dist
+build
+out
+*.tsbuildinfo
+
+# Version control and CI metadata
+.git
+.gitignore
+.github
+
+# Secrets. .env is gitignored but may exist locally, and a build context is not
+# a private place: anything here lands in an image layer (CLAUDE.md §8).
+.env
+.env.local
+.env.*.local
+
+# Client material and project documentation - not needed to run the app, and
+# context/ holds the signed agreement and meeting reports.
+context
+*.md
+!README.md
+
+# Local tooling and agent state
+.claude
+.claude-flow
+.swarm
+.agents
+.vscode
+.idea
+
+# Test and coverage artifacts
+coverage
+.nyc_output
+
+# Container definitions themselves
+Dockerfile*
+.dockerignore
+docker-compose.yml

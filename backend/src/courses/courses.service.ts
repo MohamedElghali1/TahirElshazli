@@ -125,9 +125,19 @@ export class CoursesService {
 
   async getEnrolledCourses(studentId: string): Promise<CourseListItem[]> {
     const enrollments = await this.enrollmentsService.findForStudent(studentId);
+    // One batch read, then an in-memory join by id. Awaiting `findById` inside
+    // the map was free against an array and a round trip per course against
+    // Postgres - the N+1 CLAUDE.md §7.1 catalogues.
+    const courses = await this.courseRepo.findByIds(
+      enrollments.map((enrollment) => enrollment.courseId),
+    );
+    const byId = new Map(courses.map((course) => [course.id, course]));
+
     const items = await Promise.all(
       enrollments.map(async (enrollment) => {
-        const course = await this.courseRepo.findById(enrollment.courseId);
+        const course = byId.get(enrollment.courseId);
+        // An enrollment whose course has been deleted is dropped rather than
+        // rendered as a broken card.
         return course ? this.toListItem(course, enrollment) : null;
       }),
     );

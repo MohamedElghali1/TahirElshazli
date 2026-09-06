@@ -41,6 +41,25 @@ export class InMemoryUserRepository implements UserRepository {
       name: 'Dr. Tahir Elshazli',
       createdAt: '2025-11-01T09:00:00Z',
     },
+    // Two assistants, because one cannot demonstrate scoping: assistant-1 is
+    // assigned to course-1, assistant-2 to nothing. Mirrors
+    // `database/seeds/002_staff_fixtures.sql`.
+    {
+      id: 'assistant-1',
+      email: 'assistant@example.com',
+      passwordHash: SEED_PASSWORD_HASH,
+      role: Role.Assistant,
+      name: 'Nour Hassan',
+      createdAt: '2026-01-25T09:00:00Z',
+    },
+    {
+      id: 'assistant-2',
+      email: 'assistant2@example.com',
+      passwordHash: SEED_PASSWORD_HASH,
+      role: Role.Assistant,
+      name: 'Omar Fathy',
+      createdAt: '2026-02-10T09:00:00Z',
+    },
   ];
 
   private resetTokens: PasswordResetToken[] = [];
@@ -52,6 +71,11 @@ export class InMemoryUserRepository implements UserRepository {
 
   async findById(userId: string): Promise<StoredUser | null> {
     return this.users.find((u) => u.id === userId) ?? null;
+  }
+
+  async findByIds(userIds: readonly string[]): Promise<StoredUser[]> {
+    const wanted = new Set(userIds);
+    return this.users.filter((u) => wanted.has(u.id));
   }
 
   async create(user: {

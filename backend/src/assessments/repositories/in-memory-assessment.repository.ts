@@ -267,6 +267,16 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
     );
   }
 
+  async findSubmissionsForStudent(
+    assessmentIds: readonly string[],
+    studentId: string,
+  ): Promise<StoredSubmission[]> {
+    const wanted = new Set(assessmentIds);
+    return this.submissions.filter(
+      (s) => s.studentId === studentId && wanted.has(s.assessmentId),
+    );
+  }
+
   async createSubmission(
     assessmentId: string,
     studentId: string,
@@ -294,10 +304,13 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
 
   async updateSubmission(
     submissionId: string,
+    studentId: string,
     fileUrl: string | undefined,
     answerText: string | undefined,
   ): Promise<StoredSubmission | null> {
-    const submission = this.submissions.find((s) => s.id === submissionId);
+    const submission = this.submissions.find(
+      (s) => s.id === submissionId && s.studentId === studentId,
+    );
     if (!submission) {
       return null;
     }
@@ -327,7 +340,18 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
     return submission;
   }
 
-  async findRevisions(submissionId: string): Promise<SubmissionRevision[]> {
+  async findRevisions(
+    submissionId: string,
+    studentId: string,
+  ): Promise<SubmissionRevision[]> {
+    // Revisions carry no studentId of their own, so ownership is proven through
+    // the submission they belong to.
+    const owned = this.submissions.some(
+      (s) => s.id === submissionId && s.studentId === studentId,
+    );
+    if (!owned) {
+      return [];
+    }
     return this.revisions
       .filter((r) => r.submissionId === submissionId)
       .sort((a, b) => a.replacedAt.localeCompare(b.replacedAt));

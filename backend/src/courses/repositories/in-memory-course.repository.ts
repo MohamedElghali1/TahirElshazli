@@ -78,4 +78,15 @@ export class InMemoryCourseRepository implements CourseRepository {
   async findById(courseId: string): Promise<StoredCourse | null> {
     return STUB_COURSES.find((c) => c.id === courseId) ?? null;
   }
+
+  async findAll(limit: number, offset: number): Promise<StoredCourse[]> {
+    return [...STUB_COURSES]
+      .sort((a, b) => a.title.localeCompare(b.title))
+      .slice(offset, offset + limit);
+  }
+
+  async findByIds(courseIds: readonly string[]): Promise<StoredCourse[]> {
+    const wanted = new Set(courseIds);
+    return STUB_COURSES.filter((c) => wanted.has(c.id));
+  }
 }

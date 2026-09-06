@@ -1,50 +1,110 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import { MoonIcon, SunIcon } from '@phosphor-icons/react';
 
 type Theme = 'dark' | 'light';
+
+const STORAGE_KEY = 'te.theme';
 
 /**
  * Three-state theme in two clicks: the page follows the system until someone
  * chooses, then the choice sticks. Written to `data-theme` on <html>, which is
  * the selector every token block in tokens.css keys off.
+ *
+ * The resolved theme is read from the DOM rather than held in component state.
+ * `THEME_BOOTSTRAP` in app/layout.tsx has already stamped `data-theme` before
+ * first paint, so the attribute is the source of truth and this component is
+ * only reflecting it - which is what `useSyncExternalStore` is for. Mirroring it
+ * into `useState` inside an effect would mean a render with the wrong icon, a
+ * second render to correct it, and a hydration mismatch to suppress.
  */
-export function ThemeToggle({ className }: { className?: string }) {
-  const [theme, setTheme] = useState<Theme | null>(null);
 
-  useEffect(() => {
-    const stored = safeGet();
-    if (stored) {
-      setTheme(stored);
-      return;
+const listeners = new Set<() => void>();
+
+function emit() {
+  for (const listener of listeners) listener();
+}
+
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  // Another tab changing the theme fires `storage` here, not in that tab.
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === STORAGE_KEY) {
+      applyAttribute(readStored() ?? systemTheme());
+      listener();
     }
-    setTheme(
-      window.matchMedia('(prefers-color-scheme: light)').matches
-        ? 'light'
-        : 'dark',
-    );
-  }, []);
+  };
+  window.addEventListener('storage', onStorage);
+  return () => {
+    listeners.delete(listener);
+    window.removeEventListener('storage', onStorage);
+  };
+}
 
-  const toggle = () => {
-    const next: Theme = theme === 'light' ? 'dark' : 'light';
-    setTheme(next);
-    document.documentElement.setAttribute('data-theme', next);
+/** What the DOM currently says, falling back to the system preference. */
+function getSnapshot(): Theme {
+  const attribute = document.documentElement.getAttribute('data-theme');
+  if (attribute === 'dark' || attribute === 'light') {
+    return attribute;
+  }
+  return systemTheme();
+}
+
+/**
+ * On the server there is no DOM and no stored choice, so the markup is rendered
+ * for the default (dark) and the bootstrap script corrects the attribute before
+ * paint. The icon is hidden until mount for the same reason.
+ */
+function getServerSnapshot(): Theme {
+  return 'dark';
+}
+
+function systemTheme(): Theme {
+  return window.matchMedia('(prefers-color-scheme: light)').matches
+    ? 'light'
+    : 'dark';
+}
+
+function readStored(): Theme | null {
+  try {
+    const value = localStorage.getItem(STORAGE_KEY);
+    return value === 'dark' || value === 'light' ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function applyAttribute(theme: Theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+}
+
+export function ThemeToggle({ className }: { className?: string }) {
+  const theme = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  // True only after hydration, so the button does not render an icon the
+  // server could not have known was correct.
+  const mounted = useSyncExternalStore(
+    subscribe,
+    () => true,
+    () => false,
+  );
+
+  const toggle = useCallback(() => {
+    const next: Theme = getSnapshot() === 'light' ? 'dark' : 'light';
+    applyAttribute(next);
     try {
-      localStorage.setItem('te.theme', next);
+      localStorage.setItem(STORAGE_KEY, next);
     } catch {
       // Storage blocked. The choice still holds for this page load.
     }
-  };
+    emit();
+  }, []);
 
-  // Render nothing until the effect has resolved the current theme, or the
-  // button shows the wrong icon for one frame.
-  const icon =
-    theme === null ? null : theme === 'light' ? (
-      <MoonIcon size={16} weight="regular" />
-    ) : (
-      <SunIcon size={16} weight="regular" />
-    );
+  const icon = !mounted ? null : theme === 'light' ? (
+    <MoonIcon size={16} weight="regular" />
+  ) : (
+    <SunIcon size={16} weight="regular" />
+  );
 
   return (
     <button
@@ -61,13 +121,4 @@ export function ThemeToggle({ className }: { className?: string }) {
       {icon}
     </button>
   );
-}
-
-function safeGet(): Theme | null {
-  try {
-    const v = localStorage.getItem('te.theme');
-    return v === 'dark' || v === 'light' ? v : null;
-  } catch {
-    return null;
-  }
 }

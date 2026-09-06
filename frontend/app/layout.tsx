@@ -34,6 +34,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
+  // Duplicates --bg-primary from app/tokens.css, because a <meta> tag cannot
+  // read a CSS variable. Nothing enforces the coupling, so changing the surface
+  // colours there means changing these two by hand or the browser chrome stops
+  // matching the page.
   themeColor: [
     { media: '(prefers-color-scheme: dark)', color: '#161616' },
     { media: '(prefers-color-scheme: light)', color: '#ffffff' },

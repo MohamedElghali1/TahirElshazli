@@ -1,12 +1,12 @@
 import {
   IsOptional,
   IsString,
-  IsUrl,
   Matches,
   MaxLength,
   MinLength,
   ValidateIf,
 } from 'class-validator';
+import { IsPublicHttpUrl } from '../../common/validators/is-public-http-url.validator.js';
 
 export class UpdateProfileDto {
   @IsOptional()
@@ -23,6 +23,11 @@ export class UpdateProfileDto {
 
   @IsOptional()
   @ValidateIf((_object, value) => value !== null)
-  @IsUrl()
+  // The same guard the submission fileUrl uses, rather than class-validator's
+  // @IsUrl(): that accepts ftp: and any private host, and this value is handed
+  // straight to an <img src> in the browser and may later be fetched
+  // server-side for thumbnailing. One rule for client-supplied URLs, not two.
+  @IsPublicHttpUrl()
+  @MaxLength(2048)
   avatarUrl?: string | null;
 }

@@ -6,11 +6,14 @@ import { AuthService } from './auth.service.js';
 import { JwtStrategy } from './jwt.strategy.js';
 import { TokenDenylistService } from './token-denylist.service.js';
 import { BcryptPasswordHasher } from './bcrypt-password-hasher.js';
+import type { UserRepository } from './interfaces/user-repository.interface.js';
 import { USER_REPOSITORY } from './interfaces/user-repository.interface.js';
 import { PASSWORD_HASHER } from './interfaces/password-hasher.interface.js';
 import { PASSWORD_RESET_NOTIFIER } from './interfaces/password-reset-notifier.interface.js';
 import { LoggingPasswordResetNotifier } from './logging-password-reset-notifier.js';
 import { InMemoryUserRepository } from './repositories/in-memory-user.repository.js';
+import { PostgresUserRepository } from './repositories/postgres-user.repository.js';
+import { repositoryProvider } from '../database/repository.provider.js';
 import { StudentRepositoryModule } from '../students/student-repository.module.js';
 import { JWT_SECRET, JWT_EXPIRES_IN } from './constants.js';
 
@@ -30,10 +33,9 @@ import { JWT_SECRET, JWT_EXPIRES_IN } from './constants.js';
     AuthService,
     JwtStrategy,
     TokenDenylistService,
-    {
-      provide: USER_REPOSITORY,
-      useClass: InMemoryUserRepository,
-    },
+    InMemoryUserRepository,
+    PostgresUserRepository,
+    repositoryProvider<UserRepository>(USER_REPOSITORY, InMemoryUserRepository, PostgresUserRepository),
     {
       provide: PASSWORD_HASHER,
       useClass: BcryptPasswordHasher,

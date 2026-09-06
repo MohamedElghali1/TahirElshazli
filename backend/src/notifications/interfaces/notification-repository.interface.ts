@@ -10,7 +10,16 @@ export interface Notification {
   type: NotificationType;
   title: string;
   message: string;
-  /** In-app deep link, e.g. /assessments/assess-3 - never an absolute URL. */
+  /**
+   * An in-app deep link, never an absolute URL - the client renders it into a
+   * <Link href>, so an absolute one would make notification content an
+   * open-redirect.
+   *
+   * It must be a *page* route, not an API route. The two do not match: the
+   * assessments API lives at /assessments/:id while the page lives at
+   * /learn/:courseId/assessments/:id. Writing the API shape here produces a
+   * notification that 404s when clicked.
+   */
   link: string | null;
   read: boolean;
   createdAt: string;

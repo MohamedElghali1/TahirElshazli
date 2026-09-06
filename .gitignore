@@ -43,4 +43,16 @@ tmp/
 .claude-flow/sessions/
 .claude-flow/metrics/
 .claude-flow/security/audit-status.json
+# Runtime state of the local ruflo daemon - per-machine, never shared.
+.claude-flow/daemon.pid
+.claude-flow/daemon-state.json
 .swarm/memory.db
+# Locally-adopted harness tuning, stamped with this machine's epoch timestamps
+# and champion hashes. Same category as the daemon state above: it churns on
+# every machine that runs the harness and means nothing on another one. The
+# agent definitions under .claude/agents/ are the opposite - those are project
+# assets and stay tracked.
+.claude-flow/harness-active-policy.json
+.claude-flow/policy/
+.claude/proven-config.json
+.claude/.proven-config-version

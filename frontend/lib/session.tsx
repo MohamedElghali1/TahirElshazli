@@ -77,9 +77,19 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
+  // Storage is read after mount, not during render, and that is deliberate:
+  // the server has no sessionStorage, so a lazy `useState(readStored)` would
+  // render "signed out" on the server and "signed in" on the client and fail
+  // hydration. `loading` exists precisely to cover this one frame, and the app
+  // layout holds its guard until it clears.
+  //
+  // The React Compiler rule below flags synchronous setState in an effect,
+  // which is the right default; this is the documented exception (syncing from
+  // an external system that only exists in the browser), not a cascade.
   useEffect(() => {
     const stored = readStored();
     if (stored) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setToken(stored.token);
       setUser(stored.user);
     }
@@ -161,6 +171,11 @@ export function useApi<T>(
     const controller = new AbortController();
     let live = true;
 
+    // Entering the loading state for a *new* request. Same exception as the
+    // provider above: this synchronises React with an external system (the
+    // API), and the alternative - rendering stale data from the previous
+    // course while the new one loads - is a worse bug than an extra render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setError(null);
 

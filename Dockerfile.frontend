@@ -1,39 +1,63 @@
-# Build stage
+# syntax=docker/dockerfile:1
+#
+# Next.js web image.
+#
+# Build context is the REPO ROOT for the same reason as Dockerfile.backend: one
+# lockfile, at the root, and `npm ci` from inside frontend/ has nothing to
+# install from. Build with `docker build -f Dockerfile.frontend .`.
+
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
-COPY frontend/package*.json ./
+COPY package.json package-lock.json ./
+COPY backend/package.json ./backend/
+COPY frontend/package.json ./frontend/
 
-# Install dependencies
 RUN npm ci
 
-# Copy source
-COPY frontend/ ./
+COPY frontend/ ./frontend/
 
-# Build Next.js
-RUN npm run build
+# NEXT_PUBLIC_* values are inlined into the client bundle at BUILD time - they
+# are not read from the environment at runtime. So the API origin has to be
+# supplied here, which does make the image environment-specific: a build for
+# staging cannot be promoted to production unchanged. That is a property of
+# Next.js client bundles rather than a choice, and it is the one place CLAUDE.md
+# §3's "no hostname baked into the artifact" cannot be fully honoured. Keep it a
+# build argument so the value lives in the pipeline, never in the source.
+ARG NEXT_PUBLIC_API_URL=http://localhost:3001
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
-# Runtime stage
-FROM node:20-alpine
+RUN npm run build --workspace=frontend
+
+
+FROM node:20-alpine AS runtime
 
 WORKDIR /app
 
-# Install only production dependencies
-COPY frontend/package*.json ./
-RUN npm ci --only=production
+ENV NODE_ENV=production
 
-# Copy built application
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
+# next.config.ts sets `output: 'standalone'`, so the build traces the exact
+# node_modules the server actually imports and emits a self-contained server.
+# That is why this stage has no npm ci at all. With outputFileTracingRoot
+# pinned to the repo root, the traced tree keeps the workspace layout:
+# .next/standalone/frontend/server.js alongside .next/standalone/node_modules.
+COPY --from=builder /app/frontend/.next/standalone ./
+# Static assets and public/ are deliberately NOT traced into standalone; the
+# server expects to find them on disk next to it, and a missing copy here shows
+# up as an app that renders unstyled with every image 404ing.
+COPY --from=builder /app/frontend/.next/static ./frontend/.next/static
+COPY --from=builder /app/frontend/public ./frontend/public
 
-# Expose port
+USER node
+
 EXPOSE 3000
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3000', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
+  CMD node -e "const p=process.env.PORT||3000;require('http').get('http://127.0.0.1:'+p+'/',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"
 
-# Start application
-CMD ["npm", "start"]
+# The standalone server reads PORT and HOSTNAME. HOSTNAME must be 0.0.0.0 or it
+# binds to localhost inside the container and nothing published reaches it.
+ENV PORT=3000 HOSTNAME=0.0.0.0
+
+CMD ["node", "frontend/server.js"]

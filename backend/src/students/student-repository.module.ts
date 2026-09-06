@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
+import type { StudentRepository } from './interfaces/student-repository.interface.js';
 import { STUDENT_REPOSITORY } from './interfaces/student-repository.interface.js';
 import { InMemoryStudentRepository } from './repositories/in-memory-student.repository.js';
+import { PostgresStudentRepository } from './repositories/postgres-student.repository.js';
+import { repositoryProvider } from '../database/repository.provider.js';
 
 /**
  * Holds the student repository on its own so both AuthModule (which creates a
@@ -11,10 +14,9 @@ import { InMemoryStudentRepository } from './repositories/in-memory-student.repo
  */
 @Module({
   providers: [
-    {
-      provide: STUDENT_REPOSITORY,
-      useClass: InMemoryStudentRepository,
-    },
+    InMemoryStudentRepository,
+    PostgresStudentRepository,
+    repositoryProvider<StudentRepository>(STUDENT_REPOSITORY, InMemoryStudentRepository, PostgresStudentRepository),
   ],
   exports: [STUDENT_REPOSITORY],
 })

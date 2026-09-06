@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { EnvelopeSimpleIcon, WhatsappLogoIcon } from '@phosphor-icons/react/dist/ssr';
 import { ContactForm } from '@/components/site/contact-form';
+import { CONTACT } from '@/lib/site-content';
 
 export const metadata: Metadata = {
   title: 'Contact',
@@ -24,7 +25,7 @@ export default function ContactPage() {
 
         <div className="mt-[var(--sp-12)] flex flex-col gap-[var(--sp-4)] border-t border-[var(--border-light)] pt-[var(--sp-8)]">
           <a
-            href="https://wa.me/201000000000"
+            href={CONTACT.whatsappUrl}
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center gap-[var(--sp-3)] text-[var(--fs-body)] text-[var(--fg-secondary)] transition-colors duration-[var(--dur-fast)] hover:text-[var(--fg-primary)]"
@@ -33,11 +34,11 @@ export default function ContactPage() {
             WhatsApp
           </a>
           <a
-            href="mailto:hello@tahirelshazli.com"
+            href={`mailto:${CONTACT.email}`}
             className="inline-flex items-center gap-[var(--sp-3)] text-[var(--fs-body)] text-[var(--fg-secondary)] transition-colors duration-[var(--dur-fast)] hover:text-[var(--fg-primary)]"
           >
             <EnvelopeSimpleIcon size={20} className="text-[var(--fg-tertiary)]" />
-            hello@tahirelshazli.com
+            {CONTACT.email}
           </a>
         </div>
       </div>

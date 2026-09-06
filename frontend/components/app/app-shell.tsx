@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   BellIcon,
   ListIcon,
@@ -34,7 +34,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, signOut } = useSession();
   const [open, setOpen] = useState(false);
 
-  useEffect(() => setOpen(false), [pathname]);
+  // A route change with the sheet still open leaves the page unscrollable.
+  // Adjusted during render rather than in an effect: an effect would paint one
+  // frame with the sheet still over the new page, and React's own guidance is
+  // to derive state from a changed prop this way.
+  const [lastPathname, setLastPathname] = useState(pathname);
+  if (lastPathname !== pathname) {
+    setLastPathname(pathname);
+    setOpen(false);
+  }
 
   // The badge is the one number in the shell, so it gets its own read rather
   // than being threaded down from whichever page happens to be mounted.

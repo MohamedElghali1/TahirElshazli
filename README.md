@@ -16,51 +16,89 @@ A premium Learning Management System (LMS) for Dr. Tahir Elshazli's educational 
 | Hosting | Hostinger VPS (Docker) |
 | Security | Cloudflare (WAF, DDoS, CDN) |
 
-## Quick Start
+## Quick start
 
 ### Prerequisites
 
 - **Node.js** 20+ (LTS)
-- **Docker** (for PostgreSQL and full stack)
-- **npm** or **yarn**
+- **npm** 10+
+- **Docker** — only for the Postgres and full-stack options below
 
-### Development Setup
+### Option 1 — run the sample (no database, no config)
 
-#### Option 1: Direct (without Docker)
+Two commands from a fresh clone. This is the fastest way to click through the
+real UI.
 
 ```bash
-# Install root dependencies
-npm install
-
-# Install frontend & backend dependencies
-cd frontend && npm install
-cd ../backend && npm install
-
-# Set up environment
-cp .env.example .env
-# Edit .env with your local values
-
-# Start PostgreSQL separately (or use Docker)
-# docker run --name postgres -e POSTGRES_PASSWORD=devpassword -p 5432:5432 postgres:15-alpine
-
-# Run in development
+npm install     # once, at the ROOT only - see "A note on installing" below
 npm run dev
-# Frontend: http://localhost:3000
-# Backend:  http://localhost:3001
 ```
 
-#### Option 2: Docker (full stack)
+- Web: <http://localhost:3000>
+- API: <http://localhost:3001>
+
+The API starts on the **in-memory driver** (`PERSISTENCE_DRIVER` defaults to
+`memory` outside production), so there is no database to set up and no `.env` to
+write. Data resets on every restart — that is the point of this mode.
+
+Sign in with the seeded fixture account:
+
+| Field | Value |
+|---|---|
+| Email | `student@example.com` |
+| Password | `password123` |
+
+That password is published in this repository and exists only in the
+development fixtures. `npm run db:seed` refuses to run when `NODE_ENV=production`
+for exactly this reason.
+
+### Option 2 — run against a real PostgreSQL
 
 ```bash
-# Build and start all services
-npm run docker:up
+docker compose up -d postgres
 
-# View logs
+PERSISTENCE_DRIVER=postgres \
+DATABASE_URL=postgresql://dev:devpassword@localhost:5432/tahirelshazli \
+  npm run db:migrate
+
+PERSISTENCE_DRIVER=postgres \
+DATABASE_URL=postgresql://dev:devpassword@localhost:5432/tahirelshazli \
+  npm run db:seed
+
+npm run dev
+```
+
+Migrations are forward-only and recorded in `schema_migrations`, so re-running
+them is a no-op. The SQL lives in `backend/src/database/migrations/`; the
+`database/schema.sql` at the repo root is a design outline and is **not**
+applied.
+
+### Option 3 — full stack in containers
+
+```bash
+npm run docker:up     # builds both images and starts postgres + api + web
 npm run docker:logs
-
-# Stop services
 npm run docker:down
 ```
+
+Compose builds the same production images CI builds, from the repo root — it
+does not hot-reload. For day-to-day iteration use Option 1.
+
+### A note on installing
+
+This is an **npm workspaces monorepo with a single lockfile at the root**. Run
+`npm install` at the root and nothing else: there is no
+`frontend/package-lock.json` or `backend/package-lock.json`, so `npm ci` from
+inside either workspace fails outright. The same rule is why both Dockerfiles
+build from the repo root rather than from their workspace directory.
+
+### Ports
+
+The API defaults to **3001** (`resolvePort` in
+`backend/src/common/config/env.ts`) because 3000 belongs to Next.js and
+`npm run dev` starts both. Override with `PORT`; if you do, set
+`NEXT_PUBLIC_API_URL` to match, since the frontend inlines that value at build
+time.
 
 ## Project Structure
 

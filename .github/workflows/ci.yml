@@ -1,57 +1,238 @@
-name: CI/CD
+name: CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, master, develop]
   pull_request:
-    branches: [ main, develop ]
+    branches: [main, master, develop]
+
+# A second push to the same branch cancels the first: these jobs boot a Postgres
+# and build two images, and there is no value in finishing a run whose commit is
+# already superseded.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege for the job token. Nothing here writes to the repository -
+# no step pushes, comments, or publishes - so read is all it needs. Stated
+# explicitly rather than inherited from the repo/org default, so a future step
+# cannot quietly acquire more scope than it was reviewed with (CLAUDE.md §8).
+permissions:
+  contents: read
+
+env:
+  # Pinned rather than "lts/*" so a Node release never changes what CI tested
+  # without a commit saying so.
+  NODE_VERSION: '20.x'
 
 jobs:
-  lint-and-test:
+  # ---------------------------------------------------------------------------
+  # Lint, build, and the suites that need no services.
+  # ---------------------------------------------------------------------------
+  verify:
+    name: Lint, build, unit + e2e
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        node-version: [20.x]
-
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v3
+      - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
-          cache: 'npm'
+          node-version: ${{ env.NODE_VERSION }}
+          # One lockfile, at the repo root - this is an npm workspaces monorepo.
+          cache: npm
 
-      - name: Install dependencies
+      # `npm ci` once at the root installs both workspaces. Running it inside
+      # frontend/ or backend/ would fail: neither has its own lockfile.
+      - name: Install
         run: npm ci
 
-      - name: Lint frontend
-        run: npm run lint:frontend --if-present
-
       - name: Lint backend
-        run: npm run lint:backend --if-present
+        run: npm run lint:backend
 
-      - name: Build frontend
-        run: npm run build:frontend --if-present
+      - name: Lint frontend
+        run: npm run lint:frontend
 
       - name: Build backend
-        run: npm run build:backend --if-present
+        run: npm run build:backend
 
-      - name: Run tests
-        run: npm run test --if-present
+      - name: Build frontend
+        run: npm run build:frontend
 
-  docker-build:
+      # The root `test` script maps to the backend workspace only. The frontend
+      # has no test runner yet, and a `--if-present` here would turn that
+      # absence into a silent pass. When frontend tests land, add the script and
+      # a step here - not an --if-present.
+      - name: Unit tests
+        run: npm run test
+
+      - name: E2E tests
+        run: npm run test:e2e
+
+  # ---------------------------------------------------------------------------
+  # The suite that needs a real database.
+  #
+  # Separate job because it is the only one needing a service container.
+  # ---------------------------------------------------------------------------
+  integration:
+    name: Postgres integration
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: tahirelshazli_test
+          POSTGRES_USER: dev
+          POSTGRES_PASSWORD: devpassword
+        ports:
+          - 5432:5432
+        # Without this the first query races the server's startup and the suite
+        # fails on connection refused rather than on anything real.
+        options: >-
+          --health-cmd "pg_isready -U dev -d tahirelshazli_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
 
-      - name: Build Docker images
+      - name: Install
+        run: npm ci
+
+      # The spec DROP SCHEMAs on every run, so this must point at a throwaway
+      # database - here, the service container's, which dies with the job.
+      #
+      # The suite `describe.skip`s itself when TEST_DATABASE_URL is unset, so
+      # omitting this variable would make the job pass while testing nothing.
+      # The guard step below exists to catch exactly that.
+      - name: Integration tests
+        env:
+          TEST_DATABASE_URL: postgresql://dev:devpassword@localhost:5432/tahirelshazli_test
+        # `set -o pipefail` is written out rather than inherited. Piping into
+        # `tee` otherwise returns tee's exit code, so a failing suite would
+        # report success and the guard step below would be the only thing
+        # catching it. GitHub's default bash already sets it; saying so here
+        # means a future `shell:` change cannot silently remove the protection.
         run: |
-          docker build -f Dockerfile.frontend -t tahirelshazli-frontend:latest .
-          docker build -f Dockerfile.backend -t tahirelshazli-backend:latest .
+          set -o pipefail
+          npm run test:integration 2>&1 | tee integration.log
+
+      - name: Fail if the integration suite ran nothing
+        run: |
+          if ! grep -qE '^ *Tests +[0-9]+ passed' integration.log; then
+            echo "::error::The integration suite reported no passing tests."
+            echo "TEST_DATABASE_URL was probably unset or unreachable, which"
+            echo "makes this job pass while running nothing."
+            exit 1
+          fi
+          if grep -qE '[0-9]+ skipped' integration.log; then
+            echo "::error::The integration suite skipped tests - it self-skips"
+            echo "when TEST_DATABASE_URL is missing."
+            exit 1
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Container builds.
+  #
+  # Runs on pull requests too, deliberately. Both Dockerfiles were unbuildable
+  # while this job only ran on main; a broken image is far cheaper to find on
+  # the PR that broke it.
+  # ---------------------------------------------------------------------------
+  images:
+    name: Build container images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Build context is the repo root for both: one lockfile, at the root.
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.backend
+          push: false
+          tags: tahirelshazli-backend:${{ github.sha }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.frontend
+          push: false
+          tags: tahirelshazli-frontend:${{ github.sha }}
+          # NEXT_PUBLIC_* is inlined into the client bundle at build time, so a
+          # real deployment must rebuild with its own API origin rather than
+          # promoting this image. See Dockerfile.frontend.
+          build-args: |
+            NEXT_PUBLIC_API_URL=http://localhost:3001
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
+
+  # ---------------------------------------------------------------------------
+  # Deploy.
+  #
+  # INERT until the Hostinger VPS is provisioned and the secrets below exist -
+  # third-party subscriptions are the client's responsibility (CLAUDE.md §3), so
+  # this job is gated on a repository variable rather than guessing at a host
+  # that may not be there. Set DEPLOY_ENABLED=true in repo variables to arm it.
+  #
+  # The shape is the part that matters and is deliberate: migrations run as
+  # their own step BEFORE the new image serves traffic. DB_AUTO_MIGRATE stays
+  # off, because with more than one replica every instance would race to apply
+  # the same DDL (CLAUDE.md §7.1, env.ts resolveAutoMigrate).
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: [verify, integration, images]
+    if: >-
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') &&
+      vars.DEPLOY_ENABLED == 'true'
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # Forward-only and idempotent: applied migrations are recorded in
+      # schema_migrations and re-running is a no-op, so a re-deploy is safe.
+      - name: Apply database migrations
+        env:
+          NODE_ENV: production
+          PERSISTENCE_DRIVER: postgres
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npm run db:migrate
+
+      # NOTE: this step and the `images` job have to be finished together, not
+      # independently. `images` currently builds with `push: false` and performs
+      # no registry login, so there is no artifact for a rollout to pull. Arming
+      # DEPLOY_ENABLED without first adding a registry login, `push: true` and a
+      # pull step here would run migrations against production and then do
+      # nothing - the worst of both.
+      - name: Release
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          echo "Migrations applied. Image rollout goes here once the VPS exists:"
+          echo "  - add a registry login + push: true to the images job"
+          echo "  - pull the ${{ github.sha }} tag and restart on the host"
+          echo "Left explicit rather than guessed - see CLAUDE.md section 3."

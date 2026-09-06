@@ -73,6 +73,19 @@ export interface AssessmentRepository {
     assessmentId: string,
     studentId: string,
   ): Promise<StoredSubmission | null>;
+  /**
+   * One student's submissions across many assessments, for the course
+   * assessment list and the performance report. Both used to await
+   * `findSubmission` once per assessment - free against an array, a round trip
+   * each against Postgres, and a course has ten to twenty assessments.
+   *
+   * Scoped to `studentId` for the same reason `findSubmission` is: a batch read
+   * is exactly where an unscoped query would leak a whole cohort's marks.
+   */
+  findSubmissionsForStudent(
+    assessmentIds: readonly string[],
+    studentId: string,
+  ): Promise<StoredSubmission[]>;
   createSubmission(
     assessmentId: string,
     studentId: string,
@@ -83,13 +96,26 @@ export interface AssessmentRepository {
    * Replaces the student's answer, archiving the previous content as a revision.
    * `undefined` leaves a field untouched - a resubmission that supplies only
    * `answerText` must not silently erase an already-uploaded file.
+   *
+   * `studentId` is part of the predicate, not a convenience argument: a
+   * submission id is otherwise all it takes to overwrite someone else's work.
+   * It sits in the signature so no implementor can omit it and no future caller
+   * has to remember it - today's single call site derives the id from
+   * `findSubmission(assessmentId, studentId)` two lines earlier, which is a
+   * property of that one call site and invisible here. The next caller is a TA
+   * grading endpoint holding a submission id for a course it may not be
+   * assigned to (CLAUDE.md §5.11).
    */
   updateSubmission(
     submissionId: string,
+    studentId: string,
     fileUrl: string | undefined,
     answerText: string | undefined,
   ): Promise<StoredSubmission | null>;
-  findRevisions(submissionId: string): Promise<SubmissionRevision[]>;
+  findRevisions(
+    submissionId: string,
+    studentId: string,
+  ): Promise<SubmissionRevision[]>;
 }
 
 export const ASSESSMENT_REPOSITORY = Symbol('ASSESSMENT_REPOSITORY');

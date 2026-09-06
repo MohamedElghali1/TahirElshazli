@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { WhatsappLogoIcon } from '@phosphor-icons/react/dist/ssr';
 import { Wordmark } from './wordmark';
+import { CONTACT } from '@/lib/site-content';
 
 const COLUMNS = [
   {
@@ -33,7 +34,7 @@ export function SiteFooter() {
             returned.
           </p>
           <a
-            href="https://wa.me/201000000000"
+            href={CONTACT.whatsappUrl}
             target="_blank"
             rel="noreferrer"
             className="mt-[var(--sp-6)] inline-flex items-center gap-[var(--sp-2)] text-[var(--fs-base)] text-[var(--fg-secondary)] transition-colors duration-[var(--dur-fast)] hover:text-[var(--fg-primary)]"

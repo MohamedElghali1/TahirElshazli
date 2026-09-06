@@ -86,11 +86,22 @@ export class AssessmentsService {
     studentId: string,
   ): Promise<StoredAssessment> {
     const assessment = await this.assessmentRepo.findById(assessmentId);
-    if (!assessment) {
-      throw new NotFoundException('Assessment not found');
+    if (assessment) {
+      const enrollment = await this.enrollmentsService.find(
+        assessment.courseId,
+        studentId,
+      );
+      if (enrollment) {
+        return assessment;
+      }
     }
-    await this.enrollmentsService.assertEnrolled(assessment.courseId, studentId);
-    return assessment;
+    // One message and one status for both branches. Letting `assertEnrolled`
+    // throw its own "Course not found or student not enrolled" here would make
+    // the *body* differ between an id that exists in someone else's course and
+    // an id that does not exist at all - an existence oracle over the whole
+    // assessment id space, even though both are 404. ReportsService.getDocument
+    // already collapses the two the same way.
+    throw new NotFoundException('Assessment not found');
   }
 
   /**
@@ -164,15 +175,26 @@ export class AssessmentsService {
     await this.enrollmentsService.assertEnrolled(courseId, studentId);
     const now = new Date();
     const assessments = await this.assessmentRepo.findByCourse(courseId, filter);
-    return Promise.all(
-      assessments.map(async (assessment) =>
-        this.toListItem(
-          assessment,
-          await this.assessmentRepo.findSubmission(assessment.id, studentId),
-          now,
-        ),
-      ),
+    const submissions = await this.submissionsByAssessment(assessments, studentId);
+    return assessments.map((assessment) =>
+      this.toListItem(assessment, submissions.get(assessment.id) ?? null, now),
     );
+  }
+
+  /**
+   * One read for the whole list, keyed by assessment id. The per-assessment
+   * `findSubmission` this replaces cost nothing against an in-memory array and
+   * one round trip each against Postgres (CLAUDE.md §7.1).
+   */
+  private async submissionsByAssessment(
+    assessments: readonly StoredAssessment[],
+    studentId: string,
+  ): Promise<Map<string, StoredSubmission>> {
+    const submissions = await this.assessmentRepo.findSubmissionsForStudent(
+      assessments.map((assessment) => assessment.id),
+      studentId,
+    );
+    return new Map(submissions.map((s) => [s.assessmentId, s]));
   }
 
   async getAssessmentDetail(
@@ -205,7 +227,10 @@ export class AssessmentsService {
             correctedAt: submission.correctedAt,
             feedback: submission.feedback,
             annotatedFileUrl: submission.annotatedFileUrl,
-            revisions: await this.assessmentRepo.findRevisions(submission.id),
+            revisions: await this.assessmentRepo.findRevisions(
+              submission.id,
+              studentId,
+            ),
           }
         : null,
     };
@@ -255,6 +280,7 @@ export class AssessmentsService {
     // only one field must leave the other one standing.
     const updated = await this.assessmentRepo.updateSubmission(
       existing.id,
+      studentId,
       fileUrl,
       answerText,
     );
@@ -271,22 +297,18 @@ export class AssessmentsService {
   ): Promise<AssessmentPerformanceEntry[]> {
     const now = new Date();
     const assessments = await this.assessmentRepo.findByCourse(courseId);
-    return Promise.all(
-      assessments.map(async (assessment) => {
-        const submission = await this.assessmentRepo.findSubmission(
-          assessment.id,
-          studentId,
-        );
-        return {
-          assessmentId: assessment.id,
-          title: assessment.title,
-          type: assessment.type,
-          topics: assessment.topics,
-          maxScore: assessment.maxScore,
-          score: submission?.correctedAt ? submission.score : null,
-          status: this.computeStatus(assessment, submission, now),
-        };
-      }),
-    );
+    const submissions = await this.submissionsByAssessment(assessments, studentId);
+    return assessments.map((assessment) => {
+      const submission = submissions.get(assessment.id) ?? null;
+      return {
+        assessmentId: assessment.id,
+        title: assessment.title,
+        type: assessment.type,
+        topics: assessment.topics,
+        maxScore: assessment.maxScore,
+        score: submission?.correctedAt ? submission.score : null,
+        status: this.computeStatus(assessment, submission, now),
+      };
+    });
   }
 }

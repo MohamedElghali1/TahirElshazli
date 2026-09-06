@@ -1,5 +1,10 @@
--- Tahirelshazli LMS - Seed Data (Development)
--- This file contains sample data for development and testing.
+-- Tahirelshazli LMS - Seed Data (SUPERSEDED - NOT APPLIED)
+--
+-- The fixtures the application actually loads are in
+-- backend/src/database/seeds/, run by `npm run db:seed`, which refuses to run
+-- in production. This file targets the outline in schema.sql, not the applied
+-- migration, and would fail against it (no `first_name`/`last_name` columns,
+-- and `password_hash` is NOT NULL). Kept only as scaffold history.
 
 -- Sample users (passwords should be hashed in production)
 INSERT INTO users (email, role, first_name, last_name, is_active) VALUES

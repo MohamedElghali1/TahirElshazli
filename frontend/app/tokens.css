@@ -146,7 +146,11 @@
   --accent:       #9A7A12;
   --accent-hover: #866A0C;
   --accent-press: #6E5709;
-  --accent-fg:    #FFFFFF;
+  /* Dark text on gold in BOTH themes, per the rule above. White on the
+     light gold (#9A7A12) measures 4.07:1 - under the 4.5:1 AA floor for
+     normal text - and this token colours every primary button label and
+     the unread badge. The value below measures 4.58:1. Do not lighten it. */
+  --accent-fg:    #17150E;
   --accent-wash:  rgba(154, 122, 18, 0.10);
   --accent-line:  rgba(154, 122, 18, 0.30);
 
@@ -161,7 +165,7 @@
     --bg-scrim:rgba(255,255,255,.78);
     --border-light:#F0F0F0; --border-medium:#E4E4E4; --border-strong:#C4C4C4;
     --fg-primary:#1A1A1A; --fg-secondary:#5C5C5C; --fg-tertiary:#8A8A8A; --fg-muted:#ADADAD;
-    --accent:#9A7A12; --accent-hover:#866A0C; --accent-press:#6E5709; --accent-fg:#FFFFFF;
+    --accent:#9A7A12; --accent-hover:#866A0C; --accent-press:#6E5709; --accent-fg:#17150E;
     --accent-wash:rgba(154,122,18,.10); --accent-line:rgba(154,122,18,.30);
     --shadow-sm:0 2px 4px rgba(0,0,0,.04), 0 0 4px rgba(0,0,0,.06);
     --shadow-lg:2px 4px 16px rgba(0,0,0,.10), 0 2px 4px rgba(0,0,0,.06);

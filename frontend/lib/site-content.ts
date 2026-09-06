@@ -8,6 +8,23 @@
  * with real photography of Dr. Tahir and real classroom shots before launch.
  */
 
+/**
+ * PLACEHOLDER contact details. Both values are invented and must be replaced
+ * with Dr. Tahir's real WhatsApp number and inbox before launch.
+ *
+ * They live here rather than inline in the footer and the contact page so
+ * there is one place to change and no chance of the two drifting - and so a
+ * placeholder cannot go live unmarked, which is how a fake number reaches a
+ * printed flyer.
+ */
+export const CONTACT = {
+  whatsappNumber: '201000000000',
+  get whatsappUrl() {
+    return `https://wa.me/${this.whatsappNumber}`;
+  },
+  email: 'hello@tahirelshazli.com',
+} as const;
+
 export const photo = (seed: string, w: number, h: number) =>
   `https://picsum.photos/seed/${seed}/${w}/${h}`;
 

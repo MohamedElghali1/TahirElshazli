@@ -1,38 +1,64 @@
-# Build stage
+# syntax=docker/dockerfile:1
+#
+# NestJS API image.
+#
+# The build context is the REPO ROOT, not backend/. This is an npm workspaces
+# monorepo with a single lockfile at the root: there is no
+# backend/package-lock.json, so an `npm ci` run from inside backend/ fails
+# outright. Build it with `docker build -f Dockerfile.backend .` from the root.
+
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
-COPY backend/package*.json ./
+# Manifests before sources, so editing a .ts file reuses the cached install
+# layer. Every workspace manifest has to be present: npm reads the `workspaces`
+# array from the root package.json and errors on a directory that has no
+# package.json, even when only the other workspace is being installed.
+COPY package.json package-lock.json ./
+COPY backend/package.json ./backend/
+COPY frontend/package.json ./frontend/
 
-# Install dependencies
+# Dev dependencies included - `nest build` is one of them.
 RUN npm ci
 
-# Copy source
-COPY backend/ ./
+COPY backend/ ./backend/
 
-# Build NestJS
-RUN npm run build
+# nest-cli.json declares database/migrations/**/*.sql and database/seeds/**/*.sql
+# as build assets, so they land in dist/. MigrationRunner reads them from dist at
+# runtime: if that asset config is ever dropped, this image builds fine and then
+# fails on the first migrate.
+RUN npm run build --workspace=backend
 
-# Runtime stage
-FROM node:20-alpine
+
+FROM node:20-alpine AS runtime
 
 WORKDIR /app
 
-# Install only production dependencies
-COPY backend/package*.json ./
-RUN npm ci --only=production
+ENV NODE_ENV=production
 
-# Copy built application
-COPY --from=builder /app/dist ./dist
+# Production dependencies only, resolved through the same workspace layout the
+# build used, so the hoisted node_modules at /app/node_modules stays on the
+# resolution path for /app/backend/dist.
+COPY package.json package-lock.json ./
+COPY backend/package.json ./backend/
+COPY frontend/package.json ./frontend/
+RUN npm ci --omit=dev --workspace=backend \
+ && npm cache clean --force
 
-# Expose port
+COPY --from=builder /app/backend/dist ./backend/dist
+
+# node:alpine ships an unprivileged `node` user. Nothing here needs uid 0.
+USER node
+
+# The app's own default (env.ts resolvePort) is 3001; PORT overrides it. The
+# healthcheck reads the same variable rather than assuming, so a deployment that
+# moves the port does not silently fail its own health probe.
 EXPOSE 3001
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3001/health', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
+  CMD node -e "const p=process.env.PORT||3001;require('http').get('http://127.0.0.1:'+p+'/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
 
-# Start application
-CMD ["node", "dist/main"]
+WORKDIR /app/backend
+
+CMD ["node", "dist/main.js"]

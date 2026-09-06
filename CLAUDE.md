@@ -19,13 +19,18 @@ because they appear in a wish list.
 1. What the user says in the current conversation.
 2. `context/Report 2 - Mr Tahir Elshazli LMS.pdf` — latest client meeting (6 Aug 2026).
 3. `context/report 1.pdf` — earlier client meeting (30 Jul 2026).
-4. `context/download.pdf` — the signed development agreement (stack, scope, timeline, phases).
-5. `context/tahirlmstaadmincontext.md` — TA & Admin prototype walkthrough. A peer of item 6, not its
+4. **The user-stories board** (FigJam, `R17sOASEJqQ7iQC2LeyFFK`, last updated 30 Jul 2026) — 129
+   role-scoped stickies plus nine sequence diagrams; §12 has the link. It is the *artifact* of the
+   item-3 meeting, so it ranks beside it, not above it. Where it disagrees with item 2 the later
+   meeting wins; where it disagrees with the prototype doc (item 6), the two are peers and the
+   disagreement is an open question, not a resolution — see §11.
+5. `context/download.pdf` — the signed development agreement (stack, scope, timeline, phases).
+6. `context/tahirlmstaadmincontext.md` — TA & Admin prototype walkthrough. A peer of item 7, not its
    superior: the doc calls itself *"reference material, not an instruction to act on"* and *"what
    the prototype currently shows, not a locked spec."* Where it disagrees with a client meeting
-   (items 2-3), **the meeting wins** — see §11 for the one live case.
-6. `context/tahirlmsprojectknowledge.md` — background notes; **partly superseded** (see §3).
-7. The original brief's full feature wish list (§9) — a menu of ideas, not a checklist.
+   (items 2-4), **the meeting wins** — see §11 for the live cases.
+7. `context/tahirlmsprojectknowledge.md` — background notes; **partly superseded** (see §3).
+8. The original brief's full feature wish list (§9) — a menu of ideas, not a checklist.
 
 ---
 
@@ -96,7 +101,16 @@ dashboard counts are scoped to their own courses — never the full roster.
 student directory including unenroll, payments/refunds/discount codes, CMS, cross-course reports,
 TA-to-course assignment, and audit-log access.
 
-Whether TAs can generate reports is **unresolved** — §5.9 grants it, the prototype doesn't. See §11.
+**Two powers the user-stories board grants a TA that this preset does not.** `ASG-10` reads
+*"Create and publish assignments independently"* and `CRS-11` reads *"Schedule/share Zoom links for
+my sessions"* — both sit in the board's TA column, and neither appears above. The board is a peer of
+the prototype (§0 items 4 and 6), so this is a **disagreement between two reference artifacts, not a
+correction of one by the other**. Ship the preset as written — the narrower reading — and treat both
+as §11 questions. Neither is expensive to reverse if the answer is yes: they are two rows in the
+permission data, not a schema change, provided the preset is data (§11) rather than branches.
+
+Whether TAs can generate reports is **unresolved** — §5.9 grants it, the prototype and the board
+both withhold it. See §11.
 
 See §5.11 — scoping is a query filter, never a hidden UI element.
 
@@ -169,6 +183,14 @@ Two tiers, and neither replaces the other: **every** TA mutation is logged (that
 actual ask), and on the admin side anything touching **money, enrollment, or accounts** — refunds,
 unenrollment, account changes, course deletion — is logged without exception.
 
+**Built:** `audit_log` (migration 002) and `AuditService`, append-and-read only — the repository
+interface has no update and no delete, which is where that is enforced. `AuditAction` and
+`AuditTargetType` are string *unions*, so adding a mutating endpoint cannot log until someone adds
+its action to the list; that compile error is the mechanism keeping "every TA mutation is logged"
+true as surfaces land. Two actions exist so far, both admin: `course_staff.assigned` and
+`course_staff.unassigned`. §7.1 records the one gap — the entry is written after the action commits,
+not inside its transaction.
+
 ### 5.5 In-platform PDF assignment correction
 
 When a student submits a PDF, the teacher corrects it **inside the platform**: mark incorrect words
@@ -199,6 +221,10 @@ assignment**, not a global hardcoded whitelist — but always validated server-s
 Both the **teacher and the teaching assistant** can generate student grade reports. Reports are
 downloadable.
 
+**The TA half of that sentence is contested** — the prototype and the user-stories board both put
+report generation under Admin only. Don't write a `@Roles()` decorator off this line alone; §11 has
+the full case and the one thing to check first. The teacher half is not in question.
+
 ### 5.10 Status is computed server-side
 
 An assessment's displayed status — **Locked / Available / Submitted / Corrected** — is always derived
@@ -215,14 +241,23 @@ a TA can read or grade another TA's students.
 
 Admin queries never join through this table; that asymmetry is the whole design.
 
-Route split: **`/api/staff/*`** is shared and always TA-scoped through `CourseStaffAssignment`
+Route split: **`/staff/*`** is shared and always TA-scoped through `CourseStaffAssignment`
 (courses, roster, submission grading, attendance, quizzes + export/duplicate, announcements,
-messages); **`/api/admin/*`** is admin-only and unscoped (course CRUD, unenroll, full student
+messages); **`/admin/*`** is admin-only and unscoped (course CRUD, unenroll, full student
 directory, payments + refunds, discount codes, CMS, report generation + CSV, staff assignment,
 audit log).
 
-Proposed posture, not yet ruled on: an unassigned course should 404 rather than 403 for a TA, the
-same way an unenrolled student already gets 404 — so a TA can't enumerate courses they don't hold.
+> The route inventory this came from writes these as `/api/staff/*` and `/api/admin/*`. **This
+> application has no global `/api` prefix** — the student surface is `/courses`, `/notifications`,
+> `/students/me/profile` — so the built routes drop it, and the paths above are what exists. If a
+> prefix is wanted later it belongs in `main.ts` as `setGlobalPrefix`, applied to every route at
+> once, not written into some controllers and not others.
+
+**Settled, and implemented:** an unassigned course 404s rather than 403s for a TA, the same way an
+unenrolled student already gets 404 — so a TA can't enumerate courses they don't hold.
+`StaffScopeService.assertAssigned` is the single place that decides it, and
+`staff-scope.service.spec.ts` asserts a held-but-wrong course and a nonexistent one come back
+identical.
 
 **Caching the assignment check.** Default is **no cache** — compute on read until measurement says
 otherwise, the same rule §6.1 sets for `QuizAnalyticsSnapshot`. When that day comes, the
@@ -364,37 +399,93 @@ WhatsApp Business API · SMS · quiz analytics export · multi-tutor expansion.
 ## 7.1 Build status — what actually exists
 
 Honest inventory, so nobody assumes a surface is there. Of the five roles in §2,
-**one has a backend.**
+**one has a full backend; two now have a foundation and nothing more.**
 
 | Role | Backend status |
 |---|---|
-| **Student** | Built. 9 controllers, all `@Roles(Role.Student)`, unit + e2e covered. |
-| **Visitor** | None. No public endpoints at all beyond the health check — no catalog, blog, or contact. |
+| **Student** | Built. 9 feature controllers, every route `@Roles(Role.Student)`, unit + e2e covered. `JwtAuthGuard` + `RolesGuard` are **global**, so a new controller is protected by default; `@Public()` (health, register, login, password reset) and `@AnyRole()` (logout) are the only exits. |
+| **Visitor** | None. `GET /health` is the only public endpoint — no catalog, blog, or contact. |
 | **Parent** | None. Enum entry only; no `ParentLink`, no read-only views. |
-| **Teaching Assistant** | None. Enum entry only; no `CourseStaffAssignment` (§5.11). |
-| **Teacher / Admin** | None. Enum entry and a seed user; no admin surface. |
+| **Teaching Assistant** | **Foundation only.** `CourseStaffAssignment` exists and `StaffScopeService` enforces it (§5.11); `GET /staff/courses` is the one route, and it exists to prove the scoping rather than to be useful. No grading, attendance, quizzes, materials, announcements or messages. The scoping itself is the tested part: 31 unit specs across `staff-scope.service.spec.ts` and `staff.controller.spec.ts`, plus 14 in `test/staff.e2e-spec.ts`. |
+| **Teacher / Admin** | **Foundation only.** TA-to-course assignment (`/admin/courses/:id/staff`, all three verbs) and the audit-log reader (`/admin/audit-log`). No course CRUD, student directory, payments, CMS or reports. |
 
-**Persistence is entirely in-memory.** Ten `InMemory*Repository` classes plus an
-in-process `InMemoryRateLimitStore`, zero real implementations, no Postgres
-driver in `backend/`. Every repository sits behind an interface and a `Symbol`
-token, so the swap is mechanical — but until it happens, all data is lost on
-restart and nothing survives a second replica.
+**Frontend:** built for the Visitor-facing marketing site and the Student LMS —
+`app/(site)`, `app/(app)`, `app/(auth)`, 20 pages, typed against the backend's
+response shapes in `lib/types.ts`. The marketing pages read from
+`lib/site-content.ts` rather than an API, because there is no public API to read
+(the Visitor row above). **No Parent, TA or Admin screens** — the staff and
+admin routes above have no UI at all and are reachable only over HTTP.
 
-Known scaling debt to clear alongside that swap, none of it structural:
-two separate N+1 reads in `assessments.service.ts` (`:167-175` and `:274-290`)
-plus one in `courses.service.ts:126-135`; the dashboard runs `assertEnrolled`
-four times and `getProgress` twice per load; `CourseRepository` and
-`StudentRepository` expose no list or batch method, so there is nowhere to
-attach pagination; no count-only repository methods except
-`NotificationRepository.countUnread`, so badge integers fetch full rows; no
-pagination on any list endpoint, and notifications are append-only with no
-ceiling; the rate limiter and token denylist are per-process; and `JwtStrategy`
-does a user lookup per request that will need caching.
+**Persistence is driver-selected, and both drivers are real.** Every one of the
+twelve repository interfaces has an `InMemory*Repository` and a
+`Postgres*Repository`; `database/repository.provider.ts` binds the `Symbol`
+token from `PERSISTENCE_DRIVER`, read once at wiring time. `memory` is the
+default in development and test and is **refused in production** — an unset
+value there resolves to `postgres` and fails on the missing `DATABASE_URL`
+rather than serving traffic from a process-local array. Schema lives in
+`backend/src/database/migrations/`: `001_student_platform.sql` (17 tables, the
+student surface) and `002_staff_and_audit.sql` (`course_staff_assignments`,
+`audit_log`), applied by `MigrationRunner` via `npm run db:migrate` or
+`DB_AUTO_MIGRATE=1` on a single-container deploy.
+`test/postgres-repositories.integration-spec.ts` covers all twelve and skips
+itself when no `TEST_DATABASE_URL` is set. As of 2026-09-07 it **has now run
+against a real PostgreSQL 15** — 33 tests green, both migrations applied from an
+empty schema — and CI runs it on every push against a Postgres service
+container, with a guard step that fails the job if the suite reports no executed
+tests (a suite that self-skips is otherwise indistinguishable from one that
+passes).
 
-The interface-shape items here — batch, list and count methods — are cheapest to
-fix **before** a Postgres implementation exists, not alongside it. Once a real
-repository and a second caller exist, adding a method is a breaking change to
-every implementor, and "the swap is mechanical" stops being true.
+That first run immediately earned its keep: it caught the admin audit log
+**silently ending after page one**. `audit_log.created_at` was microsecond
+`TIMESTAMPTZ`, but the keyset cursor `(created_at, id)` is rebuilt in JavaScript
+where a `Date` carries only milliseconds, so the next page compared against a
+strictly smaller timestamp and matched nothing in that millisecond. The column is
+now `TIMESTAMPTZ(3)`, which also makes the Postgres and in-memory drivers page
+identically as `audit-cursor.ts` already claimed. Migration 002 was amended in
+place rather than superseded, because it had provably never been applied outside
+a throwaway test database. **The lesson generalises: any future keyset cursor
+over a timestamp column must store the precision the reader can represent.**
+
+Note that the scaffold-era `database/schema.sql` and `database/seed.sql` at the
+repo root are *not* applied and disagree with the migration on column shapes.
+They are the §6 design outline; their headers say so.
+
+Scaling debt still open, none of it structural: `CourseRepository` and
+`AssessmentRepository` have batch reads (`findByIds`,
+`findSubmissionsForStudent`) and the three N+1 loops are gone;
+`CourseRepository.findAll(limit, offset)` and `AuditLogRepository.find` are the
+first two **paginated** reads in the codebase, and `UserRepository.findByIds`
+the third batch read. `StudentRepository` still exposes no list method; there is
+no count-only method except `NotificationRepository.countUnread`, so badge
+integers still fetch full rows; no student-facing list endpoint is paginated,
+and notifications are append-only with no ceiling; the rate limiter
+(`InMemoryRateLimitStore`) and the token denylist are per-process, so they break
+under a second replica; and `JwtStrategy` does a user lookup per request that
+will need caching. Those last three want the *same* Redis — introduce it once,
+not three times (§5.11 makes the same argument for a fourth).
+
+The interface-shape items here — list and count methods — were cheapest to fix
+before a second implementation existed. That window closed some time ago:
+`findAll` and `findByIds` above each cost two implementors and an integration
+suite to add, which is the going rate now. Still worth doing, still not free.
+
+**Audit coverage is two actions, not "every mutation".** The `AuditModule` is
+`@Global()` and `AuditService` is exported precisely so every future TA and
+admin surface can reach it, but today it is injected in exactly one place —
+`StaffService` — and records exactly `course_staff.assigned` and
+`course_staff.unassigned`. §5.4 requires *every* TA mutation to be logged; that
+requirement is currently satisfied by there being almost no TA mutations. Each
+new staff or admin write must add its own `audit.record` call, and the moment
+one forgets, the requirement is quietly broken with nothing failing. Grading,
+attendance and payments are where this stops being theoretical.
+
+**One known gap in the audit trail, recorded rather than discovered later.**
+`AuditService.record` writes on its own connection *after* the action it
+describes has committed, so a crash in between leaves an action done and
+unlogged. Closing it needs the mutation and its audit row in one transaction,
+which the repository-per-connection design cannot express today. It should land
+before the payments surface (§5.12), where the gap is a money-trail hole rather
+than a missing line.
 
 ---
 
@@ -487,10 +578,43 @@ logs, future subscriptions. Designed so **additional gateways drop in later**.
 - Whether the existing Vercel/Next.js prototype UI is reused or rebuilt under the agreed stack.
 - Parent role depth: read-only monitoring only, or also communication and payment management.
 - One tutor brand vs. a future multi-tutor marketplace.
-- **Can a TA generate reports?** §5.9 — from a client meeting — says yes, explicitly. The TA
-  prototype has no Reports screen and puts report generation + CSV under Admin-only. The meeting
-  outranks the prototype (§0), so the default is *yes* until the client says otherwise, but this
-  decides a `@Roles()` decorator and is worth one question.
+- **Can a TA generate reports?** §5.9 — from a client meeting — says yes, explicitly. Two
+  artifacts say no. The TA prototype has no Reports screen and puts report generation + CSV under
+  Admin-only; the user-stories board puts all five `REP-*` stickies in the Owner column and gives
+  the TA **none**, while still granting `QUZ-12` (quiz analytics for assigned courses) and `PRG-05`
+  (progress/grade summaries for assigned students). That split is coherent on its own terms — the TA
+  *reads* their own courses' numbers but does not *generate the artifact* — and it is the reading to
+  assume if nobody answers.
+
+  The board is the 30 Jul meeting's own artifact (§0 item 4), so "the meeting outranks the
+  prototype" no longer settles this: the 30 Jul meeting and the prototype now agree with each other
+  against §5.9. If §5.9 traces to Report 2 (6 Aug) it still wins on recency; if it traces to Report
+  1, it is contradicted by the board drawn at that same meeting. **Check which PDF §5.9 came from
+  before writing the `@Roles()` decorator** — and either way this is worth one question to the
+  client, because `ReportRun.generated_by` (§6.1) exists precisely to record a TA as the author.
+
+- **Can a TA create assignments?** The board's `ASG-10` says yes, "independently"; §2.2's preset
+  omits it, granting only grading of work that already exists. Note the asymmetry the preset already
+  carries — a TA may build and publish *quizzes* (`QUZ-11`) but, on the preset's reading, not
+  assignments. If the client cannot articulate why those differ, the answer is probably yes to both.
+
+- **Can a TA schedule sessions and post Zoom links?** The board's `CRS-11` says yes; §2.2's preset
+  omits it. This is entangled with the open Zoom question above — manual link + time vs. API
+  automation. Under the manual assumption it is a `LiveSession` write, which is cheap to grant;
+  under API automation it means the TA's action provisions a meeting on Dr. Tahir's Zoom account —
+  a different question, and one the client should answer deliberately. Note that the board's own
+  Zoom diagram draws `TeacherTA` as a single lifeline and does not distinguish the two.
+
+- **Two board stories have no entity anywhere in §6 or §6.1.** `COM-08` — a student can comment on
+  or ask a question against a lesson, "to get help without leaving the platform" — and `CMS-13` — a
+  visitor can read course reviews and ratings from past students. §9's wish list has neither
+  (its "testimonials" are curated marketing copy, not per-course ratings), so these were never
+  costed. Both are real features with their own moderation surface, not fields on an existing table:
+  lesson comments need a threading model and a TA/admin moderation view, ratings need
+  enrollment-gated authorship and an aggregate the public catalog can read. **Confirm whether either
+  is in scope before Phase 2 closes** — adding them afterwards means a public write path on a
+  codebase that currently has none.
+
 - Whether the Payments **page** should also hide transaction amounts, or only the dashboard does
   (§1). The prototype shows amounts on the page; nobody has ruled on it.
 - Whether TA permissions are per-TA configurable (§2 says "must be configurable") or the fixed
@@ -531,5 +655,40 @@ logs, future subscriptions. Designed so **additional gateways drop in later**.
   file. §5.11's route split comes from it. Worth saving to `context/` so the file matches.
 - `context/tahirlmsprojectknowledge.md` — background notes (stack section superseded, see §3).
 - User stories board (Figma): `figma.com/board/R17sOASEJqQ7iQC2LeyFFK/Tahirelshazli.com---User-Stories`
+  — 129 stickies in five role columns (Owner 51, TA 16, Student 35, Parent 12, Visitor 15) carrying
+  the same `ACC-`/`CRS-`/`ASG-`/`QUZ-`/`PRG-`/`PAY-`/`CMS-`/`COM-`/`REP-`/`PUB-` codes used above,
+  plus nine sequence diagrams (four system flows, five API-integration flows). §0 item 4 ranks it;
+  §2.2 and §11 record where it disagrees with the prototype doc. **A full transcription of the board
+  was supplied in conversation but is not in `context/`** — the same gap the
+  `tahirlmstaadmincontext.md` note above describes, and worth closing the same way.
 - TA/Admin prototype: `sketch-manage-82110863.figma.site`
 - Style references: gostars.online · bassthalk.com · mentoraeg.com · teachable.com
+
+---
+
+## 13. The project log
+
+`project_log.md` is the running narrative of what this project is and how it got here — prose and
+Mermaid diagrams, not a changelog. Both `project_log.md` and `CLAUDE.md` are referenced by name in
+several entries; keep the two consistent.
+
+**Update it as part of finishing a piece of work, not afterwards as a chore.** Every material
+change gets an entry; a typo fix does not.
+
+Shape of an entry, newest at the bottom:
+
+- `## YYYY-MM-DD — Title (commit \`hash\`)` — the hash where there is one.
+- **What changed** — in prose. What a reader needs to know to navigate the code, not a file list.
+- **Why** — cite the `CLAUDE.md` section or the prototype requirement code (§10) that motivated it.
+  An entry that cannot name one is a candidate for scope creep.
+- A Mermaid diagram when the shape of something changed — data flow, module wiring, a decision
+  boundary. Not one per entry for its own sake.
+- **Follow-ups / debt** — what was knowingly left undone, so the next session inherits it instead
+  of rediscovering it.
+
+The **Current state** block at the top is overwritten each update rather than appended to. It is
+the answer to "what exists right now"; §7.1 here is the same answer in inventory form, so when one
+changes, check the other.
+
+Be honest in it. "Written but never run against a real database" is worth more than a green
+checkmark, and an entry that overstates what works is worse than no entry.

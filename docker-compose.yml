@@ -1,4 +1,12 @@
-version: '3.8'
+# Local full-stack development environment.
+#
+# `docker compose up -d` gives you Postgres + the API on the postgres driver +
+# the web app. If you only want to click through the UI, `npm run dev` from the
+# repo root is faster and needs no database at all - it runs the API on the
+# in-memory fixtures. See README "Quick start".
+#
+# The `version:` key is deliberately absent: Compose v2 ignores it and warns
+# that it is obsolete.
 
 services:
   postgres:
@@ -13,46 +21,74 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dev"]
+      test: ["CMD-SHELL", "pg_isready -U dev -d tahirelshazli"]
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      # Context is the repo root and the Dockerfile lives there too: this is an
+      # npm workspaces monorepo with one lockfile, and `npm ci` from inside
+      # backend/ has no lockfile to install from.
+      context: .
+      dockerfile: Dockerfile.backend
     container_name: tahirelshazli-api
     environment:
       NODE_ENV: development
+      # env.ts already defaults to 3001, but the port is pinned here so the
+      # value the container binds and the port mapping below can never drift
+      # apart silently.
+      PORT: 3001
+      # Compose ships a Postgres service, so the container uses it rather than
+      # the in-memory stubs. Switch to `memory` to run the API without the db.
+      PERSISTENCE_DRIVER: postgres
       DATABASE_URL: postgresql://dev:devpassword@postgres:5432/tahirelshazli
+      # Single container, so boot-time migration is safe here. With more than
+      # one replica this becomes a CI/CD step (`npm run db:migrate`) instead,
+      # or every instance races to apply the same DDL.
+      DB_AUTO_MIGRATE: "1"
       JWT_SECRET: dev-secret-key-change-in-production
       JWT_EXPIRY: 24h
+      CORS_ORIGIN: http://localhost:3000
+      # No proxy in front of the container in local compose. A non-zero value
+      # here would let a client set X-Forwarded-For and get a fresh rate-limit
+      # bucket per request.
+      TRUSTED_PROXY_HOPS: 0
     ports:
       - "3001:3001"
     depends_on:
       postgres:
         condition: service_healthy
-    volumes:
-      - ./backend/src:/app/src
-    command: npm run start:dev
+    # Deliberately no memory/CPU limits here: the right numbers come from
+    # measuring this workload, and a guessed limit either does nothing or OOM-
+    # kills the API under a load nobody has profiled. They belong in the VPS
+    # deployment once there is a profile to size them from.
+    restart: unless-stopped
 
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        # Inlined into the client bundle at build time, so it has to be a URL
+        # the *browser* can reach - not the compose service name. Reaching the
+        # API as http://backend:3001 would only work from inside the network.
+        NEXT_PUBLIC_API_URL: http://localhost:3001
     container_name: tahirelshazli-web
-    environment:
-      NEXT_PUBLIC_API_URL: http://localhost:3001
-      NEXT_PUBLIC_VIDEO_CDN: https://bunny-stream-cdn.example.com
-      NEXT_PUBLIC_STORAGE_URL: https://r2-cdn.example.com
+    # No `environment:` block on purpose. This service previously set
+    # NEXT_PUBLIC_VIDEO_CDN and NEXT_PUBLIC_STORAGE_URL here, which did nothing:
+    # NEXT_PUBLIC_* is inlined into the client bundle at build time, so a value
+    # supplied to the *container* is never read. Nothing in frontend/ consumes
+    # either one yet. When the Bunny Stream and R2 origins are actually wired up,
+    # they belong in `args:` above alongside NEXT_PUBLIC_API_URL - not here,
+    # where they would read as live configuration while silently being ignored.
     ports:
       - "3000:3000"
     depends_on:
       - backend
-    volumes:
-      - ./frontend/app:/app/app
-      - ./frontend/components:/app/components
+    restart: unless-stopped
 
 volumes:
   postgres_data:

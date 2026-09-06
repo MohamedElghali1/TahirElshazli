@@ -39,10 +39,16 @@ export class RecordingsService {
     filter?: RecordingFilter,
   ): Promise<RecordingListResponse> {
     await this.enrollmentsService.assertEnrolled(courseId, studentId);
-    const [recordings, all] = await Promise.all([
-      this.recordingRepo.findByCourse(courseId, studentId, filter),
-      this.recordingRepo.findByCourse(courseId, studentId),
-    ]);
+    // One read, filtered here. Issuing the filtered and unfiltered queries in
+    // parallel cost nothing against an in-memory array and doubles a joined
+    // Postgres query on every recordings tab and every recorded-mode dashboard.
+    // The unfiltered set already carries every column both answers need.
+    const all = await this.recordingRepo.findByCourse(courseId, studentId);
+    const recordings = all.filter(
+      (r) =>
+        (!filter?.chapter || r.chapter === filter.chapter) &&
+        (!filter?.topic || r.topics.includes(filter.topic)),
+    );
     // Filter chips always list every chapter/topic in the course, not just the
     // ones surviving the current filter - otherwise selecting one hides the rest.
     return {
@@ -82,12 +88,18 @@ export class RecordingsService {
     watchedSeconds: number,
   ): Promise<RecordingProgress> {
     const recording = await this.recordingRepo.findRecordingById(recordingId);
-    if (!recording) {
-      throw new NotFoundException('Recording not found');
-    }
     // The recording carries its own courseId, so enrollment is checked against
     // the course that actually owns it rather than anything the client sent.
-    await this.enrollmentsService.assertEnrolled(recording.courseId, studentId);
+    //
+    // Both failures answer with the same 404 body. Letting `assertEnrolled`
+    // throw its own message would tell the caller which of the two happened,
+    // which is an existence oracle over the recording id space.
+    const enrollment = recording
+      ? await this.enrollmentsService.find(recording.courseId, studentId)
+      : null;
+    if (!recording || !enrollment) {
+      throw new NotFoundException('Recording not found');
+    }
     return this.recordingRepo.upsertProgress(recordingId, studentId, watchedSeconds);
   }
 }

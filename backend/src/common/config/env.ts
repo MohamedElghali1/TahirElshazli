@@ -138,11 +138,18 @@ export function resolveTrustedProxyHops(
  * The port the HTTP server binds to. Validated here with everything else so a
  * non-numeric value fails at boot rather than surfacing as an opaque listen
  * error, and so there is one convention in this file rather than two.
+ *
+ * The default is 3001 because 3000 belongs to the Next.js frontend, and
+ * `npm run dev` starts both in one process tree: with a 3000 default the two
+ * race for the same port and whichever loses dies at boot. Every other file in
+ * the repo already assumes this split - `frontend/lib/api.ts` defaults to
+ * `http://localhost:3001`, the Dockerfile EXPOSEs 3001, compose maps 3001:3001
+ * - so this default is what makes a fresh clone run without a .env at all.
  */
 export function resolvePort(raw = process.env.PORT): number {
   const value = raw?.trim();
   if (!value) {
-    return 3000;
+    return 3001;
   }
   if (!/^\d+$/.test(value) || Number(value) < 1 || Number(value) > 65535) {
     throw new Error(
@@ -150,6 +157,110 @@ export function resolvePort(raw = process.env.PORT): number {
     );
   }
   return Number(value);
+}
+
+/**
+ * Which repository implementations the app wires up.
+ *
+ * `memory` keeps the `InMemory*Repository` stubs: no database needed, data
+ * lost on restart, nothing shared between replicas. It is the right default
+ * for local work and for the test suite, and it is never acceptable in
+ * production - which is why an unset value resolves to `postgres` there and
+ * the boot then fails on the missing DATABASE_URL rather than quietly serving
+ * traffic from a process-local array.
+ */
+export type PersistenceDriver = 'memory' | 'postgres';
+
+const VALID_PERSISTENCE_DRIVERS: PersistenceDriver[] = ['memory', 'postgres'];
+
+export function resolvePersistenceDriver(
+  nodeEnv: NodeEnv,
+  raw = process.env.PERSISTENCE_DRIVER,
+): PersistenceDriver {
+  const value = raw?.trim();
+  if (!value) {
+    return nodeEnv === 'production' ? 'postgres' : 'memory';
+  }
+  if (!VALID_PERSISTENCE_DRIVERS.includes(value as PersistenceDriver)) {
+    throw new Error(
+      `PERSISTENCE_DRIVER must be one of ${VALID_PERSISTENCE_DRIVERS.join(', ')} ` +
+        `(got "${value}").`,
+    );
+  }
+  if (value === 'memory' && nodeEnv === 'production') {
+    throw new Error(
+      'PERSISTENCE_DRIVER=memory is refused in production. Every write would be ' +
+        'lost on restart and invisible to any other replica.',
+    );
+  }
+  return value as PersistenceDriver;
+}
+
+/**
+ * The Postgres connection string. Only required when the Postgres driver is
+ * selected, so a developer running on the in-memory stubs never needs a
+ * database - but a production boot without one fails here rather than on the
+ * first query.
+ */
+export function resolveDatabaseUrl(
+  driver: PersistenceDriver,
+  raw = process.env.DATABASE_URL,
+): string | null {
+  const value = raw?.trim();
+  if (driver !== 'postgres') {
+    return null;
+  }
+  if (!value) {
+    throw new Error(
+      'DATABASE_URL is required when PERSISTENCE_DRIVER=postgres. ' +
+        'Example: postgresql://user:password@host:5432/tahirelshazli',
+    );
+  }
+  if (!/^postgres(ql)?:\/\//.test(value)) {
+    throw new Error(
+      `DATABASE_URL must be a postgres:// or postgresql:// URL (got "${redactUrl(value)}").`,
+    );
+  }
+  return value;
+}
+
+/**
+ * Strips the password before a connection string reaches an error message or a
+ * log line. `DATABASE_URL` carries a live credential (CLAUDE.md §8: never log
+ * credentials), and the unhelpful alternative is an error that names no value
+ * at all.
+ */
+export function redactUrl(raw: string): string {
+  try {
+    const url = new URL(raw);
+    if (url.password) {
+      url.password = '***';
+    }
+    return url.toString();
+  } catch {
+    return '<unparseable connection string>';
+  }
+}
+
+/**
+ * Whether pending migrations run automatically at boot.
+ *
+ * Off by default. Auto-migrating suits a single-container deployment, but with
+ * more than one replica every instance races to apply the same DDL on startup,
+ * so the deliberate path is a migration step in CI/CD before the new image
+ * serves traffic.
+ */
+export function resolveAutoMigrate(raw = process.env.DB_AUTO_MIGRATE): boolean {
+  const value = raw?.trim().toLowerCase();
+  if (!value) {
+    return false;
+  }
+  if (!['0', '1', 'true', 'false'].includes(value)) {
+    throw new Error(
+      `DB_AUTO_MIGRATE must be 0, 1, true or false (got "${value}").`,
+    );
+  }
+  return value === '1' || value === 'true';
 }
 
 export function resolveCorsOrigins(

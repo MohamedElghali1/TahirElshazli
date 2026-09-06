@@ -8,43 +8,56 @@ the **Current state** block below is overwritten each update.
 
 ## Current state (as of 2026-09-06)
 
-The repository is a monorepo scaffold with a **NestJS backend** and a **Next.js frontend**,
-targeting the stack fixed in the signed agreement (Next.js + NestJS + PostgreSQL + Bunny Stream +
-Cloudflare R2 + Hostinger VPS, all behind swappable interfaces).
+The repository is a monorepo with a **NestJS backend** and a **Next.js frontend**, on the stack
+fixed in the signed agreement (Next.js + NestJS + PostgreSQL + Bunny Stream + Cloudflare R2 +
+Hostinger VPS, all behind swappable interfaces).
 
-**Backend — the student-facing API surface is built and tested; nothing else is.** Of the five
-roles in `CLAUDE.md` §2, only **Student** has endpoints. Twelve feature modules
-(`auth`, `students`, `courses`, `enrollments`, `dashboard`, `assessments`, `materials`,
-`recordings`, `live-sessions`, `reports`, `notifications`, plus `common` for rate-limiting and
-validators) expose ~30 routes, every protected one gated `@Roles(Role.Student)`. Auth is
-JWT + argon-style hashing behind a `PasswordHasher` interface, with a token denylist for logout,
-rate limiting on auth routes, and password-reset request/confirm.
+**Backend — the student API surface is built and tested; the TA/admin surface has its
+foundation and nothing else.** Of the five roles in `CLAUDE.md` §2, **Student** has a full set of
+endpoints and **Assistant** and **Teacher** now have five routes between them. Fourteen feature
+modules (`auth`, `students`, `courses`, `enrollments`, `dashboard`, `assessments`, `materials`,
+`recordings`, `live-sessions`, `reports`, `notifications`, `staff`, `audit`, plus `common`) expose
+~35 routes behind global `JwtAuthGuard` + `RolesGuard`. `staff` owns the `CourseStaffAssignment`
+scoping every future TA endpoint must join through (§5.11); `audit` owns the append-only log §5.4
+requires. Neither has a UI.
 
-**Persistence is entirely in-memory.** Every repository sits behind an interface and a DI `Symbol`
-token, with an `InMemory*Repository` implementation. No Postgres driver is installed in `backend/`
-yet — all data is lost on restart and nothing survives a second replica. The known interface-shape
-debt (no list/batch/count methods, no pagination) is documented in `CLAUDE.md` §7.1 and is
-deliberately cheapest to fix before a real DB implementation exists.
+**Persistence is now driver-selected.** All twelve repository interfaces have *two*
+implementations — an `InMemory*Repository` and a `Postgres*Repository` — bound through
+`database/repository.provider.ts` by the `PERSISTENCE_DRIVER` env var. `memory` is the default
+in development and test and is **refused outright in production**. Two migrations:
+`001_student_platform.sql` and `002_staff_and_audit.sql`. The integration suite covers all twelve
+and, as of 2026-09-07, **has now run against a real PostgreSQL 15** — 33 tests green, both
+migrations applied from an empty schema. Its first-ever run found a real bug (audit-log keyset
+paging), fixed the same day.
 
-**Frontend is the untouched `create-next-app` starter** — `app/page.tsx` is still the template.
-No marketing site, no LMS screens.
+**Delivery is wired.** `npm install && npm run dev` runs the whole thing with no database and no
+config; both container images build from the repo root and have been run; CI lints, builds, and
+runs unit + e2e + integration (against a Postgres service) on every push and PR.
 
-**Tooling:** the ruflo meta-harness is installed (`.claude/`, `.claude-flow/`, `.mcp.json`), plus a
-project-specific 8-agent read-only review swarm under `.claude/agents/tahir/` driven by
-`/swarm-review`.
+**Frontend is built across all three surfaces.** `app/(site)` marketing, `app/(app)` student LMS
+shell, `app/(auth)` authentication — 20 pages, a shared token system in `app/tokens.css`, and an
+API client in `lib/api.ts` covering every backend student route. Builds, typechecks and lints clean.
+
+**Tooling:** the ruflo meta-harness (`.claude/`, `.claude-flow/`, `.mcp.json`) plus a
+project-specific 10-agent review swarm under `.claude/agents/tahir/`, driven by `/swarm-review`.
 
 ```mermaid
 graph TD
     subgraph Repo
-      FE["frontend/ — Next.js<br/>(default starter, unbuilt)"]
-      BE["backend/ — NestJS<br/>student API, in-memory data"]
+      FE["frontend/ — Next.js<br/>(site) · (app) · (auth)"]
+      BE["backend/ — NestJS<br/>student API + staff foundation"]
       CTX["context/ — client PDFs + prototype notes"]
       SWARM[".claude/agents/tahir/ — review swarm"]
     end
-    BE -->|"@Roles(Role.Student) only"| STU["Student surface: 12 modules"]
-    BE -.->|not built| OTHERS["Visitor · Parent · TA · Teacher/Admin"]
-    STU -->|behind interfaces + Symbol tokens| MEM["InMemory*Repository ×10"]
-    MEM -.->|mechanical swap, not done| PG[("PostgreSQL")]
+    FE -->|"lib/api.ts, JWT bearer"| BE
+    BE -->|"@Roles(Role.Student)"| STU["Student surface: 11 modules"]
+    BE -->|"@Roles(Assistant, Teacher)"| TA["staff + audit<br/>scoping and audit log only"]
+    BE -.->|not built| OTHERS["Visitor · Parent"]
+    STU -->|"interface + Symbol token"| SEL{{"repositoryProvider()<br/>PERSISTENCE_DRIVER"}}
+    TA --> SEL
+    SEL -->|memory| MEM["InMemory*Repository ×12"]
+    SEL -->|postgres| PG["Postgres*Repository ×12"]
+    PG --> DB[("PostgreSQL")]
 ```
 
 ### Backend module / route map
@@ -214,3 +227,436 @@ graph TD
 **Follow-ups.** This log file itself was introduced in this session (`CLAUDE.md` §13) and
 backfilled with the history above. Next material work is still the Postgres repository
 implementation and the first non-student role (TA / `CourseStaffAssignment`, §5.11).
+
+---
+
+## 2026-09-06 — Frontend: marketing site, student LMS shell, auth (commit `6e1e8ad`)
+
+**What changed.** The frontend stopped being the `create-next-app` starter. Three route groups
+now cover 20 pages: `app/(site)` — home, about, courses index, course detail, blog, contact;
+`app/(app)` — dashboard, notifications, profile, and the seven `learn/[id]` screens (overview,
+recordings, materials, assessments, assessment detail, sessions, report); `app/(auth)` — login,
+register, forgot-password, reset-password. `lib/api.ts` is a single typed client over every
+student route the backend exposes, with `ApiError` carrying the status through; `lib/session.tsx`
+holds the JWT and the current user; `lib/types.ts` mirrors the backend response shapes exactly, so
+a change to a controller's payload breaks the build rather than a screen at runtime.
+
+**Why.** `CLAUDE.md` §7 Phase 1 — "homepage & marketing pages, about / courses / contact, student
+authentication, student dashboard & course pages, fully responsive design". The two surfaces are
+deliberately different: the marketing site is editorial and spacious, the LMS is dense and
+token-driven, per §4 (black / white / dark grey / gold accent, gold never a background).
+
+Two domain rules are visible in the markup rather than buried. §5.1 — progress and performance
+render as **two separate blocks** on the course overview and the report screen; there is no
+combined percentage anywhere. §5.2 — the course shell renders checkpoints for a recorded
+enrollment and an attendance timeline for a live one, switching on the mode the enrollment
+carries, not on a client guess. Live sessions are plain links (Google Meet / Zoom URLs), which is
+the client's stated assumption in §11, not API automation.
+
+```mermaid
+graph TD
+    subgraph site["app/(site) — editorial"]
+      HOME["/"] --- ABOUT["/about"] --- CRSI["/courses · /courses/[slug]"] --- BLOG["/blog"] --- CONT["/contact"]
+    end
+    subgraph auth["app/(auth)"]
+      LOGIN["/login · /register"] --- RESET["/forgot-password · /reset-password"]
+    end
+    subgraph app["app/(app) — dense, token-driven"]
+      DASH["/dashboard"] --> LEARN["/learn/[id]"]
+      LEARN --> RECS["recordings"] & MATS["materials"] & ASSESS["assessments/[id]"] & SESS["sessions"] & REPORT["report"]
+      NOTIF["/notifications"]
+      PROF["/profile"]
+    end
+    LOGIN -->|"JWT into lib/session.tsx"| DASH
+    app -->|"lib/api.ts"| API[["NestJS student API"]]
+    site -.->|"no public API yet (§7.1)"| API
+```
+
+**Swarm additions.** The review swarm grew from eight agents to ten with a matched pair for this
+surface: `lms-fe-build` (the only agent in the set that writes — it knows the two-surface design
+contract and the backend's exact response shapes) and `lms-fe-review`, its read-only counterpart,
+which checks token discipline, the surface boundary, contrast in both themes, reduced motion, and
+whether the UI actually matches what the API returns.
+
+**Follow-ups / debt.** The marketing site has no backend to read from — §7.1's Visitor row is
+still empty, so course cards, blog posts and testimonials come from `lib/site-content.ts`, whose
+header marks every seeded image and figure as a placeholder that must not go live unreplaced. The
+contact form has nowhere to POST (`components/site/contact-form.tsx`) and says so in a comment
+rather than pretending to send. No parent, TA or admin screens — those roles have no API.
+
+---
+
+## 2026-09-06 — Postgres persistence + swarm-driven security and scale fixes
+
+**What changed.** The single largest gap in `CLAUDE.md` §7.1 — *"persistence is entirely
+in-memory"* — is closed. Every one of the ten repository interfaces now has a second
+implementation, `Postgres*Repository`, alongside the original `InMemory*Repository`. No module
+knows which one it got: `database/repository.provider.ts` binds the `Symbol` token to one or the
+other from `PERSISTENCE_DRIVER`, read once at wiring time.
+
+The supporting pieces are all new: `DatabaseService` (a pooled `pg` client that stays dormant when
+no connection string is configured), `MigrationRunner`, `migrations/001_student_platform.sql` (17
+tables — exactly what the student surface touches, not the whole §6 domain), a development seed
+that mirrors the in-memory fixtures row for row, and `db:migrate` / `db:seed` CLI entry points.
+`test/postgres-repositories.integration-spec.ts` covers all ten against a real database and
+`describe.skip`s itself when `DATABASE_URL` is absent, so the suite stays green on a machine with
+no Postgres.
+
+The driver choice is a safety boundary, not a preference. `memory` is the default in development
+and test and is **refused outright in production** — an unset value there resolves to `postgres`
+and then fails on the missing `DATABASE_URL`, rather than quietly serving traffic from a
+process-local array. That single rule also disposes of the swarm's one critical finding: the
+seeded `teacher@example.com` / `password123` account can no longer exist on a production instance,
+because the repository holding it cannot be selected there. `db:seed` refuses production for the
+same reason.
+
+**Why.** `CLAUDE.md` §3 (PostgreSQL is the decided stack; infrastructure behind interfaces so the
+VPS is migratable without code changes) and §7.1, which called the swap "mechanical" — it was,
+because every repository already sat behind an interface and a token. The two implementations
+being interchangeable is the point: the in-memory path stays as the zero-dependency development
+and test story.
+
+```mermaid
+graph TD
+    SVC["FeatureService"] -->|"injects COURSE_REPOSITORY (Symbol)"| TOK{{"repositoryProvider()"}}
+    ENV["PERSISTENCE_DRIVER<br/>(common/config/env.ts)"] --> TOK
+    TOK -->|memory| MEM["InMemoryCourseRepository<br/>dev · test only"]
+    TOK -->|postgres| PGR["PostgresCourseRepository"]
+    PGR --> DBS["DatabaseService<br/>pooled pg client"]
+    DBS --> PG[("PostgreSQL")]
+    MIG["MigrationRunner<br/>001_student_platform.sql"] --> PG
+    SEED["db:seed — refuses production"] --> PG
+    ENV -.->|"memory + NODE_ENV=production"| BOOM["boot refused"]
+```
+
+**Alongside it, the review swarm ran and its findings were fixed.** The ones that changed code:
+
+| Finding | Fix |
+|---|---|
+| Guards were opt-in per controller | `JwtAuthGuard` + `RolesGuard` registered **globally**; `@Public()` and `@AnyRole()` are now the explicit exits, so a new controller is protected by default rather than by remembering |
+| No health route, but `Dockerfile.backend` health-checked one | Added `/health` (public); the three e2e tests that pinged `GET /` follow it |
+| 404-vs-403 message oracle in assessments and recordings | Collapsed to one indistinguishable 404, so an unenrolled student cannot probe which course ids exist |
+| Submission reads and writes took no owner | Owner is now a repository-method parameter, not a service-layer check — changed while there were only two implementors to update |
+| N+1 reads (`CLAUDE.md` §7.1) | Batch methods on the course and assessment-submission interfaces; the three service loops now issue one query. Over in-memory arrays these were free; over Postgres they were about to become real round trips |
+| Duplicated recordings query in the dashboard | Read once, passed down |
+| Light-theme contrast failure, five React Compiler `set-state-in-effect` errors | Fixed; `frontend` lints clean |
+
+**Verification.** 153 unit tests, 63 e2e, `nest build`, frontend `next build` + `tsc --noEmit` +
+`eslint` — all green. The integration suite is written but unrun here: no Postgres on this machine.
+One e2e run in four failed two tests with `ECONNRESET`; three consecutive runs after it passed, so
+it is flaky rather than broken — worth watching, not yet worth chasing.
+
+**Housekeeping.** `.env.example` gained `PERSISTENCE_DRIVER`, `DB_AUTO_MIGRATE` and `PORT`;
+`docker-compose.yml` now sets them, including the `PORT: 3001` its forwarded port always assumed.
+The scaffold-era `database/schema.sql` and `database/seed.sql` are **not** what runs — they are the
+§6 design outline and they disagree with the migration on column shapes, so both now say so in
+their headers and point at `backend/src/database/`.
+
+**Follow-ups / debt.** The integration suite needs a real database run before anyone trusts it.
+The rate limiter and token denylist are still per-process, and `JwtStrategy` still does a user
+lookup per request — all three want the same Redis that `CLAUDE.md` §5.11 says to introduce once,
+not four times. No pagination on any list endpoint; the interfaces now have batch reads but still
+no list or count methods, and §7.1's warning holds — those are cheapest to add *before* a third
+implementor exists. Still only one of five roles has a backend.
+
+---
+
+## 2026-09-06 — User-stories board reconciled into the spec (no commit yet)
+
+**What changed.** No code. The FigJam user-stories board — 129 role-scoped stickies plus nine
+sequence diagrams, the artifact of the 30 Jul 2026 client meeting — was read against the built
+surface and against `CLAUDE.md`, and four places where the two reference artifacts *disagree with
+each other* are now written down instead of living in one session's head.
+
+The board was previously a bare link at the bottom of `CLAUDE.md` §12 with no rank. It now sits at
+**§0 item 4**, beside `report 1.pdf` rather than above it: it is that meeting's own output, not a
+later correction of it. Everything below it renumbered by one, and the two cross-references inside
+§0 that named item numbers were fixed with it.
+
+The substantive edits, all of them recording a conflict rather than resolving one:
+
+- **§2.2** gained a paragraph naming the two TA powers the board grants and the preset omits —
+  `ASG-10` (create and publish assignments independently) and `CRS-11` (schedule and share Zoom
+  links). The instruction is to ship the narrower preset and treat both as questions, because the
+  board and the prototype doc are **peers** under §0, so neither overrides the other.
+- **§5.9** now marks its own TA clause as contested. That sentence was the single line a future
+  session would have read as settled before writing `@Roles(Role.Assistant)` on a report endpoint.
+  The teacher half is untouched; only the TA half is flagged.
+- **§11** gained three bullets and had its TA-reports bullet rewritten. The rewrite matters most:
+  §11 previously argued "the meeting outranks the prototype, so the default is *yes*." The board
+  breaks that argument — it puts all five `REP-*` stickies in the Owner column and gives the TA
+  none, while still granting `QUZ-12` and `PRG-05`, so the 30 Jul meeting and the prototype now
+  agree *against* §5.9. The bullet now says to check which PDF §5.9 actually came from before
+  writing the decorator.
+- **§11** also records two board stories that have **no entity anywhere in §6 or §6.1** — `COM-08`
+  (student comments and questions on a lesson) and `CMS-13` (course reviews and ratings from past
+  students). Neither is in the §9 wish list either, so neither was ever costed, and both are real
+  features with their own moderation surface rather than columns on an existing table.
+
+**Why.** `CLAUDE.md` §0 exists to make the precedence between reference artifacts explicit, and it
+had a gap: the board was cited nowhere in the ranking while being the source that contradicts §5.9.
+§13 asks that entries name the section that motivated them — this one is §0 and §11 themselves.
+
+```mermaid
+graph TD
+    USER["1 · the user, in conversation"]
+    R2["2 · report 2.pdf — 6 Aug"]
+    R1["3 · report 1.pdf — 30 Jul"]
+    BOARD["4 · user-stories board — 30 Jul<br/>129 stickies · 9 diagrams"]
+    AGR["5 · download.pdf — signed agreement"]
+    PROTO["6 · tahirlmstaadmincontext.md<br/>TA/Admin prototype"]
+    USER --> R2 --> R1
+    R1 -.->|"same meeting, same rank"| BOARD
+    R1 --> AGR --> PROTO
+    BOARD -->|"REP-* Owner-only<br/>no TA report story"| CONFLICT{{"§5.9 says TAs<br/>can generate reports"}}
+    PROTO -->|"Reports screen is<br/>Admin-only"| CONFLICT
+    CONFLICT --> ASK["§11 · check which PDF<br/>§5.9 came from, then ask"]
+    BOARD -->|"ASG-10 · CRS-11<br/>grants TA more"| PRESET{{"§2.2 preset<br/>grants TA less"}}
+    PROTO -->|"defines the preset"| PRESET
+    PRESET --> SHIP["ship the narrower preset<br/>as permission data, not branches"]
+```
+
+**Coverage, for the record.** Of the board's 129 stickies: Student ~17 built and 3 partial of 35;
+Visitor ~10 of 15 but as static pages only, with no public API behind any of them; Owner 0 of 51,
+TA 0 of 16, Parent 0 of 12. Of the nine sequence diagrams only the *read* half of Frame 1
+(assignment upload and grading) exists — there is no upload endpoint, so the
+`Frontend → BackendAPI → FileStorage` leg is absent and `fileUrl` is a client-supplied URL. The
+quiz auto-marking, payment-to-enrollment, reCAPTCHA, Google Sign-In, Google Forms and WhatsApp
+flows are all unbuilt. Nothing built *contradicts* the board; it is simply far ahead of the code.
+
+**Follow-ups / debt.** The board transcription was supplied in conversation and is **not** in
+`context/` — the same gap §12 already records for the fuller TA/Admin doc, and now noted in the
+same place. Two `CLAUDE.md` claims are worth verifying at the source rather than inherited: §5.9's
+TA clause (which meeting?) and §2's "parent manages payments", which the board contradicts by
+putting every paying story in the Student column and leaving the parent only `PAY-14`/`PAY-15`.
+That last one was deliberately left out of this pass and is still unrecorded in §11.
+
+---
+
+## 2026-09-06 — `CourseStaffAssignment` scoping and the audit log (no commit yet)
+
+**What changed.** The two primitives every TA and admin surface will sit on, plus the smallest
+surface that makes them live rather than plumbing nobody has run.
+
+Two new modules, `backend/src/staff/` and `backend/src/audit/`, and one migration,
+`002_staff_and_audit.sql`. Both follow the shape the student surface already uses: an interface, an
+`InMemory*` and a `Postgres*` implementation, bound by `repositoryProvider()` off
+`PERSISTENCE_DRIVER`.
+
+**`StaffScopeService` is the piece that matters.** It is the direct counterpart of
+`EnrollmentsService.assertEnrolled` — same job, different table — and it takes a `StaffActor`
+(`{ id, role }`) rather than a bare user id. That signature is the point: with a bare id there is no
+way to express "an admin skips the join", so every caller would re-derive the bypass and one of them
+would eventually get it wrong in the direction that grants access. `scopeFor()` returns a
+discriminated union rather than an optional `courseIds`, so a caller cannot read an undefined field
+and treat it as "no restriction" — the same bug as forgetting the check, arrived at politely.
+
+An unassigned course now **404s rather than 403s** for a TA, implementing the posture `CLAUDE.md`
+§5.11 had listed as proposed. A spec asserts that a held-but-wrong course and a course that does not
+exist return the identical message, because a 403 confirms existence and lets a TA enumerate the
+catalog one id at a time.
+
+**The audit log is append-and-read only**, and that is enforced by the interface having no update
+and no delete rather than by a database trigger — a trigger would also block the GDPR redaction path
+§8 may need, which should arrive as its own named and itself-audited operation. `audit_log` carries
+**no foreign keys**, deliberately: deleting a course is itself an auditable action, and a FK would
+either cascade the evidence away or block the deletion the log exists to record. `actor_role` is
+stored at write time, so a TA later promoted does not retroactively read as having acted as an
+admin.
+
+Two things fell out of building it that are worth naming. Audit ids are not `randomUUID()` — they
+are `<ms>-<sequence>-<uuid>`, because the id is also the feed's sort tiebreak and same-millisecond
+writes are the normal case, not an edge one; with a random id two events in one request display in a
+coin-flip order. And the page cursor is a `(createdAt, id)` pair for the same reason: a keyset cursor
+on a non-unique key skips rows. Both are covered by tests that freeze the clock.
+
+**The surface**, three routes, deliberately minimal:
+
+| Route | Role | What it proves |
+|---|---|---|
+| `GET /staff/courses` | assistant + teacher | The TA sees only assigned courses; the admin reaches the same route unscoped |
+| `GET·POST·DELETE /admin/courses/:courseId/staff` | teacher | Assignment is admin-only (§2.2) and audited on both sides |
+| `GET /admin/audit-log` | teacher | "Which assistant did what" (§5.4), filterable by actor, course, action, target |
+
+Supporting changes to existing code, each the smallest that would do:
+`CourseRepository.findAll(limit, offset)` (the admin's unscoped read, and the first paginated
+repository method in the codebase), `UserRepository.findByIds` (so the staff panel does not N+1 for
+names), and `CoursesModule` now exports `COURSE_REPOSITORY` so `StaffModule` shares the instance
+rather than building a second in-memory store with its own state.
+
+**Why.** §5.11 — scoping is a query filter, and getting the table in before the TA surface exists is
+the whole argument; retrofitting the join is how the leak happens. §5.4 for the audit log. §2.2 for
+TA-to-course assignment being admin-only. Board codes: `TA-R1`/`TA-R2` (a TA cannot touch accounts),
+`ACC-11`, `CRS-13`, and the `who took the action` annotation on `ASG-11`.
+
+```mermaid
+graph TD
+    REQ["request + JWT"] --> G1["RateLimitGuard"] --> G2["JwtAuthGuard"] --> G3["RolesGuard<br/>fail-closed, global"]
+    G3 -->|"@Roles(Assistant, Teacher)"| STAFFC["StaffController<br/>/staff/*"]
+    G3 -->|"@Roles(Teacher)"| ADMINC["AdminStaffController · AdminAuditController<br/>/admin/*"]
+    STAFFC --> SVC["StaffService"]
+    ADMINC --> SVC
+    SVC --> SCOPE{{"StaffScopeService<br/>scopeFor(actor)"}}
+    SCOPE -->|"role = teacher"| UNSCOPED["courseRepo.findAll()<br/>never joins the table"]
+    SCOPE -->|"role = assistant"| SCOPED["course_staff_assignments<br/>WHERE user_id = actor"]
+    SCOPED --> IDS["findByIds(assigned only)"]
+    ADMINC -->|"assign · unassign"| WRITE["CourseStaffRepository<br/>ON CONFLICT DO NOTHING"]
+    WRITE --> AUDIT["AuditService.record()<br/>actor · action · target · before/after"]
+    AUDIT --> LOG[("audit_log<br/>append-only, no FKs")]
+    ADMINC -->|"read"| LOG
+```
+
+**Verification.** 196 unit tests (31 new across `staff-scope.service.spec.ts`,
+`staff.controller.spec.ts`, `audit.service.spec.ts`) and 84 e2e — `test/staff.e2e-spec.ts` is new and
+is the only place proving an unassigned TA is stopped over HTTP through the *real* guards, since the
+unit specs override them. `nest build` and `tsc --noEmit` clean. The backend has no ESLint config;
+lint is a frontend-only step here.
+
+Two honest caveats. The e2e suite crashed one worker on the first parallel run with
+`Worker exited unexpectedly` and then passed three runs in a row, parallel and sequential — the same
+flakiness the 2026-09-06 persistence entry recorded, now easier to hit with two files booting
+`AppModule` at once. And the integration suite now covers twelve repositories instead of ten,
+including the ON CONFLICT idempotency, the `ON DELETE CASCADE`/`RESTRICT` split on
+`course_staff_assignments`, jsonb round-tripping, and keyset paging over deliberately tied
+timestamps — but **it still has not run against a real database**. Docker Desktop was not running on
+this machine, so migration `002` has been typechecked and reasoned about, not executed.
+
+**Follow-ups / debt.**
+
+- `AuditService.record` writes after the action it describes has committed, on its own connection.
+  A crash between the two leaves an action done and unlogged. The fix is a transaction-scoped
+  repository handle, and it should land **before** the payments surface (§5.12), where the gap is a
+  money-trail hole rather than a missing line.
+- Migration 002 and the two new Postgres repositories are unrun. `docker compose up -d postgres`
+  then `TEST_DATABASE_URL=... npm run test:integration` is the whole job.
+- No UI. These routes are reachable only over HTTP; there are still no TA or Admin screens.
+- The permission preset is still shape, not data. §2.2 asks for it to be configurable and §11 leaves
+  per-TA configurability open; today the only thing that varies per TA is *which courses*, which is
+  the part that had to exist first. The `ASG-10` and `CRS-11` questions this file's previous entry
+  recorded are still unanswered and still cheap to answer while the preset is two roles wide.
+
+---
+
+## 2026-09-07 — Delivery pipeline, a runnable sample, and the first real-database run
+
+**What changed.** The delivery surface went from "documented" to "executed". Everything below was
+run on this machine, not reasoned about.
+
+*The sample you can actually run.* `npm install && npm run dev` now works from a fresh clone with
+no database and no `.env`. It could not before: `resolvePort` defaulted the API to **3000**, which
+is the port Next.js takes, so `npm run dev` started both and one of them lost the race — while
+`frontend/lib/api.ts` had always pointed at **3001**. Every other file in the repo already assumed
+the 3000/3001 split; the default was the single outlier, so it moved to 3001 rather than the six
+files around it moving to 3000. Verified end to end: `GET /health` 200, login as
+`student@example.com` returning a 304-character JWT, `GET /courses` returning the seeded AS
+Chemistry course with progress and performance as separate objects (§5.1), and `/`, `/courses`,
+`/login`, `/dashboard` all rendering 200.
+
+*Containers that build.* All four Dockerfiles were unbuildable and had been since the scaffold.
+Each copied only a workspace's `package*.json` and ran `npm ci` — but this is an npm workspaces
+monorepo whose only lockfile is at the root, and `npm ci` without a lockfile exits non-zero. There
+were also two competing pairs that had already drifted (`docker-compose.yml` built
+`backend/Dockerfile`; CI built `Dockerfile.backend`, and only the latter pair had HEALTHCHECKs).
+Consolidated to the root pair, both now building from the repo root; the workspace pair is deleted.
+Added the root `.dockerignore` that never existed — the build context had been shipping
+`node_modules/`, `.git/` and the client's PDFs under `context/`. Both images build, and the API
+image was **run** in `NODE_ENV=production` against real Postgres: it boots, reports
+`Listening on 3001 (production, persistence=postgres)`, and its container healthcheck reaches
+`healthy`.
+
+*CI that runs something.* The old workflow ended in `npm run test --if-present`, and the root
+`test` script called `test:frontend`, which called a script the frontend workspace does not have —
+so the step failed, and `--if-present` was load-bearing in the worst way. The root `test` now maps
+to the workspaces that actually have tests, deliberately without `--if-present`: a missing test
+script should be a visible absence, not a silent pass. CI grew an e2e step, a Postgres service
+container for the integration suite, and — because that suite `describe.skip`s itself when
+`TEST_DATABASE_URL` is unset — a guard step that **fails the job if the suite reports no executed
+tests**, which is the only thing standing between "integration tests pass" and "integration tests
+never ran". That guard was then tested against real vitest output in three states — green, a
+self-skipped suite, and an injected failing test — and rejects the last two. The step writes
+`set -o pipefail` explicitly rather than inheriting it from GitHub's default shell, because piping
+into `tee` otherwise returns `tee`'s exit code and a failing suite would report success; and the
+workflow declares `permissions: contents: read`, since no step writes to the repository. Image
+builds moved onto pull requests too; a Dockerfile broken since the scaffold is the argument. A `deploy` job carries the contracted shape (§3) — migrations as their own step
+before the new image serves traffic, `DB_AUTO_MIGRATE` left off — and is gated inert on a
+`DEPLOY_ENABLED` repository variable, because the VPS is the client's to provision and guessing a
+hostname is worse than an obvious gap.
+
+**The bug the integration suite found on its first run.** It had never executed against a real
+database; the previous two attempts stopped because Docker was not running. It ran, and 32 of 33
+passed. The failure was real, and it was in the audit log.
+
+`audit_log.created_at` was `TIMESTAMPTZ` — microseconds. The feed's keyset cursor `(created_at, id)`
+is built in JavaScript from the value read back, and a JS `Date` carries only milliseconds. So
+Postgres stored `22:31:29.889842`, the cursor came back as `22:31:29.889`, and the next page's
+row-wise `(created_at, id) < (cursor)` compared against a strictly *smaller* timestamp — matching
+nothing in that millisecond. Proven directly in SQL: the truncated cursor returned **0** rows where
+the full-precision one returned 3.
+
+The consequence is worse than a failing test. **The admin audit log silently stopped after page
+one** — no error, just an empty second page — and dropped any entry sharing the boundary
+millisecond. §5.4 exists so the teacher can see which assistant did what; an audit trail that
+quietly hides its own entries fails that requirement precisely where it matters. It was also
+Postgres-only: the in-memory driver compares the same truncated strings on both sides and pages
+correctly, so the two drivers disagreed while `audit-cursor.ts` documented that they page
+identically.
+
+Fixed by making the column `TIMESTAMPTZ(3)` — matching the storage to the precision the reader can
+represent, which is what makes both drivers agree. Ordering inside a millisecond is not lost: audit
+ids are `<ms>-<sequence>-<uuid>` exactly so the id breaks the tie. Migration `002` was amended in
+place rather than a `003` added, because it has provably never been applied outside a throwaway
+test database (§7.1 said so, and this run confirmed it by applying both migrations to an empty
+schema). Re-verified over HTTP against the production image: paging with `limit=2` now walks all 7
+entries across 4 pages, 7 distinct, no gaps and no repeats.
+
+```mermaid
+graph TD
+    A["audit_log.created_at<br/>TIMESTAMPTZ = 22:31:29.889842"] -->|"pg driver to JS Date"| B["entry.createdAt<br/>22:31:29.889 (ms only)"]
+    B -->|encodeAuditCursor| C["cursor carries .889"]
+    C -->|"next page: (created_at, id) < cursor"| D{{"is .889842 < .889000 ?"}}
+    D -->|"NO - every tied row excluded"| E["page 2 empty<br/>audit trail ends silently"]
+    F["fix: TIMESTAMPTZ(3)"] -->|"stored .889 == read .889"| G["comparison exact<br/>id breaks the tie"]
+    G --> H["7 entries over 4 pages"]
+```
+
+**Why.** §3 — CI/CD and containerized deployment are contracted deliverables, and infrastructure
+stays behind configuration. §5.4 for the audit-log fix. §7.1's standing debt item "the integration
+suite has still not been run against a real database" is now closed, and it paid for itself on the
+first run.
+
+**Verification.** All of it executed, none inferred:
+
+| Check | Result |
+|---|---|
+| `npm run lint:backend` / `lint:frontend` | clean |
+| `npm run build:backend` / `build:frontend` | clean; 20 page routes, 23 entries after SSG expansion |
+| `npm run test` (unit) | **196 passed** / 18 files |
+| `npm run test:e2e` | **84 passed** / 2 files |
+| `npm run test:integration` vs PostgreSQL 15 | **33 passed** — was 32 passed / 1 failed before the fix |
+| `docker build` both images | both succeed; API image 257MB |
+| API image run in `NODE_ENV=production` | boots on real Postgres, healthcheck `healthy` |
+| `npm run dev` from a clean tree | API 3001 + web 3000, login and authenticated reads work |
+
+**Follow-ups / debt.**
+
+- `NEXT_PUBLIC_API_URL` is inlined into the client bundle at build time, so the web image is
+  environment-specific and a staging build cannot be promoted to production unchanged. That is a
+  Next.js property rather than a choice, and it is the one place §3's "no hostname in the artifact"
+  cannot be fully honoured. It is a build argument so the value lives in the pipeline, not the source.
+- The `deploy` job is inert until the VPS exists and `DEPLOY_ENABLED` is set. Its rollout step is an
+  explicit placeholder rather than a guessed `ssh` invocation.
+- `backend/src/common/config/env.ts` is the boot-time security contract — secrets, CORS, proxy hops,
+  persistence driver — and has **no unit tests at all**. Changing a default there today is caught by
+  nothing, which is uncomfortable for the file that decides whether production can boot on a dev
+  signing key.
+- `docker compose` no longer bind-mounts source or runs `start:dev`; it builds and runs the same
+  production images CI builds. Local hot-reload iteration is `npm run dev`, which is faster anyway.
+- `backend/src/database/migrations/002_staff_and_audit.sql` was amended in place, which is only
+  defensible while it stays unshipped. Both `backend/audit/` and the migrations directory are still
+  **untracked** — nothing has been committed, let alone applied to a durable environment. The moment
+  this is committed and applied anywhere real, the same class of edit needs a forward `003`. The
+  migration ledger records filenames with no content checksum, so drift would not be detected
+  automatically.
+- `course_staff_assignments.assigned_at` is still microsecond `TIMESTAMPTZ`. Harmless today because
+  nothing pages on it; it now carries a comment pointing at the `audit_log` precedent so the same
+  bug is not reintroduced the day it gets a cursor.

@@ -19,6 +19,16 @@ export interface PasswordResetToken {
 export interface UserRepository {
   findByEmail(email: string): Promise<StoredUser | null>;
   findById(userId: string): Promise<StoredUser | null>;
+  /**
+   * The batch read behind any list that shows people by name - the admin's
+   * course-staff panel is the first. Order is not guaranteed and missing ids
+   * are simply absent; callers hold the ids and join by them.
+   *
+   * Exists so those lists do not `await findById` once per row. A course has a
+   * handful of TAs, so the N+1 would be small today and invisible until the
+   * same pattern is copied onto the student roster (CLAUDE.md §7.1).
+   */
+  findByIds(userIds: readonly string[]): Promise<StoredUser[]>;
   create(user: {
     email: string;
     passwordHash: string;

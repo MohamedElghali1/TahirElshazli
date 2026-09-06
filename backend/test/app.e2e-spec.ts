@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
-import { App } from 'supertest/types';
+import type { Server } from 'node:http';
 import { AppModule } from './../src/app.module.js';
 import { RATE_LIMIT_STORE } from './../src/common/rate-limit/rate-limit.interface.js';
 import type {
@@ -29,7 +29,7 @@ const ALWAYS_ALLOW: RateLimitStore = {
  * dependency graph resolves and that protected routes are actually protected.
  */
 describe('Student API (e2e)', () => {
-  let app: INestApplication<App>;
+  let app: INestApplication<Server>;
   let accessToken: string;
 
   beforeAll(async () => {
@@ -57,8 +57,14 @@ describe('Student API (e2e)', () => {
 
   const auth = () => ({ Authorization: `Bearer ${accessToken}` });
 
-  it('serves the health check', () => {
-    return request(app.getHttpServer()).get('/').expect(200).expect('Hello World!');
+  it('serves the health check without a token', () => {
+    // Anonymous on purpose: the container's HEALTHCHECK has no credentials.
+    // Every other route is now refused by the global JwtAuthGuard, so this
+    // passing is what proves @Public() is still on it.
+    return request(app.getHttpServer())
+      .get('/health')
+      .expect(200)
+      .expect({ status: 'ok' });
   });
 
   it('issues a usable token on login', () => {
@@ -197,6 +203,55 @@ describe('Student API (e2e)', () => {
       const imaginary = await request(app.getHttpServer())
         .get('/reports/documents/rpt-does-not-exist')
         .set({ Authorization: `Bearer ${otherToken}` });
+      expect(real.status).toBe(imaginary.status);
+      expect(real.body.message).toEqual(imaginary.body.message);
+    });
+
+    /**
+     * A freshly registered account, enrolled in nothing. Needed to tell an id
+     * that exists in a course the caller does not hold from one that does not
+     * exist at all - student-2 holds course-1, where every fixture lives.
+     */
+    const unenrolledToken = async (): Promise<string> => {
+      const registered = await request(app.getHttpServer())
+        .post('/auth/register')
+        .send({
+          email: `oracle-${Date.now()}-${Math.random().toString(36).slice(2)}@example.com`,
+          password: 'oraclepass123',
+          name: 'Oracle Probe',
+        })
+        .expect(201);
+      return registered.body.accessToken as string;
+    };
+
+    it('answers identically for a real and an imaginary assessment', async () => {
+      // `otherToken` is student-2, enrolled only in course-1. assess-1 is real
+      // and in a course they hold, so pick one they do not: a status match alone
+      // is not enough - the *body* used to name which of the two happened,
+      // which is an existence oracle over the whole assessment id space.
+      const auth = { Authorization: `Bearer ${await unenrolledToken()}` };
+      const real = await request(app.getHttpServer())
+        .get('/assessments/assess-1')
+        .set(auth);
+      const imaginary = await request(app.getHttpServer())
+        .get('/assessments/assess-does-not-exist')
+        .set(auth);
+      expect(real.status).toBe(404);
+      expect(real.status).toBe(imaginary.status);
+      expect(real.body.message).toEqual(imaginary.body.message);
+    });
+
+    it('answers identically for a real and an imaginary recording', async () => {
+      const auth = { Authorization: `Bearer ${await unenrolledToken()}` };
+      const real = await request(app.getHttpServer())
+        .post('/recordings/rec-1/progress')
+        .set(auth)
+        .send({ watchedSeconds: 60 });
+      const imaginary = await request(app.getHttpServer())
+        .post('/recordings/rec-does-not-exist/progress')
+        .set(auth)
+        .send({ watchedSeconds: 60 });
+      expect(real.status).toBe(404);
       expect(real.status).toBe(imaginary.status);
       expect(real.body.message).toEqual(imaginary.body.message);
     });
@@ -401,7 +456,7 @@ describe('Student API (e2e)', () => {
  * its exhausted buckets cannot leak into the other tests.
  */
 describe('Rate limiting (e2e)', () => {
-  let app: INestApplication<App>;
+  let app: INestApplication<Server>;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -442,11 +497,11 @@ describe('Rate limiting (e2e)', () => {
 
   it('does not spend the login bucket on unrelated routes', async () => {
     // Buckets are per route, so exhausting login must not lock the health check.
-    await request(app.getHttpServer()).get('/').expect(200);
+    await request(app.getHttpServer()).get('/health').expect(200);
   });
 
   it('advertises the remaining allowance on a normal response', async () => {
-    const res = await request(app.getHttpServer()).get('/').expect(200);
+    const res = await request(app.getHttpServer()).get('/health').expect(200);
     expect(res.headers['x-ratelimit-limit']).toBeDefined();
     expect(Number(res.headers['x-ratelimit-remaining'])).toBeGreaterThanOrEqual(0);
   });

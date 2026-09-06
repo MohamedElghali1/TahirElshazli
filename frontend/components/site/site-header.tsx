@@ -20,7 +20,14 @@ export function SiteHeader() {
   const [open, setOpen] = useState(false);
 
   // A route change with the sheet still open leaves the page unscrollable.
-  useEffect(() => setOpen(false), [pathname]);
+  // Adjusted during render rather than in an effect: an effect would paint one
+  // frame with the sheet still over the new page, and React's own guidance is
+  // to derive state from a changed prop this way.
+  const [lastPathname, setLastPathname] = useState(pathname);
+  if (lastPathname !== pathname) {
+    setLastPathname(pathname);
+    setOpen(false);
+  }
 
   useEffect(() => {
     document.body.style.overflow = open ? 'hidden' : '';
