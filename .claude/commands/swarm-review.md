@@ -26,17 +26,28 @@ plus the last commit).
 not make five agents each re-derive it. If the target is empty, stop and say so rather than sending
 the swarm at nothing.
 
-**2. Spawn the five analysts in ONE message, in parallel**, each with `run_in_background: true` and a
-`name` matching its `subagent_type`. Give each: the scope from step 1, the file list, and the
-instruction *"You are read-only. Report findings in your defined output format. Send your report to
-`lms-review-code` via SendMessage when done."*
+**2. Spawn the analysts in WAVES OF AT MOST THREE — never all at once.**
 
-Skip an analyst whose domain the diff does not touch, and say which you skipped and why — running
-`lms-sec-appsec` on a change that touches no auth, upload, or config file wastes a slot and pads the
+> Six parallel agents on a 100-file diff exhausted the session rate limit and *all six* died with
+> HTTP 429 before producing a single report. Two waves of three cost the same tokens but survive.
+
+Wave A — `lms-sec-rbac`, `lms-sec-appsec`, `lms-sec-datatrail`.
+Wave B — `lms-arch-scale`, `lms-arch-maintain`, `lms-review-reqs`, once Wave A has returned.
+
+Give each: the scope from step 1, the file list, and the instruction *"You are read-only. Report
+findings in your defined output format."* Collect each wave's reports yourself and relay them
+onward — do not rely on agents messaging each other by name.
+
+**Narrow the scope before adding agents.** On a diff this size, point each agent at the specific
+files in its domain rather than the whole commit. A focused agent finishes; a broad one burns budget
+re-reading files another agent already covered.
+
+**Skip an analyst whose domain the diff does not touch**, and say which you skipped and why. Running
+`lms-sec-appsec` on a change touching no auth, upload, or config file wastes a slot and pads the
 report with noise.
 
-**3. Spawn `lms-review-reqs` in the same message.** It works from the diff directly and does not wait
-on the analysts.
+**If an agent dies on a 429**, say so plainly and name which reports are missing. Do not present a
+partial or intermediate note from a dead agent as a finding — verify it yourself first, or drop it.
 
 **4. When the analysts report, run `lms-review-code`.** It reviews the diff for correctness on its
 own account *and* verifies every incoming claim at the cited `file:line`, rejecting what the code

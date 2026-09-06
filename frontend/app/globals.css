@@ -1,26 +1,104 @@
 @import "tailwindcss";
+@import "./tokens.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
+/* Bridge the token layer into Tailwind's theme so utilities and raw CSS
+   read from the same source. Every color a component uses resolves here. */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg:          var(--bg-primary);
+  --color-surface:     var(--bg-secondary);
+  --color-raised:      var(--bg-tertiary);
+  --color-wash:        var(--bg-wash);
+  --color-line:        var(--border-light);
+  --color-line-medium: var(--border-medium);
+  --color-line-strong: var(--border-strong);
+  --color-fg:          var(--fg-primary);
+  --color-fg-2:        var(--fg-secondary);
+  --color-fg-3:        var(--fg-tertiary);
+  --color-fg-4:        var(--fg-muted);
+  --color-accent:      var(--accent);
+  --color-accent-fg:   var(--accent-fg);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  color-scheme: dark light;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  background: var(--bg-primary);
+  color: var(--fg-primary);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* The public site opts out of the 13px product default. Marketing copy at
+   product density is unreadable at arm's length, which is how a parent
+   reads a course page. */
+[data-surface="site"] {
+  font-size: var(--fs-body);
+  line-height: var(--lh-loose);
+}
+
+::selection {
+  background: var(--accent-wash);
+  color: var(--fg-primary);
+}
+
+/* One focus treatment for the whole product. Never `outline: none`. */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--r-xs);
+}
+
+/* Numerals in the app are tabular or columns of scores stop lining up. */
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* Hairline row separators do the work cards would otherwise do. */
+.rows > * + * {
+  border-top: 1px solid var(--border-light);
+}
+
+@media (hover: hover) {
+  .row:hover { background: var(--bg-wash); }
+  .row:hover .reveal { opacity: 1; }
+}
+
+.reveal {
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+
+/* Scrollbars: visible enough to grab, quiet enough to ignore. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb {
+  background: var(--border-medium);
+  border-radius: var(--r-full);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover { background-color: var(--border-strong); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
