@@ -1,3 +1,5 @@
+import type { LearningMode } from '../../enrollments/interfaces/enrollment-repository.interface.js';
+
 export interface Lesson {
   id: string;
   title: string;
@@ -20,6 +22,12 @@ export interface StoredCourse {
   thumbnailUrl: string | null;
   teacherName: string;
   sequentialLockEnabled: boolean;
+  /**
+   * The mode a self-enrollment lands in. The enrollment still owns the mode
+   * per student (CLAUDE.md §5.2) - this is only the default applied when a
+   * student enrolls themselves and has no way to know how a course is taught.
+   */
+  defaultLearningMode: LearningMode;
   modules: CourseModule[];
 }
 

@@ -89,6 +89,25 @@ export interface CourseDetail extends CourseListItem {
   modules: CourseModule[];
 }
 
+/**
+ * A catalog row - a course the student may or may not hold yet.
+ *
+ * Has no `progress`, unlike `CourseListItem`, and that is the point: there is
+ * no completion figure for a course nobody has started, and a zeroed one would
+ * read as "0% done" rather than "not started".
+ */
+export interface CatalogItem {
+  id: string;
+  title: string;
+  description: string;
+  thumbnailUrl: string | null;
+  teacherName: string;
+  learningMode: LearningMode;
+  moduleCount: number;
+  lessonCount: number;
+  enrolled: boolean;
+}
+
 /* --- live sessions (live-sessions/interfaces/live-session-repository) -----
    A live session is a scheduled time plus a meeting link the teacher pastes
    (Google Meet, Zoom, anything). There is no embed and no API automation. */

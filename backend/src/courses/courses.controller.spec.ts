@@ -107,4 +107,86 @@ describe('CoursesController', () => {
       }),
     ).rejects.toThrow();
   });
+
+  describe('catalog and self-enrollment', () => {
+    const STUDENT_2 = {
+      user: { sub: 'student-2', email: 's2@example.com', role: 'student', jti: 'j2' },
+    };
+
+    it('should list every course, not only the enrolled ones', async () => {
+      // student-2 holds course-1 only, but the catalog is unscoped.
+      const catalog = await controller.listCatalog(STUDENT_2);
+      expect(catalog.map((c) => c.id).sort()).toEqual(['course-1', 'course-2']);
+    });
+
+    it('should flag which catalog courses the caller already holds', async () => {
+      const catalog = await controller.listCatalog(STUDENT_2);
+      const byId = new Map(catalog.map((c) => [c.id, c]));
+      expect(byId.get('course-1')?.enrolled).toBe(true);
+      expect(byId.get('course-2')?.enrolled).toBe(false);
+    });
+
+    it('should report outline sizes but no lesson content', async () => {
+      const catalog = await controller.listCatalog(STUDENT_2);
+      const chemistry = catalog.find((c) => c.id === 'course-1');
+      expect(chemistry).toMatchObject({ moduleCount: 3, lessonCount: 12 });
+      // The catalog advertises a course; it does not serve it. Anything that
+      // would let an unenrolled student read the syllabus itself belongs
+      // behind `assertEnrolled`.
+      expect(chemistry).not.toHaveProperty('modules');
+      expect(chemistry).not.toHaveProperty('progress');
+    });
+
+    it('should enroll the caller and open the course to them', async () => {
+      // Before: student-2 cannot see course-2 at all.
+      await expect(
+        controller.getCourseDetail('course-2', STUDENT_2),
+      ).rejects.toThrow();
+
+      const enrolled = await controller.enroll('course-2', STUDENT_2);
+      expect(enrolled.id).toBe('course-2');
+
+      // After: the same read succeeds, and the course is on the dashboard.
+      const detail = await controller.getCourseDetail('course-2', STUDENT_2);
+      expect(detail.id).toBe('course-2');
+      const mine = await controller.listCourses(STUDENT_2);
+      expect(mine.map((c) => c.id).sort()).toEqual(['course-1', 'course-2']);
+    });
+
+    it('should take the learning mode from the course, not the request', async () => {
+      // course-2 is taught live, so the enrollment must land in live mode and
+      // render an attendance timeline rather than a completion bar
+      // (CLAUDE.md §5.2). Nothing in the request could have said so.
+      const enrolled = await controller.enroll('course-2', STUDENT_2);
+      expect(enrolled.learningMode).toBe('live');
+      expect(enrolled.progress.type).toBe('live');
+    });
+
+    it('should treat a repeated enrollment as success without resetting it', async () => {
+      const first = await controller.enroll('course-1', STUDENT_2);
+      // student-2 was already enrolled on course-1 in March; a second click
+      // must not restamp that date or change the mode.
+      expect(first.learningMode).toBe('recorded');
+
+      const second = await controller.enroll('course-1', STUDENT_2);
+      expect(second.id).toBe('course-1');
+
+      const mine = await controller.listCourses(STUDENT_2);
+      expect(mine.filter((c) => c.id === 'course-1')).toHaveLength(1);
+    });
+
+    it('should 404 an enrollment on a course that does not exist', async () => {
+      await expect(controller.enroll('course-nope', STUDENT_2)).rejects.toThrow();
+    });
+
+    it('should enroll the caller from the token, never a supplied id', async () => {
+      await controller.enroll('course-2', STUDENT_2);
+      // The other student's roster is untouched - there is no parameter on
+      // the route that could have named them.
+      const other = await controller.listCourses({
+        user: { sub: 'student-3', email: 's3@example.com', role: 'student', jti: 'j3' },
+      });
+      expect(other).toEqual([]);
+    });
+  });
 });

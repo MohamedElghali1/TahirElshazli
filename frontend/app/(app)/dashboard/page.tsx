@@ -35,6 +35,11 @@ export default function DashboardPage() {
       <PageHeader
         title={firstName ? `Welcome back, ${firstName}` : 'Welcome back'}
         subtitle="Pick up where you left off."
+        action={
+          <ButtonLink href="/catalog" variant="secondary">
+            Browse courses
+          </ButtonLink>
+        }
       />
       <PageBody className="flex flex-col gap-[var(--sp-6)]">
         {loading && <RowsSkeleton rows={3} />}
@@ -44,9 +49,9 @@ export default function DashboardPage() {
         {data && data.length === 0 && (
           <EmptyState
             title="No courses yet"
-            body="Once your place is confirmed, the course appears here with its timetable and work."
+            body="Pick a course from the catalog and it appears here with its timetable, work and recordings."
             action={
-              <ButtonLink href="/courses" variant="primary">
+              <ButtonLink href="/catalog" variant="primary">
                 Browse courses
               </ButtonLink>
             }

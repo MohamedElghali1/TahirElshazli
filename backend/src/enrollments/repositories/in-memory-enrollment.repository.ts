@@ -4,7 +4,7 @@ import type {
   EnrollmentRepository,
 } from '../interfaces/enrollment-repository.interface.js';
 
-const STUB_ENROLLMENTS: Enrollment[] = [
+const SEED_ENROLLMENTS: readonly Enrollment[] = [
   {
     studentId: 'student-1',
     courseId: 'course-1',
@@ -27,15 +27,38 @@ const STUB_ENROLLMENTS: Enrollment[] = [
 
 @Injectable()
 export class InMemoryEnrollmentRepository implements EnrollmentRepository {
+  /**
+   * A per-instance copy of the seed, not the seed itself. `create` writes here,
+   * and this repository is a singleton in the app but a fresh instance in every
+   * test - so a test that enrolls someone cannot leak that enrollment into the
+   * next test, which a shared module-level array would.
+   */
+  private readonly enrollments: Enrollment[] = [...SEED_ENROLLMENTS];
+
   async findByStudent(studentId: string): Promise<Enrollment[]> {
-    return STUB_ENROLLMENTS.filter((e) => e.studentId === studentId);
+    return this.enrollments.filter((e) => e.studentId === studentId);
   }
 
   async find(courseId: string, studentId: string): Promise<Enrollment | null> {
     return (
-      STUB_ENROLLMENTS.find(
+      this.enrollments.find(
         (e) => e.courseId === courseId && e.studentId === studentId,
       ) ?? null
     );
+  }
+
+  /**
+   * Appends to the module-level array, so a self-enrollment survives for the
+   * life of the process and no longer. That is the whole contract of the
+   * memory driver - it is the dev fallback, and CLAUDE.md §7.1 is explicit
+   * that nothing here outlives a restart.
+   */
+  async create(enrollment: Enrollment): Promise<Enrollment> {
+    const existing = await this.find(enrollment.courseId, enrollment.studentId);
+    if (existing) {
+      return existing;
+    }
+    this.enrollments.push(enrollment);
+    return enrollment;
   }
 }

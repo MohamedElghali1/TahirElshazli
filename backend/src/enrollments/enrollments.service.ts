@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type {
   Enrollment,
   EnrollmentRepository,
+  LearningMode,
 } from './interfaces/enrollment-repository.interface.js';
 import { ENROLLMENT_REPOSITORY } from './interfaces/enrollment-repository.interface.js';
 
@@ -24,6 +25,28 @@ export class EnrollmentsService {
 
   async find(courseId: string, studentId: string): Promise<Enrollment | null> {
     return this.enrollmentRepo.find(courseId, studentId);
+  }
+
+  /**
+   * Enrolls a student on a course. The caller has already established that the
+   * course exists - this service knows nothing about courses on purpose, for
+   * the dependency-cycle reason above.
+   *
+   * Returns the existing enrollment unchanged if there is one, so an Enroll
+   * button that is double-clicked reads as success rather than as a conflict
+   * the student cannot resolve.
+   */
+  async enroll(
+    courseId: string,
+    studentId: string,
+    learningMode: LearningMode,
+  ): Promise<Enrollment> {
+    return this.enrollmentRepo.create({
+      studentId,
+      courseId,
+      learningMode,
+      enrolledAt: new Date().toISOString(),
+    });
   }
 
   /**

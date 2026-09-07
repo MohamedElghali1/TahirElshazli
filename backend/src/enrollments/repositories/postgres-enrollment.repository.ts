@@ -51,4 +51,31 @@ export class PostgresEnrollmentRepository implements EnrollmentRepository {
     );
     return row ? toEnrollment(row) : null;
   }
+
+  /**
+   * `DO NOTHING` plus a RETURNING-less re-read rather than `DO UPDATE`: the
+   * conflict case must not touch the existing row (see the interface). The
+   * second read only happens on the losing side of a race, so the common path
+   * is still one statement.
+   */
+  async create(enrollment: Enrollment): Promise<Enrollment> {
+    const row = await this.db.queryOne<EnrollmentRow>(
+      `INSERT INTO enrollments (student_id, course_id, learning_mode, enrolled_at)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (student_id, course_id) DO NOTHING
+       RETURNING student_id, course_id, learning_mode, enrolled_at`,
+      [
+        enrollment.studentId,
+        enrollment.courseId,
+        enrollment.learningMode,
+        enrollment.enrolledAt,
+      ],
+    );
+    if (row) {
+      return toEnrollment(row);
+    }
+    const existing = await this.find(enrollment.courseId, enrollment.studentId);
+    // Only reachable if the row was deleted between the conflict and this read.
+    return existing ?? enrollment;
+  }
 }

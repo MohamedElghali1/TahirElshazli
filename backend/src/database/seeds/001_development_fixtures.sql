@@ -32,16 +32,22 @@ ON CONFLICT (id) DO NOTHING;
 -- Courses, modules, lessons
 -- ============================================================
 
-INSERT INTO courses (id, title, description, thumbnail_url, teacher_name, sequential_lock_enabled) VALUES
-  ('course-1', 'AS Chemistry',            'Complete AS-level Chemistry course with Dr. Tahir', NULL, 'Dr. Tahir Elshazli', true),
-  ('course-2', 'IELTS Preparation - Live', 'Live IELTS preparation course',                    NULL, 'Dr. Tahir Elshazli', false)
+INSERT INTO courses (id, title, description, thumbnail_url, teacher_name, sequential_lock_enabled, default_learning_mode) VALUES
+  ('course-1', 'AS Chemistry',             'Complete AS-level Chemistry course with Dr. Tahir', NULL, 'Dr. Tahir Elshazli', true,  'recorded'),
+  ('course-2', 'IELTS Preparation - Live', 'Live IELTS preparation course',                     NULL, 'Dr. Tahir Elshazli', false, 'live'),
+  -- A third course nobody is seeded into, so the catalog has something to
+  -- enroll on out of the box. Without it every seeded student already holds
+  -- every course and the Enroll button has nothing to act on.
+  ('course-3', 'IGCSE English Language',   'IGCSE First Language English, Papers 1 and 2',      NULL, 'Dr. Tahir Elshazli', false, 'recorded')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO course_modules (id, course_id, title, chapter, position) VALUES
   ('mod-1', 'course-1', 'Atomic Structure',      'Chapter 1', 1),
   ('mod-2', 'course-1', 'Moles & Stoichiometry', 'Chapter 2', 2),
   ('mod-3', 'course-1', 'Organic Chemistry',     'Chapter 3', 3),
-  ('mod-4', 'course-2', 'Speaking & Listening',  'Chapter 1', 1)
+  ('mod-4', 'course-2', 'Speaking & Listening',  'Chapter 1', 1),
+  ('mod-5', 'course-3', 'Reading & Comprehension', 'Chapter 1', 1),
+  ('mod-6', 'course-3', 'Directed Writing',        'Chapter 2', 2)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO lessons (id, module_id, title, position, duration_seconds) VALUES
@@ -57,7 +63,11 @@ INSERT INTO lessons (id, module_id, title, position, duration_seconds) VALUES
   ('lesson-10', 'mod-3', 'Alkenes',                           2, 2640),
   ('lesson-11', 'mod-3', 'Alcohols',                          3, 2400),
   ('lesson-12', 'mod-3', 'Halogenoalkanes',                   4, 2160),
-  ('lesson-13', 'mod-4', 'Introduction to IELTS Speaking',    1, 3600)
+  ('lesson-13', 'mod-4', 'Introduction to IELTS Speaking',    1, 3600),
+  ('lesson-14', 'mod-5', 'Reading for Implicit Meaning',      1, 2280),
+  ('lesson-15', 'mod-5', 'Summary Writing Technique',         2, 2040),
+  ('lesson-16', 'mod-6', 'Writing to Persuade',               1, 2460),
+  ('lesson-17', 'mod-6', 'Register and Audience',             2, 2220)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO enrollments (student_id, course_id, learning_mode, enrolled_at) VALUES

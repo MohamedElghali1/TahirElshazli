@@ -2,6 +2,7 @@ import type {
   AssessmentDetail,
   AssessmentListItem,
   AuthResult,
+  CatalogItem,
   CourseDetail,
   CourseListItem,
   DashboardResponse,
@@ -157,6 +158,21 @@ export const api = {
   courses: {
     list: (token: string) =>
       request<CourseListItem[]>('/courses', { token }),
+
+    /** Every course on the platform, each flagged `enrolled` for this student. */
+    catalog: (token: string) =>
+      request<CatalogItem[]>('/courses/catalog', { token }),
+
+    /**
+     * Enrolls the signed-in student. Takes no student id - the backend reads
+     * it from the token, so there is nothing here to point at someone else.
+     * Enrolling twice succeeds and returns the existing enrollment.
+     */
+    enroll: (token: string, courseId: string) =>
+      request<CourseListItem>(`/courses/${courseId}/enroll`, {
+        method: 'POST',
+        token,
+      }),
 
     get: (token: string, courseId: string) =>
       request<CourseDetail>(`/courses/${courseId}`, { token }),

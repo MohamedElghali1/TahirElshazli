@@ -403,18 +403,25 @@ Honest inventory, so nobody assumes a surface is there. Of the five roles in §2
 
 | Role | Backend status |
 |---|---|
-| **Student** | Built. 9 feature controllers, every route `@Roles(Role.Student)`, unit + e2e covered. `JwtAuthGuard` + `RolesGuard` are **global**, so a new controller is protected by default; `@Public()` (health, register, login, password reset) and `@AnyRole()` (logout) are the only exits. |
+| **Student** | Built. 9 feature controllers, every route `@Roles(Role.Student)`, unit + e2e covered. `JwtAuthGuard` + `RolesGuard` are **global**, so a new controller is protected by default; `@Public()` (health, register, login, password reset) and `@AnyRole()` (logout) are the only exits. Includes the catalog and self-enrollment added 2026-09-07 ({S}7.2). |
 | **Visitor** | None. `GET /health` is the only public endpoint — no catalog, blog, or contact. |
 | **Parent** | None. Enum entry only; no `ParentLink`, no read-only views. |
 | **Teaching Assistant** | **Foundation only.** `CourseStaffAssignment` exists and `StaffScopeService` enforces it (§5.11); `GET /staff/courses` is the one route, and it exists to prove the scoping rather than to be useful. No grading, attendance, quizzes, materials, announcements or messages. The scoping itself is the tested part: 31 unit specs across `staff-scope.service.spec.ts` and `staff.controller.spec.ts`, plus 14 in `test/staff.e2e-spec.ts`. |
 | **Teacher / Admin** | **Foundation only.** TA-to-course assignment (`/admin/courses/:id/staff`, all three verbs) and the audit-log reader (`/admin/audit-log`). No course CRUD, student directory, payments, CMS or reports. |
 
 **Frontend:** built for the Visitor-facing marketing site and the Student LMS —
-`app/(site)`, `app/(app)`, `app/(auth)`, 20 pages, typed against the backend's
+`app/(site)`, `app/(app)`, `app/(auth)`, 21 pages, typed against the backend's
 response shapes in `lib/types.ts`. The marketing pages read from
 `lib/site-content.ts` rather than an API, because there is no public API to read
 (the Visitor row above). **No Parent, TA or Admin screens** — the staff and
 admin routes above have no UI at all and are reachable only over HTTP.
+
+A consequence worth stating plainly, because it looks like a bug: signing in to
+the web app as `teacher@example.com` or `assistant@example.com` lands on the
+student dashboard, which immediately calls `GET /courses` and is refused 403.
+The account is fine and the guard is doing its job — there is simply no screen
+for those roles yet. `AppLayout` gates on *being signed in*, never on role, and
+it must stay that way: the server is the access control ({S}8).
 
 **Persistence is driver-selected, and both drivers are real.** Every one of the
 twelve repository interfaces has an `InMemory*Repository` and a
@@ -486,6 +493,49 @@ unlogged. Closing it needs the mutation and its audit row in one transaction,
 which the repository-per-connection design cannot express today. It should land
 before the payments surface (§5.12), where the gap is a money-trail hole rather
 than a missing line.
+
+---
+
+## 7.2 Open enrollment — a deliberate, temporary posture
+
+Added 2026-09-07 at the client's direct instruction, after they signed in and
+found an empty dashboard with no way to fill it: *"for now, let me access every
+course and appears in my student dashboard."*
+
+**Any signed-in student can enroll themselves on any course, free.**
+`GET /courses/catalog` lists every course flagged with whether the caller holds
+it; `POST /courses/:id/enroll` enrolls the caller and nobody else — the student
+id comes from the verified JWT, and the route has no parameter or body that
+could name a different one.
+
+This is a **testing posture, not the business model.** The client's own next
+sentence was *"maybe we could add the payment gateway if you want to buy a
+course"* ({S}7, "Later / on request"). When payment lands it becomes a
+precondition **in front of** `CoursesService.enroll`; the enrollment write
+itself does not move. Do not delete the method to add payment.
+
+Three things it deliberately does **not** do, so a later reader does not
+mistake restraint for oversight:
+
+- **It does not weaken the enrollment gate.** The catalog returns titles,
+  descriptions and outline *counts* — what the public marketing pages already
+  advertise. Lessons, materials, recordings, assessments and reports all still
+  go through `assertEnrolled`, and an unenrolled student still gets 404 on
+  `GET /courses/:id`. Counting lessons is not reading them.
+- **It does not let the client choose the learning mode.** The mode comes from
+  the new `courses.default_learning_mode` column, because a student has no way
+  to know whether a course is taught live or from recordings, and letting the
+  request decide would let it pick its own dashboard ({S}5.2). The *enrollment*
+  still owns the mode per student — the course only supplies the default, so an
+  admin moving one student to the live cohort stays possible.
+- **It is not audited.** A student enrolling themselves is not a TA or admin
+  mutation, so {S}5.4 does not reach it. That changes the moment money does:
+  a paid enrollment is a money event and {S}5.12's trail applies.
+
+Still open: whether every course should be self-enrollable, or whether courses
+need a `published`/`open_for_enrollment` flag so Dr. Tahir can draft one without
+it appearing in the catalog. Today every row in `courses` is offered. Worth one
+question before the catalog holds anything he would not want shown.
 
 ---
 

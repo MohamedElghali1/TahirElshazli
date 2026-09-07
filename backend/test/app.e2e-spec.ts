@@ -150,6 +150,114 @@ describe('Student API (e2e)', () => {
     }
   });
 
+  describe('catalog and self-enrollment', () => {
+    // A brand-new account, not one of the seeded students. This block enrolls
+    // someone, and the in-memory enrollment repository is a singleton for the
+    // life of the app - reusing student-1 or student-2 here would silently
+    // change what the cross-course tests below are asserting against.
+    let freshToken: string;
+
+    beforeAll(async () => {
+      const registered = await request(app.getHttpServer())
+        .post('/auth/register')
+        .send({
+          email: 'catalog-e2e@example.com',
+          password: 'password123',
+          name: 'Catalog Tester',
+        })
+        .expect(201);
+      freshToken = registered.body.accessToken;
+    });
+
+    const fresh = () => ({ Authorization: `Bearer ${freshToken}` });
+
+    it('routes /courses/catalog to the catalog, not to a course with id "catalog"', async () => {
+      // Nest matches in declaration order, so `@Get(':id')` declared first
+      // would swallow this path and answer 404. That is the regression this
+      // test exists for.
+      const res = await request(app.getHttpServer())
+        .get('/courses/catalog')
+        .set(fresh())
+        .expect(200);
+      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body.length).toBeGreaterThan(0);
+    });
+
+    it('shows a new student an empty dashboard but a full catalog', async () => {
+      const mine = await request(app.getHttpServer())
+        .get('/courses')
+        .set(fresh())
+        .expect(200);
+      expect(mine.body).toEqual([]);
+
+      const catalog = await request(app.getHttpServer())
+        .get('/courses/catalog')
+        .set(fresh())
+        .expect(200);
+      expect(catalog.body.every((c: { enrolled: boolean }) => !c.enrolled)).toBe(true);
+    });
+
+    it('does not leak course content through the catalog', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/courses/catalog')
+        .set(fresh())
+        .expect(200);
+      for (const course of res.body) {
+        expect(course).not.toHaveProperty('modules');
+        expect(course).toHaveProperty('lessonCount');
+      }
+      // The outline is still gated: counting lessons is not reading them.
+      await request(app.getHttpServer())
+        .get('/courses/course-1')
+        .set(fresh())
+        .expect(404);
+    });
+
+    it('enrolls the caller and opens the course to them', async () => {
+      await request(app.getHttpServer())
+        .post('/courses/course-1/enroll')
+        .set(fresh())
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .get('/courses/course-1')
+        .set(fresh())
+        .expect(200);
+
+      const mine = await request(app.getHttpServer())
+        .get('/courses')
+        .set(fresh())
+        .expect(200);
+      expect(mine.body.map((c: { id: string }) => c.id)).toEqual(['course-1']);
+    });
+
+    it('is idempotent - a second enroll succeeds and adds nothing', async () => {
+      await request(app.getHttpServer())
+        .post('/courses/course-1/enroll')
+        .set(fresh())
+        .expect(200);
+
+      const mine = await request(app.getHttpServer())
+        .get('/courses')
+        .set(fresh())
+        .expect(200);
+      expect(mine.body.map((c: { id: string }) => c.id)).toEqual(['course-1']);
+    });
+
+    it('404s an enrollment on a course that does not exist', async () => {
+      await request(app.getHttpServer())
+        .post('/courses/course-nope/enroll')
+        .set(fresh())
+        .expect(404);
+    });
+
+    it('refuses an unauthenticated enrollment', async () => {
+      await request(app.getHttpServer())
+        .post('/courses/course-2/enroll')
+        .expect(401);
+    });
+  });
+
   describe('cross-course authorization', () => {
     // student-2 is enrolled in course-1 only. course-2 must be invisible to them.
     let otherToken: string;

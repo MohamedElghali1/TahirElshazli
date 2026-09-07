@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import {
   BellIcon,
+  BooksIcon,
   ListIcon,
   SignOutIcon,
   SquaresFourIcon,
@@ -20,6 +21,7 @@ import { cx } from '@/components/ui';
 
 const NAV = [
   { href: '/dashboard', label: 'My courses', Icon: SquaresFourIcon },
+  { href: '/catalog', label: 'Browse courses', Icon: BooksIcon },
   { href: '/notifications', label: 'Notifications', Icon: BellIcon },
   { href: '/profile', label: 'Profile', Icon: UserIcon },
 ] as const;

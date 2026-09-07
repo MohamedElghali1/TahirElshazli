@@ -12,6 +12,7 @@ const STUB_COURSES: StoredCourse[] = [
     thumbnailUrl: null,
     teacherName: 'Dr. Tahir Elshazli',
     sequentialLockEnabled: true,
+    defaultLearningMode: 'recorded',
     modules: [
       {
         id: 'mod-1',
@@ -58,6 +59,7 @@ const STUB_COURSES: StoredCourse[] = [
     thumbnailUrl: null,
     teacherName: 'Dr. Tahir Elshazli',
     sequentialLockEnabled: false,
+    defaultLearningMode: 'live',
     modules: [
       {
         id: 'mod-4',

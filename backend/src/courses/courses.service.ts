@@ -63,6 +63,37 @@ export interface CourseDetail extends CourseListItem {
   modules: CourseModule[];
 }
 
+/**
+ * A course as it appears in the catalog, before the student holds it.
+ *
+ * Deliberately not a `CourseListItem`: that type carries `progress`, and there
+ * is no progress to report on a course nobody is enrolled on. Reusing it would
+ * force a zeroed `progress` object that reads as "0% complete" rather than as
+ * "not started", which is exactly the progress/performance blurring
+ * CLAUDE.md §5.1 rules out.
+ */
+export interface CatalogItem {
+  id: string;
+  title: string;
+  description: string;
+  thumbnailUrl: string | null;
+  teacherName: string;
+  /** The mode this course is taught in, and the mode enrolling would use. */
+  learningMode: LearningMode;
+  moduleCount: number;
+  lessonCount: number;
+  /** Whether the caller already holds this course. */
+  enrolled: boolean;
+}
+
+/**
+ * The catalog is small and edited rarely (§6.1 notes the same about the admin
+ * course list), so one page is the whole thing today. The cap exists so that
+ * stops being true quietly - a catalog that outgrows it truncates rather than
+ * serving an unbounded list, and the truncation is what prompts real paging.
+ */
+const CATALOG_PAGE_SIZE = 100;
+
 @Injectable()
 export class CoursesService {
   constructor(
@@ -142,6 +173,60 @@ export class CoursesService {
       }),
     );
     return items.filter((item): item is CourseListItem => item !== null);
+  }
+
+  /**
+   * Every course on the platform, flagged with whether this student already
+   * holds it.
+   *
+   * Unscoped by design and safe to be: it returns titles, descriptions and
+   * outline sizes - the same things the public marketing pages advertise. It
+   * returns no lesson content, no materials and no recordings. The enrollment
+   * gate (§5.11's student equivalent, `assertEnrolled`) still stands in front
+   * of every one of those, and this endpoint does not weaken it.
+   */
+  async getCatalog(studentId: string): Promise<CatalogItem[]> {
+    const [courses, enrollments] = await Promise.all([
+      this.courseRepo.findAll(CATALOG_PAGE_SIZE, 0),
+      this.enrollmentsService.findForStudent(studentId),
+    ]);
+    const enrolledIds = new Set(enrollments.map((e) => e.courseId));
+
+    return courses.map((course) => ({
+      id: course.id,
+      title: course.title,
+      description: course.description,
+      thumbnailUrl: course.thumbnailUrl,
+      teacherName: course.teacherName,
+      learningMode: course.defaultLearningMode,
+      moduleCount: course.modules.length,
+      lessonCount: course.modules.reduce((n, m) => n + m.lessons.length, 0),
+      enrolled: enrolledIds.has(course.id),
+    }));
+  }
+
+  /**
+   * Self-enrollment. Free for now - CLAUDE.md §7 puts the payment gateway in a
+   * later phase, and when it arrives it gates this method rather than
+   * replacing it: the enrollment write stays here, and the payment becomes a
+   * precondition in front of it.
+   *
+   * The mode comes from the course, not the request body. A student has no way
+   * to know whether a course is taught live or from recordings, and letting
+   * the client choose would let it pick the wrong dashboard for itself
+   * (§5.2).
+   */
+  async enroll(courseId: string, studentId: string): Promise<CourseListItem> {
+    const course = await this.courseRepo.findById(courseId);
+    if (!course) {
+      throw new NotFoundException('Course not found');
+    }
+    const enrollment = await this.enrollmentsService.enroll(
+      courseId,
+      studentId,
+      course.defaultLearningMode,
+    );
+    return this.toListItem(course, enrollment);
   }
 
   /** Returns the course only if the caller is enrolled in it. */
