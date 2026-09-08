@@ -19,6 +19,7 @@ import {
 import { api } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
 import {
+  MATERIAL_CATEGORY_LABEL,
   formatDate,
   formatPercent,
   formatRelative,
@@ -84,12 +85,6 @@ const URGENT_MS = 48 * 60 * 60 * 1000;
 const DUE_SOON_MS = 48 * 60 * 60 * 1000;
 
 const MAX_INBOX = 4;
-
-const MATERIAL_LABEL: Record<MaterialCategory, string> = {
-  course_notes: 'Course notes',
-  study_materials: 'Study materials',
-  important_files: 'Important files',
-};
 
 const MATERIAL_ICON: Record<MaterialCategory, typeof FileTextIcon> = {
   course_notes: FileTextIcon,
@@ -860,12 +855,12 @@ function MaterialsPanel({
 
   const rows = single
     ? (
-        Object.keys(MATERIAL_LABEL) as MaterialCategory[]
+        Object.keys(MATERIAL_CATEGORY_LABEL) as MaterialCategory[]
       ).map((category) => ({
         href: `/learn/${courses[0].id}/materials`,
         icon: MATERIAL_ICON[category],
         tone: MATERIAL_TONE[category],
-        label: MATERIAL_LABEL[category],
+        label: MATERIAL_CATEGORY_LABEL[category],
         sub: courses[0].title,
         count: String(dashboards[0].quickAccess[category] ?? 0),
       }))
