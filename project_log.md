@@ -1034,3 +1034,72 @@ actions", both written before the console existed.
 - Whether `is_published` should be one flag or two (`open_for_enrollment` alongside it) is still
   §11's open question. Fix 3 above chose the safe reading — a draft is neither listed nor
   enrollable — which is reversible in one line if Dr. Tahir wants to advertise before opening.
+
+---
+
+## 2026-09-08 (later) — The student dashboard, rebuilt from an annotated reference
+
+**What changed.** The client marked up a screenshot of a Twenty CRM record page with four
+annotations saying what each region should become for a student, and the dashboard was rebuilt to
+that layout. The reference is worth naming because `app/tokens.css` already cites the same lineage:
+the 4px grid, the 13px workhorse type, the quantized row heights and the four-tint text ramp were
+drawn from it when the token system was written. So this was a mapping exercise, not a restyle —
+the grammar already matched, and nothing new was added to the token file.
+
+Four regions, in the two-column board the reference uses (right column wider):
+
+- **Hero (left/top)** — three states in the priority the annotation sets: a live session that is
+  running or starts within the hour, else the most recent unread announcement from the last 48
+  hours, else a greeting. The announcement is shown here *and* left in the inbox below, because the
+  annotation asks for both and because surfacing something is not the same as reading it.
+- **Quick access (left/bottom)** — Recordings, Work, Timetable, Report, each with a live count off
+  `DashboardResponse.stats`. Its stated purpose is that the rail is not the only way through the app.
+- **Inbox (right/top)** — assessments and announcements normalised into one sorted list: overdue,
+  then due-soon, then to-do, then results ready. `status` is rendered as the server derived it and
+  never recomputed (§5.10); `locked` and `submitted` are excluded deliberately — one the student
+  cannot act on, the other they already did.
+- **Materials (right/bottom)** — the same row grammar. With one course the rows are its three
+  material categories; with several they are the courses, because a combined count that links to
+  only one course is a number the destination cannot account for.
+
+Two deliberate departures from the reference, both because copying the pixel would have copied the
+wrong meaning. Its trailing `+` is an *add* affordance in a CRM and every row here navigates, so it
+carries a caret. And the course cards were kept below the board, which the reference has no
+equivalent of: a student's landing screen without their courses on it would be cloning the form and
+losing the function.
+
+**The bug this surfaced, which is the reason it was worth doing.** Migration 005 added
+`'announcement'` to the notification type union on the backend, and `frontend/lib/types.ts` was
+never widened to match. Two screens — the dashboard and `/notifications` — index a
+`Record<NotificationType, Icon>` by that field. The first announcement to reach a student's mailbox
+would have resolved to `undefined`, rendered as `<undefined />`, and taken both pages down. The
+announcement fan-out shipped in the entry above, so this was live. Union and both maps fixed.
+
+**Also fixed: the dashboard only ever read the first course.** `GET /courses/:id/dashboard` is
+per-course, and the old screen called it once. Any student on two courses had the second one's
+homework silently missing from a screen whose whole job is to say what needs doing. It now fans out
+across every enrollment and aggregates.
+
+**Why.** The client's annotations, plus §5.1 (progress and performance stay apart — completion gets
+the meter, marks get numerals), §5.2 (the enrollment's mode decides what the card measures), §5.10
+(server-derived status), §5.14 (announcements) and §4 (gold is the one accent; the status chips are
+the semantic ramp, not the brand colour). Traceability: `CRS-`, `ASG-`, `QUZ-`, `COM-`, `PRG-`.
+
+**Verification.** `npm run lint` clean both workspaces, `npm run build:frontend` clean at 21 routes,
+unit **274 passed**, e2e **151 passed**. Driven against the running dev app on the memory driver:
+see the run notes below.
+
+**Follow-ups / debt.**
+
+- The reference's dismissible top banner has no equivalent here. It was left out rather than
+  duplicated, since the hero already carries the urgent announcement the annotation describes; if
+  the client wants it to follow the student across screens it belongs in `AppShell`, not this page.
+- **"Urgent" is inferred, not stored.** An announcement has no priority field, so the hero shows the
+  most recent unread one inside 48 hours. If Dr. Tahir wants to mark one as urgent, that is a column
+  on `announcements` and a flag on the fan-out, not a heuristic here.
+- **Quick access points at the first enrolled course.** With more than one course the sub-label
+  names which course it opens, so the destination is at least honest, but a student on three courses
+  gets one course's shortcuts. A course switcher on the panel header is the fix.
+- The fan-out issues `2 × courses` requests on load. Fine at two courses and no worse than the page
+  it replaced, but it wants a single aggregate endpoint rather than a loop the moment a student can
+  hold ten.

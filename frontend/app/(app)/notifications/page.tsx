@@ -6,6 +6,7 @@ import {
   BellIcon,
   CheckCircleIcon,
   ClipboardTextIcon,
+  MegaphoneIcon,
   VideoCameraIcon,
 } from '@phosphor-icons/react';
 import { api } from '@/lib/api';
@@ -27,6 +28,7 @@ const ICON: Record<NotificationType, typeof BellIcon> = {
   new_recording: VideoCameraIcon,
   live_session_soon: BellIcon,
   assessment_available: ClipboardTextIcon,
+  announcement: MegaphoneIcon,
 };
 
 export default function NotificationsPage() {

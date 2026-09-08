@@ -314,7 +314,15 @@ export type NotificationType =
   | 'grade_posted'
   | 'new_recording'
   | 'live_session_soon'
-  | 'assessment_available';
+  | 'assessment_available'
+  /**
+   * Announcement fan-out (CLAUDE.md §5.14). Added by migration 005 on the
+   * backend and missing here until 2026-09-08 - which was not a cosmetic gap:
+   * both notification screens index an icon map by this union, so the first
+   * announcement a student received rendered `<undefined />` and took the page
+   * down with it.
+   */
+  | 'announcement';
 
 export interface AppNotification {
   id: string;
