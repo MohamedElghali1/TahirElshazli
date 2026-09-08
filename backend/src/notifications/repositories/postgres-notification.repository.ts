@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { DatabaseService } from '../../database/database.service.js';
 import { iso, num } from '../../database/database.types.js';
 import type {
+  NewNotification,
   Notification,
   NotificationRepository,
   NotificationType,
@@ -47,6 +49,40 @@ export class PostgresNotificationRepository implements NotificationRepository {
       [userId, unreadOnly],
     );
     return rows.map(toNotification);
+  }
+
+  /**
+   * One INSERT for the whole audience, built from parallel arrays rather than
+   * a generated `VALUES ($1,$2,...),($7,$8,...)` list.
+   *
+   * `unnest` keeps this a *fixed* six-parameter statement whatever the
+   * recipient count, so nothing about the SQL text depends on user input
+   * (CLAUDE.md §8) and Postgres can reuse the plan. A concatenated VALUES list
+   * would also hit the 65535-parameter ceiling at ~10k recipients, which is
+   * inside the "thousands of students" §1 targets.
+   */
+  async createMany(notifications: readonly NewNotification[]): Promise<number> {
+    if (notifications.length === 0) {
+      // `unnest` of empty arrays inserts nothing, but the round trip is still
+      // a round trip - and an announcement to an empty audience is normal.
+      return 0;
+    }
+    const rows = await this.db.query<{ id: string }>(
+      `INSERT INTO notifications (id, user_id, type, title, message, link)
+       SELECT * FROM unnest(
+         $1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[]
+       )
+       RETURNING id`,
+      [
+        notifications.map(() => randomUUID()),
+        notifications.map((n) => n.userId),
+        notifications.map((n) => n.type),
+        notifications.map((n) => n.title),
+        notifications.map((n) => n.message),
+        notifications.map((n) => n.link),
+      ],
+    );
+    return rows.length;
   }
 
   /**

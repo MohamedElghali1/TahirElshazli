@@ -501,12 +501,18 @@ describe('Student API (e2e)', () => {
       teacherToken = login.body.accessToken;
     });
 
-    // Every route in the app is @Roles(Role.Student) today. A teacher account
+    // Every route below is @Roles(Role.Student). A teacher account
     // authenticates fine and must still be refused - proving the role check is
     // doing work independently of the JWT check.
+    //
+    // `/notifications` is deliberately absent: it is now open to every
+    // signed-in LMS role, because CLAUDE.md 5.14's `all_tas` announcement
+    // audience delivers into an assistant's mailbox and a mailbox nobody can
+    // open is not a delivery. What replaced the role gate there is the
+    // per-caller scoping asserted immediately below - a wider @Roles list is
+    // not a wider read.
     it.each([
       '/courses',
-      '/notifications',
       '/students/me/profile',
       '/assessments/assess-1',
       '/courses/course-1/dashboard',
@@ -519,6 +525,25 @@ describe('Student API (e2e)', () => {
         .get(route)
         .set({ Authorization: `Bearer ${teacherToken}` })
         .expect(403);
+    });
+
+    it('gives a teacher their own empty mailbox, never a student’s', async () => {
+      const feed = await request(app.getHttpServer())
+        .get('/notifications')
+        .set({ Authorization: `Bearer ${teacherToken}` })
+        .expect(200);
+      // Nothing addresses the teacher yet, and the seeded rows belong to
+      // students. The response is scoped by `req.user.sub`, so an empty list
+      // here is the scoping working rather than the feature missing.
+      expect(feed.body.notifications).toEqual([]);
+      expect(feed.body.unreadCount).toBe(0);
+
+      // notif-1 belongs to student-1. Holding a valid token of a *higher*
+      // privilege role must not be enough to touch it.
+      await request(app.getHttpServer())
+        .post('/notifications/notif-1/read')
+        .set({ Authorization: `Bearer ${teacherToken}` })
+        .expect(404);
     });
 
     it('refuses a student write route to a teacher token', async () => {

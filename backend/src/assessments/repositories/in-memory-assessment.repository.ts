@@ -277,6 +277,53 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
     );
   }
 
+  async findSubmissionsForAssessments(
+    assessmentIds: readonly string[],
+  ): Promise<StoredSubmission[]> {
+    const wanted = new Set(assessmentIds);
+    return this.submissions.filter((s) => wanted.has(s.assessmentId));
+  }
+
+  async findSubmissionById(
+    submissionId: string,
+  ): Promise<StoredSubmission | null> {
+    const found = this.submissions.find((s) => s.id === submissionId);
+    // A copy, not the stored object. Postgres necessarily returns a fresh row
+    // per read; handing out the live reference here makes the two drivers
+    // behave differently in a way that is invisible until something holds the
+    // result across a write and finds it has changed underneath - which is
+    // exactly how the grading audit entry first recorded before === after.
+    return found ? { ...found } : null;
+  }
+
+  async gradeSubmission(
+    submissionId: string,
+    grade: {
+      score: number;
+      feedback: string | null;
+      annotatedFileUrl: string | undefined;
+    },
+  ): Promise<StoredSubmission | null> {
+    const submission = this.submissions.find((s) => s.id === submissionId);
+    if (!submission) {
+      return null;
+    }
+    const now = new Date().toISOString();
+    submission.score = grade.score;
+    submission.feedback = grade.feedback;
+    if (grade.annotatedFileUrl !== undefined) {
+      submission.annotatedFileUrl = grade.annotatedFileUrl;
+    }
+    // Stamped on every grading pass, including a re-grade: it is when the mark
+    // currently shown was decided, which is what the student's status line
+    // means by "corrected" (CLAUDE.md §5.10).
+    submission.correctedAt = now;
+    submission.updatedAt = now;
+    // `fileUrl`, `answerText`, `submittedAt` and `lastSubmittedAt` are
+    // untouched - the student's own work is immutable here (§5.5).
+    return submission;
+  }
+
   async createSubmission(
     assessmentId: string,
     studentId: string,

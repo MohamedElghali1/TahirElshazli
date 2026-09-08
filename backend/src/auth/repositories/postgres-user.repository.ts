@@ -62,6 +62,26 @@ export class PostgresUserRepository implements UserRepository {
     return rows.map(toUser);
   }
 
+  async findByRole(
+    role: Role,
+    options: { search?: string; limit: number; offset: number },
+  ): Promise<StoredUser[]> {
+    // The search term is a parameter, not interpolated text: `%` and `_` inside
+    // it are matched literally by ILIKE only because they arrive as data. Never
+    // build this predicate by concatenation (CLAUDE.md §8).
+    const search = options.search?.trim();
+    const rows = await this.db.query<UserRow>(
+      `SELECT ${USER_COLUMNS} FROM users
+       WHERE role = $1
+         AND ($2::text IS NULL OR name ILIKE '%' || $2 || '%'
+                               OR email ILIKE '%' || $2 || '%')
+       ORDER BY name
+       LIMIT $3 OFFSET $4`,
+      [role, search && search.length > 0 ? search : null, options.limit, options.offset],
+    );
+    return rows.map(toUser);
+  }
+
   async findByEmail(email: string): Promise<StoredUser | null> {
     // Matches the unique index `users_email_lower_key`, so this is an index
     // lookup rather than a sequential scan with a function applied per row.
@@ -78,6 +98,16 @@ export class PostgresUserRepository implements UserRepository {
       [userId],
     );
     return row ? toUser(row) : null;
+  }
+
+  async findIdsByRole(role: Role): Promise<string[]> {
+    // Ordered, so a fan-out writes its rows in a stable sequence and two runs
+    // of the same send are comparable.
+    const rows = await this.db.query<{ id: string }>(
+      'SELECT id FROM users WHERE role = $1 ORDER BY id',
+      [role],
+    );
+    return rows.map((row) => row.id);
   }
 
   async create(user: {

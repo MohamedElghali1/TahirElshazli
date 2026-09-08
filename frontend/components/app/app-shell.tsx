@@ -6,10 +6,13 @@ import { useState } from 'react';
 import {
   BellIcon,
   BooksIcon,
+  ClockCounterClockwiseIcon,
   ListIcon,
   SignOutIcon,
   SquaresFourIcon,
   UserIcon,
+  UsersThreeIcon,
+  VideoIcon,
   XIcon,
 } from '@phosphor-icons/react';
 import { api } from '@/lib/api';
@@ -17,24 +20,64 @@ import { useSession, useApi } from '@/lib/session';
 import { initials } from '@/lib/format';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Wordmark } from '@/components/site/wordmark';
-import { cx } from '@/components/ui';
+import { cx, Chip } from '@/components/ui';
+import { isStaffRole } from '@/lib/roles';
+import type { Role } from '@/lib/types';
 
-const NAV = [
+interface NavItem {
+  href: string;
+  label: string;
+  Icon: React.ComponentType<{ size?: number; weight?: 'fill' | 'regular' }>;
+}
+
+const STUDENT_NAV: NavItem[] = [
   { href: '/dashboard', label: 'My courses', Icon: SquaresFourIcon },
   { href: '/catalog', label: 'Browse courses', Icon: BooksIcon },
   { href: '/notifications', label: 'Notifications', Icon: BellIcon },
   { href: '/profile', label: 'Profile', Icon: UserIcon },
-] as const;
+];
 
 /**
- * The product shell: a fixed rail at --sp-* widths, a 32px top bar, and the
+ * The teacher and the assistant share one rail, and the difference between
+ * them is three entries (CLAUDE.md §2.2: the directory, the recording library
+ * and the activity log are admin, never TA).
+ *
+ * Hiding them is courtesy, not access control - `/admin/*` is
+ * `@Roles(Role.Teacher)` server-side and a TA who types the URL gets 403 from
+ * the API regardless of what this array says (§8).
+ */
+const STAFF_NAV: NavItem[] = [
+  { href: '/manage', label: 'Overview', Icon: SquaresFourIcon },
+  { href: '/manage/courses', label: 'Courses', Icon: BooksIcon },
+];
+
+const ADMIN_NAV: NavItem[] = [
+  { href: '/manage/students', label: 'Students', Icon: UsersThreeIcon },
+  { href: '/manage/recordings', label: 'Recordings', Icon: VideoIcon },
+  { href: '/manage/activity', label: 'Activity log', Icon: ClockCounterClockwiseIcon },
+];
+
+function navFor(role: Role | undefined): NavItem[] {
+  if (role === 'teacher') return [...STAFF_NAV, ...ADMIN_NAV];
+  if (role === 'assistant') return STAFF_NAV;
+  return STUDENT_NAV;
+}
+
+/**
+ * The product shell: a fixed rail at --sp-* widths, a 56px top bar, and the
  * page in between. Everything here is the dense token scale - the marketing
  * site's rhythm has no business inside the app.
+ *
+ * One shell for every signed-in role. The student LMS and the TA/admin console
+ * are the same application wearing a different rail, which is what keeps the
+ * teacher from having to sign in somewhere else to do their job.
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user, signOut } = useSession();
   const [open, setOpen] = useState(false);
+  const staff = isStaffRole(user?.role);
+  const NAV = navFor(user?.role);
 
   // A route change with the sheet still open leaves the page unscrollable.
   // Adjusted during render rather than in an effect: an effect would paint one
@@ -48,9 +91,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   // The badge is the one number in the shell, so it gets its own read rather
   // than being threaded down from whichever page happens to be mounted.
+  //
+  // Students only: `/notifications` is `@Roles(Role.Student)`, so calling it as
+  // a teacher is a guaranteed 403 - and `useApi` treats nothing but 401 as a
+  // sign-out, so it would surface as a permanent error rather than a redirect
+  // loop. Returning null skips the request instead of failing it.
   const { data: notifications } = useApi(
-    (token) => api.notifications.list(token),
-    [],
+    (token) => (staff ? Promise.resolve(null) : api.notifications.list(token)),
+    [staff],
   );
   const unread = notifications?.unreadCount ?? 0;
 
@@ -64,20 +112,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           open ? 'translate-x-0' : '-translate-x-full rtl:translate-x-full',
         )}
       >
-        <div className="flex h-[56px] items-center px-[var(--sp-4)]">
-          <Link href="/dashboard" aria-label="Dashboard">
+        <div className="flex h-[56px] items-center gap-[var(--sp-2)] px-[var(--sp-4)]">
+          <Link href={staff ? '/manage' : '/dashboard'} aria-label="Home">
             <Wordmark />
           </Link>
+          {/* Which console this is. A TA and the teacher share the shell, so
+              the rail says which set of powers is in play rather than leaving
+              it to be inferred from which links happen to be present. */}
+          {staff && (
+            <Chip tone={user?.role === 'teacher' ? 'amber' : 'teal'}>
+              {user?.role === 'teacher' ? 'Teacher' : 'Assistant'}
+            </Chip>
+          )}
         </div>
 
         <nav className="flex flex-1 flex-col gap-[var(--sp-1)] px-[var(--sp-2)] py-[var(--sp-2)]">
           {NAV.map(({ href, label, Icon }) => {
-            // /dashboard also owns every /learn/* screen - they are the same
-            // section of the product, reached through the course list.
+            // Two exact-match cases, because both own deeper routes that belong
+            // to a *different* entry: /dashboard owns /learn/*, and /manage is
+            // the parent of every other staff link in this rail.
             const active =
               href === '/dashboard'
                 ? pathname === '/dashboard' || pathname.startsWith('/learn')
-                : pathname.startsWith(href);
+                : href === '/manage'
+                  ? pathname === '/manage'
+                  : pathname.startsWith(href);
             return (
               <Link
                 key={href}

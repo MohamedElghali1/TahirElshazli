@@ -17,6 +17,21 @@ export interface CourseModule {
 
 export interface StoredCourse {
   id: string;
+  /**
+   * The course's public URL segment - unique, stable, and what the marketing
+   * site links. Ids stay internal; a visitor never sees `course-1`.
+   */
+  slug: string;
+  /**
+   * Whether the course appears on the public site. CLAUDE.md §11 left this
+   * open until the catalog went public; it is the answer to "can Dr. Tahir
+   * draft a course without the world seeing it".
+   *
+   * It gates the *public* surface only. The student catalog (§7.2) and every
+   * enrolled read are unaffected - un-publishing a course must never strand a
+   * student who already holds it.
+   */
+  isPublished: boolean;
   title: string;
   description: string;
   thumbnailUrl: string | null;
@@ -54,6 +69,22 @@ export interface CourseRepository {
    * to attach pagination; this is the first place one is attached.
    */
   findAll(limit: number, offset: number): Promise<StoredCourse[]>;
+  /**
+   * The public catalog: published courses only, paged the same way `findAll`
+   * is and for the same reason.
+   *
+   * A separate method rather than a flag on `findAll` because the two have
+   * different callers and different risks - `findAll` is the admin's list and
+   * must show drafts, this one is anonymous and must never show them. A
+   * boolean parameter is one wrong argument away from leaking the drafts.
+   */
+  findPublished(limit: number, offset: number): Promise<StoredCourse[]>;
+  /**
+   * Resolve a public URL. Returns the course whatever its publish state - the
+   * caller decides what an unpublished course means, because the answer
+   * differs by surface (the public page 404s; an admin preview would not).
+   */
+  findBySlug(slug: string): Promise<StoredCourse | null>;
 }
 
 export const COURSE_REPOSITORY = Symbol('COURSE_REPOSITORY');

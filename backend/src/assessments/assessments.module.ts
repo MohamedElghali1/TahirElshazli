@@ -18,6 +18,6 @@ import { EnrollmentsModule } from '../enrollments/enrollments.module.js';
     PostgresAssessmentRepository,
     repositoryProvider<AssessmentRepository>(ASSESSMENT_REPOSITORY, InMemoryAssessmentRepository, PostgresAssessmentRepository),
   ],
-  exports: [AssessmentsService],
+  exports: [AssessmentsService, ASSESSMENT_REPOSITORY],
 })
 export class AssessmentsModule {}

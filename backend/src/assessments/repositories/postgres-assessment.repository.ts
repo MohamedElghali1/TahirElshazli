@@ -168,6 +168,66 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
     return rows.map(toSubmission);
   }
 
+  async findSubmissionsForAssessments(
+    assessmentIds: readonly string[],
+  ): Promise<StoredSubmission[]> {
+    if (assessmentIds.length === 0) {
+      return [];
+    }
+    const rows = await this.db.query<SubmissionRow>(
+      `SELECT ${SUBMISSION_COLUMNS}
+       FROM assessment_submissions
+       WHERE assessment_id = ANY($1::text[])
+       ORDER BY last_submitted_at DESC`,
+      [[...assessmentIds]],
+    );
+    return rows.map(toSubmission);
+  }
+
+  async findSubmissionById(
+    submissionId: string,
+  ): Promise<StoredSubmission | null> {
+    const row = await this.db.queryOne<SubmissionRow>(
+      `SELECT ${SUBMISSION_COLUMNS} FROM assessment_submissions WHERE id = $1`,
+      [submissionId],
+    );
+    return row ? toSubmission(row) : null;
+  }
+
+  async gradeSubmission(
+    submissionId: string,
+    grade: {
+      score: number;
+      feedback: string | null;
+      annotatedFileUrl: string | undefined;
+    },
+  ): Promise<StoredSubmission | null> {
+    // Only the correction columns are in the SET list. file_url and answer_text
+    // are absent by design, not by omission - the student's submitted work is
+    // immutable (CLAUDE.md §5.5).
+    //
+    // annotated_file_url uses COALESCE so a grading pass that supplies no
+    // annotated copy leaves an earlier one in place; feedback does not, because
+    // clearing feedback is a thing a teacher may legitimately want to do.
+    const row = await this.db.queryOne<SubmissionRow>(
+      `UPDATE assessment_submissions SET
+         score              = $2,
+         feedback           = $3,
+         annotated_file_url = COALESCE($4::text, annotated_file_url),
+         corrected_at       = now(),
+         updated_at         = now()
+       WHERE id = $1
+       RETURNING ${SUBMISSION_COLUMNS}`,
+      [
+        submissionId,
+        grade.score,
+        grade.feedback,
+        grade.annotatedFileUrl ?? null,
+      ],
+    );
+    return row ? toSubmission(row) : null;
+  }
+
   async createSubmission(
     assessmentId: string,
     studentId: string,

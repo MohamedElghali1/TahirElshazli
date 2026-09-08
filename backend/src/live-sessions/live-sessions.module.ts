@@ -18,6 +18,10 @@ import { EnrollmentsModule } from '../enrollments/enrollments.module.js';
     PostgresLiveSessionRepository,
     repositoryProvider<LiveSessionRepository>(LIVE_SESSION_REPOSITORY, InMemoryLiveSessionRepository, PostgresLiveSessionRepository),
   ],
-  exports: [LiveSessionsService],
+  // The token is exported alongside the service so `ManageModule` can reach the
+  // *same* instance. Re-providing it there would build a second in-memory
+  // array, and a session scheduled through the admin console would be invisible
+  // to the student reading it through this module.
+  exports: [LiveSessionsService, LIVE_SESSION_REPOSITORY],
 })
 export class LiveSessionsModule {}

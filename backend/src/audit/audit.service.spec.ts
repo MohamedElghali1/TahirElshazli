@@ -180,6 +180,13 @@ describe('AuditService', () => {
       const page = await service.find({ limit: 10, action });
       expect(page.entries.length).toBeGreaterThan(0);
     }
+
+    // Target types are recorded separately: an action does not imply a target
+    // type, so writing one entry per action leaves any target type that no
+    // action in the list happens to use with nothing to find.
+    await Promise.all(
+      AUDIT_TARGET_TYPES.map((targetType) => service.record(entry({ targetType }))),
+    );
     for (const targetType of AUDIT_TARGET_TYPES) {
       const page = await service.find({ limit: 10, targetType });
       expect(page.entries.length).toBeGreaterThan(0);

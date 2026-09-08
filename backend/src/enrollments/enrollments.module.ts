@@ -13,6 +13,10 @@ import { repositoryProvider } from '../database/repository.provider.js';
     PostgresEnrollmentRepository,
     repositoryProvider<EnrollmentRepository>(ENROLLMENT_REPOSITORY, InMemoryEnrollmentRepository, PostgresEnrollmentRepository),
   ],
-  exports: [EnrollmentsService],
+  // The token is exported alongside the service so the TA/admin surface can
+  // reach the same singleton. Re-providing it in another module would build a
+  // second InMemoryEnrollmentRepository with its own array - reads and writes
+  // would land in different places under the memory driver.
+  exports: [EnrollmentsService, ENROLLMENT_REPOSITORY],
 })
 export class EnrollmentsModule {}

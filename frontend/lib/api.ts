@@ -1,20 +1,34 @@
 import type {
   AssessmentDetail,
   AssessmentListItem,
+  AuditLogPage,
   AuthResult,
   CatalogItem,
   CourseDetail,
   CourseListItem,
+  CourseRosterResponse,
+  CourseStaffMember,
   DashboardResponse,
+  DirectoryEntry,
+  GradingQueueItem,
+  GradingQueueResponse,
+  GradingStatus,
   LiveSession,
   LiveSessionListResponse,
+  ManageOverview,
   MaterialCategory,
   MaterialsByCategory,
   NotificationListResponse,
+  OutlineModule,
+  PublicCourseDetail,
+  PublicCourseSummary,
   RecordingListResponse,
   RecordingProgress,
   ReportDocument,
   ReportSummary,
+  StaffCourseSummary,
+  StaffRecording,
+  StudentDirectoryEntry,
   StudentProfile,
   AppNotification,
 } from './types';
@@ -58,10 +72,16 @@ interface RequestOptions {
   signal?: AbortSignal;
   /** Server Components pass this; the browser client leaves it alone. */
   cache?: RequestCache;
+  /**
+   * Seconds to cache a Server Component read for. Only the public marketing
+   * pages set it - everything else is per-student and must never be shared
+   * between two readers, which is why `cache` defaults to 'no-store' below.
+   */
+  revalidate?: number;
 }
 
 async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, token, signal, cache } = opts;
+  const { method = 'GET', body, token, signal, cache, revalidate } = opts;
 
   const headers: Record<string, string> = {};
   if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -74,7 +94,11 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
       signal,
-      cache: cache ?? 'no-store',
+      // `cache` and `next.revalidate` are mutually exclusive in Next - passing
+      // both makes the revalidate silently lose.
+      ...(revalidate === undefined
+        ? { cache: cache ?? 'no-store' }
+        : { next: { revalidate } }),
     });
   } catch (cause) {
     if (cause instanceof DOMException && cause.name === 'AbortError') throw cause;
@@ -127,11 +151,46 @@ const qs = (params: Record<string, string | undefined>) => {
 
 /* ------------------------------------------------------------------------
    Every endpoint below is verified against the backend controllers.
-   Each one is @Roles(Role.Student) except the auth block - CLAUDE.md §7.1
-   records that no visitor, parent, TA or admin API exists yet.
+
+   Role per block, and it is the server that enforces each one:
+     auth            - @Public (register, login, reset) or @AnyRole (logout)
+     courses .. students - @Roles(Role.Student)
+     staff           - @Roles(Role.Assistant, Role.Teacher), TA-scoped
+     admin           - @Roles(Role.Teacher)
+
+     publicCourses   - @Public, anonymous, read-only
+
+   There is still no parent API (CLAUDE.md §7.1).
    ------------------------------------------------------------------------ */
 
+/**
+ * How long a public course page may be stale. Course content changes on the
+ * scale of a term, not a request, and these are the pages that have to be fast
+ * and crawlable (CLAUDE.md §4). Five minutes is short enough that publishing a
+ * course feels immediate and long enough that a crawler does not become load.
+ */
+const PUBLIC_REVALIDATE_SECONDS = 300;
+
 export const api = {
+  /**
+   * The Visitor surface. No token parameter anywhere in this block, by
+   * construction - if one of these ever needs a token it is not public and
+   * does not belong here.
+   */
+  publicCourses: {
+    list: () =>
+      request<PublicCourseSummary[]>('/public/courses', {
+        revalidate: PUBLIC_REVALIDATE_SECONDS,
+      }),
+
+    /** Keyed by slug; an unpublished or unknown course answers 404 alike. */
+    get: (slug: string) =>
+      request<PublicCourseDetail>(
+        `/public/courses/${encodeURIComponent(slug)}`,
+        { revalidate: PUBLIC_REVALIDATE_SECONDS },
+      ),
+  },
+
   auth: {
     register: (body: { email: string; password: string; name: string }) =>
       request<AuthResult>('/auth/register', { method: 'POST', body }),
@@ -282,6 +341,133 @@ export const api = {
         method: 'POST',
         token,
       }),
+  },
+
+  /* ----------------------------------------------------------------------
+     /staff/* - reached by BOTH the teaching assistant and the teacher.
+     The backend scopes a TA to their assigned courses and leaves the teacher
+     unscoped; nothing here chooses, and nothing here may filter (CLAUDE.md
+     §5.11 - there is no "fetch everything and hide some" path).
+     ---------------------------------------------------------------------- */
+  staff: {
+    /** Courses the caller may work on. Scoped for a TA, all of them for admin. */
+    courses: (token: string) =>
+      request<StaffCourseSummary[]>('/staff/courses', { token }),
+
+    /** Dashboard counts. `scope` says which reading of them is correct. */
+    overview: (token: string) =>
+      request<ManageOverview>('/staff/overview', { token }),
+
+    roster: (token: string, courseId: string) =>
+      request<CourseRosterResponse>(`/staff/courses/${courseId}/roster`, { token }),
+
+    /** Modules and lessons, for the recording upload form's pickers. */
+    outline: (token: string, courseId: string) =>
+      request<OutlineModule[]>(`/staff/courses/${courseId}/outline`, { token }),
+
+    submissions: (token: string, courseId: string, status?: GradingStatus) =>
+      request<GradingQueueResponse>(
+        `/staff/courses/${courseId}/submissions${qs({ status })}`,
+        { token },
+      ),
+
+    /**
+     * Takes no course id: the backend resolves the course from the
+     * submission's own assessment before checking scope, so there is nothing
+     * here that could name a course the caller does not hold.
+     */
+    grade: (
+      token: string,
+      submissionId: string,
+      body: { score: number; feedback?: string; annotatedFileUrl?: string },
+    ) =>
+      request<GradingQueueItem>(`/staff/submissions/${submissionId}/grade`, {
+        method: 'POST',
+        token,
+        body,
+      }),
+
+    recordings: (token: string, courseId: string) =>
+      request<StaffRecording[]>(`/staff/courses/${courseId}/recordings`, { token }),
+  },
+
+  /* ----------------------------------------------------------------------
+     /admin/* - teacher only. A TA calling any of these gets 403 from
+     `RolesGuard`, which is the enforcement; the UI hiding them is only
+     courtesy (CLAUDE.md §8).
+     ---------------------------------------------------------------------- */
+  admin: {
+    students: (token: string, search?: string) =>
+      request<StudentDirectoryEntry[]>(`/admin/students${qs({ search })}`, { token }),
+
+    assistants: (token: string, search?: string) =>
+      request<DirectoryEntry[]>(`/admin/assistants${qs({ search })}`, { token }),
+
+    courseStaff: (token: string, courseId: string) =>
+      request<CourseStaffMember[]>(`/admin/courses/${courseId}/staff`, { token }),
+
+    assignStaff: (token: string, courseId: string, userId: string) =>
+      request<CourseStaffMember>(`/admin/courses/${courseId}/staff`, {
+        method: 'POST',
+        token,
+        body: { userId },
+      }),
+
+    unassignStaff: (token: string, courseId: string, userId: string) =>
+      request<{ removed: true }>(`/admin/courses/${courseId}/staff/${userId}`, {
+        method: 'DELETE',
+        token,
+      }),
+
+    createRecording: (
+      token: string,
+      courseId: string,
+      body: {
+        moduleId: string;
+        lessonId: string;
+        title: string;
+        chapter?: string;
+        topics?: string[];
+        videoUrl: string;
+        durationSeconds: number;
+        lessonDate?: string;
+      },
+    ) =>
+      request<StaffRecording>(`/admin/courses/${courseId}/recordings`, {
+        method: 'POST',
+        token,
+        body,
+      }),
+
+    updateRecording: (
+      token: string,
+      recordingId: string,
+      body: {
+        title?: string;
+        chapter?: string;
+        topics?: string[];
+        videoUrl?: string;
+        durationSeconds?: number;
+        lessonDate?: string;
+      },
+    ) =>
+      request<StaffRecording>(`/admin/recordings/${recordingId}`, {
+        method: 'PATCH',
+        token,
+        body,
+      }),
+
+    deleteRecording: (token: string, recordingId: string) =>
+      request<{ removed: true }>(`/admin/recordings/${recordingId}`, {
+        method: 'DELETE',
+        token,
+      }),
+
+    auditLog: (token: string, filter?: { courseId?: string; cursor?: string }) =>
+      request<AuditLogPage>(
+        `/admin/audit-log${qs({ courseId: filter?.courseId, cursor: filter?.cursor })}`,
+        { token },
+      ),
   },
 
   students: {

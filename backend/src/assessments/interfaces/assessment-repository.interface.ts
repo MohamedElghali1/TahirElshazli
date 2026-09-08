@@ -116,6 +116,43 @@ export interface AssessmentRepository {
     submissionId: string,
     studentId: string,
   ): Promise<SubmissionRevision[]>;
+  /**
+   * Every student's submissions across a set of assessments - the grading
+   * queue's read, and the deliberate opposite of
+   * `findSubmissionsForStudent` above.
+   *
+   * Unscoped by student *because that is the point*: a TA marking an
+   * assignment needs the whole cohort. The scoping that keeps it safe is a
+   * different one - the caller resolves `assessmentIds` from a course it has
+   * already put through `StaffScopeService.assertAssigned` (CLAUDE.md §5.11).
+   * Passing assessment ids rather than a course id is what makes that
+   * impossible to skip: there is no course id here to be trusted unchecked.
+   */
+  findSubmissionsForAssessments(
+    assessmentIds: readonly string[],
+  ): Promise<StoredSubmission[]>;
+  /** One submission by id, for the grading screen. Null when it is gone. */
+  findSubmissionById(submissionId: string): Promise<StoredSubmission | null>;
+  /**
+   * Records a mark and feedback against a submission.
+   *
+   * Writes only the correction columns. The student's own `fileUrl` and
+   * `answerText` are never touched here - CLAUDE.md §5.5 keeps the original
+   * submission immutable, and the annotated copy is a separate artifact
+   * beside it (`annotatedFileUrl`), not an overwrite.
+   *
+   * `correctedAt` is stamped by the repository, not passed in, for the same
+   * reason `submittedAt` is: a client-supplied correction time is a client
+   * rewriting history.
+   */
+  gradeSubmission(
+    submissionId: string,
+    grade: {
+      score: number;
+      feedback: string | null;
+      annotatedFileUrl: string | undefined;
+    },
+  ): Promise<StoredSubmission | null>;
 }
 
 export const ASSESSMENT_REPOSITORY = Symbol('ASSESSMENT_REPOSITORY');

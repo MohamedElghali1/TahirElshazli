@@ -2,14 +2,18 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ApiError } from '@/lib/api';
 import { useSession } from '@/lib/session';
+import { resolvePostAuthPath } from '@/lib/roles';
 import { Button, Field, FormError, Input } from '@/components/ui';
 
 export default function LoginPage() {
   const { signIn } = useSession();
   const router = useRouter();
+  // Set by the public course pages, so someone who clicked "Sign in to enroll"
+  // arrives at the catalog rather than at a dashboard they did not ask for.
+  const next = useSearchParams().get('next');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -19,11 +23,15 @@ export default function LoginPage() {
     setError(null);
     setBusy(true);
     try {
-      await signIn(
+      const account = await signIn(
         String(data.get('email') ?? '').trim(),
         String(data.get('password') ?? ''),
       );
-      router.push('/dashboard');
+      // Dr. Tahir and his assistants land in the management console, students
+      // in the LMS or wherever `next` pointed. Routing on the returned account
+      // rather than on session state avoids a render where the destination is
+      // not known yet.
+      router.push(resolvePostAuthPath(account.role, next));
     } catch (cause) {
       // The backend answers unknown-email and wrong-password identically, on
       // purpose. Do not narrow the message here or that work is undone.

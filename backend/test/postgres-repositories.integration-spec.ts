@@ -14,6 +14,7 @@ import { PostgresReportRepository } from '../src/reports/repositories/postgres-r
 import { PostgresNotificationRepository } from '../src/notifications/repositories/postgres-notification.repository.js';
 import { PostgresCourseStaffRepository } from '../src/staff/repositories/postgres-course-staff.repository.js';
 import { PostgresAuditLogRepository } from '../src/audit/repositories/postgres-audit-log.repository.js';
+import { PostgresAnnouncementRepository } from '../src/announcements/repositories/postgres-announcement.repository.js';
 import { Role } from '../src/auth/roles.enum.js';
 
 /**
@@ -158,6 +159,54 @@ describeIfDb('Postgres repositories', () => {
       ).toEqual(['course-1']);
       expect(await repo.findByIds([])).toEqual([]);
     });
+
+    it('resolves a course by its public slug, tree attached', async () => {
+      const course = await new PostgresCourseRepository(db).findBySlug(
+        'as-chemistry',
+      );
+      expect(course?.id).toBe('course-1');
+      expect(course?.isPublished).toBe(true);
+      expect(course?.modules).toHaveLength(3);
+    });
+
+    it('returns null for an unknown slug', async () => {
+      expect(
+        await new PostgresCourseRepository(db).findBySlug('no-such-course'),
+      ).toBeNull();
+    });
+
+    /**
+     * The one that matters: `findPublished` must filter, not merely order.
+     * Un-publishing a seeded course has to remove it here while leaving
+     * `findAll` - the admin's list - untouched.
+     */
+    it('excludes unpublished courses from findPublished but not findAll', async () => {
+      const repo = new PostgresCourseRepository(db);
+      await db.query(
+        `UPDATE courses SET is_published = false WHERE id = 'course-3'`,
+      );
+      try {
+        const published = await repo.findPublished(100, 0);
+        const all = await repo.findAll(100, 0);
+        expect(published.map((c) => c.id)).not.toContain('course-3');
+        expect(all.map((c) => c.id)).toContain('course-3');
+      } finally {
+        await db.query(
+          `UPDATE courses SET is_published = true WHERE id = 'course-3'`,
+        );
+      }
+    });
+
+    it('pages findPublished by title', async () => {
+      const repo = new PostgresCourseRepository(db);
+      const firstPage = await repo.findPublished(1, 0);
+      const secondPage = await repo.findPublished(1, 1);
+      expect(firstPage).toHaveLength(1);
+      expect(secondPage).toHaveLength(1);
+      expect(firstPage[0].id).not.toBe(secondPage[0].id);
+      // ORDER BY title, and 'AS Chemistry' sorts first of the three.
+      expect(firstPage[0].title.localeCompare(secondPage[0].title)).toBeLessThan(0);
+    });
   });
 
   describe('enrollments', () => {
@@ -231,6 +280,82 @@ describeIfDb('Postgres repositories', () => {
       const courseTwo = await repo.findAttendanceForCourse('course-2', 'student-1');
       expect(courseTwo.map((a) => a.sessionId).sort()).toEqual(['sess-5', 'sess-6']);
       expect(await repo.findAttendanceForCourse('course-1', 'student-2')).toEqual([]);
+    });
+
+    it('schedules a session into the running order and reads it back', async () => {
+      const repo = new PostgresLiveSessionRepository(db);
+      const created = await repo.create({
+        courseId: 'course-1',
+        title: 'Integration clinic',
+        zoomLink: 'https://zoom.us/j/70000000001',
+        scheduledAt: '2026-08-25T18:00:00Z',
+        durationMinutes: 45,
+      });
+      expect(await repo.findById(created.id)).toMatchObject({
+        title: 'Integration clinic',
+        durationMinutes: 45,
+      });
+
+      // ORDER BY scheduled_at, so it lands between sess-1 and sess-2 rather
+      // than at the end - the thing an append-ordered list would get wrong.
+      const schedule = await repo.findByCourse('course-1');
+      expect(schedule.map((s) => s.id)).toEqual([
+        'sess-1',
+        created.id,
+        'sess-2',
+        'sess-3',
+      ]);
+
+      await repo.remove(created.id);
+    });
+
+    it('leaves an omitted field alone on update', async () => {
+      const repo = new PostgresLiveSessionRepository(db);
+      const created = await repo.create({
+        courseId: 'course-1',
+        title: 'Before',
+        zoomLink: 'https://zoom.us/j/70000000002',
+        scheduledAt: '2026-11-01T18:00:00Z',
+        durationMinutes: 60,
+      });
+
+      // The COALESCE path: `zoom_link` was not supplied and must survive.
+      const updated = await repo.update(created.id, { title: 'After' });
+      expect(updated).toMatchObject({
+        title: 'After',
+        zoomLink: 'https://zoom.us/j/70000000002',
+        durationMinutes: 60,
+      });
+      expect(await repo.update('nope', { title: 'x' })).toBeNull();
+
+      await repo.remove(created.id);
+    });
+
+    it('cancels a session, taking its attendance with it', async () => {
+      const repo = new PostgresLiveSessionRepository(db);
+      const created = await repo.create({
+        courseId: 'course-1',
+        title: 'Doomed',
+        zoomLink: 'https://zoom.us/j/70000000003',
+        scheduledAt: '2026-11-08T18:00:00Z',
+        durationMinutes: 30,
+      });
+      await db.query(
+        `INSERT INTO attendance (session_id, student_id, attended) VALUES ($1, 'student-1', true)`,
+        [created.id],
+      );
+
+      expect(await repo.remove(created.id)).toBe(true);
+      // ON DELETE CASCADE, which is a real loss of history and the reason the
+      // audit entry keeps a full `before` snapshot.
+      const orphans = await db.query(
+        'SELECT session_id FROM attendance WHERE session_id = $1',
+        [created.id],
+      );
+      expect(orphans).toEqual([]);
+      // A second removal is false, not a lie about having deleted something.
+      expect(await repo.remove(created.id)).toBe(false);
+      expect(await repo.findById(created.id)).toBeNull();
     });
   });
 
@@ -354,6 +479,187 @@ describeIfDb('Postgres repositories', () => {
       expect(await repo.markAllRead('student-1')).toBe(1);
       expect(await repo.countUnread('student-1')).toBe(0);
     });
+
+    it('fans one payload out to many recipients in a single insert', async () => {
+      const repo = new PostgresNotificationRepository(db);
+      const written = await repo.createMany([
+        {
+          userId: 'student-1',
+          type: 'announcement',
+          title: 'Fan-out',
+          message: 'Reached both.',
+          link: '/learn/course-1',
+        },
+        {
+          userId: 'student-2',
+          type: 'announcement',
+          title: 'Fan-out',
+          message: 'Reached both.',
+          link: null,
+        },
+      ]);
+      expect(written).toBe(2);
+
+      // The half the in-memory driver cannot prove: migration 005 widened the
+      // `notifications_type_check` CHECK constraint, and without it every
+      // announcement insert would fail here and nowhere else.
+      expect(await repo.countUnread('student-1')).toBe(1);
+      const forStudentTwo = await repo.findByUser('student-2', true);
+      expect(forStudentTwo[0]).toMatchObject({
+        type: 'announcement',
+        // A NULL inside the text[] must stay SQL NULL, not the string 'null'.
+        link: null,
+      });
+
+      // No round trip and no malformed `unnest` for an empty audience.
+      expect(await repo.createMany([])).toBe(0);
+    });
+
+    it('still refuses a type the constraint does not name', async () => {
+      await expect(
+        db.query(
+          `INSERT INTO notifications (id, user_id, type, title, message)
+           VALUES ('notif-bad', 'student-1', 'not_a_type', 't', 'm')`,
+        ),
+      ).rejects.toThrow();
+    });
+  });
+
+  describe('announcements', () => {
+    const repo = () => new PostgresAnnouncementRepository(db);
+
+    it('stores the audience as a pair and hands back §6.1’s single string', async () => {
+      const course = await repo().create({
+        audienceType: 'course',
+        courseId: 'course-1',
+        title: 'Course only',
+        body: 'Body.',
+        postedBy: 'assistant-1',
+        recipientCount: 2,
+      });
+      expect(course.audience).toBe('course:course-1');
+
+      const platform = await repo().create({
+        audienceType: 'all_tas',
+        courseId: null,
+        title: 'Every assistant',
+        body: 'Body.',
+        postedBy: 'teacher-1',
+        recipientCount: 2,
+      });
+      expect(platform.audience).toBe('all_tas');
+      expect(platform.courseId).toBeNull();
+      expect(platform.postedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    });
+
+    it('refuses an audience_type and course_id that disagree', async () => {
+      // The CHECK in migration 005. Neither half is reachable through the
+      // service, which is exactly why the database has to be the one holding
+      // the invariant.
+      await expect(
+        db.query(
+          `INSERT INTO announcements (id, audience_type, course_id, title, body, posted_by)
+           VALUES ('ann-bad-1', 'course', NULL, 't', 'b', 'teacher-1')`,
+        ),
+      ).rejects.toThrow();
+      await expect(
+        db.query(
+          `INSERT INTO announcements (id, audience_type, course_id, title, body, posted_by)
+           VALUES ('ann-bad-2', 'all_students', 'course-1', 't', 'b', 'teacher-1')`,
+        ),
+      ).rejects.toThrow();
+    });
+
+    it('stores posted_at at the precision a JS Date can represent', async () => {
+      // TIMESTAMPTZ(3), not the default microsecond TIMESTAMPTZ. Migration 002
+      // records what a microsecond column costs the moment a keyset cursor is
+      // added over it: the audit feed silently ended after page one.
+      const [row] = await db.query<{ id: string; posted_at: Date }>(
+        'SELECT id, posted_at FROM announcements ORDER BY posted_at DESC, id DESC LIMIT 1',
+      );
+      // The exact round trip a keyset cursor would make: read the timestamp
+      // out through a JS Date, hand it straight back, and require it to match
+      // the row it came from. On a microsecond column this is false.
+      const [same] = await db.query<{ equal: boolean }>(
+        'SELECT posted_at = $2::timestamptz AS equal FROM announcements WHERE id = $1',
+        [row!.id, row!.posted_at.toISOString()],
+      );
+      expect(same?.equal).toBe(true);
+    });
+
+    it('lists a course’s own announcements, newest first, and pages them', async () => {
+      for (const title of ['older', 'newer'] as const) {
+        await repo().create({
+          audienceType: 'course',
+          courseId: 'course-2',
+          title,
+          body: 'Body.',
+          postedBy: 'teacher-1',
+          recipientCount: 1,
+        });
+      }
+
+      const courseTwo = await repo().findByCourse('course-2', 10, 0);
+      expect(courseTwo.map((a) => a.title)).toEqual(['newer', 'older']);
+      // A platform-wide announcement belongs to no course and must not appear.
+      expect(courseTwo.every((a) => a.courseId === 'course-2')).toBe(true);
+
+      const firstPage = await repo().findByCourse('course-2', 1, 0);
+      const secondPage = await repo().findByCourse('course-2', 1, 1);
+      expect(firstPage[0]?.title).toBe('newer');
+      expect(secondPage[0]?.title).toBe('older');
+
+      // findAll spans every audience, which is the admin's sent history.
+      const all = await repo().findAll(100, 0);
+      expect(all.map((a) => a.audience)).toContain('all_tas');
+      expect(all.length).toBeGreaterThan(courseTwo.length);
+    });
+
+    it('goes with its course, and holds its author in place', async () => {
+      await db.query(
+        `INSERT INTO courses (id, slug, title, description, teacher_name, sequential_lock_enabled)
+         VALUES ('course-ann', 'course-ann', 'Ann', 'Ann', 'Dr. Tahir Elshazli', false)`,
+      );
+      const posted = await repo().create({
+        audienceType: 'course',
+        courseId: 'course-ann',
+        title: 'Goes away',
+        body: 'Body.',
+        postedBy: 'teacher-1',
+        recipientCount: 0,
+      });
+      await db.query(`DELETE FROM courses WHERE id = 'course-ann'`);
+      // CASCADE: unlike an audit entry, an announcement to a deleted course
+      // addresses nobody and describes nothing.
+      expect(await repo().findByCourse('course-ann', 10, 0)).toEqual([]);
+      expect(
+        (await repo().findAll(100, 0)).map((a) => a.id),
+      ).not.toContain(posted.id);
+
+      // RESTRICT on posted_by: the author cannot be deleted out from under it.
+      await expect(
+        db.query(`DELETE FROM users WHERE id = 'teacher-1'`),
+      ).rejects.toThrow();
+    });
+  });
+
+  describe('users by role', () => {
+    it('resolves an audience from the role, ids only, at read time', async () => {
+      // What CLAUDE.md §5.14 turns on: `all_tas` is this query, run at the
+      // moment of sending, never a stored list.
+      const repo = new PostgresUserRepository(db);
+      const before = await repo.findIdsByRole(Role.Assistant);
+      expect(before).toContain('assistant-1');
+      expect(before).not.toContain('student-1');
+
+      const hire = await repo.create({
+        email: 'late.assistant@example.com',
+        passwordHash: 'hash',
+        name: 'Late Assistant',
+        role: Role.Assistant,
+      });
+      expect(await repo.findIdsByRole(Role.Assistant)).toContain(hire.id);
+    });
   });
   describe('course staff assignments', () => {
     const repo = () => new PostgresCourseStaffRepository(db);
@@ -398,8 +704,8 @@ describeIfDb('Postgres repositories', () => {
       // ON DELETE CASCADE on course_id, RESTRICT on assigned_by. The second
       // half is what stops an admin's departure from silently revoking access.
       await db.query(
-        `INSERT INTO courses (id, title, description, teacher_name, sequential_lock_enabled)
-         VALUES ('course-temp', 'Temp', 'Temp', 'Dr. Tahir Elshazli', false)`,
+        `INSERT INTO courses (id, slug, title, description, teacher_name, sequential_lock_enabled)
+         VALUES ('course-temp', 'course-temp', 'Temp', 'Temp', 'Dr. Tahir Elshazli', false)`,
       );
       await repo().create('course-temp', 'assistant-2', 'teacher-1');
       await db.query(`DELETE FROM courses WHERE id = 'course-temp'`);
@@ -482,8 +788,8 @@ describeIfDb('Postgres repositories', () => {
       // No foreign keys, on purpose: deleting a course is itself auditable, and
       // a FK would take the evidence with it.
       await db.query(
-        `INSERT INTO courses (id, title, description, teacher_name, sequential_lock_enabled)
-         VALUES ('course-gone', 'Gone', 'Gone', 'Dr. Tahir Elshazli', false)`,
+        `INSERT INTO courses (id, slug, title, description, teacher_name, sequential_lock_enabled)
+         VALUES ('course-gone', 'course-gone', 'Gone', 'Gone', 'Dr. Tahir Elshazli', false)`,
       );
       const recorded = await repo().record({
         actorId: 'teacher-1',

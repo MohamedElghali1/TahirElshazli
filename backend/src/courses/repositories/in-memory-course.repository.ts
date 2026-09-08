@@ -7,6 +7,8 @@ import type {
 const STUB_COURSES: StoredCourse[] = [
   {
     id: 'course-1',
+    slug: 'as-chemistry',
+    isPublished: true,
     title: 'AS Chemistry',
     description: 'Complete AS-level Chemistry course with Dr. Tahir',
     thumbnailUrl: null,
@@ -54,6 +56,8 @@ const STUB_COURSES: StoredCourse[] = [
   },
   {
     id: 'course-2',
+    slug: 'ielts-preparation-live',
+    isPublished: true,
     title: 'IELTS Preparation - Live',
     description: 'Live IELTS preparation course',
     thumbnailUrl: null,
@@ -85,6 +89,16 @@ export class InMemoryCourseRepository implements CourseRepository {
     return [...STUB_COURSES]
       .sort((a, b) => a.title.localeCompare(b.title))
       .slice(offset, offset + limit);
+  }
+
+  async findPublished(limit: number, offset: number): Promise<StoredCourse[]> {
+    return STUB_COURSES.filter((c) => c.isPublished)
+      .sort((a, b) => a.title.localeCompare(b.title))
+      .slice(offset, offset + limit);
+  }
+
+  async findBySlug(slug: string): Promise<StoredCourse | null> {
+    return STUB_COURSES.find((c) => c.slug === slug) ?? null;
   }
 
   async findByIds(courseIds: readonly string[]): Promise<StoredCourse[]> {

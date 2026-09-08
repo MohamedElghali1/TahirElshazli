@@ -1,17 +1,23 @@
 import Image from 'next/image';
-import Link from 'next/link';
-import { ArrowRightIcon, CheckIcon } from '@phosphor-icons/react/dist/ssr';
 import { ButtonLink } from '@/components/ui';
 import { Reveal } from '@/components/site/reveal';
-import { FAQS, PLATFORM, STAGES, TESTIMONIALS, TRACKS, photo } from '@/lib/site-content';
+import { CourseCard } from '@/components/site/course-card';
+import { CatalogEmpty, CatalogUnavailable } from '@/components/site/catalog-states';
+import { fetchCatalog } from '@/lib/catalog';
+import type { PublicCourseSummary } from '@/lib/types';
+import { FAQS, PLATFORM, STAGES, TESTIMONIALS, photo } from '@/lib/site-content';
 
 const shell = 'mx-auto w-full max-w-[var(--maxw-site)] px-[var(--sp-6)]';
 
-export default function HomePage() {
+export default async function HomePage() {
+  // One read, shared by the proof strip and the grid, so the homepage cannot
+  // show "3 courses" above a grid holding two.
+  const courses = await fetchCatalog();
+
   return (
     <>
-      <Hero />
-      <Tracks />
+      <Hero courses={courses} />
+      <Courses courses={courses} />
       <HowItRuns />
       <Platform />
       <Voices />
@@ -21,9 +27,23 @@ export default function HomePage() {
   );
 }
 
+/** "24 lessons · 14 hours of video" - counted, never asserted. */
+function catalogFacts(courses: PublicCourseSummary[]) {
+  const lessons = courses.reduce((n, c) => n + c.lessonCount, 0);
+  const seconds = courses.reduce((n, c) => n + c.totalDurationSeconds, 0);
+  const hours = Math.round(seconds / 3600);
+  return [
+    { value: courses.length, label: courses.length === 1 ? 'course' : 'courses' },
+    { value: lessons, label: lessons === 1 ? 'lesson' : 'lessons' },
+    ...(hours > 0 ? [{ value: hours, label: hours === 1 ? 'hour of video' : 'hours of video' }] : []),
+  ];
+}
+
 /* --- 1. Hero: asymmetric split. Four text elements, no more. -------------- */
 
-function Hero() {
+function Hero({ courses }: { courses: PublicCourseSummary[] | null }) {
+  const facts = courses && courses.length > 0 ? catalogFacts(courses) : null;
+
   return (
     <section className={`${shell} grid items-center gap-[var(--sp-12)] pb-[var(--sp-24)] pt-[var(--sp-16)] lg:grid-cols-[7fr_5fr] lg:gap-[var(--sp-16)] lg:pt-[var(--sp-24)]`}>
       <div>
@@ -42,6 +62,27 @@ function Hero() {
             Meet Dr. Tahir
           </ButtonLink>
         </div>
+
+        {/* Counted from the catalog that renders below it, so the claim and
+            the evidence can never disagree. Absent rather than zeroed when the
+            catalog is unreachable - "0 courses" is worse than no number. */}
+        {facts && (
+          <dl className="mt-[var(--sp-12)] flex flex-wrap gap-x-[var(--sp-8)] gap-y-[var(--sp-4)] border-t border-[var(--border-light)] pt-[var(--sp-6)]">
+            {facts.map((fact) => (
+              <div key={fact.label}>
+                <dt className="sr-only">{fact.label}</dt>
+                <dd>
+                  <span className="font-[family-name:var(--font-mono)] text-[var(--fs-h2)] font-medium tabular-nums tracking-[-0.03em] text-[var(--fg-primary)]">
+                    {fact.value}
+                  </span>
+                  <span className="ms-[var(--sp-2)] text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+                    {fact.label}
+                  </span>
+                </dd>
+              </div>
+            ))}
+          </dl>
+        )}
       </div>
 
       <div className="relative aspect-[4/5] overflow-hidden rounded-[var(--r-lg)] border border-[var(--border-medium)]">
@@ -58,68 +99,47 @@ function Hero() {
   );
 }
 
-/* --- 2. Tracks: two tiles, image-led. ------------------------------------ */
+/* --- 2. Courses: the real catalog, straight from the API. ---------------
+   This is the section the page exists for. It used to be two hardcoded tiles
+   describing tracks that were not rows in any table, ending at "Contact us" -
+   a visitor could not see a single real course, let alone what was in it. It
+   now renders whatever Dr. Tahir has published, and every card is a route into
+   the syllabus. */
 
-function Tracks() {
+function Courses({ courses }: { courses: PublicCourseSummary[] | null }) {
   return (
     <section className="border-y border-[var(--border-light)] bg-[var(--bg-secondary)] py-[var(--sp-24)]">
       <div className={shell}>
         <Reveal>
-          <h2 className="max-w-[20ch] text-[clamp(1.75rem,3.5vw,var(--fs-h1))] font-semibold leading-[1.1] tracking-[-0.02em] text-[var(--fg-primary)]">
-            Two tracks, taught separately.
-          </h2>
+          <div className="flex flex-wrap items-end justify-between gap-[var(--sp-6)]">
+            <h2 className="max-w-[20ch] text-[clamp(1.75rem,3.5vw,var(--fs-h1))] font-semibold leading-[1.1] tracking-[-0.02em] text-[var(--fg-primary)]">
+              Courses running now.
+            </h2>
+            {courses && courses.length > 3 && (
+              <ButtonLink href="/courses" variant="secondary" size="lg">
+                See all {courses.length}
+              </ButtonLink>
+            )}
+          </div>
         </Reveal>
 
-        <div className="mt-[var(--sp-12)] grid gap-[var(--sp-8)] md:grid-cols-2">
-          {TRACKS.map((track, i) => (
-            <Reveal key={track.slug} delay={i * 0.08}>
-              <article className="group flex h-full flex-col overflow-hidden rounded-[var(--r-lg)] border border-[var(--border-medium)] bg-[var(--bg-primary)]">
-                <div className="relative aspect-[16/10] overflow-hidden">
-                  <Image
-                    src={track.image}
-                    alt=""
-                    fill
-                    sizes="(max-width: 768px) 100vw, 560px"
-                    className="object-cover transition-transform duration-[var(--dur-slow)] ease-[var(--ease-out)] group-hover:scale-[1.03]"
-                  />
-                </div>
-                <div className="flex flex-1 flex-col p-[var(--sp-8)]">
-                  <p className="text-[var(--fs-base)] text-[var(--fg-tertiary)]">
-                    {track.audience}
-                  </p>
-                  <h3 className="mt-[var(--sp-2)] text-[var(--fs-h3)] font-semibold tracking-[-0.01em] text-[var(--fg-primary)]">
-                    {track.name}
-                  </h3>
-                  <p className="mt-[var(--sp-4)] text-[var(--fs-base)] leading-[var(--lh-loose)] text-[var(--fg-secondary)]">
-                    {track.summary}
-                  </p>
-                  <ul className="mt-[var(--sp-6)] flex flex-col gap-[var(--sp-3)]">
-                    {track.points.map((point) => (
-                      <li
-                        key={point}
-                        className="flex gap-[var(--sp-3)] text-[var(--fs-base)] text-[var(--fg-secondary)]"
-                      >
-                        <CheckIcon
-                          size={18}
-                          weight="bold"
-                          className="mt-[3px] shrink-0 text-[var(--accent)]"
-                        />
-                        {point}
-                      </li>
-                    ))}
-                  </ul>
-                  <Link
-                    href={`/courses/${track.slug}`}
-                    className="mt-[var(--sp-8)] inline-flex items-center gap-[var(--sp-2)] text-[var(--fs-base)] font-medium text-[var(--fg-primary)] transition-colors duration-[var(--dur-fast)] hover:text-[var(--accent)]"
-                  >
-                    See the {track.name} course
-                    <ArrowRightIcon size={16} />
-                  </Link>
-                </div>
-              </article>
-            </Reveal>
-          ))}
-        </div>
+        {courses === null ? (
+          <div className="mt-[var(--sp-12)]">
+            <CatalogUnavailable />
+          </div>
+        ) : courses.length === 0 ? (
+          <div className="mt-[var(--sp-12)]">
+            <CatalogEmpty />
+          </div>
+        ) : (
+          <div className="mt-[var(--sp-12)] grid gap-[var(--sp-6)] md:grid-cols-2 lg:grid-cols-3">
+            {courses.slice(0, 6).map((course, i) => (
+              <Reveal key={course.id} delay={i * 0.06}>
+                <CourseCard course={course} />
+              </Reveal>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );

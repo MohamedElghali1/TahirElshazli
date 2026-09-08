@@ -52,6 +52,55 @@ export class PostgresEnrollmentRepository implements EnrollmentRepository {
     return row ? toEnrollment(row) : null;
   }
 
+  async findByCourse(courseId: string): Promise<Enrollment[]> {
+    // `enrollments_course_id_idx` serves this; the primary key leads with
+    // student_id and cannot.
+    const rows = await this.db.query<EnrollmentRow>(
+      `${SELECT} WHERE course_id = $1 ORDER BY enrolled_at`,
+      [courseId],
+    );
+    return rows.map(toEnrollment);
+  }
+
+  async countByCourses(
+    courseIds: readonly string[],
+  ): Promise<Record<string, number>> {
+    if (courseIds.length === 0) {
+      // `= ANY('{}')` is valid but still a round trip for a known-empty answer.
+      return {};
+    }
+    const rows = await this.db.query<{ course_id: string; count: string }>(
+      `SELECT course_id, COUNT(*) AS count
+       FROM enrollments
+       WHERE course_id = ANY($1::text[])
+       GROUP BY course_id`,
+      [[...courseIds]],
+    );
+    // node-postgres returns COUNT(*) as a string - bigint does not fit a JS
+    // number, so the driver refuses to guess. These counts do fit.
+    return Object.fromEntries(
+      rows.map((row) => [row.course_id, Number(row.count)]),
+    );
+  }
+
+  async countByStudents(
+    studentIds: readonly string[],
+  ): Promise<Record<string, number>> {
+    if (studentIds.length === 0) {
+      return {};
+    }
+    const rows = await this.db.query<{ student_id: string; count: string }>(
+      `SELECT student_id, COUNT(*) AS count
+       FROM enrollments
+       WHERE student_id = ANY($1::text[])
+       GROUP BY student_id`,
+      [[...studentIds]],
+    );
+    return Object.fromEntries(
+      rows.map((row) => [row.student_id, Number(row.count)]),
+    );
+  }
+
   /**
    * `DO NOTHING` plus a RETURNING-less re-read rather than `DO UPDATE`: the
    * conflict case must not touch the existing row (see the interface). The

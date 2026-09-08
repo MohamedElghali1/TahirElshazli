@@ -120,6 +120,25 @@ export const PLATFORM: PlatformFeature[] = [
   },
 ];
 
+/**
+ * The instructor credibility block reused on every course page. One
+ * paragraph, not the full `/about` biography - a course page is selling the
+ * course, and a reader who wants the rest follows the link. Kept as data
+ * rather than copy-pasted per page so the two never drift apart.
+ */
+export const INSTRUCTOR = {
+  name: 'Dr. Tahir Elshazli',
+  // Do not reinstate the old closing clause ("he marks every submission
+  // himself, not a teaching assistant"). CLAUDE.md §2.2 grants assistants
+  // "grade submissions and return feedback" in the shipped preset, and
+  // `POST /staff/submissions/:id/grade` is TA-reachable today - so that
+  // sentence was a claim the product contradicts the first time a TA marks
+  // anything. Marketing copy must not promise a staffing model the
+  // permission table does not enforce.
+  bio: 'Dr. Tahir has taught English to IGCSE and IELTS candidates for over a decade, working with students across Egypt and, since classes moved online, further afield. He sets the syllabus and teaches every session himself.',
+  image: photo('dr-tahir-elshazli-portrait-study', 400, 400),
+} as const;
+
 export interface Testimonial {
   quote: string;
   name: string;

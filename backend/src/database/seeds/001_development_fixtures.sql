@@ -32,13 +32,20 @@ ON CONFLICT (id) DO NOTHING;
 -- Courses, modules, lessons
 -- ============================================================
 
-INSERT INTO courses (id, title, description, thumbnail_url, teacher_name, sequential_lock_enabled, default_learning_mode) VALUES
-  ('course-1', 'AS Chemistry',             'Complete AS-level Chemistry course with Dr. Tahir', NULL, 'Dr. Tahir Elshazli', true,  'recorded'),
-  ('course-2', 'IELTS Preparation - Live', 'Live IELTS preparation course',                     NULL, 'Dr. Tahir Elshazli', false, 'live'),
+-- `slug` is NOT NULL with no default (migration 004): the backfill there only
+-- covers rows that existed when it ran, and seeds run afterwards. Every course
+-- inserted from here on must name its own slug.
+--
+-- All three are published, so the public catalog has something to show out of
+-- the box. Flip `is_published` to false on one to exercise the draft path -
+-- it should vanish from /public/courses while staying in the student catalog.
+INSERT INTO courses (id, slug, is_published, title, description, thumbnail_url, teacher_name, sequential_lock_enabled, default_learning_mode) VALUES
+  ('course-1', 'as-chemistry',            true, 'AS Chemistry',             'Complete AS-level Chemistry course with Dr. Tahir', NULL, 'Dr. Tahir Elshazli', true,  'recorded'),
+  ('course-2', 'ielts-preparation-live',  true, 'IELTS Preparation - Live', 'Live IELTS preparation course',                     NULL, 'Dr. Tahir Elshazli', false, 'live'),
   -- A third course nobody is seeded into, so the catalog has something to
   -- enroll on out of the box. Without it every seeded student already holds
   -- every course and the Enroll button has nothing to act on.
-  ('course-3', 'IGCSE English Language',   'IGCSE First Language English, Papers 1 and 2',      NULL, 'Dr. Tahir Elshazli', false, 'recorded')
+  ('course-3', 'igcse-english-language',  true, 'IGCSE English Language',   'IGCSE First Language English, Papers 1 and 2',      NULL, 'Dr. Tahir Elshazli', false, 'recorded')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO course_modules (id, course_id, title, chapter, position) VALUES

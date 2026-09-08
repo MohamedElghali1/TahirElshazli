@@ -6,37 +6,51 @@ the **Current state** block below is overwritten each update.
 
 ---
 
-## Current state (as of 2026-09-06)
+## Current state (as of 2026-09-08)
 
 The repository is a monorepo with a **NestJS backend** and a **Next.js frontend**, on the stack
 fixed in the signed agreement (Next.js + NestJS + PostgreSQL + Bunny Stream + Cloudflare R2 +
 Hostinger VPS, all behind swappable interfaces).
 
-**Backend — the student API surface is built and tested; the TA/admin surface has its
-foundation and nothing else.** Of the five roles in `CLAUDE.md` §2, **Student** has a full set of
-endpoints and **Assistant** and **Teacher** now have five routes between them. Fourteen feature
-modules (`auth`, `students`, `courses`, `enrollments`, `dashboard`, `assessments`, `materials`,
-`recordings`, `live-sessions`, `reports`, `notifications`, `staff`, `audit`, plus `common`) expose
-~35 routes behind global `JwtAuthGuard` + `RolesGuard`. `staff` owns the `CourseStaffAssignment`
-scoping every future TA endpoint must join through (§5.11); `audit` owns the append-only log §5.4
-requires. Neither has a UI.
+**Backend — four of five roles now have a working API.** Of the five roles in `CLAUDE.md` §2,
+**Student**, **Assistant** and **Teacher** have full surfaces and **Visitor** now has a partial one
+(the public catalog); only **Parent** has nothing. Seventeen feature modules (`auth`, `students`,
+`courses`, `enrollments`, `dashboard`, `assessments`, `materials`, `recordings`, `live-sessions`,
+`reports`, `notifications`, `staff`, `manage`, `announcements`, `public`, `audit`, plus `common`)
+sit behind global `JwtAuthGuard` + `RolesGuard`. `staff` owns the `CourseStaffAssignment` scoping
+every TA endpoint joins through (§5.11); `manage` is the work surface built on it — overview,
+roster, grading, the recording library, live-session scheduling and the people directory;
+`announcements` carries the send-time audience resolution §5.14 requires; `public` is the only
+unauthenticated surface besides health and auth; `audit` owns the append-only log, now covering
+**ten actions**.
 
-**Persistence is now driver-selected.** All twelve repository interfaces have *two*
-implementations — an `InMemory*Repository` and a `Postgres*Repository` — bound through
-`database/repository.provider.ts` by the `PERSISTENCE_DRIVER` env var. `memory` is the default
-in development and test and is **refused outright in production**. Two migrations:
-`001_student_platform.sql` and `002_staff_and_audit.sql`. The integration suite covers all twelve
-and, as of 2026-09-07, **has now run against a real PostgreSQL 15** — 33 tests green, both
-migrations applied from an empty schema. Its first-ever run found a real bug (audit-log keyset
-paging), fixed the same day.
+**Persistence is driver-selected.** All thirteen repository interfaces have *two* implementations —
+an `InMemory*Repository` and a `Postgres*Repository` — bound through
+`database/repository.provider.ts` by the `PERSISTENCE_DRIVER` env var. `memory` is the default in
+development and test and is **refused outright in production**. Five migrations:
+`001_student_platform.sql`, `002_staff_and_audit.sql`, `003_course_catalog.sql`,
+`004_public_catalog.sql`, `005_announcements.sql`.
+
+**The integration suite has now run in full.** It covers all thirteen repositories and holds 48
+tests, and as of **2026-09-08 all five migrations have been applied to a real PostgreSQL 15 from an
+empty schema with all 48 green** — the announcements DDL and both its CHECK constraints, the
+`notifications_type_check` swap, 004's slug backfill and 003's learning-mode UPDATE included.
+Docker's engine was simply stopped rather than broken; starting Docker Desktop was the whole fix.
+The CI guard that fails a job reporting no executed tests still matters, because the suite
+self-skips and exits 0 wherever `TEST_DATABASE_URL` is unset.
 
 **Delivery is wired.** `npm install && npm run dev` runs the whole thing with no database and no
-config; both container images build from the repo root and have been run; CI lints, builds, and
-runs unit + e2e + integration (against a Postgres service) on every push and PR.
+config; CI lints, builds, and runs unit + e2e + integration (against a Postgres service) plus both
+container image builds on every push and PR. Both images built and ran from the repo root when
+that was last verified on 2026-09-07; they have **not** been rebuilt since. CI still builds them on
+every push.
 
-**Frontend is built across all three surfaces.** `app/(site)` marketing, `app/(app)` student LMS
-shell, `app/(auth)` authentication — 20 pages, a shared token system in `app/tokens.css`, and an
-API client in `lib/api.ts` covering every backend student route. Builds, typechecks and lints clean.
+**Frontend covers the marketing site, the student LMS and the TA/admin console.** `app/(site)`
+marketing, `app/(app)` product shell — student LMS *and* `/manage/*` — and `app/(auth)`
+authentication: 30 page files compiling to 21 build routes, a shared token system in
+`app/tokens.css`, and an API client in
+`lib/api.ts` covering every student, staff and admin route. One `AppShell` serves every signed-in
+role and picks its rail from `lib/roles.ts`. Builds, typechecks and lints clean.
 
 **Tooling:** the ruflo meta-harness (`.claude/`, `.claude-flow/`, `.mcp.json`) plus a
 project-specific 10-agent review swarm under `.claude/agents/tahir/`, driven by `/swarm-review`.
@@ -45,16 +59,18 @@ project-specific 10-agent review swarm under `.claude/agents/tahir/`, driven by 
 graph TD
     subgraph Repo
       FE["frontend/ — Next.js<br/>(site) · (app) · (auth)"]
-      BE["backend/ — NestJS<br/>student API + staff foundation"]
+      BE["backend/ — NestJS<br/>student API + TA/admin console"]
       CTX["context/ — client PDFs + prototype notes"]
       SWARM[".claude/agents/tahir/ — review swarm"]
     end
     FE -->|"lib/api.ts, JWT bearer"| BE
     BE -->|"@Roles(Role.Student)"| STU["Student surface: 11 modules"]
-    BE -->|"@Roles(Assistant, Teacher)"| TA["staff + audit<br/>scoping and audit log only"]
+    BE -->|"@Roles(Assistant, Teacher)"| TA["staff + manage<br/>scoped console"]
+    BE -->|"@Roles(Teacher)"| ADM["manage /admin/*<br/>unscoped + audit log"]
     BE -.->|not built| OTHERS["Visitor · Parent"]
     STU -->|"interface + Symbol token"| SEL{{"repositoryProvider()<br/>PERSISTENCE_DRIVER"}}
     TA --> SEL
+    ADM --> SEL
     SEL -->|memory| MEM["InMemory*Repository ×12"]
     SEL -->|postgres| PG["Postgres*Repository ×12"]
     PG --> DB[("PostgreSQL")]
@@ -660,3 +676,361 @@ first run.
 - `course_staff_assignments.assigned_at` is still microsecond `TIMESTAMPTZ`. Harmless today because
   nothing pages on it; it now carries a comment pointing at the `audit_log` precedent so the same
   bug is not reintroduced the day it gets a cursor.
+
+---
+
+## 2026-09-07 — The TA & admin console, and teacher-uploaded recordings
+
+**What changed.** The teacher and the teaching assistant now have a working console, and it is the
+*same application* the student signs into rather than a second one. `AppShell` picks its navigation
+from `lib/roles.ts`, `app/(app)/layout.tsx` routes each role into its own half, and everything below
+is shared: one login, one shell, one design system.
+
+On the backend this is a new `manage` module sitting on the `staff` foundation laid last week. It
+adds four services — `ManageService` (overview, roster, course outline), `GradingService`,
+`ManageRecordingsService`, `DirectoryService` — behind exactly two controllers, because the role
+boundary should be one thing a reader checks rather than a decorator hunt:
+
+- **`StaffManageController`** — `@Roles(Assistant, Teacher)`, mounted at `/staff/*`. Every handler
+  passes the caller to a service that begins with `StaffScopeService`. A TA sees their assigned
+  courses; the teacher sees everything through the identical route.
+- **`AdminManageController`** — `@Roles(Teacher)`, mounted at `/admin/*`. Joins through nothing.
+
+The second half of the ask: **Dr. Tahir can now upload recordings**, and a student watches them
+immediately — the Udemy-shaped loop the client described. `RecordingRepository` grew
+`findByCourseForStaff`, `create`, `update` and `remove` on both drivers; no migration was needed
+because `recordings` already had the columns. The upload writes into the same table the student
+recordings page has always read, which the e2e suite asserts rather than assumes: publish as the
+teacher, then fetch as the student and find it there with `watchedSeconds: 0`.
+
+**Why.** The client asked for it directly, in these terms: an admin dashboard integrated with the
+user dashboard, working for both the teacher and the assistant, with the assistant held to the
+restrictions already recorded; the teacher able to upload recordings for students to watch.
+
+Traceability: `CRS-` (course roster and library), `ASG-` (grading and feedback), `PRG-` (per-course
+averages), `TA-R` (the assistant's restricted subset), `ACC-` (the people directory and TA
+assignment). The permission split is `CLAUDE.md` §2.2's preset; the scoping rule is §5.11; the audit
+coverage is §5.4; the averages are §5.6; keeping marks apart from completion is §5.1.
+
+**Recording writes are teacher-only, deliberately.** §2.2's preset grants a TA materials and never
+recordings, and the client's phrasing was specifically that *the teacher* uploads them. The service
+takes a `StaffActor` rather than assuming admin, so widening this later is moving three routes
+between controllers — not a redesign. It is flagged in §11 territory rather than silently decided.
+
+```mermaid
+graph TD
+    subgraph "One shell, two consoles"
+      SHELL["AppShell + app/(app)/layout.tsx<br/>rail and redirect from lib/roles.ts"]
+      SHELL --> STUDENTUI["/dashboard · /learn/* · /catalog"]
+      SHELL --> MANAGEUI["/manage · /manage/courses/*<br/>+ /students /recordings /activity (teacher)"]
+    end
+
+    MANAGEUI -->|"lib/api.ts staff.*"| SC["StaffManageController<br/>@Roles(Assistant, Teacher)"]
+    MANAGEUI -->|"lib/api.ts admin.*"| AC["AdminManageController<br/>@Roles(Teacher)"]
+
+    SC --> SCOPE{{"StaffScopeService<br/>assertAssigned / scopeFor"}}
+    SCOPE -->|"TA: join course_staff_assignments"| DATA[("shared repositories")]
+    SCOPE -->|"teacher: no join"| DATA
+    AC -->|"never joins"| DATA
+
+    SC -->|"grade"| AUD["AuditService<br/>submission.graded"]
+    AC -->|"publish / edit / delete"| AUD
+    AUD --> LOG[("audit_log — append only")]
+```
+
+**Two bugs this work surfaced, both fixed.**
+
+The first is worth recording because the test caught it and a reviewer would not have. The in-memory
+assessment repository returned the *stored object* from `findSubmissionById`, and `gradeSubmission`
+then mutated that same object in place — so `GradingService` read the submission, wrote the grade,
+and recorded an audit entry whose `before` and `after` were the identical mutated object. The log
+would have shown every mark as never having moved, which is worse than no entry at all because it
+looks like evidence. Fixed twice over: the service copies the prior values out before the write, and
+the repository hands back a copy so the two drivers stop behaving differently.
+
+The second is smaller. `AppShell` fetched the notification badge for every signed-in user, but
+`/notifications` is `@Roles(Role.Student)`. A teacher would have collected a permanent 403 in the
+shell itself, on every screen. It now skips the request rather than failing it.
+
+**Verification.**
+
+| Check | Result |
+|---|---|
+| `npm run test` (unit) | **235 passed** / 19 files — was 204 |
+| `npm run test:e2e` | **116 passed** / 2 files — was 84 |
+| `npm run lint` (both workspaces) | clean |
+| `npm run build:frontend` | clean |
+| Driven against the running dev app | teacher upload → visible to student; TA scoped to course-1; TA 404 on course-2; TA 403 on `/admin/*`; grade over max → 400; audit log shows the assistant's grade with before/after |
+
+**Follow-ups / debt.**
+
+- **Audit coverage is now six actions, and the §5.4 gap is unchanged.** `AuditService.record` still
+  writes on its own connection *after* the action commits, so a crash in between leaves an action
+  done and unlogged. Grading makes this materially worse than it was when only staff assignment was
+  audited: a disputed mark with no entry is the exact thing the log exists to answer. It still needs
+  the mutation and its audit row in one transaction, and it should land before payments (§5.12).
+- **`ManageService.overview` fans out per course** — four `Promise.all` loops issuing a query each
+  for enrollments, assessments and recordings, plus one for submissions. Bounded at 100 courses and
+  fine at two; it is a genuine N+1 at any real catalog size and wants a grouped read per concern.
+  The single-course reads it feeds are already batched.
+- **No attendance, quizzes, materials upload, announcements or messages** — §2.2's preset lists them
+  and they are not built. The console's course tabs are Roster / Grading / Recordings / Assistants
+  and nothing else.
+- **Unenrolling a student has no route**, so the roster is read-only for the teacher too, not only
+  for the TA. That matches §2.2 for the assistant and understates the admin's powers; the button was
+  deliberately not shipped ahead of the endpoint.
+- **The annotated-copy field is a URL, not an editor.** §5.5 wants in-platform PDF annotation and §3
+  puts files in Cloudflare R2; neither exists. The field records the separate artifact §5.5 asks for
+  without pretending to be the tool.
+- **Recording "upload" is likewise a URL**, not a file transfer. Bunny Stream (§3) and the signed
+  playback URLs §8 requires are both unbuilt, so this stores the reference the student player
+  already reads.
+- **Deleting a recording destroys every student's watch progress for it** through the FK cascade.
+  The UI asks first, but §6's soft-delete convention arguably applies here and does not yet.
+- `frontend/components/site/reveal.tsx` still throws a hydration mismatch on the marketing pages —
+  `useReducedMotion()` resolves differently on server and client. Pre-existing, untouched, and
+  unrelated to this work, but it is now the only React warning in the dev log.
+
+---
+
+## 2026-09-07 (later) — Announcements, live-session scheduling, and a marketplace course page
+
+**What changed.** Three strands, all driven by one instruction from the client: the platform should
+work like a course marketplace for the visitor, like Udemy for the student watching recordings, and
+the teacher should be able to *"make announcements of the live sessions and quizzes"*.
+
+**1. Announcements (`backend/src/announcements/`).** A new module, two controllers, and the
+permission split §2.2 actually specifies: a TA posts to courses they are assigned to via
+`POST /staff/courses/:id/announcements`, and only the teacher reaches `POST /admin/announcements`
+with an explicit audience. The safety property is structural rather than a check somebody has to
+remember: **the staff DTO has no `audience` field at all**, so with `whitelist: true` on the global
+pipe a TA who puts `audience: "all_students"` in the body has it stripped before the service runs,
+and the audience comes from the URL regardless. Verified over HTTP rather than only asserted in a
+test: the smuggled send was recorded as `course:course-1`.
+
+Audience resolves at send time (§5.14) and fans out to the existing notification mailbox rather than
+inventing a second inbox. `all_tas` reads `role = 'assistant'` at the moment of sending, so an
+assistant hired after the announcement was drafted is still reached. The row stores a
+`recipient_count`, deliberately **not** a recipient list, because a stored list is exactly the
+frozen membership set §5.14 prohibits.
+
+`/notifications` widened from `@Roles(Student)` to all three roles. That is a loosened role gate and
+deserves the scrutiny: it does not widen what anyone can *read*, because every handler is scoped by
+`req.user.sub` and the repository's `user_id` predicate is the authorization. An `all_tas`
+announcement landing in a mailbox no assistant can open is not a delivery.
+
+**2. Live-session scheduling.** `LiveSessionRepository` was read-only; it gained `create`, `update`
+and `remove` on both drivers. No migration was needed, because `live_sessions` from migration 001
+already had every column. Teacher-only, because §2.2's preset omits it and §11 records `CRS-11` as
+an unresolved disagreement between the prototype and the user-stories board. The service takes a
+`StaffActor` and derives `actorRole` from it rather than hardcoding `Role.Teacher`, so widening it
+later cannot silently attribute an assistant's action to Dr. Tahir. `zoomLink` goes through the
+existing `IsPublicHttpUrl` validator, so `javascript:` and private hosts are rejected at the
+boundary; confirmed with a live 400.
+
+**3. The visitor and student surfaces.** The public course page became a real conversion page:
+counted facts in the header, outcomes branching on the course's actual `learningMode`, and an
+instructor block. The student recordings tab became a course-player, with a player region beside a
+collapsible curriculum sidebar, resume-from-position, prev/next, and throttled progress reporting.
+
+The player branches honestly on what `Recording.url` actually is, because Bunny Stream and signed
+URLs (§3, §8) are still unbuilt: a direct file gets a real `<video>` with automatic progress, a
+recognized embed host gets an iframe **and an admission that cross-origin playback cannot be
+observed**, and anything else gets a link-out. Every seeded URL is a `video.example.com` placeholder
+and therefore lands in the link-out branch today, so the automatic-progress path is written but
+unexercised by fixtures.
+
+**Why.** The client's own words, plus §2.2 for the permission split, §5.11 for scoping, §5.14 for
+audience resolution, §5.4 for audit coverage, and §5.1 for keeping completion apart from marks.
+Traceability: `CRS-`, `COM-`, `QUZ-`, `TA-R`.
+
+```mermaid
+graph TD
+    TA["Assistant"] -->|"POST /staff/courses/:id/announcements<br/>no audience field on the DTO"| SC["StaffAnnouncementsController"]
+    TCH["Teacher"] -->|"POST /admin/announcements<br/>explicit audience"| AC["AdminAnnouncementsController"]
+    SC --> SCOPE{{"StaffScopeService.assertAssigned<br/>unassigned course to 404"}}
+    SCOPE --> SVC["AnnouncementsService"]
+    AC --> SVC
+    SVC -->|"resolve NOW, never a stored list"| RES{{"audience"}}
+    RES -->|"course:id"| ENR["EnrollmentRepository.findByCourse"]
+    RES -->|"all_students / all_tas"| ROLE["UserRepository.findIdsByRole"]
+    ENR --> FAN["NotificationsService.fanOut<br/>createMany, de-duplicated"]
+    ROLE --> FAN
+    FAN --> INBOX[("notifications - the existing mailbox<br/>unread badge, read state")]
+    SVC --> AUD["AuditService<br/>announcement.posted"]
+```
+
+**Verification.** Run against the booted app on the memory driver, not inferred:
+
+| Check | Result |
+|---|---|
+| `npm run lint` both workspaces | clean |
+| `npm run build` both workspaces | clean, 21 frontend routes |
+| `npm run test` (unit) | **269 passed** / 21 files, was 241 |
+| `npm run test:e2e` | **151 passed** / 3 files, was 125 |
+| `npm run test:integration` | **48 written, 0 executed**, no Postgres available |
+| `/admin/*` as either assistant | 403; teacher 200 |
+| assigned vs unassigned course as a TA | 200 vs **404**, never 403 |
+| TA smuggling `audience: all_students` | stripped, stored as `course:course-1` |
+| TA scheduling a live session | 403 |
+| `javascript:` zoom link | 400 |
+| student mailbox after three sends | all three present, links are page routes |
+
+**Follow-ups / debt.**
+
+- **Migration `005_announcements.sql` has never executed.** Docker's engine returns HTTP 500 on
+  every API version on this machine and there is no native Postgres, so the integration suite
+  self-skips: 48 tests written, zero run. Unexercised: the announcements DDL, both CHECK
+  constraints, the `notifications_type_check` swap, the `unnest` insert, and the `TIMESTAMPTZ(3)`
+  round-trip. The last time an integration suite ran for the first time it found a real
+  silently-truncating-cursor bug, so this is not a formality.
+- `posted_at` is `TIMESTAMPTZ(3)` although both reads are LIMIT/OFFSET and neither needs it today.
+  This is a monotonically growing feed ordered by exactly that column, so a keyset cursor is the
+  obvious next change, and the microsecond trap is documented in the entry above.
+- **Platform-wide fan-out is synchronous and unpaged.** `findIdsByRole` has no ceiling on purpose,
+  because a partial audience is a *wrong* audience, so an `all_students` send at the "thousands of
+  students" scale §1 targets belongs in a background job. Recorded in the interface, not built.
+- **The §5.4 transaction gap is unchanged and now matters more.** `audit.record` still commits
+  separately from the action it describes, and it now covers four more write paths.
+- Announcements have no edit and no delete, deliberately: by the time a row exists it has been
+  delivered into people's feeds and neither operation can recall it. A retraction is a second
+  announcement. The Postgres repository has no UPDATE and no DELETE, which is where that is
+  enforced.
+- The CI guard that fails a job reporting no executed tests was tightened. It matched a bare
+  `N skipped` anywhere in the log, so one legitimate `it.skip` would have failed the job while
+  blaming `TEST_DATABASE_URL`. Now anchored to the `Test Files` line, and both branches were
+  exercised against real output.
+- `DATABASE_POOL_MAX` and `PGSSLMODE` are read straight from `process.env` in `database.module.ts`,
+  bypassing `env.ts`'s validation contract, and neither appears in `.env.example`. `PGSSLMODE` is
+  the one that matters: it disables database certificate verification.
+- `ManageRecordingsService` still hardcodes `Role.Teacher` in its audit entries where the new
+  live-session service derives it. Two-line fix, latent until recordings widen to TAs.
+- `frontend/components/site/reveal.tsx` no longer throws a hydration mismatch. The first fix
+  replaced it with a lint error and did not actually disable the animation, since `initial` is only
+  read on a motion component's first render. It now reads the media query through
+  `useSyncExternalStore` and honours reduced motion by collapsing the transition duration.
+
+---
+
+## 2026-09-08 — A verification pass over five sessions, and four fixes it earned
+
+**What changed.** No new features. This entry is an audit of the five sessions of work sitting
+uncommitted in the tree — Postgres persistence, `CourseStaffAssignment` scoping and the audit log,
+the delivery pipeline, the TA/admin console, and announcements + live sessions + the public catalog
+— re-read against `CLAUDE.md` rather than against the entries that describe them. Five reviewers ran
+in parallel: authorization, audit-trail, scalability, requirements traceability, and a claim-by-claim
+check of what the last three log entries assert.
+
+**The claims held.** Every factual assertion in the entries above was verified against the code and
+found true: `TIMESTAMPTZ(3)` on `audit_log.created_at` and `announcements.posted_at`,
+`course_staff_assignments.assigned_at` still microsecond and still genuinely unpaged, the staff
+announcement DTO with no `audience` field behind a global `whitelist: true`, the append-only audit
+repository, thirteen repository interfaces with two implementations each, ten audit actions wired
+1:1. Nothing above needed retracting. The four fixes below are things nobody had looked for.
+
+**1. The integration suite finally ran in full, and the DDL is sound.** Docker's engine was not
+returning HTTP 500 as the last two entries recorded — the daemon was simply not running. Starting
+Docker Desktop was the entire fix, which is worth writing down because two consecutive sessions
+treated it as an environmental dead end and shipped unexecuted DDL instead. **All five migrations
+applied to a real PostgreSQL 15 from an empty schema, 48 of 48 tests green.** The three migrations
+that had never touched a database — `003_course_catalog`, `004_public_catalog`,
+`005_announcements` — all apply cleanly: both announcement CHECK constraints exist, the
+`notifications_type_check` drop-and-re-add landed with `'announcement'` in the union, 004's slug
+backfill produced `as-chemistry` / `ielts-preparation-live` / `igcse-english-language` with no
+collision and no NULL fallback, and 003's UPDATE correctly matched `course-2` to `live` off its
+existing enrollments. The last time an unexecuted migration first ran it found a silent
+audit-log paging bug; this time it found nothing, and that is now a fact rather than a hope.
+
+**2. The `before === after` aliasing bug, found a second time.** `in-memory-recording.repository.ts`
+returned the stored object from `findRecordingById`, and `update` mutated that same object and
+handed it back — so in `ManageRecordingsService.update`, `existing` and `updated` were one object,
+and every `recording.updated` audit entry recorded a rename that appeared never to have happened.
+This is the *identical* defect the 2026-09-07 entry describes fixing in grading, and which
+`in-memory-live-session.repository.ts` carries an explicit comment against. It survived because the
+live-session suite has a "before/after pair that actually differs" test and the recordings suite
+only asserted that an entry was written at all. Fixed by returning a copy, and the missing test now
+exists — verified to fail without the fix (`expected { title: 'After the rename' } to match object
+{ title: 'Before the rename' }`) and pass with it. Under the memory driver, which is the default in
+development and test.
+
+**3. A draft course's content was readable by any signed-in student.** Migration 004 added
+`is_published` and the *public* catalog honours it, so §7.2 read as settled. It was not:
+`CoursesService.getCatalog` called `findAll`, not `findPublished`, and `enroll` never checked the
+flag. So any student could list an unpublished course, self-enroll on it in one POST, and from
+there `assertEnrolled` passes and its recordings, materials and assessments are all readable —
+which is the opposite of what a draft is for. §7.2 deliberately left the *enrollment* half of the
+flag open; what it did not say, because nobody had traced it, is that the open half reached content
+rather than titles. The catalog now reads `findPublished` and `enroll` answers for an unpublished
+course exactly as it does for one that does not exist, so a draft's id cannot be confirmed by
+trying to enroll on it.
+
+**4. Two by-id write paths were unscoped, and the comments beside them said otherwise.**
+`ManageRecordingsService` and `ManageLiveSessionsService` took a bare resource id, read the row and
+wrote, with no `assertAssigned` — correct today, because both are only reachable through
+`AdminManageController`. But §11 records "widening this is a controller move" as the reason the
+narrow reading was safe to ship, and that was **not true**: moving those routes as written would
+have let any TA edit or delete every recording and live session on the platform by id. The scope
+check now lives in the service where the claim requires it, resolving the course from the resource
+itself (§5.11), including on `create`, which took its course id from the URL and checked only that
+the course existed. A no-op for the teacher, and the thing that makes the §11 note honest.
+
+Also: `ManageRecordingsService` derives `actorRole` from the caller instead of hardcoding
+`Role.Teacher` (the two-line fix §5.4 had been carrying as latent debt), and grading's out-of-scope
+404 now returns the same body as its not-found 404 — two different 404 sentences let a TA tell a
+real submission id on another course from one that was never issued, which is the enumeration the
+status code was chosen to prevent.
+
+```mermaid
+graph TD
+    subgraph "What the audit checked"
+      C1["log claims vs code"] -->|all true| OK["nothing retracted"]
+      C2["RBAC + IDOR sweep"] --> F3["draft content readable<br/>via self-enrollment"]
+      C2 --> F4["by-id writes unscoped<br/>the §11 claim was false"]
+      C3["audit trail"] --> F2["before === after<br/>on recording.updated"]
+      C4["migrations 003-005"] -->|"first real run"| F1["48/48 green<br/>DDL sound"]
+      C5["traceability"] --> D1["CLAUDE.md stale:<br/>twelve repos, two audit actions"]
+    end
+    F2 --> FIX["fixed + regression tests"]
+    F3 --> FIX
+    F4 --> FIX
+    D1 --> DOC["CLAUDE.md §5.4, §7.1 corrected"]
+```
+
+**Why.** §5.4 for the audit trail and the aliasing fix, §5.11 for the by-id scoping and the 404
+posture, §7.2 for the draft-course gate, §13 for keeping this file and `CLAUDE.md` consistent —
+which they were not: §7.1 still said "twelve repository interfaces" and "audit coverage is two
+actions", both written before the console existed.
+
+**Verification.** All executed on this machine:
+
+| Check | Result |
+|---|---|
+| `npm run lint` both workspaces | clean (three unused frontend imports removed; the last entry's "clean" was three warnings) |
+| `npm run build` both workspaces | clean |
+| `npm run test` (unit) | **274 passed** / 21 files — was 270, four new regression tests |
+| `npm run test:e2e` | **151 passed** / 3 files |
+| `npm run test:integration` vs PostgreSQL 15 | **48 passed** — all five migrations from an empty schema, first run for 003/004/005 |
+| Recording audit regression test without the fix | fails, `before` reads as the after value |
+
+**Follow-ups / debt.**
+
+- **`ManageService.overview` is a confirmed N+1** and now measured: one batched query plus three
+  per-course fan-outs plus one more, so 41 queries at 10 courses and **401 at its own
+  `OVERVIEW_COURSE_LIMIT` of 100**. It is the console's landing page, hit on every login. The fix is
+  four batched reads mirroring `countByCourses`, across two drivers — mechanical, not structural,
+  and unchanged from the last entry except that it is no longer an estimate.
+- **The §5.4 transaction gap is unchanged**, now carrying ten write paths. Closing it needs a
+  transaction-scoped handle both the mutating repository and `AuditLogRepository.record` can share,
+  which the repository-per-connection design cannot express. Still owed before payments (§5.12).
+- **Hard deletes still cascade away history.** Deleting a live session removes its `Attendance`
+  rows, which are the same rows §5.15's Attendance Report aggregates; deleting a recording removes
+  every student's watch progress. §6's soft-delete convention arguably covers both and covers
+  neither today.
+- `CreateRecordingDto.videoUrl` validates with `@IsUrl` while `UpdateLiveSessionDto.zoomLink` uses
+  the stricter `IsPublicHttpUrl`. Teacher-only either way, so not a privilege question, but the
+  asymmetry looks unintended.
+- The in-memory `CourseRepository.findAll`/`findPublished` sort by title with no id tiebreak where
+  Postgres orders by `(title, id)`, so paging could diverge between drivers on duplicate titles.
+- Whether `is_published` should be one flag or two (`open_for_enrollment` alongside it) is still
+  §11's open question. Fix 3 above chose the safe reading — a draft is neither listed nor
+  enrollable — which is reversible in one line if Dr. Tahir wants to advertise before opening.

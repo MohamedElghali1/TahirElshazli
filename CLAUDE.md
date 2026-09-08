@@ -187,9 +187,22 @@ unenrollment, account changes, course deletion — is logged without exception.
 interface has no update and no delete, which is where that is enforced. `AuditAction` and
 `AuditTargetType` are string *unions*, so adding a mutating endpoint cannot log until someone adds
 its action to the list; that compile error is the mechanism keeping "every TA mutation is logged"
-true as surfaces land. Two actions exist so far, both admin: `course_staff.assigned` and
-`course_staff.unassigned`. §7.1 records the one gap — the entry is written after the action commits,
-not inside its transaction.
+true as surfaces land. **Ten actions exist so far**, across staff assignment, grading, the recording
+library, live-session scheduling and announcements:
+
+`course_staff.assigned` · `course_staff.unassigned` · `submission.graded` · `recording.created` ·
+`recording.updated` · `recording.deleted` · `live_session.scheduled` · `live_session.updated` ·
+`live_session.cancelled` · `announcement.posted`
+
+Of those, `submission.graded` and `announcement.posted` are reachable by an assistant; the rest are
+teacher-only today. `actorRole` is derived from the acting user rather than assumed, so if a
+teacher-only write is later widened to TAs the log does not silently attribute an assistant's action
+to Dr. Tahir. That now holds in **every** audited service, `ManageRecordingsService` included — it
+derived nothing and hardcoded `Role.Teacher` until 2026-09-08. `StaffService` is the one remaining
+literal, and correctly so: staff assignment has no TA route to widen.
+
+§7.1 records the one gap — the entry is written after the action commits, not inside its
+transaction. Four more write paths now depend on it, which makes closing it more urgent, not less.
 
 ### 5.5 In-platform PDF assignment correction
 
@@ -404,43 +417,69 @@ Honest inventory, so nobody assumes a surface is there. Of the five roles in §2
 | Role | Backend status |
 |---|---|
 | **Student** | Built. 9 feature controllers, every route `@Roles(Role.Student)`, unit + e2e covered. `JwtAuthGuard` + `RolesGuard` are **global**, so a new controller is protected by default; `@Public()` (health, register, login, password reset) and `@AnyRole()` (logout) are the only exits. Includes the catalog and self-enrollment added 2026-09-07 ({S}7.2). |
-| **Visitor** | None. `GET /health` is the only public endpoint — no catalog, blog, or contact. |
+| **Visitor** | **Partly built.** A `public` module serves `GET /public/courses` and `GET /public/courses/:slug` unauthenticated, gated on the `is_published` flag from migration `004_public_catalog.sql` so Dr. Tahir can draft a course without it appearing. The detail response carries the **full outline** — modules and lesson titles with durations — not just counts. Rate-limited separately from auth (browsing is the point, but every call is an unauthenticated database read). Still absent: blog, contact. |
 | **Parent** | None. Enum entry only; no `ParentLink`, no read-only views. |
-| **Teaching Assistant** | **Foundation only.** `CourseStaffAssignment` exists and `StaffScopeService` enforces it (§5.11); `GET /staff/courses` is the one route, and it exists to prove the scoping rather than to be useful. No grading, attendance, quizzes, materials, announcements or messages. The scoping itself is the tested part: 31 unit specs across `staff-scope.service.spec.ts` and `staff.controller.spec.ts`, plus 14 in `test/staff.e2e-spec.ts`. |
-| **Teacher / Admin** | **Foundation only.** TA-to-course assignment (`/admin/courses/:id/staff`, all three verbs) and the audit-log reader (`/admin/audit-log`). No course CRUD, student directory, payments, CMS or reports. |
+| **Teaching Assistant** | **Working console.** `CourseStaffAssignment` + `StaffScopeService` (§5.11) now carry a real surface: `/staff/overview`, `/staff/courses`, and per-course `roster`, `outline`, `submissions`, `recordings`, `live-sessions` and `announcements`, plus `POST /staff/submissions/:id/grade` and `POST /staff/courses/:id/announcements`. Every one is scoped, and an unassigned course 404s. Still absent: attendance, quizzes, materials upload, messages. |
+| **Teacher / Admin** | **Working console — a strict superset of the TA's.** The same `/staff/*` routes unscoped, plus admin-only `/admin/students`, `/admin/assistants`, TA-to-course assignment (`/admin/courses/:id/staff`), the recording library (`POST /admin/courses/:id/recordings`, `PATCH`/`DELETE /admin/recordings/:id`), live-session scheduling (`POST /admin/courses/:id/live-sessions`, `PATCH`/`DELETE /admin/live-sessions/:id`), platform-wide announcements (`GET`/`POST /admin/announcements`) and the audit-log reader (`/admin/audit-log`). Still absent: course CRUD, payments, CMS, reports. |
 
-**Frontend:** built for the Visitor-facing marketing site and the Student LMS —
-`app/(site)`, `app/(app)`, `app/(auth)`, 21 pages, typed against the backend's
-response shapes in `lib/types.ts`. The marketing pages read from
-`lib/site-content.ts` rather than an API, because there is no public API to read
-(the Visitor row above). **No Parent, TA or Admin screens** — the staff and
-admin routes above have no UI at all and are reachable only over HTTP.
+The TA/admin work surface lives in `backend/src/manage/` — `ManageService` (overview, roster,
+outline), `GradingService`, `ManageRecordingsService`, `DirectoryService`, behind two controllers
+that carry the whole role boundary at class level: `StaffManageController` is
+`@Roles(Assistant, Teacher)` and every method routes through `StaffScopeService` first;
+`AdminManageController` is `@Roles(Teacher)` and joins through nothing. The module provides **no
+repositories of its own** — re-providing a token would build a second in-memory instance, so a grade
+written through `manage` would be invisible to the student reading it through `assessments`. That is
+why `EnrollmentsModule`, `AssessmentsModule` and `RecordingsModule` now export their tokens.
 
-A consequence worth stating plainly, because it looks like a bug: signing in to
-the web app as `teacher@example.com` or `assistant@example.com` lands on the
-student dashboard, which immediately calls `GET /courses` and is refused 403.
-The account is fine and the guard is doing its job — there is simply no screen
-for those roles yet. `AppLayout` gates on *being signed in*, never on role, and
-it must stay that way: the server is the access control ({S}8).
+**Recording writes are teacher-only.** §2.2's preset gives a TA materials and never recordings, and
+the client's instruction on 2026-09-07 was specifically that *the teacher* uploads them. If that
+widens, the three routes move from `AdminManageController` to `StaffManageController` and
+`ManageRecordingsService` is untouched — which is why it takes a `StaffActor` rather than assuming
+admin.
+
+**Frontend:** built for the Visitor-facing marketing site, the Student LMS and
+the TA/Admin console — `app/(site)`, `app/(app)`, `app/(auth)`, 29 pages, typed
+against the backend's response shapes in `lib/types.ts`. The marketing pages
+read from `lib/site-content.ts` rather than an API, because there is no public
+API to read (the Visitor row above). **No Parent screens.**
+
+**One shell, two consoles.** `AppShell` is shared by every signed-in role and
+picks its rail from `lib/roles.ts`: students get `/dashboard`, `/catalog`,
+`/notifications`, `/profile`; a TA gets `/manage` and `/manage/courses`; the
+teacher gets those plus `/manage/students`, `/manage/recordings` and
+`/manage/activity`. `app/(app)/layout.tsx` redirects each role into its own
+console, which is what fixed the old symptom where signing in as
+`teacher@example.com` landed on the student dashboard and collected a 403 from
+`GET /courses` — that screen is `@Roles(Role.Student)` end to end, so a teacher
+saw a broken page rather than a restricted one.
+
+Hiding a nav entry or a tab is **courtesy, never access control**. `/admin/*` is
+`@Roles(Role.Teacher)` server-side and a TA who types the URL is refused by the
+guard regardless of what the rail renders ({S}8). The client-side redirect
+decides *where to send* someone, never *what they may read*.
 
 **Persistence is driver-selected, and both drivers are real.** Every one of the
-twelve repository interfaces has an `InMemory*Repository` and a
+thirteen repository interfaces has an `InMemory*Repository` and a
 `Postgres*Repository`; `database/repository.provider.ts` binds the `Symbol`
 token from `PERSISTENCE_DRIVER`, read once at wiring time. `memory` is the
 default in development and test and is **refused in production** — an unset
 value there resolves to `postgres` and fails on the missing `DATABASE_URL`
 rather than serving traffic from a process-local array. Schema lives in
 `backend/src/database/migrations/`: `001_student_platform.sql` (17 tables, the
-student surface) and `002_staff_and_audit.sql` (`course_staff_assignments`,
-`audit_log`), applied by `MigrationRunner` via `npm run db:migrate` or
-`DB_AUTO_MIGRATE=1` on a single-container deploy.
-`test/postgres-repositories.integration-spec.ts` covers all twelve and skips
-itself when no `TEST_DATABASE_URL` is set. As of 2026-09-07 it **has now run
-against a real PostgreSQL 15** — 33 tests green, both migrations applied from an
-empty schema — and CI runs it on every push against a Postgres service
-container, with a guard step that fails the job if the suite reports no executed
-tests (a suite that self-skips is otherwise indistinguishable from one that
-passes).
+student surface), `002_staff_and_audit.sql` (`course_staff_assignments`,
+`audit_log`), `003_course_catalog.sql` (`default_learning_mode`),
+`004_public_catalog.sql` (`slug`, `is_published`) and `005_announcements.sql`,
+applied by `MigrationRunner` via `npm run db:migrate` or `DB_AUTO_MIGRATE=1` on
+a single-container deploy.
+`test/postgres-repositories.integration-spec.ts` covers all thirteen and skips
+itself when no `TEST_DATABASE_URL` is set. As of **2026-09-08 all five
+migrations have run against a real PostgreSQL 15** from an empty schema, with
+the suite's **48 tests green** — so the announcements DDL, both of its CHECK
+constraints, the `notifications_type_check` swap, the 004 slug backfill and
+003's learning-mode UPDATE are all exercised rather than merely written. CI runs
+the same suite on every push against a Postgres service container, with a guard
+step that fails the job if the suite reports no executed tests (a suite that
+self-skips is otherwise indistinguishable from one that passes).
 
 That first run immediately earned its keep: it caught the admin audit log
 **silently ending after page one**. `audit_log.created_at` was microsecond
@@ -476,15 +515,27 @@ before a second implementation existed. That window closed some time ago:
 `findAll` and `findByIds` above each cost two implementors and an integration
 suite to add, which is the going rate now. Still worth doing, still not free.
 
-**Audit coverage is two actions, not "every mutation".** The `AuditModule` is
-`@Global()` and `AuditService` is exported precisely so every future TA and
-admin surface can reach it, but today it is injected in exactly one place —
-`StaffService` — and records exactly `course_staff.assigned` and
-`course_staff.unassigned`. §5.4 requires *every* TA mutation to be logged; that
-requirement is currently satisfied by there being almost no TA mutations. Each
-new staff or admin write must add its own `audit.record` call, and the moment
-one forgets, the requirement is quietly broken with nothing failing. Grading,
-attendance and payments are where this stops being theoretical.
+**Audit coverage is ten actions, and every mutating staff route is covered
+today.** The `@Global()` `AuditModule` is now injected in five services —
+`StaffService`, `GradingService`, `ManageRecordingsService`,
+`ManageLiveSessionsService` and `AnnouncementsService` — wiring the ten actions
+§5.4 lists, one `audit.record` call per action. Verified by enumeration on
+2026-09-08: every `@Post`/`@Patch`/`@Delete` on `StaffManageController`,
+`AdminManageController` and both announcement controllers reaches one. That is a
+property of today's tree, not a mechanism: each new staff or admin write must
+add its own call, and the moment one forgets, §5.4 is quietly broken with
+nothing failing. Attendance and payments are where this stops being theoretical.
+
+**The audit entry's `before` must not alias its `after`.** Twice now an
+in-memory repository has handed back the stored object by reference while
+`update` mutated that same object, so `before` and `after` read identical and
+the entry recorded a change that appeared never to have happened — evidence-
+shaped and empty, which is worse than no entry. It was found in grading, fixed,
+and then found again in recordings on 2026-09-08. **Every in-memory repository
+read that feeds a `before` snapshot returns a copy**, and
+`manage.controller.spec.ts` carries a "before/after pair that actually differs"
+test for grading, live sessions and recordings alike. A new audited mutation
+needs both.
 
 **One known gap in the audit trail, recorded rather than discovered later.**
 `AuditService.record` writes on its own connection *after* the action it
@@ -502,7 +553,7 @@ Added 2026-09-07 at the client's direct instruction, after they signed in and
 found an empty dashboard with no way to fill it: *"for now, let me access every
 course and appears in my student dashboard."*
 
-**Any signed-in student can enroll themselves on any course, free.**
+**Any signed-in student can enroll themselves on any published course, free.**
 `GET /courses/catalog` lists every course flagged with whether the caller holds
 it; `POST /courses/:id/enroll` enrolls the caller and nobody else — the student
 id comes from the verified JWT, and the route has no parameter or body that
@@ -517,11 +568,20 @@ itself does not move. Do not delete the method to add payment.
 Three things it deliberately does **not** do, so a later reader does not
 mistake restraint for oversight:
 
-- **It does not weaken the enrollment gate.** The catalog returns titles,
-  descriptions and outline *counts* — what the public marketing pages already
-  advertise. Lessons, materials, recordings, assessments and reports all still
-  go through `assertEnrolled`, and an unenrolled student still gets 404 on
+- **It does not weaken the enrollment gate.** The signed-in catalog
+  (`GET /courses/catalog`) returns titles, descriptions and outline *counts*.
+  Lessons, materials, recordings, assessments and reports all still go through
+  `assertEnrolled`, and an unenrolled student still gets 404 on
   `GET /courses/:id`. Counting lessons is not reading them.
+
+  **Superseded in part by the public catalog (migration 004).**
+  `GET /public/courses/:slug` deliberately goes further and returns the **full
+  outline** — every module and lesson *title* with its duration — to an
+  unauthenticated visitor. That is not a leak, it is the point: a course detail
+  page that will not show the syllabus does not convert, and a lesson title is
+  what the marketing site advertises. The line is unchanged and is what matters:
+  titles and durations are public, **content is not**. Video URLs, materials,
+  assessments and recordings remain behind `assertEnrolled`.
 - **It does not let the client choose the learning mode.** The mode comes from
   the new `courses.default_learning_mode` column, because a student has no way
   to know whether a course is taught live or from recordings, and letting the
@@ -532,10 +592,25 @@ mistake restraint for oversight:
   mutation, so {S}5.4 does not reach it. That changes the moment money does:
   a paid enrollment is a money event and {S}5.12's trail applies.
 
-Still open: whether every course should be self-enrollable, or whether courses
-need a `published`/`open_for_enrollment` flag so Dr. Tahir can draft one without
-it appearing in the catalog. Today every row in `courses` is offered. Worth one
-question before the catalog holds anything he would not want shown.
+**Half-answered by migration `004_public_catalog.sql`.** Courses now carry
+`is_published`, defaulting to `true` so the migration hid nothing that was
+already visible, and the **public** catalog reads published rows only — so Dr.
+Tahir can draft a course without it appearing on the marketing site. The
+enrollment half was **answered on 2026-09-08, in the safe direction**:
+`is_published` now gates the signed-in catalog and `CoursesService.enroll` as
+well, and an unpublished course answers a would-be enroller exactly as a
+nonexistent one does. It had to. Until then `getCatalog` read `findAll`, so any
+signed-in student could see a draft, self-enroll on it in one POST, and past
+that `assertEnrolled` opened its recordings, materials and assessments — the
+open half reached *content*, not titles, which is not what §7.2 intended to
+leave open.
+
+What remains open is only whether this should be **one flag or two**
+(`open_for_enrollment` separate from `is_published`, so a course can be
+advertised before it opens, or run without being advertised). One flag is
+shipped; splitting it is a one-line change in the same two places, and the
+question becomes real the moment payment lands in front of
+`CoursesService.enroll`.
 
 ---
 
@@ -654,6 +729,22 @@ logs, future subscriptions. Designed so **additional gateways drop in later**.
   under API automation it means the TA's action provisions a meeting on Dr. Tahir's Zoom account —
   a different question, and one the client should answer deliberately. Note that the board's own
   Zoom diagram draws `TeacherTA` as a single lifeline and does not distinguish the two.
+
+  **Shipped teacher-only, 2026-09-07, and still open.** The client's instruction that day was that
+  *"he"* — the teacher — schedules sessions and announces them, so the narrow reading shipped:
+  `POST /admin/courses/:id/live-sessions` is `@Roles(Role.Teacher)` and a TA gets 403. Reversing it
+  is moving three routes from `AdminManageController` to `StaffManageController`;
+  `ManageLiveSessionsService` already takes a `StaffActor` and derives `actorRole` from it rather
+  than assuming the teacher, so the audit trail stays correct on the day it widens. **Announcements
+  went the other way** and a TA *can* post them, to assigned courses only, because §2.2's preset
+  grants that explicitly. Both remain the client's call, not a decided matter.
+
+- **Does a `Course` need a level / exam-board field?** There is none today — no `level`,
+  `examBoard`, or `price` anywhere in `StoredCourse`. The public course page wants to show
+  "AS Level · IGCSE" next to the title the way every course marketplace does, and currently renders
+  nothing there rather than inventing a badge. Adding it is one column and one migration, but it is
+  entangled with the catalog-shape question above (single Chemistry course vs. the fuller
+  IGCSE/IELTS catalog), so it was deliberately **not** added to satisfy a layout.
 
 - **Two board stories have no entity anywhere in §6 or §6.1.** `COM-08` — a student can comment on
   or ask a question against a lesson, "to get help without leaving the platform" — and `CMS-13` — a

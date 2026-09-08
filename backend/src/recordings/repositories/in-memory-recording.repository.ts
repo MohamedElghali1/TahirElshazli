@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import type {
+  NewRecording,
   Recording,
   RecordingFilter,
   RecordingProgress,
   RecordingRepository,
+  RecordingUpdate,
   RecordingWithProgress,
 } from '../interfaces/recording-repository.interface.js';
 
@@ -188,6 +190,20 @@ const STUB_RECORDINGS: Recording[] = [
 
 @Injectable()
 export class InMemoryRecordingRepository implements RecordingRepository {
+  /**
+   * A per-instance copy of the seed, not the seed itself.
+   *
+   * The teacher's upload/edit/delete surface writes here, and this repository
+   * is a singleton in the app but a fresh instance in every test - so a test
+   * that publishes a recording cannot leak it into the next one, which a
+   * shared module-level array would. Same reasoning as
+   * `InMemoryEnrollmentRepository`.
+   */
+  private readonly recordings: Recording[] = [...STUB_RECORDINGS];
+
+  /** Sequence for generated ids, so two uploads in one millisecond differ. */
+  private nextId = 1;
+
   private progressStore: StoredProgress[] = [
     {
       recordingId: 'rec-1',
@@ -244,7 +260,8 @@ export class InMemoryRecordingRepository implements RecordingRepository {
     studentId: string,
     filter?: RecordingFilter,
   ): Promise<RecordingWithProgress[]> {
-    return STUB_RECORDINGS.filter((r) => r.courseId === courseId)
+    return this.recordings
+      .filter((r) => r.courseId === courseId)
       .filter((r) => !filter?.chapter || r.chapter === filter.chapter)
       .filter((r) => !filter?.topic || r.topics.includes(filter.topic))
       .sort((a, b) => a.order - b.order)
@@ -266,7 +283,7 @@ export class InMemoryRecordingRepository implements RecordingRepository {
     studentId: string,
     watchedSeconds: number,
   ): Promise<RecordingProgress> {
-    const recording = STUB_RECORDINGS.find((r) => r.id === recordingId);
+    const recording = this.recordings.find((r) => r.id === recordingId);
     const cappedSeconds = recording
       ? Math.min(watchedSeconds, recording.durationSeconds)
       : watchedSeconds;
@@ -302,6 +319,81 @@ export class InMemoryRecordingRepository implements RecordingRepository {
   }
 
   async findRecordingById(recordingId: string): Promise<Recording | null> {
-    return STUB_RECORDINGS.find((r) => r.id === recordingId) ?? null;
+    const recording = this.recordings.find((r) => r.id === recordingId);
+    // A copy, so a caller holding a "before" snapshot cannot watch it change
+    // underneath them when `update` writes. Without it the audit entry for
+    // `recording.updated` reads its before and after off the same object and
+    // records a change that looks like it never happened (§5.4).
+    return recording ? { ...recording, topics: [...recording.topics] } : null;
+  }
+
+  async findByCourseForStaff(courseId: string): Promise<Recording[]> {
+    return this.recordings
+      .filter((r) => r.courseId === courseId)
+      .sort((a, b) => a.order - b.order)
+      .map((r) => ({ ...r, topics: [...r.topics] }));
+  }
+
+  async create(input: NewRecording): Promise<Recording> {
+    // Appended to the end of the course's running order. Derived from the
+    // course's own rows rather than the array length, so a course with no
+    // recordings starts at 1 instead of inheriting another course's count.
+    const highestOrder = this.recordings
+      .filter((r) => r.courseId === input.courseId)
+      .reduce((max, r) => Math.max(max, r.order), 0);
+
+    const recording: Recording = {
+      id: `rec-${Date.now()}-${this.nextId++}`,
+      courseId: input.courseId,
+      moduleId: input.moduleId,
+      lessonId: input.lessonId,
+      title: input.title,
+      chapter: input.chapter,
+      // Copied, not aliased: the caller's array must not stay writable through
+      // the stored row.
+      topics: [...input.topics],
+      videoUrl: input.videoUrl,
+      durationSeconds: input.durationSeconds,
+      lessonDate: input.lessonDate,
+      order: highestOrder + 1,
+    };
+    this.recordings.push(recording);
+    return recording;
+  }
+
+  async update(
+    recordingId: string,
+    patch: RecordingUpdate,
+  ): Promise<Recording | null> {
+    const existing = this.recordings.find((r) => r.id === recordingId);
+    if (!existing) {
+      return null;
+    }
+    // Field by field rather than a spread of `patch`, so an explicit
+    // `undefined` on the wire cannot blank a column.
+    if (patch.title !== undefined) existing.title = patch.title;
+    if (patch.chapter !== undefined) existing.chapter = patch.chapter;
+    if (patch.topics !== undefined) existing.topics = [...patch.topics];
+    if (patch.videoUrl !== undefined) existing.videoUrl = patch.videoUrl;
+    if (patch.durationSeconds !== undefined) {
+      existing.durationSeconds = patch.durationSeconds;
+    }
+    if (patch.lessonDate !== undefined) existing.lessonDate = patch.lessonDate;
+    return existing;
+  }
+
+  async remove(recordingId: string): Promise<boolean> {
+    const index = this.recordings.findIndex((r) => r.id === recordingId);
+    if (index === -1) {
+      return false;
+    }
+    this.recordings.splice(index, 1);
+    // Postgres does this through ON DELETE CASCADE on recording_progress; the
+    // memory driver has to do it by hand or the next student read joins onto
+    // progress rows for a recording that no longer exists.
+    this.progressStore = this.progressStore.filter(
+      (p) => p.recordingId !== recordingId,
+    );
+    return true;
   }
 }

@@ -3,6 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { DatabaseModule } from './database/database.module.js';
+import { PublicModule } from './public/public.module.js';
 import { RateLimitModule } from './common/rate-limit/rate-limit.module.js';
 import { RateLimitGuard } from './common/rate-limit/rate-limit.guard.js';
 import { AuthModule } from './auth/auth.module.js';
@@ -20,6 +21,8 @@ import { NotificationsModule } from './notifications/notifications.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { AuditModule } from './audit/audit.module.js';
 import { StaffModule } from './staff/staff.module.js';
+import { ManageModule } from './manage/manage.module.js';
+import { AnnouncementsModule } from './announcements/announcements.module.js';
 
 @Module({
   imports: [
@@ -43,6 +46,16 @@ import { StaffModule } from './staff/staff.module.js';
     NotificationsModule,
     DashboardModule,
     StaffModule,
+    // The TA + admin work surface. After StaffModule, which owns the scoping
+    // service every route in it depends on.
+    ManageModule,
+    // Also after StaffModule, for the same scoping service - and after
+    // NotificationsModule, whose service it fans announcements out through
+    // (CLAUDE.md §5.14).
+    AnnouncementsModule,
+    // The anonymous Visitor surface - the public course catalog the marketing
+    // site reads. After CoursesModule, whose COURSE_REPOSITORY it borrows.
+    PublicModule,
   ],
   controllers: [AppController],
   providers: [

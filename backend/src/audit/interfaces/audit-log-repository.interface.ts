@@ -12,10 +12,37 @@ import { Role } from '../../auth/roles.enum.js';
  *
  * Names are `<subject>.<past-tense verb>` so the admin feed reads as history.
  */
-export type AuditAction = 'course_staff.assigned' | 'course_staff.unassigned';
+export type AuditAction =
+  | 'course_staff.assigned'
+  | 'course_staff.unassigned'
+  // The first TA mutation the log covers. §5.4 names grading explicitly, and
+  // it is the action a student is most likely to dispute.
+  | 'submission.graded'
+  // Teacher-only writes (§2.2 grants a TA materials, not recordings), but
+  // logged on the same terms: an admin action that changes what students can
+  // see is history worth keeping.
+  | 'recording.created'
+  | 'recording.updated'
+  | 'recording.deleted'
+  // Scheduling, also teacher-only for now (§2.2's preset omits it; the
+  // user-stories board's CRS-11 disagrees, which §11 records as unresolved).
+  // A session carries a Zoom link students are told to click, so who changed
+  // it and when is exactly the history §5.4 exists for.
+  | 'live_session.scheduled'
+  | 'live_session.updated'
+  | 'live_session.cancelled'
+  // The first TA mutation outside grading. Announcements fan out to real
+  // people's notification feeds and cannot be recalled, so the entry is the
+  // only record of who sent what to whom.
+  | 'announcement.posted';
 
 /** What the action happened *to*. Grows with `AuditAction`, for the same reason. */
-export type AuditTargetType = 'course_staff_assignment';
+export type AuditTargetType =
+  | 'course_staff_assignment'
+  | 'assessment_submission'
+  | 'recording'
+  | 'live_session'
+  | 'announcement';
 
 /**
  * One side of a before/after pair.

@@ -21,6 +21,7 @@ const STUDENT = {
 
 describe('CoursesController', () => {
   let controller: CoursesController;
+  let courseRepo: InMemoryCourseRepository;
 
   beforeEach(async () => {
     // Progress depends on "now", so pin the clock to keep assertions exact.
@@ -47,6 +48,7 @@ describe('CoursesController', () => {
       .compile();
 
     controller = module.get<CoursesController>(CoursesController);
+    courseRepo = module.get(COURSE_REPOSITORY);
   });
 
   afterEach(() => {
@@ -177,6 +179,32 @@ describe('CoursesController', () => {
 
     it('should 404 an enrollment on a course that does not exist', async () => {
       await expect(controller.enroll('course-nope', STUDENT_2)).rejects.toThrow();
+    });
+
+    it('should read the catalog from the published courses, not from every row', async () => {
+      // §7.2 opened self-enrollment to any signed-in student, so what the
+      // catalog lists is one POST away from being fully readable. A course Dr.
+      // Tahir has not published is a draft, and listing it would hand its
+      // recordings and materials to anyone with an account.
+      const published = vi.spyOn(courseRepo, 'findPublished');
+      const everything = vi.spyOn(courseRepo, 'findAll');
+
+      await controller.listCatalog(STUDENT_2);
+
+      expect(published).toHaveBeenCalled();
+      expect(everything).not.toHaveBeenCalled();
+    });
+
+    it('should refuse enrollment on an unpublished course, as if it did not exist', async () => {
+      const real = await courseRepo.findById('course-2');
+      vi.spyOn(courseRepo, 'findById').mockResolvedValue({
+        ...real!,
+        isPublished: false,
+      });
+
+      await expect(controller.enroll('course-2', STUDENT_2)).rejects.toThrow(
+        'Course not found',
+      );
     });
 
     it('should enroll the caller from the token, never a supplied id', async () => {

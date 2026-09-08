@@ -11,6 +11,34 @@ export interface EnrollmentRepository {
   findByStudent(studentId: string): Promise<Enrollment[]>;
   find(courseId: string, studentId: string): Promise<Enrollment | null>;
   /**
+   * Every enrollment on one course - the staff roster read (CLAUDE.md §2.2:
+   * read-only for a TA, who reaches it only for a course they are assigned to).
+   *
+   * The scoping is the caller's job, not this method's: a repository that took
+   * an actor would have to re-derive the admin bypass, and `StaffScopeService`
+   * already owns that decision for every surface.
+   */
+  findByCourse(courseId: string): Promise<Enrollment[]>;
+  /**
+   * Enrollment counts for many courses at once, keyed by course id.
+   *
+   * A count-only read, because the staff overview wants six integers and
+   * `findByCourse` per course would fetch every row of every roster to length
+   * them - the exact shape CLAUDE.md §7.1 lists as outstanding scaling debt.
+   * Courses with no enrollments are absent from the map rather than present
+   * with 0; callers default.
+   */
+  countByCourses(
+    courseIds: readonly string[],
+  ): Promise<Record<string, number>>;
+  /**
+   * The same count from the other side: how many courses each of these
+   * students holds, for the admin directory. Absent means zero.
+   */
+  countByStudents(
+    studentIds: readonly string[],
+  ): Promise<Record<string, number>>;
+  /**
    * Enrolls a student, returning the enrollment that now exists.
    *
    * Idempotent by contract: a second call for the same pair returns the

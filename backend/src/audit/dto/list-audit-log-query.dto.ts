@@ -15,10 +15,22 @@ import type {
 export const AUDIT_ACTIONS: readonly AuditAction[] = [
   'course_staff.assigned',
   'course_staff.unassigned',
+  'submission.graded',
+  'recording.created',
+  'recording.updated',
+  'recording.deleted',
+  'live_session.scheduled',
+  'live_session.updated',
+  'live_session.cancelled',
+  'announcement.posted',
 ];
 
 export const AUDIT_TARGET_TYPES: readonly AuditTargetType[] = [
   'course_staff_assignment',
+  'assessment_submission',
+  'recording',
+  'live_session',
+  'announcement',
 ];
 
 export class ListAuditLogQueryDto {

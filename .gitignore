@@ -56,3 +56,9 @@ tmp/
 .claude-flow/policy/
 .claude/proven-config.json
 .claude/.proven-config-version
+# Local swarm runtime: the vector index the memory store rebuilds on demand,
+# and per-run swarm state. Same category as the daemon state above - churns on
+# every machine, means nothing on another one.
+.swarm/hnsw.index
+.swarm/hnsw.metadata.json
+.claude-flow/swarm/

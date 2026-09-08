@@ -18,6 +18,6 @@ import { EnrollmentsModule } from '../enrollments/enrollments.module.js';
     PostgresRecordingRepository,
     repositoryProvider<RecordingRepository>(RECORDING_REPOSITORY, InMemoryRecordingRepository, PostgresRecordingRepository),
   ],
-  exports: [RecordingsService],
+  exports: [RecordingsService, RECORDING_REPOSITORY],
 })
 export class RecordingsModule {}

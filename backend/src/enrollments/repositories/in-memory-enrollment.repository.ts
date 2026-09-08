@@ -47,6 +47,36 @@ export class InMemoryEnrollmentRepository implements EnrollmentRepository {
     );
   }
 
+  async findByCourse(courseId: string): Promise<Enrollment[]> {
+    return this.enrollments.filter((e) => e.courseId === courseId);
+  }
+
+  async countByCourses(
+    courseIds: readonly string[],
+  ): Promise<Record<string, number>> {
+    const wanted = new Set(courseIds);
+    const counts: Record<string, number> = {};
+    for (const enrollment of this.enrollments) {
+      if (wanted.has(enrollment.courseId)) {
+        counts[enrollment.courseId] = (counts[enrollment.courseId] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }
+
+  async countByStudents(
+    studentIds: readonly string[],
+  ): Promise<Record<string, number>> {
+    const wanted = new Set(studentIds);
+    const counts: Record<string, number> = {};
+    for (const enrollment of this.enrollments) {
+      if (wanted.has(enrollment.studentId)) {
+        counts[enrollment.studentId] = (counts[enrollment.studentId] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }
+
   /**
    * Appends to the module-level array, so a self-enrollment survives for the
    * life of the process and no longer. That is the whole contract of the

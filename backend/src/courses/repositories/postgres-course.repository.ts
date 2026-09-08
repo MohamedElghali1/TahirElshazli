@@ -10,6 +10,8 @@ import type { LearningMode } from '../../enrollments/interfaces/enrollment-repos
 
 interface CourseRow {
   id: string;
+  slug: string;
+  is_published: boolean;
   title: string;
   description: string;
   thumbnail_url: string | null;
@@ -31,8 +33,8 @@ interface ModuleLessonRow {
 }
 
 const COURSE_COLUMNS = `
-  id, title, description, thumbnail_url, teacher_name, sequential_lock_enabled,
-  default_learning_mode
+  id, slug, is_published, title, description, thumbnail_url, teacher_name,
+  sequential_lock_enabled, default_learning_mode
 `;
 
 @Injectable()
@@ -53,15 +55,52 @@ export class PostgresCourseRepository implements CourseRepository {
     return this.loadCourses(courseIds);
   }
 
-  async findAll(limit: number, offset: number): Promise<StoredCourse[]> {
-    // Page over ids first, then hand them to the same loader the scoped reads
-    // use. Paging inside `loadCourses` is not an option: it joins the module
-    // and lesson rows, so a LIMIT there would cut a course's outline in half
-    // rather than cutting the list of courses.
-    const ids = await this.db.query<{ id: string }>(
-      `SELECT id FROM courses ORDER BY title, id LIMIT $1 OFFSET $2`,
-      [limit, offset],
+  async findPublished(limit: number, offset: number): Promise<StoredCourse[]> {
+    return this.pageBy(
+      `SELECT id FROM courses
+        WHERE is_published
+        ORDER BY title, id
+        LIMIT $1 OFFSET $2`,
+      limit,
+      offset,
     );
+  }
+
+  async findBySlug(slug: string): Promise<StoredCourse | null> {
+    const rows = await this.db.query<{ id: string }>(
+      `SELECT id FROM courses WHERE slug = $1`,
+      [slug],
+    );
+    if (rows.length === 0) {
+      return null;
+    }
+    const courses = await this.loadCourses([rows[0].id]);
+    return courses[0] ?? null;
+  }
+
+  async findAll(limit: number, offset: number): Promise<StoredCourse[]> {
+    return this.pageBy(
+      `SELECT id FROM courses ORDER BY title, id LIMIT $1 OFFSET $2`,
+      limit,
+      offset,
+    );
+  }
+
+  /**
+   * Page over ids first, then hand them to the same loader the scoped reads
+   * use. Paging inside `loadCourses` is not an option: it joins the module and
+   * lesson rows, so a LIMIT there would cut a course's outline in half rather
+   * than cutting the list of courses.
+   *
+   * The `idsSql` is a literal in this file, never built from a caller's input -
+   * the only parameters that cross the boundary are the limit and offset.
+   */
+  private async pageBy(
+    idsSql: string,
+    limit: number,
+    offset: number,
+  ): Promise<StoredCourse[]> {
+    const ids = await this.db.query<{ id: string }>(idsSql, [limit, offset]);
     if (ids.length === 0) {
       return [];
     }
@@ -143,6 +182,8 @@ export class PostgresCourseRepository implements CourseRepository {
 
     return courses.map((course) => ({
       id: course.id,
+      slug: course.slug,
+      isPublished: course.is_published,
       title: course.title,
       description: course.description,
       thumbnailUrl: course.thumbnail_url,

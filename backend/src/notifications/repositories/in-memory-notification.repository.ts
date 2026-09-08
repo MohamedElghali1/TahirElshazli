@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import type {
+  NewNotification,
   Notification,
   NotificationRepository,
 } from '../interfaces/notification-repository.interface.js';
@@ -66,6 +68,22 @@ export class InMemoryNotificationRepository implements NotificationRepository {
         (a, b) =>
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       );
+  }
+
+  async createMany(notifications: readonly NewNotification[]): Promise<number> {
+    // One timestamp for the whole batch: they are one send, and giving them
+    // drifting createdAt values would scatter a single announcement through
+    // the feed's ordering.
+    const createdAt = new Date().toISOString();
+    for (const notification of notifications) {
+      this.notifications.push({
+        ...notification,
+        id: randomUUID(),
+        read: false,
+        createdAt,
+      });
+    }
+    return notifications.length;
   }
 
   async markRead(

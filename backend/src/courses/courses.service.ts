@@ -184,10 +184,18 @@ export class CoursesService {
    * returns no lesson content, no materials and no recordings. The enrollment
    * gate (§5.11's student equivalent, `assertEnrolled`) still stands in front
    * of every one of those, and this endpoint does not weaken it.
+   *
+   * Published courses only, and `findPublished` rather than a filter for the
+   * reason the interface gives. §7.2 leaves open whether `is_published` should
+   * also gate *enrollment*, but it cannot be right for a draft to be listed to
+   * a student: self-enrollment is one POST away from it, and past that
+   * `assertEnrolled` passes and the draft's recordings, materials and
+   * assessments are all readable. A course Dr. Tahir has not published is not
+   * finished being written.
    */
   async getCatalog(studentId: string): Promise<CatalogItem[]> {
     const [courses, enrollments] = await Promise.all([
-      this.courseRepo.findAll(CATALOG_PAGE_SIZE, 0),
+      this.courseRepo.findPublished(CATALOG_PAGE_SIZE, 0),
       this.enrollmentsService.findForStudent(studentId),
     ]);
     const enrolledIds = new Set(enrollments.map((e) => e.courseId));
@@ -218,7 +226,10 @@ export class CoursesService {
    */
   async enroll(courseId: string, studentId: string): Promise<CourseListItem> {
     const course = await this.courseRepo.findById(courseId);
-    if (!course) {
+    // An unpublished course answers exactly as a nonexistent one does, so the
+    // id of a draft cannot be confirmed by trying to enroll on it - the same
+    // 404-not-403 posture §5.11 sets for a TA and an unassigned course.
+    if (!course || !course.isPublished) {
       throw new NotFoundException('Course not found');
     }
     const enrollment = await this.enrollmentsService.enroll(

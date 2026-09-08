@@ -2,9 +2,10 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ApiError } from '@/lib/api';
 import { useSession } from '@/lib/session';
+import { resolvePostAuthPath } from '@/lib/roles';
 import { Button, Field, FormError, Input } from '@/components/ui';
 
 /** Mirrors the backend's RegisterDto rule, so the failure is caught here first. */
@@ -13,6 +14,13 @@ const PASSWORD_RULE = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
 export default function RegisterPage() {
   const { register } = useSession();
   const router = useRouter();
+  // As on the sign-in page: honour where the visitor was heading. Registration
+  // only ever creates a student, so there is no staff case to exclude here -
+  // `resolvePostAuthPath` still checks, because that is not this file's promise
+  // to keep.
+  // Named `nextPath`, not `next`: `submit` already has a local `next` for the
+  // field-error map, and the shadowing silently passed that object here.
+  const nextPath = useSearchParams().get('next');
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -38,8 +46,8 @@ export default function RegisterPage() {
 
     setBusy(true);
     try {
-      await register(name, email, password);
-      router.push('/dashboard');
+      const account = await register(name, email, password);
+      router.push(resolvePostAuthPath(account.role, nextPath));
     } catch (cause) {
       setError(
         cause instanceof ApiError

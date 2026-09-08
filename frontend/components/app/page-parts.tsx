@@ -118,6 +118,65 @@ export function CourseTabs({ courseId }: { courseId: string }) {
 }
 
 /**
+ * Course tabs for the management console.
+ *
+ * `staff` and `recordings` are omitted for a teaching assistant: §2.2 gives a
+ * TA no account management and no recording writes. That is presentation only -
+ * `/admin/*` is `@Roles(Role.Teacher)` on the server, and hiding a tab has
+ * never been what stops anyone (CLAUDE.md §8).
+ */
+export function ManageCourseTabs({
+  courseId,
+  admin,
+}: {
+  courseId: string;
+  admin: boolean;
+}) {
+  const pathname = usePathname();
+  const base = `/manage/courses/${courseId}`;
+  const tabs = [
+    { href: base, label: 'Roster' },
+    { href: `${base}/grading`, label: 'Grading' },
+    { href: `${base}/recordings`, label: 'Recordings' },
+    ...(admin ? [{ href: `${base}/staff`, label: 'Assistants' }] : []),
+  ];
+
+  return (
+    <nav
+      aria-label="Course management sections"
+      className="flex gap-[var(--sp-1)] overflow-x-auto border-b border-[var(--border-light)] px-[var(--sp-6)]"
+    >
+      {tabs.map((tab) => {
+        const active =
+          tab.href === base ? pathname === base : pathname.startsWith(tab.href);
+        return (
+          <Link
+            key={tab.href}
+            href={tab.href}
+            aria-current={active ? 'page' : undefined}
+            className={cx(
+              'relative whitespace-nowrap px-[var(--sp-3)] py-[var(--sp-3)] text-[var(--fs-base)]',
+              'transition-colors duration-[var(--dur-fast)]',
+              active
+                ? 'font-medium text-[var(--fg-primary)]'
+                : 'text-[var(--fg-tertiary)] hover:text-[var(--fg-primary)]',
+            )}
+          >
+            {tab.label}
+            {active && (
+              <span
+                aria-hidden
+                className="absolute inset-x-[var(--sp-3)] -bottom-px h-[2px] rounded-[var(--r-full)] bg-[var(--accent)]"
+              />
+            )}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+/**
  * Progress and performance side by side but never merged (CLAUDE.md §5.1).
  * Completion gets a meter, grades get numerals, and the labels say which is
  * which so the two cannot be read as one score.

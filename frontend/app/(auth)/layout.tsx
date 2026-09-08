@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import Link from 'next/link';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Wordmark } from '@/components/site/wordmark';
@@ -50,7 +51,18 @@ export default function AuthLayout({
           </Link>
           <ThemeToggle />
         </div>
-        <div className="mx-auto w-full max-w-[420px]">{children}</div>
+        {/* Sign-in and registration read `?next=` with `useSearchParams`, which
+            a prerendered client page cannot do without a boundary to suspend
+            at. It sits here rather than in each page so a future auth screen
+            that reads the query string does not have to rediscover this. The
+            fallback is deliberately near-empty: these forms render in one
+            frame, and a skeleton of a five-field form is more flicker than
+            information. */}
+        <div className="mx-auto w-full max-w-[420px]">
+          <Suspense fallback={<div className="min-h-[420px]" aria-hidden />}>
+            {children}
+          </Suspense>
+        </div>
         <div className="mt-[var(--sp-8)] hidden justify-center lg:flex">
           <ThemeToggle />
         </div>

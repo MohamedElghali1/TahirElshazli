@@ -1,11 +1,14 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { DatabaseService } from '../../database/database.service.js';
 import { iso, isoOrNull } from '../../database/database.types.js';
 import type {
+  NewRecording,
   Recording,
   RecordingFilter,
   RecordingProgress,
   RecordingRepository,
+  RecordingUpdate,
   RecordingWithProgress,
 } from '../interfaces/recording-repository.interface.js';
 
@@ -152,5 +155,87 @@ export class PostgresRecordingRepository implements RecordingRepository {
       [recordingId],
     );
     return row ? toRecording(row) : null;
+  }
+
+  async findByCourseForStaff(courseId: string): Promise<Recording[]> {
+    const rows = await this.db.query<RecordingRow>(
+      `SELECT id, course_id, module_id, lesson_id, title, chapter, topics,
+              video_url, duration_seconds, lesson_date, position
+       FROM recordings
+       WHERE course_id = $1
+       ORDER BY position`,
+      [courseId],
+    );
+    return rows.map(toRecording);
+  }
+
+  async create(input: NewRecording): Promise<Recording> {
+    // The position is chosen inside the INSERT rather than by a prior SELECT,
+    // so two teachers publishing at once cannot both read the same max and
+    // write the same position. COALESCE covers the first recording on a course,
+    // where the subquery is NULL rather than 0.
+    const row = await this.db.queryOne<RecordingRow>(
+      `INSERT INTO recordings
+         (id, course_id, module_id, lesson_id, title, chapter, topics,
+          video_url, duration_seconds, lesson_date, position)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+               COALESCE((SELECT MAX(position) FROM recordings WHERE course_id = $2), 0) + 1)
+       RETURNING id, course_id, module_id, lesson_id, title, chapter, topics,
+                 video_url, duration_seconds, lesson_date, position`,
+      [
+        randomUUID(),
+        input.courseId,
+        input.moduleId,
+        input.lessonId,
+        input.title,
+        input.chapter,
+        input.topics,
+        input.videoUrl,
+        input.durationSeconds,
+        input.lessonDate,
+      ],
+    );
+    return toRecording(row!);
+  }
+
+  async update(
+    recordingId: string,
+    patch: RecordingUpdate,
+  ): Promise<Recording | null> {
+    // COALESCE against the parameter leaves a column alone when the caller
+    // omitted it, which keeps this one statement instead of a dynamic SET list
+    // assembled by string concatenation (CLAUDE.md §8 - no string-built SQL).
+    // The casts are needed because a bare NULL parameter has no type.
+    const row = await this.db.queryOne<RecordingRow>(
+      `UPDATE recordings SET
+         title            = COALESCE($2::text, title),
+         chapter          = COALESCE($3::text, chapter),
+         topics           = COALESCE($4::text[], topics),
+         video_url        = COALESCE($5::text, video_url),
+         duration_seconds = COALESCE($6::integer, duration_seconds),
+         lesson_date      = COALESCE($7::timestamptz, lesson_date)
+       WHERE id = $1
+       RETURNING id, course_id, module_id, lesson_id, title, chapter, topics,
+                 video_url, duration_seconds, lesson_date, position`,
+      [
+        recordingId,
+        patch.title ?? null,
+        patch.chapter ?? null,
+        patch.topics ?? null,
+        patch.videoUrl ?? null,
+        patch.durationSeconds ?? null,
+        patch.lessonDate ?? null,
+      ],
+    );
+    return row ? toRecording(row) : null;
+  }
+
+  async remove(recordingId: string): Promise<boolean> {
+    // recording_progress rows go with it through ON DELETE CASCADE.
+    const rows = await this.db.query<{ id: string }>(
+      'DELETE FROM recordings WHERE id = $1 RETURNING id',
+      [recordingId],
+    );
+    return rows.length > 0;
   }
 }

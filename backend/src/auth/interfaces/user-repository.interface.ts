@@ -29,6 +29,37 @@ export interface UserRepository {
    * same pattern is copied onto the student roster (CLAUDE.md §7.1).
    */
   findByIds(userIds: readonly string[]): Promise<StoredUser[]>;
+  /**
+   * The admin directory read: accounts of one role, paged and optionally
+   * name/email searched.
+   *
+   * `role` is required rather than optional, and that is the safety property -
+   * there is no call shape here that returns "every account on the platform",
+   * so the student directory cannot accidentally list teachers and the TA
+   * picker cannot accidentally list students. Admin-only either way
+   * (CLAUDE.md §2.2); the controller enforces that.
+   */
+  findByRole(
+    role: Role,
+    options: { search?: string; limit: number; offset: number },
+  ): Promise<StoredUser[]>;
+  /**
+   * Every account id holding a role, resolved *now*.
+   *
+   * This is what CLAUDE.md §5.14 requires: an announcement's `all_tas` audience
+   * resolves from `role = 'assistant'` at the moment of sending, never from a
+   * list of ids frozen when it was drafted - which would silently miss a TA
+   * hired in between.
+   *
+   * Ids only, and unpaged. Ids only because the caller writes one notification
+   * row per recipient and needs nothing else - `findByRole` would drag a name,
+   * an email and a password hash across for each. Unpaged because a partial
+   * audience is a wrong audience: an announcement that reached the first fifty
+   * students is worse than one that failed. That makes it the one read here
+   * with no ceiling, and it is why a platform-wide send belongs in a background
+   * job once the roll is in the thousands (§1) rather than in a request.
+   */
+  findIdsByRole(role: Role): Promise<string[]>;
   create(user: {
     email: string;
     passwordHash: string;

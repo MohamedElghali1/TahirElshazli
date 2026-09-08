@@ -33,8 +33,16 @@ interface SessionValue {
   token: string | null;
   /** True until the first read of storage completes, so guards do not flash. */
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<void>;
-  register: (name: string, email: string, password: string) => Promise<void>;
+  /**
+   * Returns the signed-in account, so the caller can route on its role
+   * without waiting a render for `user` to land in state.
+   */
+  signIn: (email: string, password: string) => Promise<AuthenticatedUser>;
+  register: (
+    name: string,
+    email: string,
+    password: string,
+  ) => Promise<AuthenticatedUser>;
   signOut: () => Promise<void>;
 }
 
@@ -96,23 +104,25 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setLoading(false);
   }, []);
 
-  const adopt = useCallback((result: { accessToken: string; user: AuthenticatedUser }) => {
-    writeStored(result.accessToken, result.user);
-    setToken(result.accessToken);
-    setUser(result.user);
-  }, []);
+  const adopt = useCallback(
+    (result: { accessToken: string; user: AuthenticatedUser }) => {
+      writeStored(result.accessToken, result.user);
+      setToken(result.accessToken);
+      setUser(result.user);
+      return result.user;
+    },
+    [],
+  );
 
   const signIn = useCallback(
-    async (email: string, password: string) => {
-      adopt(await api.auth.login({ email, password }));
-    },
+    async (email: string, password: string) =>
+      adopt(await api.auth.login({ email, password })),
     [adopt],
   );
 
   const register = useCallback(
-    async (name: string, email: string, password: string) => {
-      adopt(await api.auth.register({ name, email, password }));
-    },
+    async (name: string, email: string, password: string) =>
+      adopt(await api.auth.register({ name, email, password })),
     [adopt],
   );
 

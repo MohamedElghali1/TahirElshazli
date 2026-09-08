@@ -131,7 +131,14 @@ jobs:
             echo "makes this job pass while running nothing."
             exit 1
           fi
-          if grep -qE '[0-9]+ skipped' integration.log; then
+          # Anchored to the "Test Files" line on purpose. The suite self-skips
+          # at *file* level (`describe.skip`), which vitest reports as
+          # "Test Files  1 skipped (1)". Matching a bare "N skipped" anywhere in
+          # the log would also fire on "Tests 36 passed | 1 skipped", so a single
+          # legitimate `it.skip` added later would fail this job with a message
+          # blaming TEST_DATABASE_URL - which would be false, and would send the
+          # next person looking in entirely the wrong place.
+          if grep -qE '^ *Test Files .*[0-9]+ skipped' integration.log; then
             echo "::error::The integration suite skipped tests - it self-skips"
             echo "when TEST_DATABASE_URL is missing."
             exit 1

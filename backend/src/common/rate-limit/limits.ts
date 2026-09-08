@@ -19,3 +19,15 @@ export const AUTH_ENUMERATION_LIMIT: RateLimitRule = {
   limit: 3,
   windowMs: 300_000,
 };
+
+/**
+ * The anonymous catalog. Looser than the auth limits - browsing is the point,
+ * and a visitor clicking through a course list makes many more requests than
+ * someone logging in - but tighter than the 120/min global default, because
+ * every one of these is an unauthenticated database read and the route is the
+ * only anonymous one that touches course data.
+ */
+export const PUBLIC_BROWSE_LIMIT: RateLimitRule = {
+  limit: 60,
+  windowMs: 60_000,
+};

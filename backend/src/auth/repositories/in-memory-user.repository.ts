@@ -78,6 +78,27 @@ export class InMemoryUserRepository implements UserRepository {
     return this.users.filter((u) => wanted.has(u.id));
   }
 
+  async findByRole(
+    role: Role,
+    options: { search?: string; limit: number; offset: number },
+  ): Promise<StoredUser[]> {
+    const needle = options.search?.trim().toLowerCase();
+    return this.users
+      .filter((u) => u.role === role)
+      .filter(
+        (u) =>
+          !needle ||
+          u.name.toLowerCase().includes(needle) ||
+          u.email.toLowerCase().includes(needle),
+      )
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .slice(options.offset, options.offset + options.limit);
+  }
+
+  async findIdsByRole(role: Role): Promise<string[]> {
+    return this.users.filter((u) => u.role === role).map((u) => u.id);
+  }
+
   async create(user: {
     email: string;
     passwordHash: string;
