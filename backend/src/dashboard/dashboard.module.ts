@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { DashboardController } from './dashboard.controller.js';
 import { DashboardService } from './dashboard.service.js';
+import { StudentHomeController } from './student-home.controller.js';
+import { StudentHomeService } from './student-home.service.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { EnrollmentsModule } from '../enrollments/enrollments.module.js';
 import { CoursesModule } from '../courses/courses.module.js';
@@ -25,7 +27,7 @@ import { NotificationsModule } from '../notifications/notifications.module.js';
     ReportsModule,
     NotificationsModule,
   ],
-  controllers: [DashboardController],
-  providers: [DashboardService],
+  controllers: [DashboardController, StudentHomeController],
+  providers: [DashboardService, StudentHomeService],
 })
 export class DashboardModule {}

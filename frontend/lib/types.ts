@@ -273,6 +273,29 @@ export interface DashboardResponse {
   unreadNotifications: number;
 }
 
+/* --- the aggregated Home screen (dashboard/student-home.service.ts) ------- */
+
+/**
+ * One enrolled course as the Home screen needs it.
+ *
+ * Not a `DashboardResponse`: `progress` lives on `course`, and `studentName`
+ * and the unread count belong to the student rather than to each course, so
+ * the aggregate hoists them instead of repeating them N times.
+ */
+export interface StudentHomeEntry {
+  course: CourseListItem;
+  stats: DashboardStats;
+  quickAccess: MaterialCounts;
+  nextLiveSession: LiveSession | null;
+  assessments: AssessmentListItem[];
+}
+
+export interface StudentHomeResponse {
+  studentName: string;
+  entries: StudentHomeEntry[];
+  notifications: NotificationListResponse;
+}
+
 /* --- reports (reports/reports.service.ts) --------------------------------- */
 
 export interface TopicScore {

@@ -29,6 +29,7 @@ import type {
   StaffCourseSummary,
   StaffRecording,
   StudentDirectoryEntry,
+  StudentHomeResponse,
   StudentProfile,
   AppNotification,
 } from './types';
@@ -238,6 +239,19 @@ export const api = {
   },
 
   dashboard: {
+    /**
+     * The whole Home screen in one request - every enrolled course's stats,
+     * material counts, next session and assessment list, plus the mailbox.
+     *
+     * Replaces the `2N + 2` fan-out the screen used to issue (`/courses`, then
+     * a dashboard and an assessment list per course, then `/notifications`).
+     * The server composes it from the same services the per-course screens
+     * use, so the numbers are the same ones by construction.
+     */
+    home: (token: string) => request<StudentHomeResponse>('/dashboard', { token }),
+
+    /** One course's dashboard. Still serves `/learn/[id]`; the Home screen
+     *  reads `home()` instead. */
     get: (token: string, courseId: string) =>
       request<DashboardResponse>(`/courses/${courseId}/dashboard`, { token }),
   },

@@ -131,6 +131,23 @@ export interface AssessmentRepository {
   findSubmissionsForAssessments(
     assessmentIds: readonly string[],
   ): Promise<StoredSubmission[]>;
+  /**
+   * How many submissions are still waiting to be graded, per course. Absent
+   * means zero.
+   *
+   * Ungraded is derived from `corrected_at IS NULL`, never stored (§5.10) -
+   * the same rule the read side applies, expressed once in SQL.
+   *
+   * Unlike `findSubmissionsForAssessments` this takes *course* ids, because
+   * the caller wants a figure per course and resolving assessments first would
+   * put the fan-out back. That difference matters for scoping: the caller must
+   * have put every id through `StaffScopeService.assertAssigned` before
+   * calling, since there is no assessment-id indirection here to enforce it.
+   * `ManageService.overview` does, via `coursesInScope`.
+   */
+  countUngradedSubmissionsByCourses(
+    courseIds: readonly string[],
+  ): Promise<Record<string, number>>;
   /** One submission by id, for the grading screen. Null when it is gone. */
   findSubmissionById(submissionId: string): Promise<StoredSubmission | null>;
   /**

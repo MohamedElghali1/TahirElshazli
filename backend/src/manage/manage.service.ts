@@ -139,47 +139,41 @@ export class ManageService {
     const { scope, courses, assignedAt } = await this.coursesInScope(actor);
     const courseIds = courses.map((c) => c.id);
 
-    const [studentCounts, enrollmentsPerCourse, assessmentsPerCourse, recordingsPerCourse] =
+    // Four count-only reads, each one query regardless of how many courses are
+    // in scope. This used to fan out per course - three `findByCourse` calls
+    // and a submissions read each - which was `4N + 2` queries, but the cost
+    // that actually bit was rows, not round trips: every enrollment, every
+    // assessment, every submission and every recording of every course was
+    // materialized on the console's landing page so four `.length` calls and a
+    // `Set` could be taken over them. At ten groups of thirty that is thousands
+    // of rows per login to produce six integers.
+    const [studentCounts, studentCount, recordingCounts, awaitingByCourse] =
       await Promise.all([
         this.enrollmentRepo.countByCourses(courseIds),
-        Promise.all(courseIds.map((id) => this.enrollmentRepo.findByCourse(id))),
-        Promise.all(courseIds.map((id) => this.assessmentRepo.findByCourse(id))),
-        Promise.all(courseIds.map((id) => this.recordingRepo.findByCourseForStaff(id))),
+        // Distinct people, not a sum of rosters: a student in two of the
+        // teacher's groups is one person, and an inflated reach figure on a
+        // dashboard is one nobody re-checks.
+        this.enrollmentRepo.countDistinctStudents(courseIds),
+        this.recordingRepo.countByCourses(courseIds),
+        // Ungraded is still derived from correctedAt and never stored (§5.10);
+        // the derivation now happens in SQL instead of over fetched rows.
+        this.assessmentRepo.countUngradedSubmissionsByCourses(courseIds),
       ]);
 
-    // Distinct students, because a student on two courses is one person. A sum
-    // of roster sizes would overstate reach, and an inflated number on a
-    // dashboard is one nobody re-checks.
-    const distinctStudents = new Set<string>();
-    for (const enrollments of enrollmentsPerCourse) {
-      for (const enrollment of enrollments) {
-        distinctStudents.add(enrollment.studentId);
-      }
-    }
-
-    const submissionsPerCourse = await Promise.all(
-      assessmentsPerCourse.map((assessments) =>
-        this.assessmentRepo.findSubmissionsForAssessments(assessments.map((a) => a.id)),
-      ),
-    );
-
-    const cards: ManageCourseCard[] = courses.map((course, i) => ({
+    const cards: ManageCourseCard[] = courses.map((course) => ({
       id: course.id,
       title: course.title,
       teacherName: course.teacherName,
       studentCount: studentCounts[course.id] ?? 0,
-      recordingCount: recordingsPerCourse[i].length,
-      // Derived from correctedAt, never stored: a submission is ungraded
-      // exactly while nobody has corrected it (§5.10).
-      awaitingGrading: submissionsPerCourse[i].filter((s) => s.correctedAt === null)
-        .length,
+      recordingCount: recordingCounts[course.id] ?? 0,
+      awaitingGrading: awaitingByCourse[course.id] ?? 0,
       assignedAt: assignedAt.get(course.id) ?? null,
     }));
 
     return {
       scope,
       courseCount: cards.length,
-      studentCount: distinctStudents.size,
+      studentCount,
       recordingCount: cards.reduce((sum, c) => sum + c.recordingCount, 0),
       awaitingGrading: cards.reduce((sum, c) => sum + c.awaitingGrading, 0),
       courses: cards,

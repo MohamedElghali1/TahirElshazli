@@ -57,7 +57,7 @@ export class ReportsService {
   ) {}
 
   private averagePercentage(
-    entries: AssessmentPerformanceEntry[],
+    entries: readonly AssessmentPerformanceEntry[],
   ): number | null {
     const graded = entries.filter(
       (e): e is AssessmentPerformanceEntry & { score: number } =>
@@ -97,6 +97,59 @@ export class ReportsService {
       );
   }
 
+  /**
+   * The performance block, and only it.
+   *
+   * The one arithmetic implementation - `getSummary` builds its own block from
+   * this same method, so the average a student reads on the Home screen and the
+   * one on the Report screen are the same number by construction rather than by
+   * two call sites agreeing. §5.1 keeps progress out of it: nothing here reads
+   * completion.
+   */
+  private buildPerformance(
+    entries: readonly AssessmentPerformanceEntry[],
+  ): PerformanceSnapshot {
+    const homework = entries.filter((e) => e.type === 'homework');
+    const homeworkDone = homework.filter(
+      (e) => e.status === 'submitted' || e.status === 'corrected',
+    ).length;
+
+    return {
+      quizAverage: this.averagePercentage(
+        entries.filter((e) => e.type === 'quiz'),
+      ),
+      assignmentAverage: this.averagePercentage(
+        entries.filter((e) => e.type === 'assignment'),
+      ),
+      homeworkSubmissionRate:
+        homework.length === 0
+          ? 0
+          : Math.round((homeworkDone / homework.length) * 100),
+      overallPercentage: this.averagePercentage(entries),
+      gradedCount: entries.filter((e) => e.score !== null).length,
+    };
+  }
+
+  /**
+   * Internal: performance without the progress block, for a caller that has
+   * already asserted enrollment and already holds the course's progress.
+   *
+   * Same precedent as `LiveSessionsService.getAttendanceSummary` - the caller
+   * owns the enrollment check. `DashboardService` uses this instead of
+   * `getSummary`, which would re-assert the enrollment and recompute a
+   * `CourseProgress` the dashboard has already built, for one number.
+   */
+  async getPerformanceFor(
+    courseId: string,
+    studentId: string,
+  ): Promise<PerformanceSnapshot> {
+    const entries = await this.assessmentsService.getPerformanceEntries(
+      courseId,
+      studentId,
+    );
+    return this.buildPerformance(entries);
+  }
+
   async getSummary(courseId: string, studentId: string): Promise<ReportSummary> {
     const enrollment = await this.enrollmentsService.assertEnrolled(
       courseId,
@@ -107,29 +160,12 @@ export class ReportsService {
       this.assessmentsService.getPerformanceEntries(courseId, studentId),
     ]);
 
-    const homework = entries.filter((e) => e.type === 'homework');
-    const homeworkDone = homework.filter(
-      (e) => e.status === 'submitted' || e.status === 'corrected',
-    ).length;
     const topics = this.topicScores(entries);
 
     return {
       courseId,
       progress,
-      performance: {
-        quizAverage: this.averagePercentage(
-          entries.filter((e) => e.type === 'quiz'),
-        ),
-        assignmentAverage: this.averagePercentage(
-          entries.filter((e) => e.type === 'assignment'),
-        ),
-        homeworkSubmissionRate:
-          homework.length === 0
-            ? 0
-            : Math.round((homeworkDone / homework.length) * 100),
-        overallPercentage: this.averagePercentage(entries),
-        gradedCount: entries.filter((e) => e.score !== null).length,
-      },
+      performance: this.buildPerformance(entries),
       strongAreas: topics.filter((t) => t.percentage >= STRONG_AREA_THRESHOLD),
       // Weakest first - this list is a to-do, so the worst topic leads.
       needsImprovement: topics

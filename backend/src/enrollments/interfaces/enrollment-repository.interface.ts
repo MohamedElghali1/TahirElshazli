@@ -39,6 +39,17 @@ export interface EnrollmentRepository {
     studentIds: readonly string[],
   ): Promise<Record<string, number>>;
   /**
+   * How many *distinct people* hold these courses.
+   *
+   * Not the sum of `countByCourses`: a student in two of the teacher's groups
+   * is one person, and a dashboard figure that double-counts them is one
+   * nobody re-checks. The staff overview built this by pulling every
+   * enrollment row of every course into a `Set` just to read its size - about
+   * 300 rows a login at the numbers this platform actually runs at, for one
+   * integer.
+   */
+  countDistinctStudents(courseIds: readonly string[]): Promise<number>;
+  /**
    * Enrolls a student, returning the enrollment that now exists.
    *
    * Idempotent by contract: a second call for the same pair returns the

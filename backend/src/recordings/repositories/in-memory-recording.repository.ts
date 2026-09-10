@@ -334,6 +334,19 @@ export class InMemoryRecordingRepository implements RecordingRepository {
       .map((r) => ({ ...r, topics: [...r.topics] }));
   }
 
+  async countByCourses(
+    courseIds: readonly string[],
+  ): Promise<Record<string, number>> {
+    const wanted = new Set(courseIds);
+    const counts: Record<string, number> = {};
+    for (const recording of this.recordings) {
+      if (wanted.has(recording.courseId)) {
+        counts[recording.courseId] = (counts[recording.courseId] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }
+
   async create(input: NewRecording): Promise<Recording> {
     // Appended to the end of the course's running order. Derived from the
     // course's own rows rather than the array length, so a course with no

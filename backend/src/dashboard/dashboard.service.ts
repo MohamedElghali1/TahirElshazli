@@ -4,6 +4,7 @@ import type { CourseProgress } from '../courses/courses.service.js';
 import { EnrollmentsService } from '../enrollments/enrollments.service.js';
 import { StudentsService } from '../students/students.service.js';
 import { AssessmentsService } from '../assessments/assessments.service.js';
+import type { AssessmentListItem } from '../assessments/assessments.service.js';
 import { RecordingsService } from '../recordings/recordings.service.js';
 import { MaterialsService } from '../materials/materials.service.js';
 import type { MaterialCounts } from '../materials/materials.service.js';
@@ -21,6 +22,29 @@ export interface DashboardStats {
   newRecordings: number;
   /** Grade average across marked work - performance, not completion. */
   overallReportPercentage: number | null;
+}
+
+/**
+ * The four headline numbers, derived from a list the caller already holds.
+ *
+ * A free function rather than a method because two screens need it - the
+ * per-course dashboard and the aggregated Home screen - and a second
+ * implementation is precisely how the two would come to disagree. `status` is
+ * read as the server derived it and never recomputed (§5.10); this only counts.
+ */
+export function deriveStats(
+  assessments: readonly AssessmentListItem[],
+  newRecordings: number,
+  overallReportPercentage: number | null,
+): DashboardStats {
+  return {
+    homeworkPending: assessments.filter(
+      (a) => a.type === 'homework' && a.status === 'available',
+    ).length,
+    answersAvailable: assessments.filter((a) => a.status === 'corrected').length,
+    newRecordings,
+    overallReportPercentage,
+  };
 }
 
 export interface DashboardResponse {
@@ -73,7 +97,7 @@ export class DashboardService {
       newRecordings,
       quickAccess,
       nextLiveSession,
-      summary,
+      performance,
       unreadNotifications,
     ] = await Promise.all([
       this.studentsService.getProfile(studentId),
@@ -82,7 +106,13 @@ export class DashboardService {
       this.recordingsService.countUnwatched(courseId, studentId),
       this.materialsService.getCounts(courseId, studentId),
       this.liveSessionsService.getNextSession(courseId, studentId),
-      this.reportsService.getSummary(courseId, studentId),
+      // `getPerformanceFor`, not `getSummary`: the dashboard reads one number
+      // off it, and `getSummary` would re-assert this enrollment and rebuild a
+      // `CourseProgress` - two recording reads - that `progress` above already
+      // holds. Same arithmetic either way; `ReportsService.buildPerformance` is
+      // the single implementation, so the figure cannot drift from the one the
+      // Report screen shows.
+      this.reportsService.getPerformanceFor(courseId, studentId),
       this.notificationsService.countUnread(studentId),
     ]);
 
@@ -95,17 +125,15 @@ export class DashboardService {
         learningMode: enrollment.learningMode,
       },
       progress,
-      stats: {
-        homeworkPending: assessments.filter(
-          (a) => a.type === 'homework' && a.status === 'available',
-        ).length,
-        answersAvailable: assessments.filter((a) => a.status === 'corrected').length,
+      stats: deriveStats(
+        assessments,
         newRecordings,
-        overallReportPercentage: summary.performance.overallPercentage,
-      },
+        performance.overallPercentage,
+      ),
       nextLiveSession,
       quickAccess,
       unreadNotifications,
     };
   }
 }
+

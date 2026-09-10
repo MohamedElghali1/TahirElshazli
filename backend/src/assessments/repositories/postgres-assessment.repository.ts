@@ -184,6 +184,27 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
     return rows.map(toSubmission);
   }
 
+  async countUngradedSubmissionsByCourses(
+    courseIds: readonly string[],
+  ): Promise<Record<string, number>> {
+    if (courseIds.length === 0) {
+      return {};
+    }
+    const rows = await this.db.query<{ course_id: string; count: string }>(
+      `SELECT a.course_id, COUNT(*) AS count
+       FROM assessment_submissions s
+       JOIN assessments a ON a.id = s.assessment_id
+       WHERE a.course_id = ANY($1::text[])
+         AND s.corrected_at IS NULL
+       GROUP BY a.course_id`,
+      [[...courseIds]],
+    );
+    // COUNT(*) arrives as a string; see EnrollmentRepository.countByCourses.
+    return Object.fromEntries(
+      rows.map((row) => [row.course_id, Number(row.count)]),
+    );
+  }
+
   async findSubmissionById(
     submissionId: string,
   ): Promise<StoredSubmission | null> {

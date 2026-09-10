@@ -169,6 +169,25 @@ export class PostgresRecordingRepository implements RecordingRepository {
     return rows.map(toRecording);
   }
 
+  async countByCourses(
+    courseIds: readonly string[],
+  ): Promise<Record<string, number>> {
+    if (courseIds.length === 0) {
+      return {};
+    }
+    const rows = await this.db.query<{ course_id: string; count: string }>(
+      `SELECT course_id, COUNT(*) AS count
+       FROM recordings
+       WHERE course_id = ANY($1::text[])
+       GROUP BY course_id`,
+      [[...courseIds]],
+    );
+    // COUNT(*) arrives as a string; see EnrollmentRepository.countByCourses.
+    return Object.fromEntries(
+      rows.map((row) => [row.course_id, Number(row.count)]),
+    );
+  }
+
   async create(input: NewRecording): Promise<Recording> {
     // The position is chosen inside the INSERT rather than by a prior SELECT,
     // so two teachers publishing at once cannot both read the same max and

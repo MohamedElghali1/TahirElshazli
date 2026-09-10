@@ -30,9 +30,9 @@ import type {
   AppNotification,
   AssessmentListItem,
   CourseListItem,
-  DashboardResponse,
   LiveSession,
   MaterialCategory,
+  StudentHomeEntry,
 } from '@/lib/types';
 import {
   Chip,
@@ -237,53 +237,44 @@ export default function DashboardPage() {
   const { user } = useSession();
   const now = useNow();
 
+  /* One request for the whole screen.
+
+     This used to be three `useApi` calls, the middle one fanning out over the
+     student's courses - `2N + 2` requests before the board could draw, and a
+     staged paint where the panels sat on "Loading files…" until the second
+     wave landed. `GET /dashboard` returns the same numbers, composed by the
+     same services server-side, so the screen is unchanged and the waterfall
+     is gone. */
   const {
-    data: courses,
+    data: home,
     error,
     loading,
     reload,
-  } = useApi((token) => api.courses.list(token), []);
+  } = useApi((token) => api.dashboard.home(token), []);
 
-  // The dashboard endpoint is per course, and a dashboard that silently
-  // covered only the first one would hide the other's homework. Fan out and
-  // aggregate. The key, not the array, is the dependency - a fresh array
-  // with the same ids must not refetch.
-  const courseKey = (courses ?? []).map((c) => c.id).join(',');
-
-  const { data: detail } = useApi(
-    async (token) => {
-      const list = courses ?? [];
-      if (list.length === 0) return null;
-      const [dashboards, work] = await Promise.all([
-        Promise.all(list.map((c) => api.dashboard.get(token, c.id))),
-        Promise.all(list.map((c) => api.assessments.list(token, c.id))),
-      ]);
-      return { dashboards, work };
-    },
-    [courseKey],
+  const entries = useMemo(() => home?.entries ?? [], [home]);
+  // `courses` and `mailbox` keep their old shapes so everything downstream -
+  // the cards, the panels, the inbox - reads exactly as it did.
+  const courses = useMemo(
+    () => (home ? entries.map((e) => e.course) : null),
+    [home, entries],
   );
-
-  const { data: mailbox } = useApi(
-    (token) => api.notifications.list(token),
-    [],
-  );
-
-  const dashboards = useMemo(() => detail?.dashboards ?? [], [detail]);
+  const mailbox = home?.notifications ?? null;
 
   /* --- the one session the hero and the header both speak about ------- */
   const nextSession = useMemo(() => {
-    const upcoming = dashboards
-      .filter((d): d is DashboardResponse & { nextLiveSession: LiveSession } =>
-        Boolean(d.nextLiveSession),
+    const upcoming = entries
+      .filter((e): e is StudentHomeEntry & { nextLiveSession: LiveSession } =>
+        Boolean(e.nextLiveSession),
       )
-      .map((d) => ({ session: d.nextLiveSession, courseTitle: d.course.title }))
+      .map((e) => ({ session: e.nextLiveSession, courseTitle: e.course.title }))
       .sort(
         (a, b) =>
           new Date(a.session.scheduledAt).getTime() -
           new Date(b.session.scheduledAt).getTime(),
       );
     return upcoming[0] ?? null;
-  }, [dashboards]);
+  }, [entries]);
 
   const sessionPhase = nextSession
     ? phaseOf(nextSession.session, now)
@@ -305,13 +296,11 @@ export default function DashboardPage() {
 
   /* --- inbox ---------------------------------------------------------- */
   const inbox = useMemo(() => {
-    const list = courses ?? [];
     const items: InboxItem[] = [];
 
-    (detail?.work ?? []).forEach((assessments, i) => {
-      const courseTitle = list[i]?.title ?? '';
-      assessments.forEach((assessment) => {
-        const item = assessmentItem(assessment, courseTitle, now);
+    entries.forEach((entry) => {
+      entry.assessments.forEach((assessment) => {
+        const item = assessmentItem(assessment, entry.course.title, now);
         if (item) items.push(item);
       });
     });
@@ -321,7 +310,7 @@ export default function DashboardPage() {
       .forEach((n) => items.push(announcementItem(n)));
 
     return items.sort((a, b) => a.rank - b.rank);
-  }, [courses, detail, mailbox, now]);
+  }, [entries, mailbox, now]);
 
   const needsAction = inbox.filter((i) => i.rank <= 2).length;
   const courseCount = courses?.length ?? 0;
@@ -385,7 +374,7 @@ export default function DashboardPage() {
                   />
                 </StaggerItem>
                 <StaggerItem>
-                  <QuickAccess courses={courses} dashboards={dashboards} />
+                  <QuickAccess entries={entries} />
                 </StaggerItem>
               </StaggerList>
 
@@ -398,7 +387,7 @@ export default function DashboardPage() {
                   />
                 </StaggerItem>
                 <StaggerItem>
-                  <MaterialsPanel courses={courses} dashboards={dashboards} />
+                  <MaterialsPanel entries={entries} />
                 </StaggerItem>
               </StaggerList>
             </div>
@@ -641,16 +630,10 @@ function HeroLink({ href, children }: { href: string; children: React.ReactNode 
    instead of a trip through the rail. With more than one course the
    destination is ambiguous, so the sub-label names the course it opens. */
 
-function QuickAccess({
-  courses,
-  dashboards,
-}: {
-  courses: CourseListItem[];
-  dashboards: DashboardResponse[];
-}) {
-  const primary = courses[0];
-  const stats = dashboards[0]?.stats;
-  const many = courses.length > 1;
+function QuickAccess({ entries }: { entries: StudentHomeEntry[] }) {
+  const primary = entries[0].course;
+  const stats = entries[0]?.stats;
+  const many = entries.length > 1;
   const scope = many ? primary.title : null;
 
   const rows = [
@@ -844,37 +827,31 @@ function InboxPanel({
    the courses themselves, because a combined count that links to only one
    of them would be a number the destination cannot account for. */
 
-function MaterialsPanel({
-  courses,
-  dashboards,
-}: {
-  courses: CourseListItem[];
-  dashboards: DashboardResponse[];
-}) {
-  const single = courses.length === 1 && dashboards.length === 1;
+function MaterialsPanel({ entries }: { entries: StudentHomeEntry[] }) {
+  const single = entries.length === 1;
 
   const rows = single
     ? (
         Object.keys(MATERIAL_CATEGORY_LABEL) as MaterialCategory[]
       ).map((category) => ({
-        href: `/learn/${courses[0].id}/materials`,
+        href: `/learn/${entries[0].course.id}/materials`,
         icon: MATERIAL_ICON[category],
         tone: MATERIAL_TONE[category],
         label: MATERIAL_CATEGORY_LABEL[category],
-        sub: courses[0].title,
-        count: String(dashboards[0].quickAccess[category] ?? 0),
+        sub: entries[0].course.title,
+        count: String(entries[0].quickAccess[category] ?? 0),
       }))
-    : dashboards.map((dashboard) => {
-        const total = Object.values(dashboard.quickAccess).reduce(
+    : entries.map((entry) => {
+        const total = Object.values(entry.quickAccess).reduce(
           (sum, n) => sum + n,
           0,
         );
         return {
-          href: `/learn/${dashboard.course.id}/materials`,
+          href: `/learn/${entry.course.id}/materials`,
           icon: FolderSimpleIcon,
           tone: 'blue' as ChipTone,
-          label: dashboard.course.title,
-          sub: dashboard.course.teacherName,
+          label: entry.course.title,
+          sub: entry.course.teacherName,
           count: String(total),
         };
       });
@@ -890,12 +867,11 @@ function MaterialsPanel({
       bodyClassName=""
     >
       {rows.length === 0 ? (
-        // The counts arrive on a second request, so an empty `dashboards`
-        // means "still loading", not "no files" - and saying the latter
-        // before the answer is known is the kind of small lie a dashboard
-        // gets believed about.
+        // No "still loading" branch any more: the counts arrive with the
+        // courses in one response, so by the time this panel renders the
+        // answer is known and an empty list really does mean empty.
         <p className="p-[var(--sp-4)] text-[var(--fs-base)] text-[var(--fg-tertiary)]">
-          {dashboards.length === 0 ? 'Loading files…' : 'Nothing uploaded yet.'}
+          Nothing uploaded yet.
         </p>
       ) : (
         <ul className="rows">

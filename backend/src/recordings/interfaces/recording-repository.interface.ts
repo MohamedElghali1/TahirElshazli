@@ -91,6 +91,18 @@ export interface RecordingRepository {
    * render as "nobody has watched this".
    */
   findByCourseForStaff(courseId: string): Promise<Recording[]>;
+  /**
+   * How many recordings each of these courses holds. Absent means zero.
+   *
+   * The staff overview wants one integer per course and had been calling
+   * `findByCourseForStaff` per course to length the array - every row, every
+   * title and topic array, materialized on the console's landing page to
+   * produce a number. Same count-only shape as
+   * `EnrollmentRepository.countByCourses`, and the same reason.
+   */
+  countByCourses(
+    courseIds: readonly string[],
+  ): Promise<Record<string, number>>;
   upsertProgress(
     recordingId: string,
     studentId: string,

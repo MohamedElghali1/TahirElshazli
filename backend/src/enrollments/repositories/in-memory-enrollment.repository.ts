@@ -64,6 +64,17 @@ export class InMemoryEnrollmentRepository implements EnrollmentRepository {
     return counts;
   }
 
+  async countDistinctStudents(courseIds: readonly string[]): Promise<number> {
+    const wanted = new Set(courseIds);
+    const students = new Set<string>();
+    for (const enrollment of this.enrollments) {
+      if (wanted.has(enrollment.courseId)) {
+        students.add(enrollment.studentId);
+      }
+    }
+    return students.size;
+  }
+
   async countByStudents(
     studentIds: readonly string[],
   ): Promise<Record<string, number>> {

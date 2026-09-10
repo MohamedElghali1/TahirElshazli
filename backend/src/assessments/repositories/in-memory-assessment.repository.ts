@@ -284,6 +284,28 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
     return this.submissions.filter((s) => wanted.has(s.assessmentId));
   }
 
+  async countUngradedSubmissionsByCourses(
+    courseIds: readonly string[],
+  ): Promise<Record<string, number>> {
+    const wanted = new Set(courseIds);
+    // assessment id -> course id, for the courses asked about only.
+    const courseOf = new Map<string, string>();
+    for (const assessment of STUB_ASSESSMENTS) {
+      if (wanted.has(assessment.courseId)) {
+        courseOf.set(assessment.id, assessment.courseId);
+      }
+    }
+
+    const counts: Record<string, number> = {};
+    for (const submission of this.submissions) {
+      if (submission.correctedAt !== null) continue;
+      const courseId = courseOf.get(submission.assessmentId);
+      if (courseId === undefined) continue;
+      counts[courseId] = (counts[courseId] ?? 0) + 1;
+    }
+    return counts;
+  }
+
   async findSubmissionById(
     submissionId: string,
   ): Promise<StoredSubmission | null> {

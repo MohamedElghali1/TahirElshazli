@@ -83,6 +83,19 @@ export class PostgresEnrollmentRepository implements EnrollmentRepository {
     );
   }
 
+  async countDistinctStudents(courseIds: readonly string[]): Promise<number> {
+    if (courseIds.length === 0) {
+      return 0;
+    }
+    const row = await this.db.queryOne<{ count: string }>(
+      `SELECT COUNT(DISTINCT student_id) AS count
+       FROM enrollments
+       WHERE course_id = ANY($1::text[])`,
+      [[...courseIds]],
+    );
+    return Number(row?.count ?? 0);
+  }
+
   async countByStudents(
     studentIds: readonly string[],
   ): Promise<Record<string, number>> {
