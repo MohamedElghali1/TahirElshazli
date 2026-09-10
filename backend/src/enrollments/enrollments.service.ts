@@ -2,7 +2,6 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type {
   Enrollment,
   EnrollmentRepository,
-  LearningMode,
 } from './interfaces/enrollment-repository.interface.js';
 import { ENROLLMENT_REPOSITORY } from './interfaces/enrollment-repository.interface.js';
 
@@ -36,15 +35,10 @@ export class EnrollmentsService {
    * button that is double-clicked reads as success rather than as a conflict
    * the student cannot resolve.
    */
-  async enroll(
-    courseId: string,
-    studentId: string,
-    learningMode: LearningMode,
-  ): Promise<Enrollment> {
+  async enroll(courseId: string, studentId: string): Promise<Enrollment> {
     return this.enrollmentRepo.create({
       studentId,
       courseId,
-      learningMode,
       enrolledAt: new Date().toISOString(),
     });
   }

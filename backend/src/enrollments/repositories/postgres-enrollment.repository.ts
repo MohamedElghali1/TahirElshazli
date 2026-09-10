@@ -4,24 +4,20 @@ import { iso } from '../../database/database.types.js';
 import type {
   Enrollment,
   EnrollmentRepository,
-  LearningMode,
 } from '../interfaces/enrollment-repository.interface.js';
 
 interface EnrollmentRow {
   student_id: string;
   course_id: string;
-  learning_mode: LearningMode;
   enrolled_at: Date;
 }
 
-const SELECT =
-  'SELECT student_id, course_id, learning_mode, enrolled_at FROM enrollments';
+const SELECT = 'SELECT student_id, course_id, enrolled_at FROM enrollments';
 
 function toEnrollment(row: EnrollmentRow): Enrollment {
   return {
     studentId: row.student_id,
     courseId: row.course_id,
-    learningMode: row.learning_mode,
     enrolledAt: iso(row.enrolled_at),
   };
 }
@@ -122,16 +118,11 @@ export class PostgresEnrollmentRepository implements EnrollmentRepository {
    */
   async create(enrollment: Enrollment): Promise<Enrollment> {
     const row = await this.db.queryOne<EnrollmentRow>(
-      `INSERT INTO enrollments (student_id, course_id, learning_mode, enrolled_at)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO enrollments (student_id, course_id, enrolled_at)
+       VALUES ($1, $2, $3)
        ON CONFLICT (student_id, course_id) DO NOTHING
-       RETURNING student_id, course_id, learning_mode, enrolled_at`,
-      [
-        enrollment.studentId,
-        enrollment.courseId,
-        enrollment.learningMode,
-        enrollment.enrolledAt,
-      ],
+       RETURNING student_id, course_id, enrolled_at`,
+      [enrollment.studentId, enrollment.courseId, enrollment.enrolledAt],
     );
     if (row) {
       return toEnrollment(row);

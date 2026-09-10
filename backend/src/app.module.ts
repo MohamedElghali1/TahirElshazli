@@ -24,6 +24,7 @@ import { StaffModule } from './staff/staff.module.js';
 import { ManageModule } from './manage/manage.module.js';
 import { AnnouncementsModule } from './announcements/announcements.module.js';
 import { GroupsModule } from './groups/groups.module.js';
+import { GroupDataModule } from './groups/group-data.module.js';
 
 @Module({
   imports: [
@@ -34,6 +35,13 @@ import { GroupsModule } from './groups/groups.module.js';
     // of what a mutating TA/admin action *is*, so it has to be available to
     // every feature module that follows.
     AuditModule,
+    // Global as well, and for the same shape of reason: once the learning mode
+    // moved onto `GroupCourse` (§5.2), every service that renders a student's
+    // course needs group data, and `GroupsModule` already depends on
+    // `CoursesModule`. Global exports break that cycle without `forwardRef`.
+    // Only the repository and `LearningModeService` are global; the writes stay
+    // behind `GroupsModule`.
+    GroupDataModule,
     RateLimitModule,
     AuthModule,
     EnrollmentsModule,

@@ -11,6 +11,7 @@ import type { MaterialCounts } from '../materials/materials.service.js';
 import { LiveSessionsService } from '../live-sessions/live-sessions.service.js';
 import { ReportsService } from '../reports/reports.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
+import { LearningModeService } from '../groups/learning-mode.service.js';
 import type { LiveSession } from '../live-sessions/interfaces/live-session-repository.interface.js';
 
 export interface DashboardStats {
@@ -74,6 +75,8 @@ export class DashboardService {
     private readonly liveSessionsService: LiveSessionsService,
     private readonly reportsService: ReportsService,
     private readonly notificationsService: NotificationsService,
+    /** Global (`GroupDataModule`); the mode lives on the group now (§5.2). */
+    private readonly learningMode: LearningModeService,
   ) {}
 
   /**
@@ -84,11 +87,14 @@ export class DashboardService {
     courseId: string,
     studentId: string,
   ): Promise<DashboardResponse> {
-    const enrollment = await this.enrollmentsService.assertEnrolled(
-      courseId,
-      studentId,
-    );
-    const course = await this.coursesService.getCourse(courseId, studentId);
+    // The enrollment is the gate; the *mode* now comes from the student's group
+    // (CLAUDE.md §5.2), falling back to the course default for a student who is
+    // enrolled but not yet placed (§7.2).
+    await this.enrollmentsService.assertEnrolled(courseId, studentId);
+    const [course, learningMode] = await Promise.all([
+      this.coursesService.getCourse(courseId, studentId),
+      this.learningMode.resolve(courseId, studentId),
+    ]);
 
     const [
       profile,
@@ -101,7 +107,7 @@ export class DashboardService {
       unreadNotifications,
     ] = await Promise.all([
       this.studentsService.getProfile(studentId),
-      this.coursesService.getProgress(courseId, studentId, enrollment.learningMode),
+      this.coursesService.getProgress(courseId, studentId, learningMode),
       this.assessmentsService.getAssessmentsForCourse(courseId, studentId),
       this.recordingsService.countUnwatched(courseId, studentId),
       this.materialsService.getCounts(courseId, studentId),
@@ -122,7 +128,7 @@ export class DashboardService {
         id: course.id,
         title: course.title,
         teacherName: course.teacherName,
-        learningMode: enrollment.learningMode,
+        learningMode,
       },
       progress,
       stats: deriveStats(

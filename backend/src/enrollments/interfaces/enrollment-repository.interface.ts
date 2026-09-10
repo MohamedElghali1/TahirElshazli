@@ -3,9 +3,21 @@ export type LearningMode = 'recorded' | 'live';
 export interface Enrollment {
   studentId: string;
   courseId: string;
-  learningMode: LearningMode;
   enrolledAt: string;
 }
+
+/**
+ * `LearningMode` no longer lives on the enrollment.
+ *
+ * It moved to `GroupCourse` on 2026-09-10 (CLAUDE.md §5.2): a group is *taught*
+ * one way, and two students in the same room cannot be in different modes.
+ * `LearningModeService` is the only thing that answers "how is this student
+ * taught this course" now, falling back to `courses.default_learning_mode` for
+ * a student who is enrolled but not yet placed in a group.
+ *
+ * The type is still re-exported from here because it is the shape of a column
+ * two other tables use, and moving it would touch every importer for no gain.
+ */
 
 export interface EnrollmentRepository {
   findByStudent(studentId: string): Promise<Enrollment[]>;
@@ -55,9 +67,12 @@ export interface EnrollmentRepository {
    * Idempotent by contract: a second call for the same pair returns the
    * existing row rather than raising or overwriting it. Two clicks on Enroll
    * race here, and the losing one should read as success - it describes the
-   * same true state - not as a 409 the student cannot act on. Overwriting is
-   * equally wrong: it would silently move a student the admin had placed in
-   * the live cohort back to the recorded default.
+   * same true state - not as a 409 the student cannot act on.
+   *
+   * There is nothing left on this row to overwrite, which is a small side
+   * benefit of the mode moving to the group: the old contract had to say
+   * "and do not overwrite", because a re-enroll would otherwise have reset a
+   * student the admin had deliberately moved to the live cohort.
    */
   create(enrollment: Enrollment): Promise<Enrollment>;
 }

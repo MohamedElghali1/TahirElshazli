@@ -77,10 +77,13 @@ INSERT INTO lessons (id, module_id, title, position, duration_seconds) VALUES
   ('lesson-17', 'mod-6', 'Register and Audience',             2, 2220)
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO enrollments (student_id, course_id, learning_mode, enrolled_at) VALUES
-  ('student-1', 'course-1', 'recorded', '2026-01-20T09:00:00Z'),
-  ('student-1', 'course-2', 'live',     '2026-06-01T09:00:00Z'),
-  ('student-2', 'course-1', 'recorded', '2026-03-15T09:00:00Z')
+-- No learning_mode: it moved to `group_courses` in 006 and the column was
+-- dropped in 007 (CLAUDE.md 5.2). These students' modes come from the groups
+-- seeded in 003_group_fixtures.sql, which is also why that file exists.
+INSERT INTO enrollments (student_id, course_id, enrolled_at) VALUES
+  ('student-1', 'course-1', '2026-01-20T09:00:00Z'),
+  ('student-1', 'course-2', '2026-06-01T09:00:00Z'),
+  ('student-2', 'course-1', '2026-03-15T09:00:00Z')
 ON CONFLICT (student_id, course_id) DO NOTHING;
 
 -- ============================================================

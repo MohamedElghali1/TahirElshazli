@@ -211,11 +211,18 @@ describeIfDb('Postgres repositories', () => {
   });
 
   describe('enrollments', () => {
-    it('carries the learning mode', async () => {
+    it('is the access gate, and no longer carries the learning mode', async () => {
       const repo = new PostgresEnrollmentRepository(db);
-      expect((await repo.find('course-1', 'student-1'))?.learningMode).toBe('recorded');
-      expect((await repo.find('course-2', 'student-1'))?.learningMode).toBe('live');
+      expect(await repo.find('course-1', 'student-1')).not.toBeNull();
+      expect(await repo.find('course-2', 'student-1')).not.toBeNull();
+      // student-2 holds course-1 only.
       expect(await repo.find('course-2', 'student-2')).toBeNull();
+      // The mode moved to `group_courses` on 2026-09-10 (CLAUDE.md §5.2), and
+      // migration 007 dropped the column. Asserting its absence on the shape is
+      // what stops it being quietly re-added as a second source of truth.
+      expect(await repo.find('course-1', 'student-1')).not.toHaveProperty(
+        'learningMode',
+      );
     });
   });
 

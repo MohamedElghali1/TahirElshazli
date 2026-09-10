@@ -20,6 +20,9 @@ import { RolesGuard } from '../auth/roles.guard.js';
 import { EnrollmentsService } from '../enrollments/enrollments.service.js';
 import { ENROLLMENT_REPOSITORY } from '../enrollments/interfaces/enrollment-repository.interface.js';
 import { InMemoryEnrollmentRepository } from '../enrollments/repositories/in-memory-enrollment.repository.js';
+import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interface.js';
+import { InMemoryGroupRepository } from '../groups/repositories/in-memory-group.repository.js';
+import { LearningModeService } from '../groups/learning-mode.service.js';
 
 const STUDENT = {
   user: { sub: 'student-1', email: 'student@example.com', role: 'student', jti: 'j1' },
@@ -40,6 +43,12 @@ describe('ReportsController', () => {
       providers: [
         EnrollmentsService,
         { provide: ENROLLMENT_REPOSITORY, useClass: InMemoryEnrollmentRepository },
+        // The learning mode lives on the group now (CLAUDE.md §5.2), so every
+        // module that renders a student's course needs these two. Real
+        // implementations rather than stubs: the resolution order (group,
+        // then course default) is the part worth exercising.
+        { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },
+        LearningModeService,
         ReportsService,
         AssessmentsService,
         CoursesService,

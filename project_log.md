@@ -35,8 +35,10 @@ mode moved onto `GroupCourse`; adding a group to a course enrolls nobody. An unp
 course looks empty until a TA places them, which is the design note to carry into the build.
 **Groups are specified and the foundation is built** (migration `006`, `backend/src/groups/`):
 four tables, a repository on both drivers, staff CRUD and placement, the student classmate list,
-and six new audit actions. Two pieces are knowingly inert - `learning_mode` on `group_courses` is
-written but not yet read, and `assessment_targets` is DDL only until the authoring surface lands.
+and six new audit actions. The learning mode now resolves from the group - migration `007` dropped
+`enrollments.learning_mode`, so there is no second copy to drift. One piece stays knowingly inert:
+`assessment_targets` is DDL only until the authoring surface lands. **None of the group work has a
+frontend yet.**
 
 **Backend — four of five roles now have a working API.** Of the five roles in `CLAUDE.md` §2,
 **Student**, **Assistant** and **Teacher** have full surfaces and **Visitor** now has a partial one
@@ -48,22 +50,26 @@ every TA endpoint joins through (§5.11); `manage` is the work surface built on 
 roster, grading, the recording library, live-session scheduling and the people directory;
 `announcements` carries the send-time audience resolution §5.14 requires; `public` is the only
 unauthenticated surface besides health and auth; `audit` owns the append-only log, now covering
-**ten actions**.
+**sixteen actions**; `groups` (§5.16) owns cohorts, staff placement and the classmate list, with
+`GroupDataModule` global so the learning mode can be resolved without a module cycle.
 
-**Persistence is driver-selected.** All thirteen repository interfaces have *two* implementations —
+**Persistence is driver-selected.** All fourteen repository interfaces have *two* implementations —
 an `InMemory*Repository` and a `Postgres*Repository` — bound through
 `database/repository.provider.ts` by the `PERSISTENCE_DRIVER` env var. `memory` is the default in
-development and test and is **refused outright in production**. Five migrations:
+development and test and is **refused outright in production**. Seven migrations:
 `001_student_platform.sql`, `002_staff_and_audit.sql`, `003_course_catalog.sql`,
-`004_public_catalog.sql`, `005_announcements.sql`.
+`004_public_catalog.sql`, `005_announcements.sql`, `006_groups.sql` and
+`007_learning_mode_moves_to_the_group.sql`.
 
-**The integration suite has now run in full.** It covers all thirteen repositories and holds 52
-tests, and as of **2026-09-09 all five migrations have been applied to a real PostgreSQL 15 from an
-empty schema with all 52 green** — the announcements DDL and both its CHECK constraints, the
-`notifications_type_check` swap, 004's slug backfill and 003's learning-mode UPDATE included.
-Docker's engine was simply stopped rather than broken; starting Docker Desktop was the whole fix.
-The CI guard that fails a job reporting no executed tests still matters, because the suite
-self-skips and exits 0 wherever `TEST_DATABASE_URL` is unset.
+**The integration suite has now run in full.** It covers all fourteen repositories and holds 59
+tests, and as of **2026-09-10 all seven migrations have been applied to a real PostgreSQL 15 from an
+empty schema with all 59 green** — the announcements DDL and both its CHECK constraints, the
+`notifications_type_check` swap, 004's slug backfill, 003's learning-mode UPDATE, 006's four group
+tables with their UNIQUE constraints and cascades, and 007's column drop included. The CI guard that
+fails a job reporting no executed tests still matters, because the suite self-skips and exits 0
+wherever `TEST_DATABASE_URL` is unset.
+
+Test totals across the three suites: **299 unit, 170 e2e, 59 integration.**
 
 **Delivery is wired.** `npm install && npm run dev` runs the whole thing with no database and no
 config; CI lints, builds, and runs unit + e2e + integration (against a Postgres service) plus both
@@ -1685,3 +1691,82 @@ front of the insert does the work and the constraint is never exercised.
 - Code comments that say "group" and mean *course* are now actively wrong; fix them as the remaining
   group work touches each file.
 - The §5.4 audit transaction gap is unchanged, and now has six more write paths depending on it.
+
+---
+
+## 2026-09-10 — The learning mode moves to the group (migration `007`)
+
+The previous entry closed with one piece knowingly inert: `group_courses.learning_mode` was written
+and never read, while the student surface still read `Enrollment.learningMode`. Two sources of truth
+for one value is the drift this project keeps warning about, so it did not get to sit there.
+
+**What changed.** `LearningModeService` is now the only thing that answers *how is this student
+taught this course*: the mode of a group they are in that studies the course, else
+`courses.default_learning_mode`, else `'recorded'`. Migration `007` **drops
+`enrollments.learning_mode`** — deliberately rather than leaving it as a cache, because the copy
+goes stale the instant a student is moved between groups, which is the operation groups exist to
+support. It is the first destructive migration in the set, and the file itself argues why the
+dropped value is derivable: it was written from the course default at self-enrollment and there has
+never been a route that edits it.
+
+Seven call sites moved: `CoursesService` (list, detail, enroll), `DashboardService`,
+`ReportsService.getSummary`, and the staff roster in `ManageService`. The last one takes the batch
+form, `resolveForCourse`, whose query count is bounded by the number of *groups* on the course
+rather than the number of students in it — thirty round trips on a page that lists thirty people is
+the O(N) §7.3 still says to avoid at this size.
+
+**The structural decision worth recording is `@Global()`.** Once the mode lives on the group, every
+service that renders a student's course needs group data — but `GroupsModule` already depends on
+`CoursesModule`, so `CoursesModule` importing it back is a cycle, and `forwardRef` would only hide
+one. `GroupDataModule` splits the *data* (`GROUP_REPOSITORY`) and the one *derived question*
+(`LearningModeService`) out as a global module, exactly as `AuditModule` already does for §5.4.
+`GroupsService`, which writes, stays behind `GroupsModule` and is not reachable without importing
+it. **A third global module in this codebase should need a better reason than convenience**: global
+providers are invisible in a module's import list, which is precisely what makes them worth
+rationing.
+
+**One correctness detail that a test now pins.** A student may legally sit in two groups studying
+one course. Both the single read and the roster batch resolve to the **longest-standing placement**
+(`enrolled_at` order), so the two can never disagree — two reads of one value that differ is worse
+than either answer, and the disagreement would surface as a dashboard that renders checkpoints while
+the roster says the student is live.
+
+```mermaid
+graph LR
+    Q["how is this student<br/>taught this course?"] --> G{"in a group<br/>studying it?"}
+    G -->|yes| GM["group_courses.learning_mode"]
+    G -->|"no - enrolled<br/>but unplaced (7.2)"| CD["courses.default_learning_mode"]
+    CD -->|"no such course"| SAFE["'recorded' - renders<br/>checkpoints, not an<br/>attendance timeline"]
+    OLD["enrollments.learning_mode"] -.->|"dropped, migration 007"| X["gone"]
+```
+
+**Why.** `CLAUDE.md` §5.2 (the mode belongs to the group), §7.2 (an unplaced student still gets a
+dashboard), §7.3 (batch the roster, do not batch what is already one or two rows). Traceability:
+`CRS-`, `PRG-`.
+
+**Verification.** All executed on this machine:
+
+| Check | Result |
+|---|---|
+| `npm run lint` | clean |
+| `npm run build` | clean |
+| `npm run test` (unit) | **299 passed** / 22 files — was 294, five new |
+| e2e (`--no-file-parallelism`) | **170 passed** / 3 files — was 168, two new |
+| `npm run test:integration` vs PostgreSQL 15 | **59 passed**, all **seven** migrations from an empty schema |
+
+The e2e pair is the one that matters: it asserts over the wire that `course-1` renders recorded and
+`course-2` renders live for the same student, when nothing on the enrollment says so any more — and
+that the aggregate Home screen and the per-course screen agree, which is the guarantee
+`GET /dashboard` was built for and the thing a second resolution path would break.
+
+**Follow-ups / debt.**
+
+- **`assessment_targets` is still DDL only** — the last inert piece of `006`. It lands with the
+  authoring surface (§5.18), which is the next real feature: an assessment create/edit/publish route
+  (whose `@Roles()` decorator decides §11's open "can a TA create assignments?"), the quiz engine
+  behind it, and a student-facing announcements list.
+- **No frontend for any of this.** Groups, placement and the classmate list are backend-only; the
+  console has no group screen and the student LMS has no classmates panel. The "enrolled, not yet
+  placed" queue §5.16 calls a requirement does not exist anywhere yet, and it is what stands between
+  a self-enrolled student and a course that looks empty.
+- `TA_SCOPE` flip and the §5.4 audit transaction gap: unchanged.

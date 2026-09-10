@@ -193,6 +193,18 @@ from. `courses.default_learning_mode` — already shipped, migration 003 — is 
 that is now its second job: it seeds a self-enrollment today and answers for an unplaced student
 tomorrow. **The dashboard must never have no mode to render.**
 
+**Built 2026-09-10.** `LearningModeService` (in `groups/`, exported globally by
+`GroupDataModule`) is the single answer to *how is this student taught this course*: the group's
+mode, else the course default, else `'recorded'` — the safe end of the fork, since it renders
+checkpoints against an empty list rather than an attendance timeline against sessions that do not
+exist. Migration `007` **dropped `enrollments.learning_mode`** rather than leaving it as a cache,
+because the copy would go stale the instant a student is moved between groups, which is the
+operation groups exist to support.
+
+A student legally sits in two groups studying one course. Both the single read and the roster
+batch take the **longest-standing placement** (`enrolled_at` order), so the two never disagree —
+two reads of one value that differ is worse than either answer, and a spec pins it.
+
 ### 5.3 Sequential lesson lock — configurable
 
 A student must complete a lesson before the next unlocks — but this is an **admin on/off toggle**,
@@ -657,6 +669,18 @@ repositories of its own** — re-providing a token would build a second in-memor
 written through `manage` would be invisible to the student reading it through `assessments`. That is
 why `EnrollmentsModule`, `AssessmentsModule` and `RecordingsModule` now export their tokens.
 
+**Two modules are `@Global()`, and both for the same reason.** `AuditModule`,
+because §5.4 makes an audit entry part of what a mutating action *is*; and
+`GroupDataModule` (`GROUP_REPOSITORY` + `LearningModeService`), because once
+the learning mode moved onto `GroupCourse` every service that renders a
+student's course needs group data, while `GroupsModule` itself depends on
+`CoursesModule` — so `CoursesModule` importing it back would be a cycle, and
+`forwardRef` would only hide one. Only the data and the one derived question
+are global; `GroupsService`, which writes, stays behind `GroupsModule`. **A
+third global module needs a better reason than convenience** — global providers
+are invisible in a module's import list, which is exactly what makes them worth
+rationing.
+
 **Groups exist as of 2026-09-10, and this is exactly how much of them.** Migration `006_groups.sql`
 creates four tables — `groups`, `group_courses`, `group_memberships`, `assessment_targets` — and
 `backend/src/groups/` is the module on top: a `GroupRepository` with both drivers, `GroupsService`
@@ -671,7 +695,7 @@ schema**, 59 integration tests green.
 |---|---|
 | `groups`, `group_courses`, `group_memberships` | Built and read end to end — staff CRUD, placement, classmate list. |
 | `assessment_targets` | **DDL only.** The table is created and indexed; nothing writes or reads it. It lands with the authoring surface (§5.18), and the seed deliberately leaves it empty so the student assessment list is not filtered by something no code consults. |
-| `learning_mode` on `group_courses` | **Written, not yet read.** A staff caller sets it and it round trips, but the student surface still reads `Enrollment.learningMode`. Until that moves (§5.2), the mode is stored in two places and the group's copy is the one nothing consults. **This is the next thing to close** — two sources of truth for one value is precisely the drift this file keeps warning about. |
+| `learning_mode` on `group_courses` | **Built and read end to end** (2026-09-10). `LearningModeService` resolves group → course default, every student-facing and staff-facing reader goes through it, and migration `007` dropped `enrollments.learning_mode` so there is no second copy to drift. |
 
 Code comments that say "group" and mean *course* — `EnrollmentRepository.countDistinctStudents`
 says "a student in two of the teacher's groups" — predate §5.16 and are now actively misleading.
@@ -691,8 +715,7 @@ data; there is no create, edit or publish route on any controller, and the quiz 
 `AssessmentType = 'quiz'` is unbuilt. Announcements *are* authorable, and reach the student only
 as a notification — there is no student-facing announcements route.
 
-**One shipped field still has to move.** `Enrollment.learningMode` → `GroupCourse` (§5.2), with
-`courses.default_learning_mode` as the fallback for an unplaced student.
+**The learning-mode move is done** (migration `007`, §5.2). What remains is assessment targeting:
 `StoredAssessment.courseId` **stays put** — the 2026-09-10 authoring answer (write once, target
 groups) means assessments gain a join rather than a new parent. What changes there is the *read*:
 `AssessmentRepository.findByCourse` filters by the caller's group membership, reaching both
@@ -741,12 +764,14 @@ rather than serving traffic from a process-local array. Schema lives in
 `backend/src/database/migrations/`: `001_student_platform.sql` (17 tables, the
 student surface), `002_staff_and_audit.sql` (`course_staff_assignments`,
 `audit_log`), `003_course_catalog.sql` (`default_learning_mode`),
-`004_public_catalog.sql` (`slug`, `is_published`), `005_announcements.sql` and
+`004_public_catalog.sql` (`slug`, `is_published`), `005_announcements.sql`,
 `006_groups.sql` (`groups`, `group_courses`, `group_memberships`,
-`assessment_targets`), applied by `MigrationRunner` via `npm run db:migrate` or
-`DB_AUTO_MIGRATE=1` on a single-container deploy.
+`assessment_targets`) and `007_learning_mode_moves_to_the_group.sql` (drops
+`enrollments.learning_mode` — the only destructive migration so far, and the
+file says why the dropped value is derivable), applied by `MigrationRunner` via
+`npm run db:migrate` or `DB_AUTO_MIGRATE=1` on a single-container deploy.
 `test/postgres-repositories.integration-spec.ts` covers all fourteen and skips
-itself when no `TEST_DATABASE_URL` is set. As of **2026-09-10 all six
+itself when no `TEST_DATABASE_URL` is set. As of **2026-09-10 all seven
 migrations have run against a real PostgreSQL 15** from an empty schema, with
 the suite's **59 tests green** — so the announcements DDL, both of its CHECK
 constraints, the `notifications_type_check` swap, the 004 slug backfill, 003's
@@ -873,11 +898,17 @@ mistake restraint for oversight:
   titles and durations are public, **content is not**. Video URLs, materials,
   assessments and recordings remain behind `assertEnrolled`.
 - **It does not let the client choose the learning mode.** The mode comes from
-  the new `courses.default_learning_mode` column, because a student has no way
-  to know whether a course is taught live or from recordings, and letting the
-  request decide would let it pick its own dashboard ({S}5.2). The *enrollment*
-  still owns the mode per student — the course only supplies the default, so an
-  admin moving one student to the live cohort stays possible.
+  the `courses.default_learning_mode` column, because a student has no way to
+  know whether a course is taught live or from recordings, and letting the
+  request decide would let it pick its own dashboard ({S}5.2).
+
+  **Superseded in part on 2026-09-10.** This bullet used to end "the
+  *enrollment* still owns the mode per student". It does not: the mode moved to
+  `GroupCourse` and migration `007` dropped the column. The course default is
+  now what an *unplaced* student resolves to rather than what their enrollment
+  stores, which is the same answer computed instead of copied. Moving one
+  student to the live cohort is still possible and is now the obvious thing it
+  always should have been — you move them to a live group.
 - **It is not audited.** A student enrolling themselves is not a TA or admin
   mutation, so {S}5.4 does not reach it. That changes the moment money does:
   a paid enrollment is a money event and {S}5.12's trail applies.

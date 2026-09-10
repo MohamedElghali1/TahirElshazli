@@ -564,6 +564,47 @@ describe('Student API (e2e)', () => {
     });
   });
 
+  describe('the learning mode comes from the group (§5.2)', () => {
+    it('renders a recorded course from checkpoints and a live one from attendance', async () => {
+      // student-1 sits in group-1 (course-1, recorded) and group-2 (course-2,
+      // live). Nothing on the enrollment says so any more - migration 007
+      // dropped that column - so this asserts over the wire that the dashboard
+      // is reading the group.
+      const recorded = await request(app.getHttpServer())
+        .get('/courses/course-1/dashboard')
+        .set({ Authorization: `Bearer ${accessToken}` })
+        .expect(200);
+      expect(recorded.body.course.learningMode).toBe('recorded');
+      expect(recorded.body.progress.type).toBe('recorded');
+
+      const live = await request(app.getHttpServer())
+        .get('/courses/course-2/dashboard')
+        .set({ Authorization: `Bearer ${accessToken}` })
+        .expect(200);
+      expect(live.body.course.learningMode).toBe('live');
+      expect(live.body.progress.type).toBe('live');
+    });
+
+    it('agrees between the aggregate Home screen and the per-course screen', async () => {
+      // The same guarantee GET /dashboard was built for: one implementation,
+      // so the two screens cannot drift. Worth re-asserting here because the
+      // mode is now resolved rather than stored, and a second resolution path
+      // is exactly how it would drift.
+      const home = await request(app.getHttpServer())
+        .get('/dashboard')
+        .set({ Authorization: `Bearer ${accessToken}` })
+        .expect(200);
+      expect(home.body.entries.length).toBeGreaterThan(0);
+      for (const entry of home.body.entries) {
+        const single = await request(app.getHttpServer())
+          .get(`/courses/${entry.course.id}/dashboard`)
+          .set({ Authorization: `Bearer ${accessToken}` })
+          .expect(200);
+        expect(entry.course.learningMode).toBe(single.body.course.learningMode);
+      }
+    });
+  });
+
   describe('classmates (§5.17)', () => {
     it('lists the other students in the caller own group, name only', async () => {
       const response = await request(app.getHttpServer())

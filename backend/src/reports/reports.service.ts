@@ -9,6 +9,7 @@ import type { AssessmentPerformanceEntry } from '../assessments/assessments.serv
 import { CoursesService } from '../courses/courses.service.js';
 import type { CourseProgress } from '../courses/courses.service.js';
 import { EnrollmentsService } from '../enrollments/enrollments.service.js';
+import { LearningModeService } from '../groups/learning-mode.service.js';
 
 /** At or above this percentage a topic counts as a strong area. */
 const STRONG_AREA_THRESHOLD = 75;
@@ -54,6 +55,8 @@ export class ReportsService {
     private readonly assessmentsService: AssessmentsService,
     private readonly coursesService: CoursesService,
     private readonly enrollmentsService: EnrollmentsService,
+    /** Global (`GroupDataModule`); the mode lives on the group now (§5.2). */
+    private readonly learningMode: LearningModeService,
   ) {}
 
   private averagePercentage(
@@ -151,14 +154,20 @@ export class ReportsService {
   }
 
   async getSummary(courseId: string, studentId: string): Promise<ReportSummary> {
-    const enrollment = await this.enrollmentsService.assertEnrolled(
-      courseId,
-      studentId,
-    );
-    const [progress, entries] = await Promise.all([
-      this.coursesService.getProgress(courseId, studentId, enrollment.learningMode),
+    // The gate, not a value: nothing is read off the enrollment any more, since
+    // the learning mode moved to the group (CLAUDE.md §5.2). It still has to
+    // run, and it has to run *first* - resolving a mode for a course the caller
+    // does not hold would answer a question they are not entitled to ask.
+    await this.enrollmentsService.assertEnrolled(courseId, studentId);
+    const [learningMode, entries] = await Promise.all([
+      this.learningMode.resolve(courseId, studentId),
       this.assessmentsService.getPerformanceEntries(courseId, studentId),
     ]);
+    const progress = await this.coursesService.getProgress(
+      courseId,
+      studentId,
+      learningMode,
+    );
 
     const topics = this.topicScores(entries);
 

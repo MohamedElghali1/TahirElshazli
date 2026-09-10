@@ -1,0 +1,31 @@
+-- 007_learning_mode_moves_to_the_group.sql
+--
+-- Removes `enrollments.learning_mode`.
+--
+-- CLAUDE.md §5.2, answered by the client on 2026-09-10: the learning mode
+-- belongs to the **group**, not to the enrollment. A group is *taught* one way
+-- and two students in the same room cannot be in different modes, which is what
+-- made the enrollment the wrong owner of it. Migration 006 put the column on
+-- `group_courses`; this one removes the copy it replaced.
+--
+-- **Why drop rather than keep.** Leaving it would be two sources of truth for
+-- one value, and the copy would go stale the moment a student is moved between
+-- groups - which is the operation groups exist to support. Nothing reads it as
+-- of this migration: `LearningModeService` is the only thing that answers "how
+-- is this student taught this course", resolving the student's group first and
+-- falling back to `courses.default_learning_mode` (migration 003) for a student
+-- who is enrolled but not yet placed.
+--
+-- **This is the one destructive migration in the set so far**, so it is worth
+-- being explicit about what is lost and why that is acceptable here. The column
+-- held a per-student mode that, in every deployment to date, was written from
+-- `courses.default_learning_mode` at self-enrollment (§7.2) and never
+-- subsequently changed - there has never been a route that edits it. So the
+-- value being dropped is derivable from the course, which is exactly what the
+-- new fallback computes. If a future deployment had diverged, the honest
+-- recovery is a group per distinct mode, not a restored column.
+--
+-- There is no down migration, matching every other file here: the runner is
+-- forward-only, and a rollback is a restore from backup (§8).
+
+ALTER TABLE enrollments DROP COLUMN learning_mode;

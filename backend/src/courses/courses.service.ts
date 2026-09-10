@@ -12,6 +12,7 @@ import type {
 } from '../enrollments/interfaces/enrollment-repository.interface.js';
 import { RecordingsService } from '../recordings/recordings.service.js';
 import { LiveSessionsService } from '../live-sessions/live-sessions.service.js';
+import { LearningModeService } from '../groups/learning-mode.service.js';
 
 export interface CompletionCheckpoint {
   lessonId: string;
@@ -102,6 +103,9 @@ export class CoursesService {
     private readonly enrollmentsService: EnrollmentsService,
     private readonly recordingsService: RecordingsService,
     private readonly liveSessionsService: LiveSessionsService,
+    // Global (`GroupDataModule`), so there is no import edge back to
+    // `GroupsModule` - which imports this one. See that file for the cycle.
+    private readonly learningMode: LearningModeService,
   ) {}
 
   /**
@@ -135,9 +139,15 @@ export class CoursesService {
     };
   }
 
+  /**
+   * `learningMode` is passed in rather than read off the enrollment: it lives
+   * on the student's group now (CLAUDE.md §5.2), and the caller has usually
+   * just resolved it for a whole list.
+   */
   private async toListItem(
     course: StoredCourse,
     enrollment: Enrollment,
+    learningMode: LearningMode,
   ): Promise<CourseListItem> {
     return {
       id: course.id,
@@ -145,11 +155,11 @@ export class CoursesService {
       description: course.description,
       thumbnailUrl: course.thumbnailUrl,
       teacherName: course.teacherName,
-      learningMode: enrollment.learningMode,
+      learningMode,
       progress: await this.getProgress(
         course.id,
         enrollment.studentId,
-        enrollment.learningMode,
+        learningMode,
       ),
     };
   }
@@ -169,7 +179,15 @@ export class CoursesService {
         const course = byId.get(enrollment.courseId);
         // An enrollment whose course has been deleted is dropped rather than
         // rendered as a broken card.
-        return course ? this.toListItem(course, enrollment) : null;
+        if (!course) {
+          return null;
+        }
+        // One resolution per course the student holds - one to three of them
+        // (§7.3), and each is a group lookup that usually answers from the
+        // membership index. Not batched, because a batch keyed on the student
+        // would still be one query per course to find the pairings.
+        const mode = await this.learningMode.resolve(course.id, studentId);
+        return this.toListItem(course, enrollment, mode);
       }),
     );
     return items.filter((item): item is CourseListItem => item !== null);
@@ -232,12 +250,16 @@ export class CoursesService {
     if (!course || !course.isPublished) {
       throw new NotFoundException('Course not found');
     }
-    const enrollment = await this.enrollmentsService.enroll(
-      courseId,
-      studentId,
-      course.defaultLearningMode,
+    const enrollment = await this.enrollmentsService.enroll(courseId, studentId);
+    // A self-enrolled student has no group yet (§7.2), so this resolves to the
+    // course default - which is exactly what the enrollment used to store, now
+    // computed rather than copied. Staff placing them in a group later changes
+    // the answer without anything having to be migrated.
+    return this.toListItem(
+      course,
+      enrollment,
+      await this.learningMode.resolve(courseId, studentId),
     );
-    return this.toListItem(course, enrollment);
   }
 
   /** Returns the course only if the caller is enrolled in it. */
@@ -263,7 +285,11 @@ export class CoursesService {
       throw new NotFoundException('Course not found or student not enrolled');
     }
     return {
-      ...(await this.toListItem(course, enrollment)),
+      ...(await this.toListItem(
+        course,
+        enrollment,
+        await this.learningMode.resolve(courseId, studentId),
+      )),
       sequentialLockEnabled: course.sequentialLockEnabled,
       modules: course.modules,
     };

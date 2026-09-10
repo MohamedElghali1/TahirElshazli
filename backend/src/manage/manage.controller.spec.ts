@@ -14,6 +14,9 @@ import { COURSE_REPOSITORY } from '../courses/interfaces/course-repository.inter
 import { InMemoryCourseRepository } from '../courses/repositories/in-memory-course.repository.js';
 import { ENROLLMENT_REPOSITORY } from '../enrollments/interfaces/enrollment-repository.interface.js';
 import { InMemoryEnrollmentRepository } from '../enrollments/repositories/in-memory-enrollment.repository.js';
+import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interface.js';
+import { InMemoryGroupRepository } from '../groups/repositories/in-memory-group.repository.js';
+import { LearningModeService } from '../groups/learning-mode.service.js';
 import { ASSESSMENT_REPOSITORY } from '../assessments/interfaces/assessment-repository.interface.js';
 import { InMemoryAssessmentRepository } from '../assessments/repositories/in-memory-assessment.repository.js';
 import { RECORDING_REPOSITORY } from '../recordings/interfaces/recording-repository.interface.js';
@@ -59,6 +62,12 @@ describe('Manage surface', () => {
         { provide: COURSE_STAFF_REPOSITORY, useClass: InMemoryCourseStaffRepository },
         { provide: COURSE_REPOSITORY, useClass: InMemoryCourseRepository },
         { provide: ENROLLMENT_REPOSITORY, useClass: InMemoryEnrollmentRepository },
+        // The learning mode lives on the group now (CLAUDE.md §5.2), so every
+        // module that renders a student's course needs these two. Real
+        // implementations rather than stubs: the resolution order (group,
+        // then course default) is the part worth exercising.
+        { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },
+        LearningModeService,
         { provide: ASSESSMENT_REPOSITORY, useClass: InMemoryAssessmentRepository },
         { provide: RECORDING_REPOSITORY, useClass: InMemoryRecordingRepository },
         { provide: LIVE_SESSION_REPOSITORY, useClass: InMemoryLiveSessionRepository },
