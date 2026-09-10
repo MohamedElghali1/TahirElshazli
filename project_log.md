@@ -40,7 +40,9 @@ and six new audit actions. The learning mode now resolves from the group - migra
 targets it at one or more groups, and a student sees only what was set for a group they are in.
 Announcements now have a student-facing page as well as a mailbox line. The **quiz engine is
 deliberately unbuilt** - §11 still has "how rich at launch" open. **None of the group or authoring
-work has a frontend yet.**
+work now has screens too**: `/manage/groups`, a course Groups tab carrying placement and the
+**"enrolled, not yet placed"** list, a course Work tab for authoring, and *Your class* and
+*Announcements* panels on the student course page.
 
 **Backend — four of five roles now have a working API.** Of the five roles in `CLAUDE.md` §2,
 **Student**, **Assistant** and **Teacher** have full surfaces and **Visitor** now has a partial one
@@ -81,9 +83,8 @@ every push.
 
 **Frontend covers the marketing site, the student LMS and the TA/admin console.** `app/(site)`
 marketing, `app/(app)` product shell — student LMS *and* `/manage/*` — and `app/(auth)`
-authentication: 30 page files compiling to 30 build routes, a shared token system in
-`app/tokens.css`, and an API client in
-`lib/api.ts` covering every student, staff and admin route. One `AppShell` serves every signed-in
+authentication: **33 build routes**, a shared token system in `app/tokens.css`, and an API client
+in `lib/api.ts` covering every student, staff and admin route. One `AppShell` serves every signed-in
 role and picks its rail from `lib/roles.ts`. Builds, typechecks and lints clean.
 
 **Tooling:** the ruflo meta-harness (`.claude/`, `.claude-flow/`, `.mcp.json`) plus a
@@ -1871,3 +1872,100 @@ that avoids assembling a `SET` list from strings (§8).
   are all backend-only. That is next.
 - `TA_SCOPE` flip and the §5.4 audit transaction gap: unchanged, now with four more write paths
   depending on the latter.
+
+---
+
+## 2026-09-10 — Screens for the groups and the work (frontend)
+
+Three days of backend in one day, and none of it had a screen. This is the other half.
+
+**What was built.** Three new pages and two new panels, plus the types and the API client
+they read through:
+
+- **`/manage/groups`** (teacher-only) — create a group, add the courses it studies, set each
+  pairing's learning mode. The screen's job is to teach the model that everyone gets wrong first:
+  a group is a *class of students*, not a subdivision of a course. So the copy says it, the course
+  list is a thing you add *to* a group rather than the other way round, and the panel closes with
+  the sentence that matters most — adding a course here **enrols nobody**.
+- **`/manage/courses/[id]/groups`** (TA-reachable) — placement. Which groups study this course,
+  who is in each, add and remove.
+- **`/manage/courses/[id]/assessments`** (TA-reachable) — authoring, with the target groups as a
+  multi-select and the Set-work button disabled until at least one is picked.
+- On the student course page, a **Your class** panel (§5.17) and an **Announcements** panel
+  (§5.18).
+
+**The screen that justifies the rest is the "enrolled, not yet placed" list.** It sits at the top
+of the course Groups tab, styled as something to act on rather than as a statistic, and it names
+the consequence rather than the state: *these students hold this course but sit in no group, so
+they have been set no work and their course page looks empty.* It is computed as the enrolled
+roster minus the union of every group's members, which is why the rosters are fetched once at the
+page level — per-card fetching would let "who is unplaced" disagree with itself while the cards
+loaded at different times.
+
+The same state has copy on the student side, and the wording there was the more careful decision.
+An empty classmate list must read as *"you have not been added to a class yet"* and not as *"no
+classmates"*: the first is a wait, the second is a bug report. It says explicitly that the course
+will show no work until then, and that this is expected rather than a fault.
+
+**Field-set discipline held across the boundary.** The staff roster carries an email; the student
+classmate panel carries a name and nothing else. They come from different endpoints and are
+rendered by different components, so widening one cannot widen the other by editing a line —
+which is the property §5.17 asked for, and it survives contact with the UI.
+
+**One structural note.** The Groups and Work tabs are **not** gated on `admin` in
+`ManageCourseTabs`, unlike Assistants and Recordings. That is not an oversight: the client granted
+a TA placement (§5.16) and authoring (§5.18) explicitly, so hiding those tabs from an assistant
+would misdescribe what they can do. Tab visibility has never been access control here (§8) — it is
+the server's `@Roles` that refuses, and the rail only decides where to send someone.
+
+```mermaid
+graph LR
+    T["TA opens<br/>course > Groups"] --> U["Enrolled, not yet placed<br/>(loud when non-empty)"]
+    U -->|"place"| G["group roster"]
+    T2["TA opens<br/>course > Work"] --> A["set work,<br/>multi-select groups"]
+    A --> S["student's course page"]
+    G --> S
+    S --> P1["Your class (names only)"]
+    S --> P2["Announcements"]
+    S --> P3["Work - only what<br/>their group was set"]
+```
+
+**Why.** `CLAUDE.md` §5.16 (groups and placement), §5.17 (classmates, and the field set), §5.18
+(authoring reaches the student end), §2.2 (placement and authoring are TA powers), §7.2 (the
+unplaced student), §4 (the app's dense token scale, one Panel, no card inside a card).
+Traceability: `CRS-`, `ASG-`, `QUZ-`, `COM-`, `ACC-`.
+
+**Verification.** All executed on this machine:
+
+| Check | Result |
+|---|---|
+| `npm run lint` (frontend) | clean |
+| `npm run build` (frontend) | clean, **33 routes** — was 30 |
+| `npx tsc --noEmit` | clean |
+| Backend suites, unchanged by this pass | 315 unit / 179 e2e / 64 integration |
+
+And a live smoke test against the built backend on the memory driver, which is the part worth
+recording because it is the end-to-end claim §5.18 actually makes:
+
+- signed in as `assistant-1`, read `/staff/courses/course-1/groups` → the Saturday group, 2
+  students, recorded;
+- created a task targeted at `group-1` → 201, targets `['group-1']`;
+- posted a course announcement → reached 2 people;
+- signed in as `student-1` → the assessment list grew from 8 to 9 and contained the new task, the
+  announcements list contained the new announcement;
+- signed in as the teacher → the audit log showed `assessment.created` and `announcement.posted`,
+  both with `actorId: assistant-1`, `actorRole: assistant`.
+
+**Follow-ups / debt.**
+
+- **The unplaced-student path was not confirmed over HTTP** in that smoke test — the login rate
+  limiter (5/min, working as designed) refused the extra sign-ins the check needed. It *is* covered
+  by unit tests on both sides (empty assessment list, empty classmate list, dashboard still renders
+  a mode), so this is a gap in the manual evidence rather than in the coverage.
+- **Editing a task is API-only.** `PATCH /staff/assessments/:id` and
+  `POST /staff/assessments/:id/targets` exist and are tested; the authoring screen offers create,
+  list and delete but no edit form yet. Re-aiming a task is the more likely of the two to be wanted
+  first.
+- **The quiz engine is still the open one**, and still a §11 question before it is a build.
+- **No Parent screens**, and no group screen for a parent to read — unchanged.
+- `TA_SCOPE` flip and the §5.4 audit transaction gap: unchanged.

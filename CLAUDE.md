@@ -755,10 +755,21 @@ widens, the three routes move from `AdminManageController` to `StaffManageContro
 admin.
 
 **Frontend:** built for the Visitor-facing marketing site, the Student LMS and
-the TA/Admin console — `app/(site)`, `app/(app)`, `app/(auth)`, 29 pages, typed
-against the backend's response shapes in `lib/types.ts`. The marketing pages
-read from `lib/site-content.ts` rather than an API, because there is no public
-API to read (the Visitor row above). **No Parent screens.**
+the TA/Admin console — `app/(site)`, `app/(app)`, `app/(auth)`, 33 build routes,
+typed against the backend's response shapes in `lib/types.ts`. The marketing
+pages read from `lib/site-content.ts` rather than an API, because there is no
+public API to read (the Visitor row above). **No Parent screens.**
+
+The group and authoring work has screens as of 2026-09-10: `/manage/groups`
+(teacher-only — create a group, add the courses it studies, set each pairing's
+learning mode), `/manage/courses/[id]/groups` (**TA-reachable placement**, and
+the *"enrolled, not yet placed"* list that keeps a self-enrolled student from
+sitting unnoticed in an empty course), `/manage/courses/[id]/assessments`
+(authoring, with a multi-select for the target groups), and on the student
+course page a **Your class** panel ({S}5.17) and an **Announcements** panel
+({S}5.18). The unplaced state has its own copy on both sides, because "your
+teacher has not sorted you into a class yet" and "you are alone here" are the
+difference between a wait and a bug report.
 
 **One shell, two consoles.** `AppShell` is shared by every signed-in role and
 picks its rail from `lib/roles.ts`: students get `/dashboard`, `/catalog`,

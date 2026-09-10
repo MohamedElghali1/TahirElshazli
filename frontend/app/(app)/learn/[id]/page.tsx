@@ -17,7 +17,12 @@ import {
   formatPercent,
   MATERIAL_CATEGORY_LABEL,
 } from '@/lib/format';
-import type { CourseProgress, LiveSession, MaterialCategory } from '@/lib/types';
+import type {
+  ClassmateGroup,
+  CourseProgress,
+  LiveSession,
+  MaterialCategory,
+} from '@/lib/types';
 import {
   Button,
   ButtonLink,
@@ -96,10 +101,148 @@ export default function CourseOverviewPage({
 
         <div className="flex flex-col gap-[var(--sp-6)]">
           <NextSessionPanel courseId={id} session={nextLiveSession} />
+          <AnnouncementsPanel courseId={id} />
+          <ClassmatesPanel courseId={id} />
           <QuickAccessPanel courseId={id} counts={quickAccess} />
         </div>
       </div>
     </PageBody>
+  );
+}
+
+/* --- Announcements (CLAUDE.md §5.18) ------------------------------------- */
+
+/**
+ * Until 2026-09-10 an announcement reached a student only as a line in their
+ * mailbox, with nowhere to click through to. This is the page it now has.
+ *
+ * Course announcements only. A platform-wide one already arrived in the
+ * mailbox, and filing it under a course heading would say it was about this
+ * course when it was not.
+ */
+function AnnouncementsPanel({ courseId }: { courseId: string }) {
+  const { data, error, loading } = useApi(
+    (token) => api.students.announcements(token, courseId),
+    [courseId],
+  );
+
+  return (
+    <Panel title="Announcements" bodyClassName="">
+      {loading && (
+        <div className="p-[var(--sp-4)]">
+          <Skeleton className="h-[64px]" />
+        </div>
+      )}
+      {error && (
+        <div className="p-[var(--sp-4)]">
+          <p className="text-[var(--fs-sm)] text-[var(--fg-tertiary)]">
+            Announcements could not be loaded.
+          </p>
+        </div>
+      )}
+      {data && data.length === 0 && (
+        <EmptyState
+          title="Nothing posted yet"
+          body="Notices from Dr. Tahir and the teaching assistants appear here."
+        />
+      )}
+      {data && data.length > 0 && (
+        <ul className="rows">
+          {data.map((announcement) => (
+            <li key={announcement.id} className="px-[var(--sp-4)] py-[var(--sp-3)]">
+              <div className="flex flex-wrap items-baseline justify-between gap-[var(--sp-2)]">
+                <span className="text-[var(--fs-base)] font-medium text-[var(--fg-primary)]">
+                  {announcement.title}
+                </span>
+                <span className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+                  {formatDate(announcement.postedAt)}
+                </span>
+              </div>
+              <p className="mt-[var(--sp-1)] text-[var(--fs-sm)] text-[var(--fg-secondary)]">
+                {announcement.body}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Panel>
+  );
+}
+
+/* --- Classmates (CLAUDE.md §5.17) ---------------------------------------- */
+
+/**
+ * The other students in the caller's own group — names only.
+ *
+ * Never an email, a mark, progress or attendance: §5.17 is explicit that a
+ * classmate list carrying a grade is a leaderboard, which is a different
+ * product decision with a different answer for a parent. The staff roster is a
+ * separate endpoint with a wider shape, and the two are kept apart on purpose.
+ *
+ * Two groups means **two lists**, not one merged set. And an empty answer is
+ * the normal state for a student who has enrolled but not yet been placed
+ * (§7.2), so the copy has to say *that* rather than "no classmates" — the
+ * difference between "your teacher has not sorted you into a class yet" and
+ * "you are alone here" is the difference between a wait and a bug report.
+ */
+function ClassmatesPanel({ courseId }: { courseId: string }) {
+  const { data, error, loading } = useApi(
+    (token) => api.students.classmates(token, courseId),
+    [courseId],
+  );
+
+  return (
+    <Panel title="Your class" bodyClassName="">
+      {loading && (
+        <div className="p-[var(--sp-4)]">
+          <Skeleton className="h-[48px]" />
+        </div>
+      )}
+      {error && (
+        <div className="p-[var(--sp-4)]">
+          <p className="text-[var(--fs-sm)] text-[var(--fg-tertiary)]">
+            Your class could not be loaded.
+          </p>
+        </div>
+      )}
+      {data && data.length === 0 && (
+        <EmptyState
+          title="You have not been added to a class yet"
+          body={
+            'Dr. Tahir or a teaching assistant will place you in a group. ' +
+            'Until then this course will not show you any work — that is ' +
+            'expected, not a fault.'
+          }
+        />
+      )}
+      {data && data.length > 0 && (
+        <div className="flex flex-col">
+          {data.map((group: ClassmateGroup) => (
+            <div key={group.groupId} className="px-[var(--sp-4)] py-[var(--sp-3)]">
+              <p className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+                {group.groupName}
+              </p>
+              {group.classmates.length === 0 ? (
+                <p className="mt-[var(--sp-1)] text-[var(--fs-sm)] text-[var(--fg-secondary)]">
+                  You are the only student in this class so far.
+                </p>
+              ) : (
+                <ul className="mt-[var(--sp-2)] flex flex-wrap gap-[var(--sp-2)]">
+                  {group.classmates.map((classmate) => (
+                    <li
+                      key={classmate.studentId}
+                      className="rounded-[var(--r-full)] bg-[var(--bg-tertiary)] px-[var(--sp-3)] py-[var(--sp-1)] text-[var(--fs-sm)] text-[var(--fg-secondary)]"
+                    >
+                      {classmate.name}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </Panel>
   );
 }
 

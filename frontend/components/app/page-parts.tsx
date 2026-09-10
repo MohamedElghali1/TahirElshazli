@@ -136,6 +136,11 @@ export function ManageCourseTabs({
   const base = `/manage/courses/${courseId}`;
   const tabs = [
     { href: base, label: 'Roster' },
+    // Groups and Work are both TA-reachable: the client granted placement
+    // (CLAUDE.md §5.16) and authoring (§5.18, answered 2026-09-10) to
+    // assistants explicitly, so neither is gated on `admin` here.
+    { href: `${base}/groups`, label: 'Groups' },
+    { href: `${base}/assessments`, label: 'Work' },
     { href: `${base}/grading`, label: 'Grading' },
     { href: `${base}/recordings`, label: 'Recordings' },
     ...(admin ? [{ href: `${base}/staff`, label: 'Assistants' }] : []),

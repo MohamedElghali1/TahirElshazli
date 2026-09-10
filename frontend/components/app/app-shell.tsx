@@ -11,6 +11,7 @@ import {
   SignOutIcon,
   SquaresFourIcon,
   UserIcon,
+  UsersFourIcon,
   UsersThreeIcon,
   VideoIcon,
   XIcon,
@@ -53,6 +54,10 @@ const STAFF_NAV: NavItem[] = [
 
 const ADMIN_NAV: NavItem[] = [
   { href: '/manage/students', label: 'Students', Icon: UsersThreeIcon },
+  // Creating a group and deciding what it studies is teacher-only; *placing*
+  // students is not, and a TA reaches that through the course's Groups tab
+  // (CLAUDE.md §5.16, §2.2).
+  { href: '/manage/groups', label: 'Groups', Icon: UsersFourIcon },
   { href: '/manage/recordings', label: 'Recordings', Icon: VideoIcon },
   { href: '/manage/activity', label: 'Activity log', Icon: ClockCounterClockwiseIcon },
 ];

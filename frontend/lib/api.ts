@@ -1,9 +1,13 @@
 import type {
+  Announcement,
   AssessmentDetail,
   AssessmentListItem,
+  AssessmentTargetInput,
+  AuthoredAssessment,
   AuditLogPage,
   AuthResult,
   CatalogItem,
+  ClassmateGroup,
   CourseDetail,
   CourseListItem,
   CourseRosterResponse,
@@ -13,6 +17,11 @@ import type {
   GradingQueueItem,
   GradingQueueResponse,
   GradingStatus,
+  Group,
+  GroupCourse,
+  GroupMemberView,
+  GroupSummary,
+  LearningMode,
   LiveSession,
   LiveSessionListResponse,
   ManageOverview,
@@ -403,6 +412,137 @@ export const api = {
 
     recordings: (token: string, courseId: string) =>
       request<StaffRecording[]>(`/staff/courses/${courseId}/recordings`, { token }),
+
+    /* --------------------------------------------------------------------
+       Groups (CLAUDE.md §5.16). Note which of these name a *course* and
+       which name a *group*: the course one is TA-scoped through
+       `CourseStaffAssignment` and 404s a course the caller does not hold;
+       the group ones are not, because a group spans courses and there is
+       nothing to scope by - which is also what the client asked for
+       (§5.11.1, "TAs are allowed to access all groups").
+       -------------------------------------------------------------------- */
+
+    courseGroups: (token: string, courseId: string) =>
+      request<GroupSummary[]>(`/staff/courses/${courseId}/groups`, { token }),
+
+    group: (token: string, groupId: string) =>
+      request<GroupSummary>(`/staff/groups/${groupId}`, { token }),
+
+    groupMembers: (token: string, groupId: string) =>
+      request<GroupMemberView[]>(`/staff/groups/${groupId}/members`, { token }),
+
+    /**
+     * Placement - a TA power, granted by the client in as many words (§2.2,
+     * §5.16). Deliberately *not* enrollment: a TA still cannot enroll or
+     * unenroll, and placing a student grants them nothing they did not
+     * already hold.
+     */
+    addGroupMember: (token: string, groupId: string, studentId: string) =>
+      request<{ ok: true }>(`/staff/groups/${groupId}/members`, {
+        method: 'POST',
+        token,
+        body: { studentId },
+      }),
+
+    removeGroupMember: (token: string, groupId: string, studentId: string) =>
+      request<void>(`/staff/groups/${groupId}/members/${studentId}`, {
+        method: 'DELETE',
+        token,
+      }),
+
+    /* --------------------------------------------------------------------
+       Authoring (§5.18). On /staff/* and not /admin/*: the client settled
+       §11's open question on 2026-09-10 - a TA may create both assignments
+       and quizzes.
+       -------------------------------------------------------------------- */
+
+    assessments: (token: string, courseId: string) =>
+      request<AuthoredAssessment[]>(`/staff/courses/${courseId}/assessments`, {
+        token,
+      }),
+
+    createAssessment: (
+      token: string,
+      courseId: string,
+      body: {
+        title: string;
+        description?: string;
+        instructions?: string;
+        type: 'homework' | 'assignment' | 'quiz';
+        topics?: string[];
+        lessonId?: string;
+        availableFrom: string;
+        availableTo: string;
+        dueAt: string;
+        maxScore: number;
+        allowedFileTypes: string[];
+        maxFileSizeBytes: number;
+        /** Required and non-empty: a task set for nobody is invisible. */
+        targets: AssessmentTargetInput[];
+      },
+    ) =>
+      request<AuthoredAssessment>(`/staff/courses/${courseId}/assessments`, {
+        method: 'POST',
+        token,
+        body,
+      }),
+
+    updateAssessment: (
+      token: string,
+      assessmentId: string,
+      body: {
+        title?: string;
+        description?: string;
+        instructions?: string;
+        topics?: string[];
+        availableFrom?: string;
+        availableTo?: string;
+        dueAt?: string;
+        maxScore?: number;
+        allowedFileTypes?: string[];
+        maxFileSizeBytes?: number;
+      },
+    ) =>
+      request<AuthoredAssessment>(`/staff/assessments/${assessmentId}`, {
+        method: 'PATCH',
+        token,
+        body,
+      }),
+
+    /** Replaces the whole audience; it is a set, not a diff. */
+    setAssessmentTargets: (
+      token: string,
+      assessmentId: string,
+      targets: AssessmentTargetInput[],
+    ) =>
+      request<AuthoredAssessment>(`/staff/assessments/${assessmentId}/targets`, {
+        method: 'POST',
+        token,
+        body: { targets },
+      }),
+
+    /** 400s once anything has been submitted - the API says why. */
+    deleteAssessment: (token: string, assessmentId: string) =>
+      request<void>(`/staff/assessments/${assessmentId}`, {
+        method: 'DELETE',
+        token,
+      }),
+
+    announcements: (token: string, courseId: string) =>
+      request<Announcement[]>(`/staff/courses/${courseId}/announcements`, {
+        token,
+      }),
+
+    postAnnouncement: (
+      token: string,
+      courseId: string,
+      body: { title: string; body: string },
+    ) =>
+      request<Announcement>(`/staff/courses/${courseId}/announcements`, {
+        method: 'POST',
+        token,
+        body,
+      }),
   },
 
   /* ----------------------------------------------------------------------
@@ -411,6 +551,44 @@ export const api = {
      courtesy (CLAUDE.md §8).
      ---------------------------------------------------------------------- */
   admin: {
+    /* Group CRUD is teacher-only; *placement* is not (staff.addGroupMember
+       above). The client's instruction covered placement explicitly and said
+       nothing about who creates a group, so the narrow reading ships - the
+       same call made for live-session scheduling (CLAUDE.md §11). */
+    groups: (token: string) => request<GroupSummary[]>('/admin/groups', { token }),
+
+    createGroup: (token: string, name: string) =>
+      request<Group>('/admin/groups', { method: 'POST', token, body: { name } }),
+
+    renameGroup: (token: string, groupId: string, name: string) =>
+      request<Group>(`/admin/groups/${groupId}`, {
+        method: 'PATCH',
+        token,
+        body: { name },
+      }),
+
+    /**
+     * Enrolls a *group* in a course - the client's verb. It enrolls no
+     * students: `Enrollment` stays the access gate (§5.16), which is what
+     * keeps the payment question out of this surface.
+     */
+    addGroupCourse: (
+      token: string,
+      groupId: string,
+      body: { courseId: string; learningMode: LearningMode },
+    ) =>
+      request<GroupCourse>(`/admin/groups/${groupId}/courses`, {
+        method: 'POST',
+        token,
+        body,
+      }),
+
+    removeGroupCourse: (token: string, groupId: string, courseId: string) =>
+      request<void>(`/admin/groups/${groupId}/courses/${courseId}`, {
+        method: 'DELETE',
+        token,
+      }),
+
     students: (token: string, search?: string) =>
       request<StudentDirectoryEntry[]>(`/admin/students${qs({ search })}`, { token }),
 
@@ -507,5 +685,24 @@ export const api = {
         token,
         body,
       }),
+
+    /**
+     * The classmate list (CLAUDE.md §5.17) - one entry per group the caller
+     * sits in on this course, never merged.
+     *
+     * An empty array is the normal answer for a student who is enrolled but
+     * not yet placed (§7.2), and the UI has to say "you have not been added to
+     * a group yet" rather than "no classmates".
+     */
+    classmates: (token: string, courseId: string) =>
+      request<ClassmateGroup[]>(`/courses/${courseId}/classmates`, { token }),
+
+    /**
+     * Course announcements a student can read (§5.18). Until 2026-09-10 an
+     * announcement reached them only as a notification with nowhere to click
+     * through to; this is that page's read.
+     */
+    announcements: (token: string, courseId: string) =>
+      request<Announcement[]>(`/courses/${courseId}/announcements`, { token }),
   },
 };

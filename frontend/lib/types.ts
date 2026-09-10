@@ -607,3 +607,136 @@ export interface PublicCourseSummary {
 export interface PublicCourseDetail extends PublicCourseSummary {
   modules: PublicOutlineModule[];
 }
+
+/* ------------------------------------------------------------------------
+   Groups (CLAUDE.md §5.16) - the cohort a course is taught to.
+
+   A group is a class of *students*, not a subdivision of a course: it carries
+   no courseId, and several groups can be enrolled in the same course. What a
+   group studies is `GroupCourse`, which is also where the learning mode lives
+   (§5.2) - a group is taught one way, and two students in the same room cannot
+   be in different modes.
+   ------------------------------------------------------------------------ */
+
+export interface Group {
+  id: string;
+  name: string;
+  teacherId: string;
+  createdAt: string;
+}
+
+export interface GroupCourse {
+  id: string;
+  groupId: string;
+  courseId: string;
+  learningMode: LearningMode;
+  enrolledAt: string;
+  enrolledBy: string;
+}
+
+/** One console row: the group, what it studies, how many sit in it. */
+export interface GroupSummary extends Group {
+  courses: GroupCourse[];
+  memberCount: number;
+}
+
+/**
+ * The *staff* roster row. Carries an email; §5.17's student-facing classmate
+ * list deliberately does not, and the two come from different endpoints so
+ * widening one cannot widen the other.
+ */
+export interface GroupMemberView {
+  studentId: string;
+  name: string;
+  email: string;
+  assignedBy: string;
+  assignedAt: string;
+}
+
+/**
+ * What a student may see of another student (§5.17): a name, and nothing else.
+ * Never an email, a mark, progress or attendance - a classmate list that
+ * carries a grade is a leaderboard, which is a different product decision.
+ */
+export interface Classmate {
+  studentId: string;
+  name: string;
+}
+
+/**
+ * One of the caller's groups on this course, and who else is in it.
+ *
+ * A list of lists rather than one merged set: a student in two groups sees two
+ * rosters, because merging them would invent a relationship between people who
+ * have never met.
+ */
+export interface ClassmateGroup {
+  groupId: string;
+  groupName: string;
+  classmates: Classmate[];
+}
+
+/* ------------------------------------------------------------------------
+   Authoring (CLAUDE.md §5.18) and targeting (§5.16).
+
+   A task is written **once** and aimed at one or more groups - the audience is
+   per group, the task is not duplicated per group. So there is one assessment
+   row, one target row per group, and §5.6's "average across all students"
+   stays one average over one task.
+   ------------------------------------------------------------------------ */
+
+export interface AssessmentTarget {
+  id: string;
+  assessmentId: string;
+  groupId: string;
+  /** Overrides of the assessment's own window. Null means inherit. */
+  availableFrom: string | null;
+  availableTo: string | null;
+  dueAt: string | null;
+}
+
+/** An assessment as the authoring screen sees it: the task and its audience. */
+export interface AuthoredAssessment {
+  id: string;
+  courseId: string;
+  lessonId: string | null;
+  title: string;
+  description: string;
+  instructions: string;
+  type: AssessmentType;
+  topics: string[];
+  availableFrom: string;
+  availableTo: string;
+  dueAt: string;
+  maxScore: number;
+  allowedFileTypes: string[];
+  maxFileSizeBytes: number;
+  createdAt: string;
+  targets: AssessmentTarget[];
+}
+
+/** One targeted group, with the window override left out in the common case. */
+export interface AssessmentTargetInput {
+  groupId: string;
+  availableFrom?: string;
+  availableTo?: string;
+  dueAt?: string;
+}
+
+/**
+ * An announcement, as both the staff console and the student course page read
+ * it. `audience` is the §6.1 wire form: `all_students`, `all_tas` or
+ * `course:<id>`.
+ */
+export interface Announcement {
+  id: string;
+  audience: string;
+  audienceType: 'all_students' | 'course' | 'all_tas';
+  courseId: string | null;
+  title: string;
+  body: string;
+  postedBy: string;
+  postedAt: string;
+  /** How many people it reached, counted at send time - never a stored list. */
+  recipientCount: number;
+}
