@@ -23,6 +23,7 @@ import { AuditModule } from './audit/audit.module.js';
 import { StaffModule } from './staff/staff.module.js';
 import { ManageModule } from './manage/manage.module.js';
 import { AnnouncementsModule } from './announcements/announcements.module.js';
+import { GroupsModule } from './groups/groups.module.js';
 
 @Module({
   imports: [
@@ -53,6 +54,12 @@ import { AnnouncementsModule } from './announcements/announcements.module.js';
     // NotificationsModule, whose service it fans announcements out through
     // (CLAUDE.md §5.14).
     AnnouncementsModule,
+    // Groups (CLAUDE.md §5.16) - the cohorts a course is taught to, the staff
+    // placement routes and the student classmate list. After StaffModule for
+    // the scoping service, AuthModule and CoursesModule for the two
+    // repositories it borrows, and EnrollmentsModule for the gate the
+    // classmate list checks first (§5.17).
+    GroupsModule,
     // The anonymous Visitor surface - the public course catalog the marketing
     // site reads. After CoursesModule, whose COURSE_REPOSITORY it borrows.
     PublicModule,

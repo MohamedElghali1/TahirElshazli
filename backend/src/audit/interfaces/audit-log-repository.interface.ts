@@ -34,7 +34,18 @@ export type AuditAction =
   // The first TA mutation outside grading. Announcements fan out to real
   // people's notification feeds and cannot be recalled, so the entry is the
   // only record of who sent what to whom.
-  | 'announcement.posted';
+  | 'announcement.posted'
+  // Groups (CLAUDE.md §5.16). Placement is the one here that §5.4 reaches
+  // squarely: a TA decides which cohort a student sits in, which decides -
+  // after 2026-09-10 - what work that student is set and how their dashboard
+  // renders. "Which assistant moved this student out of the Saturday group"
+  // is exactly the question the log exists to answer.
+  | 'group.created'
+  | 'group.renamed'
+  | 'group.course_added'
+  | 'group.course_removed'
+  | 'group.student_assigned'
+  | 'group.student_removed';
 
 /** What the action happened *to*. Grows with `AuditAction`, for the same reason. */
 export type AuditTargetType =
@@ -42,7 +53,14 @@ export type AuditTargetType =
   | 'assessment_submission'
   | 'recording'
   | 'live_session'
-  | 'announcement';
+  | 'announcement'
+  | 'group'
+  // The pairing and the placement are their own targets rather than both being
+  // filed under `group`: "everything that happened to group-1" and "everything
+  // that happened to this student's placement" are different questions, and
+  // `audit_log (target_type, target_id, ...)` is indexed to answer either.
+  | 'group_course'
+  | 'group_membership';
 
 /**
  * One side of a before/after pair.

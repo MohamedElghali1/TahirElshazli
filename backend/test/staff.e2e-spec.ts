@@ -783,4 +783,113 @@ describe('Staff and admin API (e2e)', () => {
         .expect(400);
     });
   });
+
+  describe('groups: placement is a TA power, group CRUD is not (§2.2, §5.16)', () => {
+    let groupId: string;
+
+    beforeAll(async () => {
+      const created = await request(app.getHttpServer())
+        .post('/admin/groups')
+        .set(bearer(adminToken))
+        .send({ name: 'E2E — Wednesday 17:00' })
+        .expect(201);
+      groupId = created.body.id;
+    });
+
+    it('refuses group creation to a TA over HTTP', async () => {
+      // The class-level @Roles(Role.Teacher) on AdminGroupsController, proved
+      // through the wire rather than by reading the decorator.
+      await request(app.getHttpServer())
+        .post('/admin/groups')
+        .set(bearer(assignedTaToken))
+        .send({ name: 'TA should not be able to create this' })
+        .expect(403);
+    });
+
+    it('refuses attaching a course to a group to a TA', async () => {
+      await request(app.getHttpServer())
+        .post(`/admin/groups/${groupId}/courses`)
+        .set(bearer(assignedTaToken))
+        .send({ courseId: 'course-1', learningMode: 'live' })
+        .expect(403);
+    });
+
+    it('lets a TA place and remove a student', async () => {
+      await request(app.getHttpServer())
+        .post(`/staff/groups/${groupId}/members`)
+        .set(bearer(assignedTaToken))
+        .send({ studentId: 'student-2' })
+        .expect(201);
+
+      const members = await request(app.getHttpServer())
+        .get(`/staff/groups/${groupId}/members`)
+        .set(bearer(assignedTaToken))
+        .expect(200);
+      expect(
+        members.body.map((m: { studentId: string }) => m.studentId),
+      ).toContain('student-2');
+
+      await request(app.getHttpServer())
+        .delete(`/staff/groups/${groupId}/members/student-2`)
+        .set(bearer(assignedTaToken))
+        .expect(204);
+    });
+
+    it('refuses the whole group surface to a student token', async () => {
+      await request(app.getHttpServer())
+        .get(`/staff/groups/${groupId}`)
+        .set(bearer(studentToken))
+        .expect(403);
+      await request(app.getHttpServer())
+        .post(`/staff/groups/${groupId}/members`)
+        .set(bearer(studentToken))
+        .send({ studentId: 'student-1' })
+        .expect(403);
+    });
+
+    it('scopes the course tab and 404s a course the TA does not hold', async () => {
+      await request(app.getHttpServer())
+        .get('/staff/courses/course-1/groups')
+        .set(bearer(assignedTaToken))
+        .expect(200);
+      // assistant-2 holds nothing; a 404 rather than a 403 so an unassigned TA
+      // cannot enumerate the catalog one id at a time (§5.11).
+      await request(app.getHttpServer())
+        .get('/staff/courses/course-1/groups')
+        .set(bearer(unassignedTaToken))
+        .expect(404);
+    });
+
+    it('validates the body at the API boundary', async () => {
+      await request(app.getHttpServer())
+        .post('/admin/groups')
+        .set(bearer(adminToken))
+        .send({ name: '' })
+        .expect(400);
+      await request(app.getHttpServer())
+        .post(`/admin/groups/${groupId}/courses`)
+        .set(bearer(adminToken))
+        .send({ courseId: 'course-1', learningMode: 'hybrid' })
+        .expect(400);
+    });
+
+    it('records the placement in the audit log with the TA as actor', async () => {
+      await request(app.getHttpServer())
+        .post(`/staff/groups/${groupId}/members`)
+        .set(bearer(assignedTaToken))
+        .send({ studentId: 'student-1' })
+        .expect(201);
+
+      const log = await request(app.getHttpServer())
+        .get('/admin/audit-log?action=group.student_assigned')
+        .set(bearer(adminToken))
+        .expect(200);
+      expect(
+        log.body.entries.some(
+          (e: { actorId: string; actorRole: string }) =>
+            e.actorId === 'assistant-1' && e.actorRole === 'assistant',
+        ),
+      ).toBe(true);
+    });
+  });
 });

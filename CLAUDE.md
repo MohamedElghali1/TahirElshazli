@@ -40,8 +40,9 @@ A premium educational platform for **Dr. Tahir Elshazli** (brand: *Dr. Tahir / E
 **tahirelshazli.com**, targeting **IGCSE and IELTS** students.
 
 It is *not* a landing page. It is a public marketing website **plus** a full Learning Management
-System, positioned against GoStars, Bassthalk, Mentora, and Teachable. Must scale to thousands of
-students.
+System, positioned against GoStars, Bassthalk, Mentora, and Teachable. The brief says it must scale
+to thousands of students; the client has since given the numbers it actually runs at, which are two
+orders of magnitude smaller — **§7.3 has them, and they are the ones to design against.**
 
 Two things that are easy to get wrong and matter a lot:
 
@@ -58,9 +59,9 @@ Two things that are easy to get wrong and matter a lot:
 | Role | Access |
 |---|---|
 | **Visitor** | Public site only, no login. Marketing pages, course catalog, blog, contact. |
-| **Student** | Courses, lessons, recordings, assignments, quizzes, grades, progress, timetable, certificates. |
+| **Student** | Courses, lessons, recordings, assignments, quizzes, grades, progress, timetable, certificates, and the classmates in their own group (§5.17). |
 | **Parent** | Read-only monitoring of a linked student: progress, grades, attendance — plus manages payments. |
-| **Teaching Assistant** | Grading, attendance, quizzes, materials, announcements — **scoped to assigned courses** (§2.2). **Fully audited**. |
+| **Teaching Assistant** | Grading, attendance, quizzes, materials, announcements, placing students in groups — **scoped to assigned courses** (§2.2). **Fully audited**. |
 | **Teacher (Dr. Tahir) — main account** | Full admin: courses, users, content, reports, settings, and visibility into every TA action. |
 
 Access control is **role-based (RBAC) and enforced server-side on every request**. Never gate on the
@@ -96,6 +97,22 @@ course roster **read-only** (no edit, no unenroll), post course announcements, a
 **In the preset, a TA cannot**: create/edit/delete courses, create or delete any user account,
 enroll or unenroll a student, touch payments, touch the CMS, or see platform-wide data. Their
 dashboard counts are scoped to their own courses — never the full roster.
+
+**Placing a student in a group is a TA power** — the client said so directly on 2026-09-10 (§5.16):
+a student is assigned to a group "by the assistant or the teacher". Note that this sits right next
+to something the preset withholds: a TA still **cannot enroll or unenroll**. The two are different
+acts and the distinction is worth keeping sharp — enrollment decides *whether* a student has the
+course at all (and, once payment lands, what they paid for); placement decides *which cohort* they
+sit in among students who already hold it. A TA moves students between groups; only the teacher puts
+one into, or takes one out of, the course.
+
+**Visibility is wider than this preset assumes, as of 2026-09-10.** The client's current posture
+is that a TA reaches **every course and every group**, not only assigned ones — §5.11 has it, and
+why it is written as a reversible posture rather than a deletion. Everything in the two lists
+above still holds; what changed is the clause *"only for courses they are explicitly assigned
+to"*, not the verbs. A TA still cannot enroll, unenroll, touch payments, touch the CMS or reach
+`/admin/*` — they can now do the things they could always do, everywhere. **Visibility widened;
+capability did not.**
 
 **Admin is a strict superset**, unscoped and platform-wide: course and curriculum CRUD, the full
 student directory including unenroll, payments/refunds/discount codes, CMS, cross-course reports,
@@ -165,7 +182,16 @@ performance.
 - **Recorded mode** — completion progress + checkpoints drive the UI.
 - **Live / scheduled mode** — an **attendance timeline** drives the UI, alongside grades.
 
-A student's course enrollment carries its mode; the dashboard renders accordingly.
+**The mode belongs to the group, as of 2026-09-10.** It used to sit on the `Enrollment`; the
+client's answer moved it, and the move is more honest — a group is *taught* one way, and two
+students in the same room cannot be in different modes. It lands on `GroupCourse` (§6.1) rather
+than on `Group`, because a group that takes two courses could take one live and one from
+recordings; mode describes how a course is **delivered to** a group.
+
+Which leaves the student who is enrolled but not yet placed (§7.2) with no group to read a mode
+from. `courses.default_learning_mode` — already shipped, migration 003 — is the fallback, and
+that is now its second job: it seeds a self-enrollment today and answers for an unplaced student
+tomorrow. **The dashboard must never have no mode to render.**
 
 ### 5.3 Sequential lesson lock — configurable
 
@@ -187,22 +213,33 @@ unenrollment, account changes, course deletion — is logged without exception.
 interface has no update and no delete, which is where that is enforced. `AuditAction` and
 `AuditTargetType` are string *unions*, so adding a mutating endpoint cannot log until someone adds
 its action to the list; that compile error is the mechanism keeping "every TA mutation is logged"
-true as surfaces land. **Ten actions exist so far**, across staff assignment, grading, the recording
-library, live-session scheduling and announcements:
+true as surfaces land. **Sixteen actions exist so far**, across staff assignment, grading, the
+recording library, live-session scheduling, announcements and groups:
 
 `course_staff.assigned` · `course_staff.unassigned` · `submission.graded` · `recording.created` ·
 `recording.updated` · `recording.deleted` · `live_session.scheduled` · `live_session.updated` ·
-`live_session.cancelled` · `announcement.posted`
+`live_session.cancelled` · `announcement.posted` · `group.created` · `group.renamed` ·
+`group.course_added` · `group.course_removed` · `group.student_assigned` · `group.student_removed`
 
-Of those, `submission.graded` and `announcement.posted` are reachable by an assistant; the rest are
-teacher-only today. `actorRole` is derived from the acting user rather than assumed, so if a
+Of those, `submission.graded`, `announcement.posted`, `group.student_assigned` and
+`group.student_removed` are reachable by an assistant; the rest are teacher-only today. `actorRole` is derived from the acting user rather than assumed, so if a
 teacher-only write is later widened to TAs the log does not silently attribute an assistant's action
 to Dr. Tahir. That now holds in **every** audited service, `ManageRecordingsService` included — it
 derived nothing and hardcoded `Role.Teacher` until 2026-09-08. `StaffService` is the one remaining
 literal, and correctly so: staff assignment has no TA route to widen.
 
 §7.1 records the one gap — the entry is written after the action commits, not inside its
-transaction. Four more write paths now depend on it, which makes closing it more urgent, not less.
+transaction. Ten more write paths now depend on it, which makes closing it more urgent, not less.
+
+**One half of that compile-error mechanism was missing until 2026-09-10.** The union does force a
+new action to be *declared*, but `ListAuditLogQueryDto` repeats both unions as runtime arrays for
+`@IsIn`, and those were plain literals - so the six `group.*` actions logged correctly and were
+then **rejected by the admin log's own filter** with a 400. The spec test that claimed to guard
+this iterates the array, so it can only prove that what is listed works and never that anything is
+missing; an e2e request found it instead. Both arrays are now derived from an exhaustive
+`Record<AuditAction, true>`, which does not compile with a union member absent. **Any future
+list-shaped mirror of a union in this codebase should be written the same way** - the pattern is
+cheap and it is the difference between a guard and a comment claiming there is one.
 
 ### 5.5 In-platform PDF assignment correction
 
@@ -217,6 +254,17 @@ immutable; the annotated version is a new artifact linked to it.
 - Per assignment/quiz: **overall average across all students** (so the teacher can see whether a
   task was hard or easy, and spot trends).
 - Aggregated averages across all students combined.
+
+**Groups (§5.16) do not complicate this, because of how the client answered the authoring
+question.** A task is written **once** and *targeted* at one or more groups — not copied per
+group — so there is still exactly one `Assessment` row per task, and "the average for this
+assignment" stays one average over every submission against it. Per-group breakdowns are a
+`GROUP BY` on the target, and the cross-group figure the client actually asked for (*was this
+task hard?*) is the default rather than something to reconstruct.
+
+> An earlier draft of this section proposed a nullable `origin_assessment_id` to stitch per-group
+> copies back together. **That column is not needed and should not be added** — it solved a
+> duplication problem the 2026-09-10 answer removed.
 
 ### 5.7 Certificates
 
@@ -293,6 +341,33 @@ The trade-off in one sentence: we accept up to 60 seconds of stale read access f
 TA in exchange for removing a database round trip from every staff read, and we buy that risk back
 by evicting on the write itself — so the TTL only ever covers a *missed* eviction, never a normal one.
 
+### 5.11.1 The current posture: TAs see everything — and why this section stays
+
+**Answered by the client on 2026-09-10.** Asked whether TAs should be scoped per group once
+groups exist (§5.16), the answer was *"TAs are allowed to access all groups"*; asked whether that
+also drops the per-course scoping, *"for now keep it as TAs see everything, but it might be
+changed."* So the intended behaviour today is an **unscoped TA** — every course, every group.
+
+**Do not delete this section to implement that.** *"It might be changed"* is the operative half of
+the instruction, and everything above is a warning that retrofitting scoping is how the leak
+happens — a codebase that has forgotten how to scope cannot be re-scoped cheaply. So:
+
+- `CourseStaffAssignment` stays, and staff-to-course assignment stays an admin action.
+- `StaffScopeService` stays the **single** place that decides, and every `/staff/*` route keeps
+  routing through it. The posture is **one answer inside `assertAssigned`**, not a hundred
+  deleted joins — which makes reversing it one method and its tests rather than a re-audit.
+- Make it **configuration, not a code edit**: the same rule §2.2 sets for the permission preset.
+  A `TA_SCOPE=all|assigned` switch read once at wiring time is honest about being a posture.
+- The 404-not-403 rule above still applies whenever the switch is `assigned`.
+
+What does **not** widen: `/admin/*` stays `@Roles(Role.Teacher)`. "A TA sees every course" is not
+"a TA may unenroll a student or issue a refund" — §2.2's *capability* split is untouched by a
+*visibility* decision, and conflating the two is the way this answer turns into a real hole.
+
+**Today's code still scopes** — an unassigned course 404s for a TA right now, so the shipped
+behaviour and the decided posture currently disagree. That is recorded rather than hidden
+(§7.1); the flip belongs with the group work.
+
 ### 5.12 Payments — transitions and refunds
 
 The known transitions are `pending → paid`, `pending → failed`, `paid → refunded`. That list is not
@@ -314,7 +389,9 @@ is a server-side clock decision, never something the reader's browser computes.
 
 ### 5.14 Announcement audiences are computed at send time
 
-Audience is one of `all_students`, `course:<id>`, or `all_tas`. **`all_tas` resolves from
+Audience is one of `all_students`, `course:<id>`, or `all_tas` — plus `group:<id>` once groups
+exist (§5.16), which is likely to be the *common* case, since "tomorrow's session moves to 7pm"
+is a message to one cohort and not to everyone taking the course. **`all_tas` resolves from
 `role = 'assistant'` at the moment of sending** — never stored as a frozen list of user ids, which
 would silently miss TAs hired after the announcement was drafted.
 
@@ -324,13 +401,131 @@ The TA's per-session roster and the admin's Attendance Report read the **same `A
 aggregated two different ways — by session for the TA, by course-average for the report. Don't
 build a second summary table for the report; it will drift.
 
+Once §5.16's groups land, a session belongs to a **group studying a course** rather than to the
+course, so the TA's aggregation is already per group and the report's "course average" needs a
+decision: per group, per course, or both. Averaging two cohorts that meet on different days into
+one figure hides the very thing the report is read for.
+
+### 5.16 Groups — a class of students, enrolled into a course
+
+**Given by the client on 2026-09-10, and it is a new entity, not a rename.** Dr. Tahir teaches in
+**groups**, and **more than one group can be enrolled in the same course**. A group is a cohort of
+students; a course is the curriculum, and a group is *enrolled* in it. The schema currently has
+only the second of those, and several comments in the code use "group" loosely to mean "course" —
+that reading is now wrong (§7.3 has the numbers this changes).
+
+- **A student is placed into a group by a teacher or a teaching assistant** — never by the student.
+  There is no self-service placement, so §7.2's open self-enrollment produces a student who holds a
+  course and has **no group yet**. That is a state the code must represent, not an error to throw.
+- **A group is a standalone class of students, not a subdivision of a course.** Answered
+  2026-09-10: *"no, I mean group of students."* A group has a name and members and exists before
+  any course is attached to it; a course is then **enrolled** — the client's own verb — and more
+  than one group can be enrolled in the same course. Nothing rules out the same group being
+  enrolled in two courses, so the group↔course link is **its own row** (§6.1), never a `course_id`
+  column on the group. Getting this backwards is the expensive mistake here: a `course_id` column
+  is a one-way door that a join table is not.
+- **Enrollment first, placement second.** Answered 2026-09-10: *"yes, enrolled then grouped by
+  TA."* `Enrollment` stays the single source of truth for *does this student have this course*;
+  group membership is a second, later fact about *which cohort they sit in*. That ordering is
+  exactly what keeps §7.2's self-enrollment intact — a student enrolls themselves and is simply
+  ungrouped until a TA places them. It also means placing a group into a course does **not** by
+  itself enroll its members (§11 asks whether it should, as a convenience).
+- **The live schedule belongs to the group, not the course.** Two groups on the same course meet at
+  different times, which is most of why groups exist at all. A session is therefore a *group
+  studying a course* — "Group A's Chemistry lesson" — not a property of either alone.
+  `LiveSession` keys on `courseId` today
+  (`live-sessions/interfaces/live-session-repository.interface.ts:1-8`); attendance keys on the
+  session, so attendance follows for free once the session moves. This is the largest structural
+  consequence of the whole instruction.
+- **Announcements gain a `group:<id>` audience** — §5.14.
+- **TA scoping is settled, for now, in the widest direction** — §5.11.1. TAs access all groups and,
+  for the moment, all courses. It is explicitly a posture the client may reverse, so the scoping
+  machinery stays in place and answers differently rather than being removed.
+- **Assessments are written once and targeted at one or more groups.** Answered 2026-09-10:
+  *"he could make a task then to submit for one or more groups with his own selection."* So
+  "per group" means the **audience** is chosen per group, not that the task is duplicated per
+  group. One `Assessment` row, a set of target groups picked at authoring time, and a student
+  sees it when they are in one of them.
+
+  That distinction decides the schema. `Assessment.courseId` **stays** — a task is course
+  material — and gains a join, `AssessmentTarget` (§6.1), one row per targeted group. The
+  per-group availability window and due date live on the *join row* as nullable overrides of the
+  assessment's own, so a teacher who wants one deadline for everyone sets it once and a teacher
+  running two cohorts a week apart overrides the later one. Marks were never shared: a submission
+  already belongs to a student.
+- **The learning mode moves to the group too** — §5.2. Onto `GroupCourse`, not `Group`.
+
+- **Adding a group to a course does not enroll its students.** Answered 2026-09-10: *"not
+  necessary — maybe the assistants and teachers can add to specific group."* No cascade, no bulk
+  enroll; staff add students to a group one at a time, and `Enrollment` stays untouched by it.
+  This keeps the §5.12 money question out of the group work entirely, which is the main reason
+  it is a good answer: nothing about placement can ever hand out a course somebody has not paid
+  for. What it costs is a real **"add students to this group"** staff surface — with 30 students
+  a group, adding them one by one from a page that only handles one at a time is the sort of
+  thing Dr. Tahir does once and never again, so multi-select from the course roster is the
+  minimum bar even though the write underneath is per student.
+
+**Read those last four together, because they compound.** An enrolled-but-unplaced student
+(§7.2) now has no group, therefore no assessments and no mode — a state that was benign when a
+group only decided *who you sit with* and is not benign once it decides *what work you are set*.
+Placement stops being an administrative nicety and becomes the thing that makes a course usable.
+Two consequences follow and neither is optional: the fallback in §5.2 so the dashboard always has
+a mode to render, and a staff **"enrolled, not yet placed"** queue prominent enough that nobody
+sits in it unnoticed. An empty course is exactly what a student reports as "the site is broken".
+
+### 5.17 A student can see their classmates
+
+From the same instruction. A student may see the other students **in their own group**. This is the
+first time in this build that one student learns another exists — every student-facing read so far
+is strictly self-scoped — so treat it as a **new PII surface**, not as one more list endpoint.
+
+- Scope is the **group**, never the course and never the platform. Two groups sharing a course must
+  not see each other. A student in two groups sees both rosters, as two lists rather than one
+  merged set — they are two different classes, and the merge would quietly invent a relationship
+  between people who have never met.
+- This is the one place where §5.11.1's "TAs see everything" posture must **not** leak downward.
+  Widening what staff may see says nothing about what a student may see, and a classmate list is
+  the student surface most likely to be widened by accident while copying a staff roster query.
+- Keep the field set minimal and decide it deliberately: display name, and an avatar if there is
+  one. **Never email, phone, grades, progress or attendance.** A classmate list that leaks a mark
+  is a different feature from the one that was asked for.
+- Gated server-side on the caller's own membership of that group, the same way `assertEnrolled`
+  gates everything else. A student not yet placed in a group gets an empty list — not a 403, and
+  never another group's roster.
+
+### 5.18 Staff authoring has to reach the student end
+
+Also from the same instruction: **quizzes, assignments and announcements uploaded by the teacher or
+the assistant must appear on the student side.** Read it as one end-to-end requirement rather than
+as three CRUD screens — the acceptance test is a student opening their dashboard and finding the
+thing that was just posted.
+
+Where that stands today (§7.1 is the fuller inventory):
+
+| Piece | Staff can author it | Student sees it |
+|---|---|---|
+| **Announcement** | Yes — `POST /admin/announcements` and `POST /staff/courses/:id/announcements`. | **Only as a notification.** There is no announcements page or list route on the student side; the body arrives through the mailbox fan-out and nowhere else. |
+| **Assignment / homework** | **No.** No create route exists anywhere — assessments are seed data. | Yes: `GET /courses/:id/assessments`, submission, revisions and server-derived status are all built. |
+| **Quiz** | **No.** No create route, and no engine behind it — `Question`, `QuestionOption`, `QuizAttempt` and `Answer` (§6) are unbuilt. `AssessmentType` has a `quiz` member that behaves exactly like an assignment. | Only as that degenerate assignment. |
+
+So the work is **two authoring surfaces and one student read surface**, not a rebuild: an assessment
+create/edit/publish route — writing it *decides* §11's "can a TA create assignments?" question, so
+ask before choosing the decorator — the quiz engine behind it, and a student-facing announcements
+list so a posted announcement has a page to link to. `Notification.link` is already page-shaped and
+nullable precisely because a platform-wide announcement has no page today; that null is what turns
+into a real route when this lands.
+
+Publication stays a **server-side clock decision** (§5.10, §5.13): an assessment appears when its
+`available_from` passes, never when a client decides it should.
+
 ---
 
 ## 6. Data model (starting point)
 
 `User` (role: visitor/student/parent/assistant/teacher) · `StudentProfile` · `ParentLink` ·
 `TeacherProfile` · `AssistantProfile` · `Course` · `CourseModule` (chapters) · `Lesson` ·
-`Enrollment` (carries **learning mode** + progress) · `Checkpoint` / `LessonProgress` ·
+`Enrollment` (progress; **learning mode moved to `GroupCourse`** — §5.2) · `Group` ·
+`GroupCourse` · `GroupMembership` · `Checkpoint` / `LessonProgress` ·
 `Recording` + `RecordingProgress` · `Material` (course_notes / study_materials / important_files) ·
 `Assessment` (type: homework/assignment/quiz; `available_from`, `available_to`, `due_at`) ·
 `AssessmentSubmission` + `SubmissionAttachment` + `SubmissionRevision` + `SubmissionAnnotation` ·
@@ -348,9 +543,40 @@ matters (submissions, grades, payments), money in **minor units as integers**, t
 These **extend** the entities above rather than duplicating them — same `User`, `Course`,
 `Enrollment`, `Assessment`.
 
+- **`Group`** — `id, name, teacher_id, created_at`. §5.16's standalone class of students, and the
+  thing a live schedule and a classmate list actually belong to. **No `course_id`** — that was
+  the shape assumed before the client answered on 2026-09-10, and it is wrong: a group exists
+  before a course is attached and may be enrolled in more than one.
+- **`GroupCourse`** — `id, group_id, course_id, learning_mode, enrolled_at, enrolled_by`. The
+  client's verb: a group is *enrolled* in a course. Many groups per course, and in principle many
+  courses per group. The **live sessions** and the **learning mode** (§5.2) hang off it, because
+  both are properties of *this group studying this course* rather than of either alone, and it is
+  what a `group:<id>` announcement resolves through. Assessments do **not** — they target the group
+  directly (`AssessmentTarget`, below), since a task is written once for a set of groups rather
+  than owned by one pairing.
+
+  It does **not** create student enrollments, and as of 2026-09-10 it deliberately never will:
+  adding a group to a course enrolls nobody (§5.16). `Enrollment` stays the access gate, which is
+  what keeps §5.12's payment question out of the group work entirely.
+- **`AssessmentTarget`** — `id, assessment_id, group_id, available_from?, available_to?, due_at?`.
+  §5.16's answer in one table: a task is authored once and targeted at the groups the teacher
+  selects. The three timestamps are **nullable overrides** of the assessment's own window, so the
+  common case writes none of them. `Assessment.courseId` is unchanged — an earlier draft had it
+  re-keying onto `GroupCourse`, which the authoring answer makes wrong and unnecessary.
+
+  The read it has to serve: *the assessments of this course targeted at a group this student is
+  in.* That is `AssessmentRepository.findByCourse` plus a join, not a new access path — and §5.10
+  still derives status server-side, now from the override window where one exists.
+- **`GroupMembership`** — `id, group_id, student_id, assigned_by, assigned_at`. Placement is a
+  staff action (§5.16), so `assigned_by` is not decoration — it is what makes the placement an
+  auditable event under §5.4, and a new `group.student_assigned` action belongs in `AuditAction`
+  the day this is built. Its own table, not a `group_id` column on `Enrollment`: the column was
+  only ever coherent while a group belonged to one course, and it cannot express a student
+  being moved between groups without losing the history of it.
 - **`CourseStaffAssignment`** — `id, user_id (role=assistant), course_id, assigned_at, assigned_by`.
   The core RBAC table; §5.11 filters every TA query through it, and it is the piece most worth
-  getting right first — retrofitting scoping is how the leak happens.
+  getting right first — retrofitting scoping is how the leak happens. **May become
+  group-scoped** — see §5.11 and §5.16; that is a security decision, not a schema preference.
 - **`Attendance`** — `id, student_id, course_id, session_date, status (present|absent|late),
   marked_by, marked_at`. `marked_by` is what ties it to §5.4. **Open:** §6 pairs `Attendance` with
   `LiveSession`, but this shape keys on a bare `session_date` with no `live_session_id`. For live
@@ -416,11 +642,11 @@ Honest inventory, so nobody assumes a surface is there. Of the five roles in §2
 
 | Role | Backend status |
 |---|---|
-| **Student** | Built. 9 feature controllers, every route `@Roles(Role.Student)`, unit + e2e covered. `JwtAuthGuard` + `RolesGuard` are **global**, so a new controller is protected by default; `@Public()` (health, register, login, password reset) and `@AnyRole()` (logout) are the only exits. Includes the catalog and self-enrollment added 2026-09-07 ({S}7.2). |
+| **Student** | Built. 10 feature controllers, every route `@Roles(Role.Student)`, unit + e2e covered. `JwtAuthGuard` + `RolesGuard` are **global**, so a new controller is protected by default; `@Public()` (health, register, login, password reset) and `@AnyRole()` (logout) are the only exits. Includes the catalog and self-enrollment added 2026-09-07 ({S}7.2), and the aggregated **`GET /dashboard`** added 2026-09-09 - the whole Home screen in one request, composed from the same per-course services so its numbers cannot drift from the screens it links to ({S}7.3). The per-course `GET /courses/:id/dashboard` remains and still serves `/learn/[id]`. Plus `GET /courses/:id/classmates` (2026-09-10, {S}5.17) — the first read where one student learns another exists, group-scoped, name only. |
 | **Visitor** | **Partly built.** A `public` module serves `GET /public/courses` and `GET /public/courses/:slug` unauthenticated, gated on the `is_published` flag from migration `004_public_catalog.sql` so Dr. Tahir can draft a course without it appearing. The detail response carries the **full outline** — modules and lesson titles with durations — not just counts. Rate-limited separately from auth (browsing is the point, but every call is an unauthenticated database read). Still absent: blog, contact. |
 | **Parent** | None. Enum entry only; no `ParentLink`, no read-only views. |
-| **Teaching Assistant** | **Working console.** `CourseStaffAssignment` + `StaffScopeService` (§5.11) now carry a real surface: `/staff/overview`, `/staff/courses`, and per-course `roster`, `outline`, `submissions`, `recordings`, `live-sessions` and `announcements`, plus `POST /staff/submissions/:id/grade` and `POST /staff/courses/:id/announcements`. Every one is scoped, and an unassigned course 404s. Still absent: attendance, quizzes, materials upload, messages. |
-| **Teacher / Admin** | **Working console — a strict superset of the TA's.** The same `/staff/*` routes unscoped, plus admin-only `/admin/students`, `/admin/assistants`, TA-to-course assignment (`/admin/courses/:id/staff`), the recording library (`POST /admin/courses/:id/recordings`, `PATCH`/`DELETE /admin/recordings/:id`), live-session scheduling (`POST /admin/courses/:id/live-sessions`, `PATCH`/`DELETE /admin/live-sessions/:id`), platform-wide announcements (`GET`/`POST /admin/announcements`) and the audit-log reader (`/admin/audit-log`). Still absent: course CRUD, payments, CMS, reports. |
+| **Teaching Assistant** | **Working console.** `CourseStaffAssignment` + `StaffScopeService` (§5.11) now carry a real surface: `/staff/overview`, `/staff/courses`, and per-course `roster`, `outline`, `submissions`, `recordings`, `live-sessions` and `announcements`, plus `POST /staff/submissions/:id/grade` and `POST /staff/courses/:id/announcements`. Every one is scoped, and an unassigned course 404s. Plus the group surface added 2026-09-10: `GET /staff/courses/:id/groups` (scoped), `GET /staff/groups/:id` and `/members`, and **placement** — `POST /staff/groups/:id/members` and `DELETE .../members/:studentId` — which {S}2.2 grants a TA explicitly. Still absent: attendance, quizzes, materials upload, messages. |
+| **Teacher / Admin** | **Working console — a strict superset of the TA's.** The same `/staff/*` routes unscoped, plus admin-only `/admin/students`, `/admin/assistants`, TA-to-course assignment (`/admin/courses/:id/staff`), the recording library (`POST /admin/courses/:id/recordings`, `PATCH`/`DELETE /admin/recordings/:id`), live-session scheduling (`POST /admin/courses/:id/live-sessions`, `PATCH`/`DELETE /admin/live-sessions/:id`), platform-wide announcements (`GET`/`POST /admin/announcements`), the audit-log reader (`/admin/audit-log`) and, from 2026-09-10, **group CRUD** — `GET`/`POST /admin/groups`, `PATCH /admin/groups/:id`, and `POST`/`DELETE` on `/admin/groups/:id/courses`. Still absent: course CRUD, payments, CMS, reports. |
 
 The TA/admin work surface lives in `backend/src/manage/` — `ManageService` (overview, roster,
 outline), `GradingService`, `ManageRecordingsService`, `DirectoryService`, behind two controllers
@@ -430,6 +656,53 @@ that carry the whole role boundary at class level: `StaffManageController` is
 repositories of its own** — re-providing a token would build a second in-memory instance, so a grade
 written through `manage` would be invisible to the student reading it through `assessments`. That is
 why `EnrollmentsModule`, `AssessmentsModule` and `RecordingsModule` now export their tokens.
+
+**Groups exist as of 2026-09-10, and this is exactly how much of them.** Migration `006_groups.sql`
+creates four tables — `groups`, `group_courses`, `group_memberships`, `assessment_targets` — and
+`backend/src/groups/` is the module on top: a `GroupRepository` with both drivers, `GroupsService`
+(create, rename, attach/detach a course, place/remove a student, all six audited),
+`ClassmatesService`, and three controllers carrying the role boundary at class level exactly as
+`manage/` does. Verified: **all six migrations applied to a real PostgreSQL 15 from an empty
+schema**, 59 integration tests green.
+
+**What is built and what is only a table:**
+
+| Piece | State |
+|---|---|
+| `groups`, `group_courses`, `group_memberships` | Built and read end to end — staff CRUD, placement, classmate list. |
+| `assessment_targets` | **DDL only.** The table is created and indexed; nothing writes or reads it. It lands with the authoring surface (§5.18), and the seed deliberately leaves it empty so the student assessment list is not filtered by something no code consults. |
+| `learning_mode` on `group_courses` | **Written, not yet read.** A staff caller sets it and it round trips, but the student surface still reads `Enrollment.learningMode`. Until that moves (§5.2), the mode is stored in two places and the group's copy is the one nothing consults. **This is the next thing to close** — two sources of truth for one value is precisely the drift this file keeps warning about. |
+
+Code comments that say "group" and mean *course* — `EnrollmentRepository.countDistinctStudents`
+says "a student in two of the teacher's groups" — predate §5.16 and are now actively misleading.
+Fix them as the remaining group work touches each file rather than in a sweep.
+
+**And TA scoping still diverges from the decided posture, deliberately.** §5.11.1 records the
+client's 2026-09-10 answer — TAs see every course and every group — but the shipped code still
+scopes: `StaffScopeService.assertAssigned` 404s an unassigned course, and the unit and e2e suites
+assert that it does. The group surface is built to match that split already: the routes that name
+a *course* go through `assertAssigned`, and the routes that name a *group* do not, because a group
+spans courses and there is nothing to scope by — which is also the client's answer. The remaining
+flip is the course half, and it belongs behind a config switch inside `assertAssigned` because the
+client's own words were *"it might be changed"*.
+
+**No assessment authoring exists either** (§5.18). Every assessment in the system arrived as seed
+data; there is no create, edit or publish route on any controller, and the quiz engine behind
+`AssessmentType = 'quiz'` is unbuilt. Announcements *are* authorable, and reach the student only
+as a notification — there is no student-facing announcements route.
+
+**One shipped field still has to move.** `Enrollment.learningMode` → `GroupCourse` (§5.2), with
+`courses.default_learning_mode` as the fallback for an unplaced student.
+`StoredAssessment.courseId` **stays put** — the 2026-09-10 authoring answer (write once, target
+groups) means assessments gain a join rather than a new parent. What changes there is the *read*:
+`AssessmentRepository.findByCourse` filters by the caller's group membership, reaching both
+dashboard services, `ReportsService` and the staff submissions list. Not a re-parenting; a
+predicate, in the places that already assert enrollment.
+
+The existing assessments are **seed data with no group**, and the call here is to regenerate the
+seed alongside the targeting work rather than invent a default group to migrate them into. They
+exist to make a dev database useful; preserving them would add a permanent concept to the schema
+to protect throwaway rows.
 
 **Recording writes are teacher-only.** §2.2's preset gives a TA materials and never recordings, and
 the client's instruction on 2026-09-07 was specifically that *the teacher* uploads them. If that
@@ -459,7 +732,7 @@ guard regardless of what the rail renders ({S}8). The client-side redirect
 decides *where to send* someone, never *what they may read*.
 
 **Persistence is driver-selected, and both drivers are real.** Every one of the
-thirteen repository interfaces has an `InMemory*Repository` and a
+fourteen repository interfaces has an `InMemory*Repository` and a
 `Postgres*Repository`; `database/repository.provider.ts` binds the `Symbol`
 token from `PERSISTENCE_DRIVER`, read once at wiring time. `memory` is the
 default in development and test and is **refused in production** — an unset
@@ -468,15 +741,17 @@ rather than serving traffic from a process-local array. Schema lives in
 `backend/src/database/migrations/`: `001_student_platform.sql` (17 tables, the
 student surface), `002_staff_and_audit.sql` (`course_staff_assignments`,
 `audit_log`), `003_course_catalog.sql` (`default_learning_mode`),
-`004_public_catalog.sql` (`slug`, `is_published`) and `005_announcements.sql`,
-applied by `MigrationRunner` via `npm run db:migrate` or `DB_AUTO_MIGRATE=1` on
-a single-container deploy.
-`test/postgres-repositories.integration-spec.ts` covers all thirteen and skips
-itself when no `TEST_DATABASE_URL` is set. As of **2026-09-08 all five
+`004_public_catalog.sql` (`slug`, `is_published`), `005_announcements.sql` and
+`006_groups.sql` (`groups`, `group_courses`, `group_memberships`,
+`assessment_targets`), applied by `MigrationRunner` via `npm run db:migrate` or
+`DB_AUTO_MIGRATE=1` on a single-container deploy.
+`test/postgres-repositories.integration-spec.ts` covers all fourteen and skips
+itself when no `TEST_DATABASE_URL` is set. As of **2026-09-10 all six
 migrations have run against a real PostgreSQL 15** from an empty schema, with
-the suite's **48 tests green** — so the announcements DDL, both of its CHECK
-constraints, the `notifications_type_check` swap, the 004 slug backfill and
-003's learning-mode UPDATE are all exercised rather than merely written. CI runs
+the suite's **59 tests green** — so the announcements DDL, both of its CHECK
+constraints, the `notifications_type_check` swap, the 004 slug backfill, 003's
+learning-mode UPDATE and 006's four tables with their UNIQUE constraints and
+cascades are all exercised rather than merely written. CI runs
 the same suite on every push against a Postgres service container, with a guard
 step that fails the job if the suite reports no executed tests (a suite that
 self-skips is otherwise indistinguishable from one that passes).
@@ -496,35 +771,49 @@ Note that the scaffold-era `database/schema.sql` and `database/seed.sql` at the
 repo root are *not* applied and disagree with the migration on column shapes.
 They are the §6 design outline; their headers say so.
 
-Scaling debt still open, none of it structural: `CourseRepository` and
+Scaling debt still open, none of it structural — and **read §7.3 before acting
+on any of it**, because the client's real numbers (10 groups × ~30 students)
+retire about half this list rather than scheduling it. `CourseRepository` and
 `AssessmentRepository` have batch reads (`findByIds`,
 `findSubmissionsForStudent`) and the three N+1 loops are gone;
 `CourseRepository.findAll(limit, offset)` and `AuditLogRepository.find` are the
 first two **paginated** reads in the codebase, and `UserRepository.findByIds`
-the third batch read. `StudentRepository` still exposes no list method; there is
-no count-only method except `NotificationRepository.countUnread`, so badge
-integers still fetch full rows; no student-facing list endpoint is paginated,
-and notifications are append-only with no ceiling; the rate limiter
-(`InMemoryRateLimitStore`) and the token denylist are per-process, so they break
-under a second replica; and `JwtStrategy` does a user lookup per request that
-will need caching. Those last three want the *same* Redis — introduce it once,
-not three times (§5.11 makes the same argument for a fourth).
+the third batch read.
+
+**Count-only reads are now four**, not one: `NotificationRepository.countUnread`
+was joined on 2026-09-09 by `EnrollmentRepository.countDistinctStudents`,
+`RecordingRepository.countByCourses` and
+`AssessmentRepository.countUngradedSubmissionsByCourses`, which between them
+took `ManageService.overview` off a `4N + 2` fan-out that materialized every
+enrollment, assessment, submission and recording row across all courses to
+produce six integers. The student Home screen's `2N + 2` **request** fan-out
+went the same day, behind a single `GET /dashboard`. Both are described in the
+project log.
+
+Still open: `StudentRepository` exposes no list method; no student-facing list
+endpoint is paginated, and notifications are append-only with no ceiling. The
+rate limiter (`InMemoryRateLimitStore`) and the token denylist are per-process
+and `JwtStrategy` does a user lookup per request — §7.1 used to call these three
+debt wanting one shared Redis, and §5.11 a fourth. **On one replica they are not
+debt**; §7.3 records the decision and names the trigger (a second replica, not a
+student count).
 
 The interface-shape items here — list and count methods — were cheapest to fix
 before a second implementation existed. That window closed some time ago:
 `findAll` and `findByIds` above each cost two implementors and an integration
 suite to add, which is the going rate now. Still worth doing, still not free.
 
-**Audit coverage is ten actions, and every mutating staff route is covered
-today.** The `@Global()` `AuditModule` is now injected in five services —
+**Audit coverage is sixteen actions, and every mutating staff route is covered
+today.** The `@Global()` `AuditModule` is now injected in six services —
 `StaffService`, `GradingService`, `ManageRecordingsService`,
-`ManageLiveSessionsService` and `AnnouncementsService` — wiring the ten actions
-§5.4 lists, one `audit.record` call per action. Verified by enumeration on
-2026-09-08: every `@Post`/`@Patch`/`@Delete` on `StaffManageController`,
-`AdminManageController` and both announcement controllers reaches one. That is a
-property of today's tree, not a mechanism: each new staff or admin write must
-add its own call, and the moment one forgets, §5.4 is quietly broken with
-nothing failing. Attendance and payments are where this stops being theoretical.
+`ManageLiveSessionsService`, `AnnouncementsService` and `GroupsService` —
+wiring the sixteen actions §5.4 lists, one `audit.record` call per action.
+Verified by enumeration on 2026-09-10: every `@Post`/`@Patch`/`@Delete` on
+`StaffManageController`, `AdminManageController`, both announcement controllers
+and both group controllers reaches one. That is a property of today's tree, not
+a mechanism: each new staff or admin write must add its own call, and the moment
+one forgets, §5.4 is quietly broken with nothing failing. Attendance and
+payments are where this stops being theoretical.
 
 **The audit entry's `before` must not alias its `after`.** Twice now an
 in-memory repository has handed back the stored object by reference while
@@ -534,8 +823,9 @@ shaped and empty, which is worse than no entry. It was found in grading, fixed,
 and then found again in recordings on 2026-09-08. **Every in-memory repository
 read that feeds a `before` snapshot returns a copy**, and
 `manage.controller.spec.ts` carries a "before/after pair that actually differs"
-test for grading, live sessions and recordings alike. A new audited mutation
-needs both.
+test for grading, live sessions and recordings alike, and
+`groups.controller.spec.ts` carries the same for a group rename and a
+placement removal. A new audited mutation needs both.
 
 **One known gap in the audit trail, recorded rather than discovered later.**
 `AuditService.record` writes on its own connection *after* the action it
@@ -611,6 +901,74 @@ advertised before it opens, or run without being advertised). One flag is
 shipped; splitting it is a one-line change in the same two places, and the
 question becomes real the moment payment lands in front of
 `CoursesService.enroll`.
+
+**Groups (§5.16) add a second thing self-enrollment cannot do**, and the client
+confirmed the ordering on 2026-09-10: *"enrolled then grouped by TA."* Placement
+in a group is a teacher's or assistant's action, so a student who enrolls
+themselves lands **enrolled but ungrouped** — and that must read as a normal, temporary
+state, not an error: they keep the recorded content their enrollment already
+opens, their classmate list (§5.17) is empty, and they appear in a staff
+"needs placing" view rather than vanishing from one. **That state got heavier
+on 2026-09-10** — with assessments authored per group (§5.16) and the learning
+mode on the group (§5.2), an unplaced student sees a course with no work in it
+and no mode to render. The lessons and recordings still open, so this is not a
+lockout; it is worse in one specific way, because it looks like a working
+course that is simply empty. The §5.2 fallback and a prominent "enrolled, not
+yet placed" staff queue are what keep it honest. The alternative — making a
+group mandatory at enrollment — would either block self-enrollment outright or
+force the student to pick their own cohort, and §5.16 says they do not get to.
+
+---
+
+## 7.3 The numbers this actually runs at
+
+Given by the client on 2026-09-09, and they are **approximate but authoritative**: Dr. Tahir runs
+about **10 groups of about 30 students each — roughly 300 students**, one teacher, a handful of TAs,
+on a single containerized VPS with one replica. A student holds one or two courses, rarely three.
+
+**Re-read those numbers in light of §5.16: ten *groups* is not ten courses.** Several groups share
+one course, so the course count is plausibly low single digits while the group count is ten and
+the thing that grows is groups, not courses. Nothing in the conclusions below changes — 300
+students is 300 students — but anything sized "per course" (the staff overview's fan-out, the
+`findByIds` batches, `coursesInScope`) is really sized per *group* once schedules, rosters and
+announcements hang off groups. Size the new work against ten groups, not against three courses.
+
+This does not contradict §1's "thousands of students" so much as date it: thousands is the ambition
+the brief was written around, 300 is what the software serves. **Design against 300 and keep the
+migration path open** (§3's rule that the VPS must move to AWS/DigitalOcean without code changes is
+unchanged and is what buys the ambition back later).
+
+Why this is written down rather than left implicit: at 300 students a good half of the "scaling
+debt" §7.1 catalogues is not debt, and building it anyway costs real complexity for no user.
+The distinction that survives the rescale is **the cost that grows with data versus the cost that
+is merely large-but-constant**:
+
+- **Still worth fixing at 300** — anything `O(N)` in courses or students on a screen someone opens
+  daily, and anything that materializes whole rows to produce an integer. Both were real and both
+  were fixed on 2026-09-09 (see the log entry): the student Home screen's `2N + 2` request fan-out,
+  and `ManageService.overview` pulling every enrollment, assessment, submission and recording row
+  across all courses to count them.
+- **Not worth building at 300, and deliberately not built** — the shared **Redis** §7.1 wants for
+  the rate limiter, the token denylist and the `JwtStrategy` lookup. All three are per-process, and
+  a per-process structure is *correct* on one replica. The trigger to revisit is **a second replica
+  being configured**, not a student count; until then Redis is a component to operate, back up and
+  fail over for no benefit. §5.11's five-condition `CourseStaffAssignment` cache is the same call —
+  it guards a primary-key lookup against ten courses.
+- **Also not built**: pagination on student-facing lists (a student has 1–3 courses and ~20
+  assessments) and `QuizAnalyticsSnapshot` caching (§6.1 already says compute on read until
+  measurement says otherwise).
+
+The honest summary: **round trips and row volume matter here; query counts mostly do not.** A
+primary-key lookup against Postgres on the same host is a fraction of a millisecond, so twenty of
+them inside one request is invisible, while twenty *HTTP* requests from a student's phone on Egyptian
+mobile data is a visibly slow screen. Optimise the ones the student waits on.
+
+**A rescale is not a licence to skip the ones that are cheap.** Where a batched or count-only read
+costs two implementations and an integration test — the going rate §7.1 names — and removes an
+`O(N)`, take it. The three added on 2026-09-09
+(`EnrollmentRepository.countDistinctStudents`, `RecordingRepository.countByCourses`,
+`AssessmentRepository.countUngradedSubmissionsByCourses`) are that trade, and they are the shape to
+copy for attendance and payments.
 
 ---
 
@@ -696,6 +1054,24 @@ logs, future subscriptions. Designed so **additional gateways drop in later**.
 
 ## 11. Open decisions — don't block on them, ask when they matter
 
+- **Groups are fully specified as of 2026-09-10** — seven questions asked, seven answered, and
+  none of them left open. In order: a group is a standalone class of students (§5.16); TAs see
+  everything for now (§5.11.1, the one that is explicitly temporary); the learning mode moves to
+  `GroupCourse` (§5.2); a task is written once and targeted at selected groups (§5.16, §6.1's
+  `AssessmentTarget`); adding a group to a course does **not** bulk-enroll anyone (§5.16); and
+  seed assessments are regenerated rather than migrated (§7.1, my call, reversible).
+
+  What is left is **implementation, not specification** — `006_groups.sql` and the surfaces on
+  top of it. The two design notes worth carrying into that work: an unplaced student sees an
+  empty course (§5.16, §7.2), and "add students to a group" needs multi-select even though the
+  write underneath is one student at a time.
+- **§5.11.1's "TAs see everything" is explicitly temporary** — the client said so in the same
+  breath. It is listed here so nobody later reads it as a settled design and deletes the scoping
+  machinery it deliberately leaves standing.
+- **What exactly may a classmate see (§5.17)?** Name and avatar is the safe default and what will
+  ship absent an answer. Ask whether Dr. Tahir wants anything more — and note that the moment it
+  includes a grade or a rank it stops being a classmate list and becomes a leaderboard, which is
+  a different product decision with a different answer for a parent.
 - Which payment processor(s) for Egypt (Paymob vs. Fawry), and whether Stripe is needed at launch.
 - Zoom: manual link + time (current assumption) vs. API automation.
 - Single Chemistry/IGCSE course vs. the fuller IGCSE/IELTS/English catalog — the schema supports both.

@@ -168,9 +168,16 @@ describe('AuditService', () => {
 
   it('should keep the DTO filter lists in step with the action unions', async () => {
     // `@IsIn` needs runtime values a TypeScript union cannot provide, so the
-    // two lists are written twice. This is the assertion that they agree - add
-    // an action to the union without adding it here and the filter silently
-    // rejects it.
+    // two lists are written twice.
+    //
+    // **This test proves less than it looks like it does, by construction.** It
+    // iterates the arrays, so it can only show that every *listed* value round
+    // trips - a union member missing from the list is invisible to it, which is
+    // exactly how the six `group.*` actions shipped a 400 on 2026-09-10. The
+    // guard that actually catches that is the exhaustive
+    // `Record<AuditAction, true>` in the DTO, which does not compile with a
+    // member missing. What remains valuable here is the other direction: a
+    // listed value that the repository cannot filter on.
     const recorded = await Promise.all(
       AUDIT_ACTIONS.map((action) => service.record(entry({ action }))),
     );

@@ -15,6 +15,7 @@ import { PostgresNotificationRepository } from '../src/notifications/repositorie
 import { PostgresCourseStaffRepository } from '../src/staff/repositories/postgres-course-staff.repository.js';
 import { PostgresAuditLogRepository } from '../src/audit/repositories/postgres-audit-log.repository.js';
 import { PostgresAnnouncementRepository } from '../src/announcements/repositories/postgres-announcement.repository.js';
+import { PostgresGroupRepository } from '../src/groups/repositories/postgres-group.repository.js';
 import { Role } from '../src/auth/roles.enum.js';
 
 /**
@@ -215,6 +216,71 @@ describeIfDb('Postgres repositories', () => {
       expect((await repo.find('course-1', 'student-1'))?.learningMode).toBe('recorded');
       expect((await repo.find('course-2', 'student-1'))?.learningMode).toBe('live');
       expect(await repo.find('course-2', 'student-2')).toBeNull();
+    });
+  });
+
+  /* The count-only reads the staff overview uses. Each one replaced a
+     per-course fetch-then-length, so the assertion that matters is not a
+     literal but agreement with the method it replaced: if SQL and the row
+     path ever disagree, the console silently shows a wrong integer. */
+  describe('staff overview counts', () => {
+    const courseIds = ['course-1', 'course-2'];
+
+    it('counts enrollments per course and distinct students across them', async () => {
+      const repo = new PostgresEnrollmentRepository(db);
+
+      const perCourse = await repo.countByCourses(courseIds);
+      for (const courseId of courseIds) {
+        const rows = await repo.findByCourse(courseId);
+        expect(perCourse[courseId] ?? 0).toBe(rows.length);
+      }
+
+      // Distinct people, not the sum: student-1 holds both seeded courses, so
+      // a sum would over-count them and this assertion would fail.
+      const distinct = await repo.countDistinctStudents(courseIds);
+      const expected = new Set<string>();
+      for (const courseId of courseIds) {
+        for (const row of await repo.findByCourse(courseId)) {
+          expected.add(row.studentId);
+        }
+      }
+      expect(distinct).toBe(expected.size);
+      const sum = Object.values(perCourse).reduce((a, b) => a + b, 0);
+      expect(distinct).toBeLessThan(sum);
+    });
+
+    it('counts recordings per course', async () => {
+      const repo = new PostgresRecordingRepository(db);
+      const counts = await repo.countByCourses(courseIds);
+      for (const courseId of courseIds) {
+        const rows = await repo.findByCourseForStaff(courseId);
+        expect(counts[courseId] ?? 0).toBe(rows.length);
+      }
+    });
+
+    it('counts ungraded submissions per course', async () => {
+      const repo = new PostgresAssessmentRepository(db);
+      const counts = await repo.countUngradedSubmissionsByCourses(courseIds);
+
+      for (const courseId of courseIds) {
+        const assessments = await repo.findByCourse(courseId);
+        const submissions = await repo.findSubmissionsForAssessments(
+          assessments.map((a) => a.id),
+        );
+        const ungraded = submissions.filter((s) => s.correctedAt === null).length;
+        expect(counts[courseId] ?? 0).toBe(ungraded);
+      }
+    });
+
+    it('answers an empty course list without a round trip', async () => {
+      const enrollments = new PostgresEnrollmentRepository(db);
+      const recordings = new PostgresRecordingRepository(db);
+      const assessments = new PostgresAssessmentRepository(db);
+      // A TA assigned to nothing reaches all three with an empty array;
+      // `= ANY('{}')` would be valid SQL but a pointless round trip.
+      expect(await enrollments.countDistinctStudents([])).toBe(0);
+      expect(await recordings.countByCourses([])).toEqual({});
+      expect(await assessments.countUngradedSubmissionsByCourses([])).toEqual({});
     });
   });
 
@@ -805,6 +871,141 @@ describeIfDb('Postgres repositories', () => {
 
       const page = await repo().find({ limit: 10, courseId: 'course-gone' });
       expect(page.entries.map((e) => e.id)).toContain(recorded.id);
+    });
+  });
+
+  /* Groups (CLAUDE.md §5.16). The assertions worth making here are the ones an
+     in-memory array cannot fail: that the DDL parses, that the two UNIQUE
+     constraints really make the writes idempotent rather than the JavaScript
+     `find` in front of them doing it, and that `findStudentGroupCourses` - a
+     real SQL join, where the memory driver composes two filters - agrees with
+     the fixture. */
+  describe('groups', () => {
+    const repo = () => new PostgresGroupRepository(db);
+
+    it('reads the seeded groups, their courses and their members', async () => {
+      expect((await repo().findById('group-1'))?.name).toContain('Saturday');
+      // No course_id on the group itself - the shape §5.16 required.
+      expect(await repo().findById('group-1')).not.toHaveProperty('courseId');
+
+      const courses = await repo().findCourses('group-1');
+      expect(courses.map((c) => c.courseId)).toEqual(['course-1']);
+      expect(courses[0]!.learningMode).toBe('recorded');
+
+      const members = await repo().findMembers('group-1');
+      expect(members.map((m) => m.studentId).sort()).toEqual([
+        'student-1',
+        'student-2',
+      ]);
+    });
+
+    it('joins membership to pairing for one student and one course', async () => {
+      // student-1 is in both groups; group-1 studies course-1 and group-2
+      // studies course-2, so each query must return exactly its own pairing.
+      const one = await repo().findStudentGroupCourses('student-1', 'course-1');
+      expect(one.map((gc) => gc.groupId)).toEqual(['group-1']);
+      expect(one[0]!.learningMode).toBe('recorded');
+
+      const two = await repo().findStudentGroupCourses('student-1', 'course-2');
+      expect(two.map((gc) => gc.groupId)).toEqual(['group-2']);
+      expect(two[0]!.learningMode).toBe('live');
+
+      // student-2 is only in group-1, so course-2 is empty for them - the
+      // "two groups on one course must not see each other" property, at the
+      // level the query decides it rather than the service.
+      expect(await repo().findStudentGroupCourses('student-2', 'course-2')).toEqual([]);
+    });
+
+    it('makes addMember idempotent through the UNIQUE constraint', async () => {
+      const first = await repo().addMember({
+        groupId: 'group-2',
+        studentId: 'student-2',
+        assignedBy: 'assistant-1',
+      });
+      const second = await repo().addMember({
+        groupId: 'group-2',
+        studentId: 'student-2',
+        // A different actor on the second call: the row must keep the first
+        // one. Overwriting it would rewrite the §5.4 trail with whoever
+        // clicked last.
+        assignedBy: 'teacher-1',
+      });
+      expect(second.id).toBe(first.id);
+      expect(second.assignedBy).toBe('assistant-1');
+      expect(
+        (await repo().findMembers('group-2')).filter(
+          (m) => m.studentId === 'student-2',
+        ),
+      ).toHaveLength(1);
+
+      expect(await repo().removeMember('group-2', 'student-2')).toBe(true);
+      // Second removal is a no-op, and says so rather than throwing.
+      expect(await repo().removeMember('group-2', 'student-2')).toBe(false);
+    });
+
+    it('makes addCourse idempotent and keeps the original learning mode', async () => {
+      const first = await repo().addCourse({
+        groupId: 'group-1',
+        courseId: 'course-2',
+        learningMode: 'live',
+        enrolledBy: 'teacher-1',
+      });
+      const second = await repo().addCourse({
+        groupId: 'group-1',
+        courseId: 'course-2',
+        // A re-add must not silently re-mode a group somebody deliberately
+        // moved to live.
+        learningMode: 'recorded',
+        enrolledBy: 'teacher-1',
+      });
+      expect(second.id).toBe(first.id);
+      expect(second.learningMode).toBe('live');
+
+      expect(await repo().removeCourse('group-1', 'course-2')).toBe(true);
+      expect(await repo().removeCourse('group-1', 'course-2')).toBe(false);
+    });
+
+    it('counts members per group in one query, agreeing with the row path', async () => {
+      const ids = ['group-1', 'group-2'];
+      const counts = await repo().countMembersByGroups(ids);
+      for (const id of ids) {
+        expect(counts[id] ?? 0).toBe((await repo().findMembers(id)).length);
+      }
+      // A group with no members is absent rather than 0; callers default.
+      const empty = await repo().create({ name: 'Empty', teacherId: 'teacher-1' });
+      expect((await repo().countMembersByGroups([empty.id]))[empty.id]).toBeUndefined();
+      expect(await repo().countMembersByGroups([])).toEqual({});
+    });
+
+    it('renames, and returns null for a group that is not there', async () => {
+      const renamed = await repo().rename('group-2', 'Chemistry — Tuesday 21:00');
+      expect(renamed?.name).toBe('Chemistry — Tuesday 21:00');
+      expect(await repo().rename('group-nope', 'x')).toBeNull();
+      // Put it back: the suite shares one database across describes.
+      await repo().rename('group-2', 'IGCSE Chemistry — Tuesday 20:00');
+    });
+
+    it('cascades memberships and pairings when a group goes', async () => {
+      const doomed = await repo().create({ name: 'Doomed', teacherId: 'teacher-1' });
+      await repo().addCourse({
+        groupId: doomed.id,
+        courseId: 'course-1',
+        learningMode: 'live',
+        enrolledBy: 'teacher-1',
+      });
+      await repo().addMember({
+        groupId: doomed.id,
+        studentId: 'student-1',
+        assignedBy: 'teacher-1',
+      });
+
+      // There is no delete on the repository (§6: soft-delete where history
+      // matters, and a group carries placement history). This asserts the DDL
+      // rather than an API: if a group is ever removed by hand, it must not
+      // leave orphaned rows pointing at nothing.
+      await db.query('DELETE FROM groups WHERE id = $1', [doomed.id]);
+      expect(await repo().findMembers(doomed.id)).toEqual([]);
+      expect(await repo().findCourses(doomed.id)).toEqual([]);
     });
   });
 });

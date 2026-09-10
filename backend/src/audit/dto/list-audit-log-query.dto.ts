@@ -7,31 +7,59 @@ import type {
 } from '../interfaces/audit-log-repository.interface.js';
 
 /**
- * The two unions are repeated here as literal arrays because `@IsIn` needs
- * runtime values and a TypeScript union has none. Adding an action without
- * adding it here means the filter silently rejects it, so they are declared
- * next to each other and the module's spec asserts they agree.
+ * The two unions repeated as runtime values, because `@IsIn` needs values and a
+ * TypeScript union has none.
+ *
+ * Written as an **exhaustive `Record`** rather than as a plain array, and that
+ * shape is the whole point: `Record<AuditAction, true>` will not compile with a
+ * union member missing, so adding an action to `AuditAction` and forgetting it
+ * here is a build failure rather than a filter that silently rejects the new
+ * action at runtime.
+ *
+ * That was not previously true. The arrays were literals and the spec's
+ * "keep the DTO filter lists in step" test iterates over the array itself - so
+ * it could only prove that what was listed worked, never that anything was
+ * missing. The six `group.*` actions added on 2026-09-10 went in without it,
+ * and it took an e2e request to `/admin/audit-log?action=group.student_assigned`
+ * coming back 400 to find out. The compiler does that job now.
  */
-export const AUDIT_ACTIONS: readonly AuditAction[] = [
-  'course_staff.assigned',
-  'course_staff.unassigned',
-  'submission.graded',
-  'recording.created',
-  'recording.updated',
-  'recording.deleted',
-  'live_session.scheduled',
-  'live_session.updated',
-  'live_session.cancelled',
-  'announcement.posted',
-];
+const AUDIT_ACTION_VALUES: Record<AuditAction, true> = {
+  'course_staff.assigned': true,
+  'course_staff.unassigned': true,
+  'submission.graded': true,
+  'recording.created': true,
+  'recording.updated': true,
+  'recording.deleted': true,
+  'live_session.scheduled': true,
+  'live_session.updated': true,
+  'live_session.cancelled': true,
+  'announcement.posted': true,
+  'group.created': true,
+  'group.renamed': true,
+  'group.course_added': true,
+  'group.course_removed': true,
+  'group.student_assigned': true,
+  'group.student_removed': true,
+};
 
-export const AUDIT_TARGET_TYPES: readonly AuditTargetType[] = [
-  'course_staff_assignment',
-  'assessment_submission',
-  'recording',
-  'live_session',
-  'announcement',
-];
+const AUDIT_TARGET_TYPE_VALUES: Record<AuditTargetType, true> = {
+  course_staff_assignment: true,
+  assessment_submission: true,
+  recording: true,
+  live_session: true,
+  announcement: true,
+  group: true,
+  group_course: true,
+  group_membership: true,
+};
+
+export const AUDIT_ACTIONS = Object.keys(
+  AUDIT_ACTION_VALUES,
+) as readonly AuditAction[];
+
+export const AUDIT_TARGET_TYPES = Object.keys(
+  AUDIT_TARGET_TYPE_VALUES,
+) as readonly AuditTargetType[];
 
 export class ListAuditLogQueryDto {
   @IsOptional()

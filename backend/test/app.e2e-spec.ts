@@ -91,6 +91,7 @@ describe('Student API (e2e)', () => {
     ['/courses'],
     ['/courses/course-1'],
     ['/courses/course-1/dashboard'],
+    ['/dashboard'],
     ['/courses/course-1/assessments'],
     ['/courses/course-1/recordings'],
     ['/courses/course-1/materials'],
@@ -107,6 +108,7 @@ describe('Student API (e2e)', () => {
     ['/courses'],
     ['/courses/course-1'],
     ['/courses/course-1/dashboard'],
+    ['/dashboard'],
     ['/courses/course-1/assessments'],
     ['/courses/course-1/recordings'],
     ['/courses/course-1/materials'],
@@ -129,6 +131,65 @@ describe('Student API (e2e)', () => {
     expect(res.body.progress.completionPercentage).not.toBe(
       res.body.stats.overallReportPercentage,
     );
+  });
+
+  /* --- the aggregated Home screen ------------------------------------
+     `GET /dashboard` exists to spare the browser a `2N + 2` fan-out. The
+     risk it introduces is a second implementation of the same numbers, so
+     these tests pin it against the per-course endpoints rather than against
+     literals: if the two ever diverge, that is the bug worth failing on. */
+
+  it('serves every enrolled course in one request', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/dashboard')
+      .set(auth())
+      .expect(200);
+
+    const courses = await request(app.getHttpServer())
+      .get('/courses')
+      .set(auth())
+      .expect(200);
+
+    expect(res.body.studentName).toBe('Ali Esam');
+    expect(res.body.entries).toHaveLength(courses.body.length);
+    expect(res.body.entries.map((e: { course: { id: string } }) => e.course.id))
+      .toEqual(courses.body.map((c: { id: string }) => c.id));
+    expect(res.body.notifications).toHaveProperty('unreadCount');
+  });
+
+  it('reports the same stats the per-course dashboard does', async () => {
+    const home = await request(app.getHttpServer())
+      .get('/dashboard')
+      .set(auth())
+      .expect(200);
+    const perCourse = await request(app.getHttpServer())
+      .get('/courses/course-1/dashboard')
+      .set(auth())
+      .expect(200);
+
+    const entry = home.body.entries.find(
+      (e: { course: { id: string } }) => e.course.id === 'course-1',
+    );
+    expect(entry).toBeDefined();
+    expect(entry.stats).toEqual(perCourse.body.stats);
+    expect(entry.quickAccess).toEqual(perCourse.body.quickAccess);
+    expect(entry.nextLiveSession).toEqual(perCourse.body.nextLiveSession);
+  });
+
+  it('carries the same assessment list the per-course endpoint serves', async () => {
+    const home = await request(app.getHttpServer())
+      .get('/dashboard')
+      .set(auth())
+      .expect(200);
+    const list = await request(app.getHttpServer())
+      .get('/courses/course-1/assessments')
+      .set(auth())
+      .expect(200);
+
+    const entry = home.body.entries.find(
+      (e: { course: { id: string } }) => e.course.id === 'course-1',
+    );
+    expect(entry.assessments).toEqual(list.body);
   });
 
   it('computes assessment status server-side and ignores a client-sent status', async () => {
@@ -195,6 +256,19 @@ describe('Student API (e2e)', () => {
         .set(fresh())
         .expect(200);
       expect(catalog.body.every((c: { enrolled: boolean }) => !c.enrolled)).toBe(true);
+    });
+
+    it('serves a new student an empty Home screen rather than an error', async () => {
+      // The aggregate takes no course id, so a student with no enrollments is
+      // an ordinary answer and not a 404. Their name and mailbox still resolve
+      // - the screen has an empty state to draw and needs the rest to draw it.
+      const res = await request(app.getHttpServer())
+        .get('/dashboard')
+        .set(fresh())
+        .expect(200);
+      expect(res.body.entries).toEqual([]);
+      expect(typeof res.body.studentName).toBe('string');
+      expect(res.body.notifications.unreadCount).toBe(0);
     });
 
     it('does not leak course content through the catalog', async () => {
@@ -490,6 +564,46 @@ describe('Student API (e2e)', () => {
     });
   });
 
+  describe('classmates (§5.17)', () => {
+    it('lists the other students in the caller own group, name only', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/courses/course-1/classmates')
+        .set({ Authorization: `Bearer ${accessToken}` })
+        .expect(200);
+
+      expect(Array.isArray(response.body)).toBe(true);
+      expect(response.body).toHaveLength(1);
+      const [group] = response.body;
+      expect(group.groupName).toBeTruthy();
+      expect(group.classmates.map((c: { studentId: string }) => c.studentId)).toEqual([
+        'student-2',
+      ]);
+
+      // The field set is the requirement, not an implementation detail: never
+      // email, phone, grades, progress or attendance. Asserted over the wire
+      // because that is where a widened shape would actually leak.
+      for (const classmate of group.classmates) {
+        expect(Object.keys(classmate).sort()).toEqual(['name', 'studentId']);
+      }
+      expect(JSON.stringify(response.body)).not.toContain('@');
+    });
+
+    it('never includes the caller themselves', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/courses/course-1/classmates')
+        .set({ Authorization: `Bearer ${accessToken}` })
+        .expect(200);
+      expect(JSON.stringify(response.body)).not.toContain('student-1');
+    });
+
+    it('404s a course the caller is not enrolled in', async () => {
+      await request(app.getHttpServer())
+        .get('/courses/course-3/classmates')
+        .set({ Authorization: `Bearer ${accessToken}` })
+        .expect(404);
+    });
+  });
+
   describe('cross-role isolation', () => {
     let teacherToken: string;
 
@@ -520,6 +634,7 @@ describe('Student API (e2e)', () => {
       '/courses/course-1/materials',
       '/courses/course-1/live-sessions',
       '/courses/course-1/reports/summary',
+      '/courses/course-1/classmates',
     ])('refuses a teacher token on the student route %s', async (route) => {
       await request(app.getHttpServer())
         .get(route)
