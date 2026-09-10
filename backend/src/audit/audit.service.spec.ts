@@ -8,6 +8,8 @@ import {
   AUDIT_TARGET_TYPES,
 } from './dto/list-audit-log-query.dto.js';
 import { Role } from '../auth/roles.enum.js';
+import { DatabaseService } from '../database/database.service.js';
+import { DATABASE_POOL } from '../database/database.tokens.js';
 
 function entry(overrides: Partial<NewAuditLogEntry> = {}): NewAuditLogEntry {
   return {
@@ -25,17 +27,33 @@ function entry(overrides: Partial<NewAuditLogEntry> = {}): NewAuditLogEntry {
 
 describe('AuditService', () => {
   let service: AuditService;
+  let db: DatabaseService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuditService,
+        DatabaseService,
+        // No pool: the memory driver. `runInTransaction` is a passthrough that
+        // still enters the ambient context, which is what makes the assertion
+        // in `record` live in tests rather than only in production.
+        { provide: DATABASE_POOL, useValue: null },
         { provide: AUDIT_LOG_REPOSITORY, useClass: InMemoryAuditLogRepository },
       ],
     }).compile();
 
     service = module.get(AuditService);
+    db = module.get(DatabaseService);
   });
+
+  /**
+   * Every `record` in this file goes through here, because `record` refuses to
+   * write outside a transaction (CLAUDE.md §5.4). That refusal is the whole
+   * mechanism: an audited write that forgets to wrap itself fails on its first
+   * test run instead of shipping an action that commits without its entry.
+   */
+  const record = (input: NewAuditLogEntry) =>
+    db.runInTransaction(() => service.record(input));
 
   it('should start empty - a seeded history is a history nobody made', async () => {
     await expect(service.find({ limit: 10 })).resolves.toEqual({
@@ -45,7 +63,7 @@ describe('AuditService', () => {
   });
 
   it('should record what happened, with an id and a timestamp', async () => {
-    const recorded = await service.record(entry());
+    const recorded = await record(entry());
     expect(recorded.id).toBeTruthy();
     expect(recorded.createdAt).toBeTruthy();
     expect(recorded).toMatchObject({
@@ -59,13 +77,13 @@ describe('AuditService', () => {
 
   it('should record the actor role as it was, not as it becomes', async () => {
     // A TA later promoted must not retroactively read as having acted as admin.
-    const recorded = await service.record(entry({ actorRole: Role.Assistant }));
+    const recorded = await record(entry({ actorRole: Role.Assistant }));
     expect(recorded.actorRole).toBe(Role.Assistant);
   });
 
   it('should return newest first', async () => {
-    await service.record(entry({ targetId: 'first' }));
-    await service.record(entry({ targetId: 'second' }));
+    await record(entry({ targetId: 'first' }));
+    await record(entry({ targetId: 'second' }));
     const page = await service.find({ limit: 10 });
     expect(page.entries.map((e) => e.targetId)).toEqual(['second', 'first']);
   });
@@ -78,7 +96,7 @@ describe('AuditService', () => {
     vi.setSystemTime(new Date('2026-09-06T12:00:00.000Z'));
     try {
       for (const targetId of ['a', 'b', 'c', 'd']) {
-        await service.record(entry({ targetId }));
+        await record(entry({ targetId }));
       }
     } finally {
       vi.useRealTimers();
@@ -92,16 +110,16 @@ describe('AuditService', () => {
   });
 
   it('should filter by actor - the §5.4 question', async () => {
-    await service.record(entry({ actorId: 'assistant-1' }));
-    await service.record(entry({ actorId: 'teacher-1', actorRole: Role.Teacher }));
+    await record(entry({ actorId: 'assistant-1' }));
+    await record(entry({ actorId: 'teacher-1', actorRole: Role.Teacher }));
     const page = await service.find({ limit: 10, actorId: 'assistant-1' });
     expect(page.entries).toHaveLength(1);
     expect(page.entries[0]?.actorId).toBe('assistant-1');
   });
 
   it('should filter by course and by target', async () => {
-    await service.record(entry({ courseId: 'course-1', targetId: 'a' }));
-    await service.record(entry({ courseId: 'course-2', targetId: 'b' }));
+    await record(entry({ courseId: 'course-1', targetId: 'a' }));
+    await record(entry({ courseId: 'course-2', targetId: 'b' }));
 
     const byCourse = await service.find({ limit: 10, courseId: 'course-2' });
     expect(byCourse.entries.map((e) => e.targetId)).toEqual(['b']);
@@ -116,7 +134,7 @@ describe('AuditService', () => {
 
   it('should cap the page size so one request cannot drain the table', async () => {
     for (let i = 0; i < 5; i += 1) {
-      await service.record(entry({ targetId: `t${i}` }));
+      await record(entry({ targetId: `t${i}` }));
     }
     const page = await service.find({ limit: MAX_AUDIT_PAGE_SIZE + 1000 });
     expect(page.entries).toHaveLength(5);
@@ -131,7 +149,7 @@ describe('AuditService', () => {
       vi.setSystemTime(new Date('2026-09-06T12:00:00.000Z'));
       try {
         for (let i = 0; i < 7; i += 1) {
-          await service.record(entry({ targetId: `t${i}` }));
+          await record(entry({ targetId: `t${i}` }));
         }
       } finally {
         vi.useRealTimers();
@@ -151,15 +169,15 @@ describe('AuditService', () => {
     });
 
     it('should not advertise a next page on an exactly-full final page', async () => {
-      await service.record(entry({ targetId: 'a' }));
-      await service.record(entry({ targetId: 'b' }));
+      await record(entry({ targetId: 'a' }));
+      await record(entry({ targetId: 'b' }));
       const page = await service.find({ limit: 2 });
       expect(page.entries).toHaveLength(2);
       expect(page.nextCursor).toBeNull();
     });
 
     it('should page empty on a malformed cursor rather than restarting', async () => {
-      await service.record(entry());
+      await record(entry());
       const page = await service.find({ limit: 10, cursor: 'not-a-cursor' });
       expect(page.entries).toEqual([]);
       expect(page.nextCursor).toBeNull();
@@ -179,7 +197,7 @@ describe('AuditService', () => {
     // member missing. What remains valuable here is the other direction: a
     // listed value that the repository cannot filter on.
     const recorded = await Promise.all(
-      AUDIT_ACTIONS.map((action) => service.record(entry({ action }))),
+      AUDIT_ACTIONS.map((action) => record(entry({ action }))),
     );
     expect(recorded.map((r) => r.action).sort()).toEqual([...AUDIT_ACTIONS].sort());
 
@@ -192,7 +210,7 @@ describe('AuditService', () => {
     // type, so writing one entry per action leaves any target type that no
     // action in the list happens to use with nothing to find.
     await Promise.all(
-      AUDIT_TARGET_TYPES.map((targetType) => service.record(entry({ targetType }))),
+      AUDIT_TARGET_TYPES.map((targetType) => record(entry({ targetType }))),
     );
     for (const targetType of AUDIT_TARGET_TYPES) {
       const page = await service.find({ limit: 10, targetType });

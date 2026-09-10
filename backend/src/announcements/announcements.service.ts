@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { StaffScopeService, type StaffActor } from '../staff/staff-scope.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { DatabaseService } from '../database/database.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { Role } from '../auth/roles.enum.js';
 import type { CourseRepository } from '../courses/interfaces/course-repository.interface.js';
@@ -45,6 +46,8 @@ export class AnnouncementsService {
     @Inject(USER_REPOSITORY) private readonly userRepo: UserRepository,
     private readonly notifications: NotificationsService,
     private readonly audit: AuditService,
+    /** `DatabaseModule` is `@Global()`; this needs no import edge. */
+    private readonly db: DatabaseService,
   ) {}
 
   /**
@@ -106,59 +109,61 @@ export class AnnouncementsService {
     actor: StaffActor,
     content: AnnouncementContent,
   ): Promise<Announcement> {
-    const recipientIds = await this.resolveRecipients(audience);
+    return this.db.runInTransaction(async () => {
+      const recipientIds = await this.resolveRecipients(audience);
 
-    const announcement = await this.announcementRepo.create({
-      audienceType: audience.type,
-      courseId: audience.courseId,
-      title: content.title,
-      body: content.body,
-      postedBy: actor.id,
-      recipientCount: recipientIds.length,
+      const announcement = await this.announcementRepo.create({
+        audienceType: audience.type,
+        courseId: audience.courseId,
+        title: content.title,
+        body: content.body,
+        postedBy: actor.id,
+        recipientCount: recipientIds.length,
+      });
+
+      /**
+       * Delivery is a notification per recipient (§5.14 resolved the audience
+       * above; this is what makes it readable).
+       *
+       * Chosen over a "student fetches announcements for their courses" endpoint
+       * because the platform already has a mailbox with an unread badge, a
+       * read/unread state and a page - all of which an announcement needs and
+       * none of which a new endpoint would have. The cost is one member on the
+       * closed `NotificationType` union and one CHECK constraint in migration
+       * 005.
+       *
+       * The body travels as the notification's message rather than as a link to
+       * a detail page, because there is no announcement detail page - truncating
+       * it would hide text with nowhere to go and read it. The link points at the
+       * course home for a course announcement and is null platform-wide, where no
+       * single page is the subject.
+       */
+      await this.notifications.fanOut(recipientIds, {
+        type: 'announcement',
+        title: content.title,
+        message: content.body,
+        link: audience.courseId ? `/learn/${audience.courseId}` : null,
+      });
+
+      await this.audit.record({
+        actorId: actor.id,
+        // The actor's role as it was (§5.4). A TA posting to their own course and
+        // the teacher posting platform-wide must not read alike in the log.
+        actorRole: actor.role === Role.Assistant ? Role.Assistant : Role.Teacher,
+        action: 'announcement.posted',
+        targetType: 'announcement',
+        targetId: announcement.id,
+        courseId: audience.courseId,
+        before: null,
+        after: {
+          audience: announcement.audience,
+          title: announcement.title,
+          recipientCount: announcement.recipientCount,
+        },
+      });
+
+      return announcement;
     });
-
-    /**
-     * Delivery is a notification per recipient (§5.14 resolved the audience
-     * above; this is what makes it readable).
-     *
-     * Chosen over a "student fetches announcements for their courses" endpoint
-     * because the platform already has a mailbox with an unread badge, a
-     * read/unread state and a page - all of which an announcement needs and
-     * none of which a new endpoint would have. The cost is one member on the
-     * closed `NotificationType` union and one CHECK constraint in migration
-     * 005.
-     *
-     * The body travels as the notification's message rather than as a link to
-     * a detail page, because there is no announcement detail page - truncating
-     * it would hide text with nowhere to go and read it. The link points at the
-     * course home for a course announcement and is null platform-wide, where no
-     * single page is the subject.
-     */
-    await this.notifications.fanOut(recipientIds, {
-      type: 'announcement',
-      title: content.title,
-      message: content.body,
-      link: audience.courseId ? `/learn/${audience.courseId}` : null,
-    });
-
-    await this.audit.record({
-      actorId: actor.id,
-      // The actor's role as it was (§5.4). A TA posting to their own course and
-      // the teacher posting platform-wide must not read alike in the log.
-      actorRole: actor.role === Role.Assistant ? Role.Assistant : Role.Teacher,
-      action: 'announcement.posted',
-      targetType: 'announcement',
-      targetId: announcement.id,
-      courseId: audience.courseId,
-      before: null,
-      after: {
-        audience: announcement.audience,
-        title: announcement.title,
-        recipientCount: announcement.recipientCount,
-      },
-    });
-
-    return announcement;
   }
 
   /**

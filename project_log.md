@@ -73,7 +73,13 @@ tables with their UNIQUE constraints and cascades, and 007's column drop include
 fails a job reporting no executed tests still matters, because the suite self-skips and exits 0
 wherever `TEST_DATABASE_URL` is unset.
 
-Test totals across the three suites: **315 unit, 179 e2e, 64 integration.**
+Test totals across the three suites: **315 unit, 179 e2e, 67 integration.**
+
+**The audit trail's one long-standing gap is closed** (2026-09-10). An action and its log entry now
+commit together: `DatabaseService` carries the in-flight transaction in `AsyncLocalStorage` so any
+repository joins it without knowing, and `AuditService.record` **throws if called outside one** -
+which is what keeps §5.4 true as new surfaces land rather than hoping each author remembers. This
+was the stated prerequisite for payments (§5.12).
 
 **Delivery is wired.** `npm install && npm run dev` runs the whole thing with no database and no
 config; CI lints, builds, and runs unit + e2e + integration (against a Postgres service) plus both
@@ -1969,3 +1975,101 @@ recording because it is the end-to-end claim §5.18 actually makes:
 - **The quiz engine is still the open one**, and still a §11 question before it is a build.
 - **No Parent screens**, and no group screen for a parent to read — unchanged.
 - `TA_SCOPE` flip and the §5.4 audit transaction gap: unchanged.
+
+---
+
+## 2026-09-10 — The audit gap is closed (the action and its entry now commit together)
+
+Every entry since 2026-09-06 has ended with the same line in its debt list: `AuditService.record`
+writes on its own connection *after* the action it describes has committed, so a crash in between
+leaves an action done and unlogged. It survived that long for a structural reason, not laziness —
+closing it "needs the mutation and its audit row in one transaction, which the
+repository-per-connection design cannot express". It is closed now, and the design did not have to
+change.
+
+**The mechanism is one `AsyncLocalStorage`.** `DatabaseService` holds the client of an in-flight
+transaction in async-local context, and `query` reaches for it before falling back to the pool.
+That single line is what lets an existing repository join a transaction **without knowing it is in
+one** — which is the whole reason this was expensive before. The alternative was threading a client
+parameter through thirteen interfaces and twenty-six implementations that would mostly ignore it,
+and updating every caller. Instead services wrap their body in
+`this.db.runInTransaction(async () => { … })` and every repository is untouched.
+
+**The part that makes it stay true is that `record` now refuses.** It throws if it is called
+outside a transaction, naming the fix in the message. That turns "every TA mutation is logged" from
+a property of today's tree into a mechanism — the same job the `AuditAction` union does for the
+action list, one layer down. It is not a theoretical guard: it caught `StaffService.unassign` on
+the day it was built, a method the wrapping pass had missed, and the failure was a red test rather
+than a silent hole in production.
+
+For that assertion to be worth anything it has to be live where the tests run, so
+`runInTransaction` **enters the context even on the memory driver**, where it is otherwise a
+passthrough. An assertion that only fires in production is not a guard, it is a liability.
+
+**Three properties recorded because they are the ones that bite later.**
+
+- **Nested calls join the outer transaction** rather than opening a second one. Postgres has no
+  nested transactions: a second `BEGIN` is a no-op and the inner `COMMIT` ends the *outer* one
+  early, silently committing half of it. `AssessmentRepository.setTargets` opens its own
+  transaction and is called from inside an audited service method, so this is exercised rather than
+  theoretical — and the integration suite asserts it by rolling back around it.
+- **The memory driver cannot roll back**, and the method says so plainly instead of pretending
+  otherwise. Atomicity is a property of Postgres; the memory driver's job is to keep the shape of
+  the code identical so nothing branches on the driver.
+- **Ambient state is invisible at the call site**, which is the real cost of this approach. It is
+  acceptable because exactly one thing sets it, it is scoped to one async call tree rather than to
+  the process, and Node's own context tracking — not a module-level variable — is what keeps two
+  concurrent requests from seeing each other's connection.
+
+Eighteen methods across six services were wrapped mechanically, plus two in `StaffService` by hand.
+The two-line comment the script left on each one was then stripped: eighteen identical copies of
+the same sentence is filler, not explanation, and `runInTransaction` and `record` both carry the
+reasoning where a reader will actually look for it.
+
+```mermaid
+sequenceDiagram
+    participant S as Service
+    participant DB as DatabaseService
+    participant R as Repository
+    participant A as AuditService
+    S->>DB: runInTransaction(fn)
+    DB->>DB: BEGIN, store client in AsyncLocalStorage
+    S->>R: update(...)
+    R->>DB: query() - finds the ambient client
+    S->>A: record(...)
+    A->>A: inTransaction? else throw
+    A->>DB: query() - same client
+    DB->>DB: COMMIT (or ROLLBACK - both halves)
+```
+
+**Why.** `CLAUDE.md` §5.4 (every mutating TA/admin action is logged), §5.12 (this was the stated
+prerequisite for payments — an unlogged refund is a money-trail hole), §8 (no string-built SQL: the
+ambient client changes *which connection*, never how a statement is assembled). Traceability:
+`TA-R`, `ACC-`.
+
+**Verification.** All executed on this machine:
+
+| Check | Result |
+|---|---|
+| `npm run lint` | clean |
+| `npm run build` | clean |
+| `npm run test` (unit) | **315 passed** / 23 files |
+| e2e (`--no-file-parallelism`) | **179 passed** / 3 files |
+| `npm run test:integration` vs PostgreSQL 15 | **67 passed** — was 64, three new |
+
+The three new integration tests are the ones that could only be made against a real database, and
+they are the actual claim: an audit write that fails **takes the action down with it** (a group
+created inside the transaction is gone after the rollback — before this change the count would have
+been one higher, an action done and unlogged); both halves commit together when nothing fails; and
+an inner transaction joins the outer one rather than committing half of it.
+
+**Follow-ups / debt.**
+
+- **The unit suite OOM-ed once mid-session** — `Zone Allocation failed`, `spawn UNKNOWN` — with 44
+  node processes lingering from a long day of dev servers and test runs. It passes serially and
+  passes in parallel from a clean machine. Same family as the e2e worker crash recorded earlier:
+  environmental, not a defect, and worth knowing before someone hunts a phantom.
+- **Payments (§5.12) no longer has a blocker in front of it.** The refund trail can be built on a
+  log that is now as reliable as the write it describes.
+- Editing a task is still API-only, the quiz engine is still a §11 question, and the `TA_SCOPE`
+  flip is still unbuilt.

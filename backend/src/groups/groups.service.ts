@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { AuditService } from '../audit/audit.service.js';
+import { DatabaseService } from '../database/database.service.js';
 import { Role } from '../auth/roles.enum.js';
 import type { UserRepository } from '../auth/interfaces/user-repository.interface.js';
 import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js';
@@ -62,6 +63,8 @@ export class GroupsService {
     @Inject(USER_REPOSITORY) private readonly userRepo: UserRepository,
     private readonly scope: StaffScopeService,
     private readonly audit: AuditService,
+    /** `DatabaseModule` is `@Global()`; this needs no import edge. */
+    private readonly db: DatabaseService,
   ) {}
 
   private actorRole(actor: StaffActor): Role {
@@ -146,19 +149,21 @@ export class GroupsService {
   }
 
   async create(actor: StaffActor, name: string): Promise<Group> {
-    const group = await this.groupRepo.create({ name, teacherId: actor.id });
-    await this.audit.record({
-      actorId: actor.id,
-      actorRole: this.actorRole(actor),
-      action: 'group.created',
-      targetType: 'group',
-      targetId: group.id,
-      // No course: a group is created before it studies anything (§5.16).
-      courseId: null,
-      before: null,
-      after: { name: group.name, teacherId: group.teacherId },
+    return this.db.runInTransaction(async () => {
+      const group = await this.groupRepo.create({ name, teacherId: actor.id });
+      await this.audit.record({
+        actorId: actor.id,
+        actorRole: this.actorRole(actor),
+        action: 'group.created',
+        targetType: 'group',
+        targetId: group.id,
+        // No course: a group is created before it studies anything (§5.16).
+        courseId: null,
+        before: null,
+        after: { name: group.name, teacherId: group.teacherId },
+      });
+      return group;
     });
-    return group;
   }
 
   async rename(
@@ -166,25 +171,27 @@ export class GroupsService {
     actor: StaffActor,
     name: string,
   ): Promise<Group> {
-    // Read before the write, so `before` is the old value and not an alias of
-    // the new one. Both repositories return copies for exactly this reason
-    // (§7.1: the before/after aliasing defect, found twice).
-    const before = await this.requireGroup(groupId);
-    const after = await this.groupRepo.rename(groupId, name);
-    if (!after) {
-      throw new NotFoundException('Group not found');
-    }
-    await this.audit.record({
-      actorId: actor.id,
-      actorRole: this.actorRole(actor),
-      action: 'group.renamed',
-      targetType: 'group',
-      targetId: groupId,
-      courseId: null,
-      before: { name: before.name },
-      after: { name: after.name },
+    return this.db.runInTransaction(async () => {
+      // Read before the write, so `before` is the old value and not an alias of
+      // the new one. Both repositories return copies for exactly this reason
+      // (§7.1: the before/after aliasing defect, found twice).
+      const before = await this.requireGroup(groupId);
+      const after = await this.groupRepo.rename(groupId, name);
+      if (!after) {
+        throw new NotFoundException('Group not found');
+      }
+      await this.audit.record({
+        actorId: actor.id,
+        actorRole: this.actorRole(actor),
+        action: 'group.renamed',
+        targetType: 'group',
+        targetId: groupId,
+        courseId: null,
+        before: { name: before.name },
+        after: { name: after.name },
+      });
+      return after;
     });
-    return after;
   }
 
   /**
@@ -203,29 +210,31 @@ export class GroupsService {
     actor: StaffActor,
     learningMode: LearningMode,
   ): Promise<GroupCourse> {
-    await this.requireGroup(groupId);
-    await this.scope.assertAssigned(courseId, actor);
-    const course = await this.courseRepo.findById(courseId);
-    if (!course) {
-      throw new NotFoundException('Course not found');
-    }
-    const pairing = await this.groupRepo.addCourse({
-      groupId,
-      courseId,
-      learningMode,
-      enrolledBy: actor.id,
+    return this.db.runInTransaction(async () => {
+      await this.requireGroup(groupId);
+      await this.scope.assertAssigned(courseId, actor);
+      const course = await this.courseRepo.findById(courseId);
+      if (!course) {
+        throw new NotFoundException('Course not found');
+      }
+      const pairing = await this.groupRepo.addCourse({
+        groupId,
+        courseId,
+        learningMode,
+        enrolledBy: actor.id,
+      });
+      await this.audit.record({
+        actorId: actor.id,
+        actorRole: this.actorRole(actor),
+        action: 'group.course_added',
+        targetType: 'group_course',
+        targetId: pairing.id,
+        courseId,
+        before: null,
+        after: { groupId, courseId, learningMode: pairing.learningMode },
+      });
+      return pairing;
     });
-    await this.audit.record({
-      actorId: actor.id,
-      actorRole: this.actorRole(actor),
-      action: 'group.course_added',
-      targetType: 'group_course',
-      targetId: pairing.id,
-      courseId,
-      before: null,
-      after: { groupId, courseId, learningMode: pairing.learningMode },
-    });
-    return pairing;
   }
 
   async removeCourse(
@@ -233,26 +242,28 @@ export class GroupsService {
     courseId: string,
     actor: StaffActor,
   ): Promise<void> {
-    await this.requireGroup(groupId);
-    await this.scope.assertAssigned(courseId, actor);
-    // Snapshot first: the row is gone by the time the entry is written, and an
-    // entry that cannot say what was removed is evidence-shaped and empty.
-    const existing = (await this.groupRepo.findCourses(groupId)).find(
-      (gc) => gc.courseId === courseId,
-    );
-    if (!existing) {
-      throw new NotFoundException('That group does not study this course');
-    }
-    await this.groupRepo.removeCourse(groupId, courseId);
-    await this.audit.record({
-      actorId: actor.id,
-      actorRole: this.actorRole(actor),
-      action: 'group.course_removed',
-      targetType: 'group_course',
-      targetId: existing.id,
-      courseId,
-      before: { groupId, courseId, learningMode: existing.learningMode },
-      after: null,
+    return this.db.runInTransaction(async () => {
+      await this.requireGroup(groupId);
+      await this.scope.assertAssigned(courseId, actor);
+      // Snapshot first: the row is gone by the time the entry is written, and an
+      // entry that cannot say what was removed is evidence-shaped and empty.
+      const existing = (await this.groupRepo.findCourses(groupId)).find(
+        (gc) => gc.courseId === courseId,
+      );
+      if (!existing) {
+        throw new NotFoundException('That group does not study this course');
+      }
+      await this.groupRepo.removeCourse(groupId, courseId);
+      await this.audit.record({
+        actorId: actor.id,
+        actorRole: this.actorRole(actor),
+        action: 'group.course_removed',
+        targetType: 'group_course',
+        targetId: existing.id,
+        courseId,
+        before: { groupId, courseId, learningMode: existing.learningMode },
+        after: null,
+      });
     });
   }
 
@@ -277,30 +288,32 @@ export class GroupsService {
     studentId: string,
     actor: StaffActor,
   ): Promise<void> {
-    await this.requireGroup(groupId);
-    const student = await this.userRepo.findById(studentId);
-    if (!student) {
-      throw new NotFoundException('Student not found');
-    }
-    if (student.role !== Role.Student) {
-      throw new BadRequestException('Only students can be placed in a group');
-    }
-    const membership = await this.groupRepo.addMember({
-      groupId,
-      studentId,
-      assignedBy: actor.id,
-    });
-    await this.audit.record({
-      actorId: actor.id,
-      actorRole: this.actorRole(actor),
-      action: 'group.student_assigned',
-      targetType: 'group_membership',
-      targetId: membership.id,
-      // A group spans courses, so there is no single course this belongs to.
-      // Null is the honest answer; the target id is what the log filters on.
-      courseId: null,
-      before: null,
-      after: { groupId, studentId },
+    return this.db.runInTransaction(async () => {
+      await this.requireGroup(groupId);
+      const student = await this.userRepo.findById(studentId);
+      if (!student) {
+        throw new NotFoundException('Student not found');
+      }
+      if (student.role !== Role.Student) {
+        throw new BadRequestException('Only students can be placed in a group');
+      }
+      const membership = await this.groupRepo.addMember({
+        groupId,
+        studentId,
+        assignedBy: actor.id,
+      });
+      await this.audit.record({
+        actorId: actor.id,
+        actorRole: this.actorRole(actor),
+        action: 'group.student_assigned',
+        targetType: 'group_membership',
+        targetId: membership.id,
+        // A group spans courses, so there is no single course this belongs to.
+        // Null is the honest answer; the target id is what the log filters on.
+        courseId: null,
+        before: null,
+        after: { groupId, studentId },
+      });
     });
   }
 
@@ -309,23 +322,25 @@ export class GroupsService {
     studentId: string,
     actor: StaffActor,
   ): Promise<void> {
-    await this.requireGroup(groupId);
-    const existing = (await this.groupRepo.findMembers(groupId)).find(
-      (m) => m.studentId === studentId,
-    );
-    if (!existing) {
-      throw new NotFoundException('That student is not in this group');
-    }
-    await this.groupRepo.removeMember(groupId, studentId);
-    await this.audit.record({
-      actorId: actor.id,
-      actorRole: this.actorRole(actor),
-      action: 'group.student_removed',
-      targetType: 'group_membership',
-      targetId: existing.id,
-      courseId: null,
-      before: { groupId, studentId, assignedBy: existing.assignedBy },
-      after: null,
+    return this.db.runInTransaction(async () => {
+      await this.requireGroup(groupId);
+      const existing = (await this.groupRepo.findMembers(groupId)).find(
+        (m) => m.studentId === studentId,
+      );
+      if (!existing) {
+        throw new NotFoundException('That student is not in this group');
+      }
+      await this.groupRepo.removeMember(groupId, studentId);
+      await this.audit.record({
+        actorId: actor.id,
+        actorRole: this.actorRole(actor),
+        action: 'group.student_removed',
+        targetType: 'group_membership',
+        targetId: existing.id,
+        courseId: null,
+        before: { groupId, studentId, assignedBy: existing.assignedBy },
+        after: null,
+      });
     });
   }
 

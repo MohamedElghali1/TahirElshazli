@@ -243,8 +243,18 @@ to Dr. Tahir. That now holds in **every** audited service, `ManageRecordingsServ
 derived nothing and hardcoded `Role.Teacher` until 2026-09-08. `StaffService` is the one remaining
 literal, and correctly so: staff assignment has no TA route to widen.
 
-§7.1 records the one gap — the entry is written after the action commits, not inside its
-transaction. Ten more write paths now depend on it, which makes closing it more urgent, not less.
+**The entry and the action it describes now commit together — closed 2026-09-10.** For weeks this
+read "the entry is written after the action commits", with a crash in the gap leaving an action
+done and unlogged. Every audited mutation is now wrapped in
+`DatabaseService.runInTransaction`, and **`AuditService.record` throws if it is called outside
+one**. That refusal is the point: it turns "every TA mutation is logged" from a property of
+today's tree into a mechanism, the same job the `AuditAction` union does for the action list one
+layer up. A new audited write that forgets to wrap itself fails on its first test run — which is
+not hypothetical: it caught `StaffService.unassign` on the day it was built.
+
+The mechanics are in §7.1. The rule for writing a new one is two lines: put the mutation and the
+`audit.record` inside `this.db.runInTransaction(async () => { … })`, and let anything the method
+returns come back out of it.
 
 **One half of that compile-error mechanism was missing until 2026-09-10.** The union does force a
 new action to be *declared*, but `ListAuditLogQueryDto` repeats both unions as runtime arrays for
@@ -884,13 +894,38 @@ test for grading, live sessions and recordings alike, and
 `groups.controller.spec.ts` carries the same for a group rename and a
 placement removal. A new audited mutation needs both.
 
-**One known gap in the audit trail, recorded rather than discovered later.**
-`AuditService.record` writes on its own connection *after* the action it
-describes has committed, so a crash in between leaves an action done and
-unlogged. Closing it needs the mutation and its audit row in one transaction,
-which the repository-per-connection design cannot express today. It should land
-before the payments surface (§5.12), where the gap is a money-trail hole rather
-than a missing line.
+**The audit trail's one known gap is closed as of 2026-09-10**, and how it was
+closed is worth reading before adding a repository method.
+
+`DatabaseService` now carries an **`AsyncLocalStorage`** holding the client of
+an in-flight transaction, and `query` uses it when there is one. That single
+line is what lets an existing repository join a transaction *without knowing it
+is in one* — the alternative was threading a client parameter through thirteen
+interfaces and twenty-six implementations that mostly ignore it, which is why
+this sat as debt for so long. Services call
+`this.db.runInTransaction(async () => { … })`; repositories are untouched.
+
+Three properties worth knowing:
+
+- **Nested calls join the outer transaction rather than opening a second one.**
+  Postgres has no nested transactions: a second `BEGIN` is a no-op and the
+  inner `COMMIT` would end the *outer* one early, silently committing half of
+  it. `AssessmentRepository.setTargets` opens its own transaction and is
+  called from inside an audited service method, so this is exercised rather
+  than theoretical — the integration suite asserts it.
+- **On the memory driver it is a passthrough with no rollback**, and the method
+  says so rather than hiding it. There is no journal to unwind an in-memory
+  array. The context is still *entered*, though, so `record`'s assertion is
+  live in unit tests — an assertion that only fires in production is not a
+  guard, it is a liability.
+- **Ambient state is invisible at the call site**, which is the real cost. It is
+  acceptable because exactly one thing sets it, it is scoped to one async call
+  tree rather than to the process, and Node's own context tracking — not a
+  module-level variable — is what keeps two concurrent requests apart.
+
+This was the stated prerequisite for the payments surface (§5.12), where an
+unlogged refund is a money-trail hole rather than a missing line. That
+prerequisite is met.
 
 ---
 

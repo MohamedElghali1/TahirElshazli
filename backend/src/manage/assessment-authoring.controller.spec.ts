@@ -17,6 +17,8 @@ import { InMemoryCourseStaffRepository } from '../staff/repositories/in-memory-c
 import { AUDIT_LOG_REPOSITORY } from '../audit/interfaces/audit-log-repository.interface.js';
 import { InMemoryAuditLogRepository } from '../audit/repositories/in-memory-audit-log.repository.js';
 import { AuditService } from '../audit/audit.service.js';
+import { DatabaseService } from '../database/database.service.js';
+import { DATABASE_POOL } from '../database/database.tokens.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { RolesGuard } from '../auth/roles.guard.js';
 import { Role } from '../auth/roles.enum.js';
@@ -63,6 +65,12 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
         StudentGroupsService,
         StaffScopeService,
         AuditService,
+        // `AuditService.record` refuses to write outside a transaction
+        // (CLAUDE.md §5.4), so every module that audits needs the real
+        // `DatabaseService`. A null pool selects the memory driver, where
+        // `runInTransaction` is a passthrough that still enters the context.
+        DatabaseService,
+        { provide: DATABASE_POOL, useValue: null },
         { provide: ASSESSMENT_REPOSITORY, useClass: InMemoryAssessmentRepository },
         { provide: ENROLLMENT_REPOSITORY, useClass: InMemoryEnrollmentRepository },
         { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },

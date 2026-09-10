@@ -1154,4 +1154,91 @@ describeIfDb('Postgres repositories', () => {
       expect(await repo().remove(created.id)).toBe(false);
     });
   });
+
+  /* The unit of work behind CLAUDE.md §5.4.
+     
+     This is the assertion the gap needed: an audit entry that fails must take
+     the action it describes down with it. It can only be made against a real
+     database - the memory driver has no journal to unwind, which
+     `runInTransaction` says plainly rather than pretending otherwise. */
+  describe('runInTransaction', () => {
+    it('rolls the action back when the audit write fails', async () => {
+      const groups = new PostgresGroupRepository(db);
+      const before = (await groups.findAll(100, 0)).length;
+
+      await expect(
+        db.runInTransaction(async () => {
+          await groups.create({ name: 'Doomed by its own log', teacherId: 'teacher-1' });
+          // Stand-in for the audit write failing, and it has to be a real
+          // constraint rather than a thrown Error - the point is that the
+          // *database* rejects the second half after the first half is already
+          // written inside the transaction.
+          //
+          // A duplicate primary key, because `audit_log.actor_id` deliberately
+          // has no foreign key (migration 002: a FK would cascade the evidence
+          // away with the account it describes), so there is no referential
+          // failure available here.
+          const insert = `INSERT INTO audit_log
+             (id, actor_id, actor_role, action, target_type, target_id)
+             VALUES ($1, $2, $3, $4, $5, $6)`;
+          const row = ['tx-dup-1', 'teacher-1', 'teacher', 'group.created', 'group', 'x'];
+          await db.query(insert, row);
+          await db.query(insert, row);
+        }),
+      ).rejects.toThrow();
+
+      // The group is gone with it. Before the transaction landed, this count
+      // would have been `before + 1`: an action done, and unlogged.
+      expect((await groups.findAll(100, 0)).length).toBe(before);
+    });
+
+    it('commits both halves together when nothing fails', async () => {
+      const groups = new PostgresGroupRepository(db);
+      const audit = new PostgresAuditLogRepository(db);
+
+      const created = await db.runInTransaction(async () => {
+        const group = await groups.create({
+          name: 'Logged properly',
+          teacherId: 'teacher-1',
+        });
+        await audit.record({
+          actorId: 'teacher-1',
+          actorRole: Role.Teacher,
+          action: 'group.created',
+          targetType: 'group',
+          targetId: group.id,
+          courseId: null,
+          before: null,
+          after: { name: group.name },
+        });
+        return group;
+      });
+
+      expect(await groups.findById(created.id)).not.toBeNull();
+      const page = await audit.find({ limit: 10, targetId: created.id });
+      expect(page.entries.map((e) => e.action)).toContain('group.created');
+    });
+
+    it('joins an inner transaction to the outer one rather than nesting', async () => {
+      // Postgres has no nested transactions: a second BEGIN is a no-op and the
+      // inner COMMIT would end the *outer* one early, silently committing half
+      // of it. `setTargets` opens its own transaction, so calling it from
+      // inside an audited service method exercises exactly this.
+      const assessments = new PostgresAssessmentRepository(db);
+      const original = await assessments.findTargets('assess-4');
+
+      await expect(
+        db.runInTransaction(async () => {
+          await assessments.setTargets('assess-4', []);
+          throw new Error('fail after the inner transaction');
+        }),
+      ).rejects.toThrow('fail after the inner transaction');
+
+      // If the inner COMMIT had ended the outer transaction, the cleared
+      // targets would have survived the rollback.
+      expect(await assessments.findTargets('assess-4')).toHaveLength(
+        original.length,
+      );
+    });
+  });
 });

@@ -12,6 +12,7 @@ import type { UserRepository } from '../auth/interfaces/user-repository.interfac
 import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js';
 import { Role } from '../auth/roles.enum.js';
 import { AuditService } from '../audit/audit.service.js';
+import { DatabaseService } from '../database/database.service.js';
 
 export interface StaffCourseSummary {
   id: string;
@@ -49,6 +50,8 @@ export class StaffService {
     @Inject(USER_REPOSITORY)
     private readonly userRepo: UserRepository,
     private readonly audit: AuditService,
+    /** `DatabaseModule` is `@Global()`; this needs no import edge. */
+    private readonly db: DatabaseService,
   ) {}
 
   /**
@@ -154,27 +157,35 @@ export class StaffService {
       );
     }
 
-    const { assignment, created } = await this.scope.assign(
-      courseId,
-      userId,
-      admin.id,
-    );
-    if (!created) {
-      // Not an error worth failing the admin's day over, but it must not be
-      // logged as an assignment that happened - the audit log would then show
-      // a grant that granted nothing (CLAUDE.md §5.4).
-      throw new ConflictException('That assistant is already assigned to this course');
-    }
+    // The write and its audit entry commit together (CLAUDE.md §5.4). The
+    // ConflictException inside rolls the assignment back, which is the correct
+    // outcome for a duplicate: nothing happened, and nothing is logged.
+    const assignment = await this.db.runInTransaction(async () => {
+      const { assignment: row, created } = await this.scope.assign(
+        courseId,
+        userId,
+        admin.id,
+      );
+      if (!created) {
+        // Not an error worth failing the admin's day over, but it must not be
+        // logged as an assignment that happened - the audit log would then show
+        // a grant that granted nothing (CLAUDE.md §5.4).
+        throw new ConflictException(
+          'That assistant is already assigned to this course',
+        );
+      }
 
-    await this.audit.record({
-      actorId: admin.id,
-      actorRole: Role.Teacher,
-      action: 'course_staff.assigned',
-      targetType: 'course_staff_assignment',
-      targetId: assignment.id,
-      courseId,
-      before: null,
-      after: { userId, courseId, assignedBy: admin.id },
+      await this.audit.record({
+        actorId: admin.id,
+        actorRole: Role.Teacher,
+        action: 'course_staff.assigned',
+        targetType: 'course_staff_assignment',
+        targetId: row.id,
+        courseId,
+        before: null,
+        after: { userId, courseId, assignedBy: admin.id },
+      });
+      return row;
     });
 
     return {
@@ -192,34 +203,43 @@ export class StaffService {
     userId: string,
     admin: StaffActor,
   ): Promise<{ removed: true }> {
-    const existing = await this.scope.findAssignment(courseId, userId);
-    if (!existing) {
-      throw new NotFoundException('That assistant is not assigned to this course');
-    }
+    // One unit of work: the removal and its audit entry commit together, or
+    // neither does (CLAUDE.md §5.4).
+    return this.db.runInTransaction(async () => {
+      const existing = await this.scope.findAssignment(courseId, userId);
+      if (!existing) {
+        throw new NotFoundException(
+          'That assistant is not assigned to this course',
+        );
+      }
 
-    const removed = await this.scope.unassign(courseId, userId);
-    if (!removed) {
-      // Lost a race with another admin. Their removal is the one that happened
-      // and is already logged; logging a second one would double-count it.
-      throw new NotFoundException('That assistant is not assigned to this course');
-    }
+      const removed = await this.scope.unassign(courseId, userId);
+      if (!removed) {
+        // Lost a race with another admin. Their removal is the one that
+        // happened and is already logged; logging a second one would
+        // double-count it.
+        throw new NotFoundException(
+          'That assistant is not assigned to this course',
+        );
+      }
 
-    await this.audit.record({
-      actorId: admin.id,
-      actorRole: Role.Teacher,
-      action: 'course_staff.unassigned',
-      targetType: 'course_staff_assignment',
-      targetId: existing.id,
-      courseId,
-      before: {
-        userId,
+      await this.audit.record({
+        actorId: admin.id,
+        actorRole: Role.Teacher,
+        action: 'course_staff.unassigned',
+        targetType: 'course_staff_assignment',
+        targetId: existing.id,
         courseId,
-        assignedBy: existing.assignedBy,
-        assignedAt: existing.assignedAt,
-      },
-      after: null,
-    });
+        before: {
+          userId,
+          courseId,
+          assignedBy: existing.assignedBy,
+          assignedAt: existing.assignedAt,
+        },
+        after: null,
+      });
 
-    return { removed: true };
+      return { removed: true as const };
+    });
   }
 }

@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { DatabaseService } from '../database/database.service.js';
 import type {
   AuditLogEntry,
   AuditLogPage,
@@ -17,6 +18,8 @@ export class AuditService {
   constructor(
     @Inject(AUDIT_LOG_REPOSITORY)
     private readonly auditRepo: AuditLogRepository,
+    /** `DatabaseModule` is `@Global()`, so this needs no import edge. */
+    private readonly db: DatabaseService,
   ) {}
 
   /**
@@ -28,17 +31,34 @@ export class AuditService {
    * requirement exists to prevent. Callers must `await` it and let it
    * propagate.
    *
-   * **Known gap, and it is a real one.** The entry is written on its own
-   * connection, after the action it describes has already committed. A crash in
-   * the gap leaves the action done and unlogged. Closing it means the mutation
-   * and its audit row sharing one transaction, which this architecture cannot
-   * express today - repositories own their own connections and
-   * `DatabaseService.transaction` hands out a client no repository accepts.
-   * Recorded rather than papered over; the fix is a transaction-scoped
-   * repository handle, and it should land before the payments surface (§5.12),
-   * where an unlogged refund is a money-trail hole rather than a missing line.
+   * **It must be called inside `DatabaseService.runInTransaction`, and it
+   * throws if it is not.**
+   *
+   * That assertion is the point of this method. The entry used to be written on
+   * its own connection *after* the action it describes had already committed,
+   * so a crash in the gap left an action done and unlogged - a hole CLAUDE.md
+   * §5.4 carried as known debt for weeks. The mutation and its entry now share
+   * one transaction, which makes them one commit: either both happened or
+   * neither did.
+   *
+   * Requiring it rather than merely documenting it is what turns "every TA
+   * mutation is logged" from a property of today's tree into a mechanism. A new
+   * audited write that forgets to wrap itself fails loudly on its first test
+   * run instead of shipping a silent gap - the same job the `AuditAction` union
+   * does for the action list, one layer down.
+   *
+   * The assertion is live under **both** drivers: `runInTransaction` enters the
+   * context even with no database behind it, so the unit tests catch a missing
+   * wrap rather than leaving it for production to discover.
    */
   async record(entry: NewAuditLogEntry): Promise<AuditLogEntry> {
+    if (!this.db.inTransaction) {
+      throw new Error(
+        `Refusing to write the audit entry for "${entry.action}" outside a ` +
+          'transaction. CLAUDE.md §5.4 requires the action and its log entry to ' +
+          'commit together; wrap both in `DatabaseService.runInTransaction`.',
+      );
+    }
     return this.auditRepo.record(entry);
   }
 

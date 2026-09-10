@@ -15,6 +15,7 @@ import { ASSESSMENT_REPOSITORY } from '../assessments/interfaces/assessment-repo
 import type { UserRepository } from '../auth/interfaces/user-repository.interface.js';
 import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js';
 import { AuditService } from '../audit/audit.service.js';
+import { DatabaseService } from '../database/database.service.js';
 import { Role } from '../auth/roles.enum.js';
 
 /** A submission is awaiting marking exactly while nobody has corrected it. */
@@ -77,6 +78,8 @@ export class GradingService {
     private readonly assessmentRepo: AssessmentRepository,
     @Inject(USER_REPOSITORY) private readonly userRepo: UserRepository,
     private readonly audit: AuditService,
+    /** `DatabaseModule` is `@Global()`; this needs no import edge. */
+    private readonly db: DatabaseService,
   ) {}
 
   /**
@@ -169,95 +172,97 @@ export class GradingService {
     actor: StaffActor,
     input: GradeInput,
   ): Promise<GradingQueueItem> {
-    const submission = await this.assessmentRepo.findSubmissionById(submissionId);
-    // 404 rather than 403 for a submission outside the actor's scope, so a TA
-    // cannot probe for which submission ids exist. Same posture as
-    // `assertAssigned`, and the reason both branches say the same thing.
-    if (!submission) {
-      throw new NotFoundException('Submission not found');
-    }
-    const assessment = await this.assessmentRepo.findById(submission.assessmentId);
-    if (!assessment) {
-      throw new NotFoundException('Submission not found');
-    }
-    // Rethrown under the submission's own wording rather than passed through.
-    // `assertAssigned` says "Course not found or not assigned to you", which on
-    // this route is a different sentence from the "Submission not found" two
-    // lines up - and two different 404 bodies is exactly the existence oracle
-    // the status code was chosen to avoid: a real id on someone else's course
-    // would read differently from a made-up one.
-    try {
-      await this.scope.assertAssigned(assessment.courseId, actor);
-    } catch (error) {
-      if (error instanceof NotFoundException) {
+    return this.db.runInTransaction(async () => {
+      const submission = await this.assessmentRepo.findSubmissionById(submissionId);
+      // 404 rather than 403 for a submission outside the actor's scope, so a TA
+      // cannot probe for which submission ids exist. Same posture as
+      // `assertAssigned`, and the reason both branches say the same thing.
+      if (!submission) {
         throw new NotFoundException('Submission not found');
       }
-      throw error;
-    }
+      const assessment = await this.assessmentRepo.findById(submission.assessmentId);
+      if (!assessment) {
+        throw new NotFoundException('Submission not found');
+      }
+      // Rethrown under the submission's own wording rather than passed through.
+      // `assertAssigned` says "Course not found or not assigned to you", which on
+      // this route is a different sentence from the "Submission not found" two
+      // lines up - and two different 404 bodies is exactly the existence oracle
+      // the status code was chosen to avoid: a real id on someone else's course
+      // would read differently from a made-up one.
+      try {
+        await this.scope.assertAssigned(assessment.courseId, actor);
+      } catch (error) {
+        if (error instanceof NotFoundException) {
+          throw new NotFoundException('Submission not found');
+        }
+        throw error;
+      }
 
-    if (input.score < 0 || input.score > assessment.maxScore) {
-      // Checked here rather than in the DTO because the ceiling is per
-      // assessment - a validator cannot know it from the request alone.
-      throw new BadRequestException(
-        `Score must be between 0 and ${assessment.maxScore}`,
-      );
-    }
+      if (input.score < 0 || input.score > assessment.maxScore) {
+        // Checked here rather than in the DTO because the ceiling is per
+        // assessment - a validator cannot know it from the request alone.
+        throw new BadRequestException(
+          `Score must be between 0 and ${assessment.maxScore}`,
+        );
+      }
 
-    // The prior values are copied out *before* the write, not read off
-    // `submission` afterwards. The in-memory driver updates the stored object
-    // in place and both reads can hand back the same reference, so holding the
-    // object and reading `.score` after the update yields the new mark - and
-    // the audit entry silently records before === after, which is worse than
-    // no entry because it looks like a mark that never moved.
-    const previous = { score: submission.score, correctedAt: submission.correctedAt };
+      // The prior values are copied out *before* the write, not read off
+      // `submission` afterwards. The in-memory driver updates the stored object
+      // in place and both reads can hand back the same reference, so holding the
+      // object and reading `.score` after the update yields the new mark - and
+      // the audit entry silently records before === after, which is worse than
+      // no entry because it looks like a mark that never moved.
+      const previous = { score: submission.score, correctedAt: submission.correctedAt };
 
-    const graded = await this.assessmentRepo.gradeSubmission(submissionId, {
-      score: input.score,
-      feedback: input.feedback ?? null,
-      annotatedFileUrl: input.annotatedFileUrl,
+      const graded = await this.assessmentRepo.gradeSubmission(submissionId, {
+        score: input.score,
+        feedback: input.feedback ?? null,
+        annotatedFileUrl: input.annotatedFileUrl,
+      });
+      if (!graded) {
+        // Deleted between the read and the write.
+        throw new NotFoundException('Submission not found');
+      }
+
+      // CLAUDE.md §5.4: every TA mutation is logged. This is the first one that
+      // is not an admin action, and grading is the one a student is most likely
+      // to dispute - before/after carries the marks, not the whole submission.
+      await this.audit.record({
+        actorId: actor.id,
+        actorRole: actor.role === Role.Teacher ? Role.Teacher : Role.Assistant,
+        action: 'submission.graded',
+        targetType: 'assessment_submission',
+        targetId: submissionId,
+        courseId: assessment.courseId,
+        before: previous,
+        after: { score: graded.score, correctedAt: graded.correctedAt },
+      });
+
+      const student = await this.userRepo.findById(graded.studentId);
+      return {
+        submissionId: graded.id,
+        assessmentId: assessment.id,
+        assessmentTitle: assessment.title,
+        assessmentType: assessment.type,
+        maxScore: assessment.maxScore,
+        studentId: graded.studentId,
+        studentName: student?.name ?? 'Unknown',
+        studentEmail: student?.email ?? '',
+        submittedAt: graded.submittedAt,
+        lastSubmittedAt: graded.lastSubmittedAt,
+        fileUrl: graded.fileUrl,
+        answerText: graded.answerText,
+        annotatedFileUrl: graded.annotatedFileUrl,
+        score: graded.score,
+        feedback: graded.feedback,
+        correctedAt: graded.correctedAt,
+        status: graded.correctedAt === null ? 'awaiting' : 'graded',
+        isLate:
+          new Date(graded.lastSubmittedAt).getTime() >
+          new Date(assessment.dueAt).getTime(),
+      };
     });
-    if (!graded) {
-      // Deleted between the read and the write.
-      throw new NotFoundException('Submission not found');
-    }
-
-    // CLAUDE.md §5.4: every TA mutation is logged. This is the first one that
-    // is not an admin action, and grading is the one a student is most likely
-    // to dispute - before/after carries the marks, not the whole submission.
-    await this.audit.record({
-      actorId: actor.id,
-      actorRole: actor.role === Role.Teacher ? Role.Teacher : Role.Assistant,
-      action: 'submission.graded',
-      targetType: 'assessment_submission',
-      targetId: submissionId,
-      courseId: assessment.courseId,
-      before: previous,
-      after: { score: graded.score, correctedAt: graded.correctedAt },
-    });
-
-    const student = await this.userRepo.findById(graded.studentId);
-    return {
-      submissionId: graded.id,
-      assessmentId: assessment.id,
-      assessmentTitle: assessment.title,
-      assessmentType: assessment.type,
-      maxScore: assessment.maxScore,
-      studentId: graded.studentId,
-      studentName: student?.name ?? 'Unknown',
-      studentEmail: student?.email ?? '',
-      submittedAt: graded.submittedAt,
-      lastSubmittedAt: graded.lastSubmittedAt,
-      fileUrl: graded.fileUrl,
-      answerText: graded.answerText,
-      annotatedFileUrl: graded.annotatedFileUrl,
-      score: graded.score,
-      feedback: graded.feedback,
-      correctedAt: graded.correctedAt,
-      status: graded.correctedAt === null ? 'awaiting' : 'graded',
-      isLate:
-        new Date(graded.lastSubmittedAt).getTime() >
-        new Date(assessment.dueAt).getTime(),
-    };
   }
 }
 

@@ -10,6 +10,7 @@ import { LIVE_SESSION_REPOSITORY } from '../live-sessions/interfaces/live-sessio
 import type { CourseRepository } from '../courses/interfaces/course-repository.interface.js';
 import { COURSE_REPOSITORY } from '../courses/interfaces/course-repository.interface.js';
 import { AuditService } from '../audit/audit.service.js';
+import { DatabaseService } from '../database/database.service.js';
 import { Role } from '../auth/roles.enum.js';
 
 /** What a teacher supplies to schedule a session. `courseId` comes from the URL. */
@@ -43,6 +44,8 @@ export class ManageLiveSessionsService {
     private readonly sessionRepo: LiveSessionRepository,
     @Inject(COURSE_REPOSITORY) private readonly courseRepo: CourseRepository,
     private readonly audit: AuditService,
+    /** `DatabaseModule` is `@Global()`; this needs no import edge. */
+    private readonly db: DatabaseService,
   ) {}
 
   /**
@@ -93,34 +96,36 @@ export class ManageLiveSessionsService {
     actor: StaffActor,
     input: ScheduleLiveSessionInput,
   ): Promise<LiveSession> {
-    // Scheduling into a course is a write; the existence check below is not a
-    // permission check. A no-op for the teacher, and the thing that makes
-    // "widening CRS-11 is a controller move" (§11) actually true.
-    await this.scope.assertAssigned(courseId, actor);
+    return this.db.runInTransaction(async () => {
+      // Scheduling into a course is a write; the existence check below is not a
+      // permission check. A no-op for the teacher, and the thing that makes
+      // "widening CRS-11 is a controller move" (§11) actually true.
+      await this.scope.assertAssigned(courseId, actor);
 
-    const course = await this.courseRepo.findById(courseId);
-    if (!course) {
-      throw new NotFoundException('Course not found');
-    }
+      const course = await this.courseRepo.findById(courseId);
+      if (!course) {
+        throw new NotFoundException('Course not found');
+      }
 
-    const session = await this.sessionRepo.create({ courseId, ...input });
+      const session = await this.sessionRepo.create({ courseId, ...input });
 
-    await this.audit.record({
-      actorId: actor.id,
-      actorRole: this.roleOf(actor),
-      action: 'live_session.scheduled',
-      targetType: 'live_session',
-      targetId: session.id,
-      courseId,
-      before: null,
-      after: {
-        title: session.title,
-        scheduledAt: session.scheduledAt,
-        durationMinutes: session.durationMinutes,
-      },
+      await this.audit.record({
+        actorId: actor.id,
+        actorRole: this.roleOf(actor),
+        action: 'live_session.scheduled',
+        targetType: 'live_session',
+        targetId: session.id,
+        courseId,
+        before: null,
+        after: {
+          title: session.title,
+          scheduledAt: session.scheduledAt,
+          durationMinutes: session.durationMinutes,
+        },
+      });
+
+      return session;
     });
-
-    return session;
   }
 
   async update(
@@ -128,43 +133,45 @@ export class ManageLiveSessionsService {
     actor: StaffActor,
     patch: LiveSessionUpdate,
   ): Promise<LiveSession> {
-    const existing = await this.sessionRepo.findById(sessionId);
-    if (!existing) {
-      throw new NotFoundException('Live session not found');
-    }
-    await this.assertMayWrite(existing.courseId, actor);
+    return this.db.runInTransaction(async () => {
+      const existing = await this.sessionRepo.findById(sessionId);
+      if (!existing) {
+        throw new NotFoundException('Live session not found');
+      }
+      await this.assertMayWrite(existing.courseId, actor);
 
-    const updated = await this.sessionRepo.update(sessionId, patch);
-    if (!updated) {
-      throw new NotFoundException('Live session not found');
-    }
+      const updated = await this.sessionRepo.update(sessionId, patch);
+      if (!updated) {
+        throw new NotFoundException('Live session not found');
+      }
 
-    await this.audit.record({
-      actorId: actor.id,
-      actorRole: this.roleOf(actor),
-      action: 'live_session.updated',
-      targetType: 'live_session',
-      targetId: sessionId,
-      courseId: existing.courseId,
-      // `existing` was read before the write and both drivers hand back a copy,
-      // so these are genuinely two different states. A repository returning the
-      // stored object by reference would make before and after the same mutated
-      // object - an entry that looks like evidence and shows nothing moving.
-      before: {
-        title: existing.title,
-        zoomLink: existing.zoomLink,
-        scheduledAt: existing.scheduledAt,
-        durationMinutes: existing.durationMinutes,
-      },
-      after: {
-        title: updated.title,
-        zoomLink: updated.zoomLink,
-        scheduledAt: updated.scheduledAt,
-        durationMinutes: updated.durationMinutes,
-      },
+      await this.audit.record({
+        actorId: actor.id,
+        actorRole: this.roleOf(actor),
+        action: 'live_session.updated',
+        targetType: 'live_session',
+        targetId: sessionId,
+        courseId: existing.courseId,
+        // `existing` was read before the write and both drivers hand back a copy,
+        // so these are genuinely two different states. A repository returning the
+        // stored object by reference would make before and after the same mutated
+        // object - an entry that looks like evidence and shows nothing moving.
+        before: {
+          title: existing.title,
+          zoomLink: existing.zoomLink,
+          scheduledAt: existing.scheduledAt,
+          durationMinutes: existing.durationMinutes,
+        },
+        after: {
+          title: updated.title,
+          zoomLink: updated.zoomLink,
+          scheduledAt: updated.scheduledAt,
+          durationMinutes: updated.durationMinutes,
+        },
+      });
+
+      return updated;
     });
-
-    return updated;
   }
 
   /**
@@ -178,35 +185,37 @@ export class ManageLiveSessionsService {
     sessionId: string,
     actor: StaffActor,
   ): Promise<{ removed: true }> {
-    const existing = await this.sessionRepo.findById(sessionId);
-    if (!existing) {
-      throw new NotFoundException('Live session not found');
-    }
-    await this.assertMayWrite(existing.courseId, actor);
+    return this.db.runInTransaction(async () => {
+      const existing = await this.sessionRepo.findById(sessionId);
+      if (!existing) {
+        throw new NotFoundException('Live session not found');
+      }
+      await this.assertMayWrite(existing.courseId, actor);
 
-    const removed = await this.sessionRepo.remove(sessionId);
-    if (!removed) {
-      // Lost a race with another admin; theirs is the cancellation that
-      // happened and is already logged. Logging a second would double-count it.
-      throw new NotFoundException('Live session not found');
-    }
+      const removed = await this.sessionRepo.remove(sessionId);
+      if (!removed) {
+        // Lost a race with another admin; theirs is the cancellation that
+        // happened and is already logged. Logging a second would double-count it.
+        throw new NotFoundException('Live session not found');
+      }
 
-    await this.audit.record({
-      actorId: actor.id,
-      actorRole: this.roleOf(actor),
-      action: 'live_session.cancelled',
-      targetType: 'live_session',
-      targetId: sessionId,
-      courseId: existing.courseId,
-      before: {
-        title: existing.title,
-        zoomLink: existing.zoomLink,
-        scheduledAt: existing.scheduledAt,
-        durationMinutes: existing.durationMinutes,
-      },
-      after: null,
+      await this.audit.record({
+        actorId: actor.id,
+        actorRole: this.roleOf(actor),
+        action: 'live_session.cancelled',
+        targetType: 'live_session',
+        targetId: sessionId,
+        courseId: existing.courseId,
+        before: {
+          title: existing.title,
+          zoomLink: existing.zoomLink,
+          scheduledAt: existing.scheduledAt,
+          durationMinutes: existing.durationMinutes,
+        },
+        after: null,
+      });
+
+      return { removed: true };
     });
-
-    return { removed: true };
   }
 }

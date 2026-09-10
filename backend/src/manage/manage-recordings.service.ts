@@ -15,6 +15,7 @@ import { RECORDING_REPOSITORY } from '../recordings/interfaces/recording-reposit
 import type { CourseRepository } from '../courses/interfaces/course-repository.interface.js';
 import { COURSE_REPOSITORY } from '../courses/interfaces/course-repository.interface.js';
 import { AuditService } from '../audit/audit.service.js';
+import { DatabaseService } from '../database/database.service.js';
 import { Role } from '../auth/roles.enum.js';
 
 /** What a teacher supplies to publish a recording. `courseId` comes from the URL. */
@@ -46,6 +47,8 @@ export class ManageRecordingsService {
     private readonly recordingRepo: RecordingRepository,
     @Inject(COURSE_REPOSITORY) private readonly courseRepo: CourseRepository,
     private readonly audit: AuditService,
+    /** `DatabaseModule` is `@Global()`; this needs no import edge. */
+    private readonly db: DatabaseService,
   ) {}
 
   /** Shared read: the TA sees their assigned courses, the teacher sees any. */
@@ -97,56 +100,58 @@ export class ManageRecordingsService {
     actor: StaffActor,
     input: CreateRecordingInput,
   ): Promise<Recording> {
-    // Before the course is even read: publishing into a course is a write, and
-    // the existence check below is not a permission check.
-    await this.scope.assertAssigned(courseId, actor);
+    return this.db.runInTransaction(async () => {
+      // Before the course is even read: publishing into a course is a write, and
+      // the existence check below is not a permission check.
+      await this.scope.assertAssigned(courseId, actor);
 
-    const course = await this.courseRepo.findById(courseId);
-    if (!course) {
-      throw new NotFoundException('Course not found');
-    }
-    const module = course.modules.find((m) => m.id === input.moduleId);
-    if (!module) {
-      throw new BadRequestException('That module is not part of this course');
-    }
-    const lesson = module.lessons.find((l) => l.id === input.lessonId);
-    if (!lesson) {
-      throw new BadRequestException('That lesson is not part of that module');
-    }
+      const course = await this.courseRepo.findById(courseId);
+      if (!course) {
+        throw new NotFoundException('Course not found');
+      }
+      const module = course.modules.find((m) => m.id === input.moduleId);
+      if (!module) {
+        throw new BadRequestException('That module is not part of this course');
+      }
+      const lesson = module.lessons.find((l) => l.id === input.lessonId);
+      if (!lesson) {
+        throw new BadRequestException('That lesson is not part of that module');
+      }
 
-    const payload: NewRecording = {
-      courseId,
-      moduleId: module.id,
-      lessonId: lesson.id,
-      title: input.title,
-      // The module's chapter is the sensible default - it is what the student's
-      // chapter filter groups by, and a free-typed chapter that matches nothing
-      // makes the recording unfindable behind that filter.
-      chapter: input.chapter?.trim() || module.chapter,
-      topics: input.topics ?? [],
-      videoUrl: input.videoUrl,
-      durationSeconds: input.durationSeconds,
-      lessonDate: input.lessonDate ?? new Date().toISOString(),
-    };
+      const payload: NewRecording = {
+        courseId,
+        moduleId: module.id,
+        lessonId: lesson.id,
+        title: input.title,
+        // The module's chapter is the sensible default - it is what the student's
+        // chapter filter groups by, and a free-typed chapter that matches nothing
+        // makes the recording unfindable behind that filter.
+        chapter: input.chapter?.trim() || module.chapter,
+        topics: input.topics ?? [],
+        videoUrl: input.videoUrl,
+        durationSeconds: input.durationSeconds,
+        lessonDate: input.lessonDate ?? new Date().toISOString(),
+      };
 
-    const recording = await this.recordingRepo.create(payload);
+      const recording = await this.recordingRepo.create(payload);
 
-    await this.audit.record({
-      actorId: actor.id,
-      actorRole: this.roleOf(actor),
-      action: 'recording.created',
-      targetType: 'recording',
-      targetId: recording.id,
-      courseId,
-      before: null,
-      after: {
-        title: recording.title,
-        lessonId: recording.lessonId,
-        durationSeconds: recording.durationSeconds,
-      },
+      await this.audit.record({
+        actorId: actor.id,
+        actorRole: this.roleOf(actor),
+        action: 'recording.created',
+        targetType: 'recording',
+        targetId: recording.id,
+        courseId,
+        before: null,
+        after: {
+          title: recording.title,
+          lessonId: recording.lessonId,
+          durationSeconds: recording.durationSeconds,
+        },
+      });
+
+      return recording;
     });
-
-    return recording;
   }
 
   async update(
@@ -154,34 +159,36 @@ export class ManageRecordingsService {
     actor: StaffActor,
     patch: RecordingUpdate,
   ): Promise<Recording> {
-    const existing = await this.recordingRepo.findRecordingById(recordingId);
-    if (!existing) {
-      throw new NotFoundException('Recording not found');
-    }
-    // Scoped on the course the resource itself names, not on one from the URL.
-    // These routes are teacher-only today, for whom `assertAssigned` is a no-op
-    // - but the claim next door is that widening them to TAs is a controller
-    // move, and that claim is only true while the scope check lives here. A
-    // by-id write with no join is the §5.11 leak in its usual shape.
-    await this.assertMayWrite(existing.courseId, actor);
+    return this.db.runInTransaction(async () => {
+      const existing = await this.recordingRepo.findRecordingById(recordingId);
+      if (!existing) {
+        throw new NotFoundException('Recording not found');
+      }
+      // Scoped on the course the resource itself names, not on one from the URL.
+      // These routes are teacher-only today, for whom `assertAssigned` is a no-op
+      // - but the claim next door is that widening them to TAs is a controller
+      // move, and that claim is only true while the scope check lives here. A
+      // by-id write with no join is the §5.11 leak in its usual shape.
+      await this.assertMayWrite(existing.courseId, actor);
 
-    const updated = await this.recordingRepo.update(recordingId, patch);
-    if (!updated) {
-      throw new NotFoundException('Recording not found');
-    }
+      const updated = await this.recordingRepo.update(recordingId, patch);
+      if (!updated) {
+        throw new NotFoundException('Recording not found');
+      }
 
-    await this.audit.record({
-      actorId: actor.id,
-      actorRole: this.roleOf(actor),
-      action: 'recording.updated',
-      targetType: 'recording',
-      targetId: recordingId,
-      courseId: existing.courseId,
-      before: { title: existing.title, videoUrl: existing.videoUrl },
-      after: { title: updated.title, videoUrl: updated.videoUrl },
+      await this.audit.record({
+        actorId: actor.id,
+        actorRole: this.roleOf(actor),
+        action: 'recording.updated',
+        targetType: 'recording',
+        targetId: recordingId,
+        courseId: existing.courseId,
+        before: { title: existing.title, videoUrl: existing.videoUrl },
+        after: { title: updated.title, videoUrl: updated.videoUrl },
+      });
+
+      return updated;
     });
-
-    return updated;
   }
 
   /**
@@ -192,34 +199,36 @@ export class ManageRecordingsService {
    * the soft-delete conventions in §6 are eventually applied here.
    */
   async remove(recordingId: string, actor: StaffActor): Promise<{ removed: true }> {
-    const existing = await this.recordingRepo.findRecordingById(recordingId);
-    if (!existing) {
-      throw new NotFoundException('Recording not found');
-    }
-    await this.assertMayWrite(existing.courseId, actor);
+    return this.db.runInTransaction(async () => {
+      const existing = await this.recordingRepo.findRecordingById(recordingId);
+      if (!existing) {
+        throw new NotFoundException('Recording not found');
+      }
+      await this.assertMayWrite(existing.courseId, actor);
 
-    const removed = await this.recordingRepo.remove(recordingId);
-    if (!removed) {
-      // Lost a race with another admin; theirs is the deletion that happened
-      // and is already logged. Logging a second would double-count it.
-      throw new NotFoundException('Recording not found');
-    }
+      const removed = await this.recordingRepo.remove(recordingId);
+      if (!removed) {
+        // Lost a race with another admin; theirs is the deletion that happened
+        // and is already logged. Logging a second would double-count it.
+        throw new NotFoundException('Recording not found');
+      }
 
-    await this.audit.record({
-      actorId: actor.id,
-      actorRole: this.roleOf(actor),
-      action: 'recording.deleted',
-      targetType: 'recording',
-      targetId: recordingId,
-      courseId: existing.courseId,
-      before: {
-        title: existing.title,
-        lessonId: existing.lessonId,
-        videoUrl: existing.videoUrl,
-      },
-      after: null,
+      await this.audit.record({
+        actorId: actor.id,
+        actorRole: this.roleOf(actor),
+        action: 'recording.deleted',
+        targetType: 'recording',
+        targetId: recordingId,
+        courseId: existing.courseId,
+        before: {
+          title: existing.title,
+          lessonId: existing.lessonId,
+          videoUrl: existing.videoUrl,
+        },
+        after: null,
+      });
+
+      return { removed: true };
     });
-
-    return { removed: true };
   }
 }

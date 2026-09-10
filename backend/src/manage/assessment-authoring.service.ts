@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { AuditService } from '../audit/audit.service.js';
+import { DatabaseService } from '../database/database.service.js';
 import { Role } from '../auth/roles.enum.js';
 import type {
   AssessmentRepository,
@@ -70,6 +71,8 @@ export class AssessmentAuthoringService {
     @Inject(GROUP_REPOSITORY) private readonly groupRepo: GroupRepository,
     private readonly scope: StaffScopeService,
     private readonly audit: AuditService,
+    /** `DatabaseModule` is `@Global()`; this needs no import edge. */
+    private readonly db: DatabaseService,
   ) {}
 
   private actorRole(actor: StaffActor): Role {
@@ -186,50 +189,52 @@ export class AssessmentAuthoringService {
     actor: StaffActor,
     input: CreateAssessmentInput,
   ): Promise<AuthoredAssessment> {
-    await this.scope.assertAssigned(courseId, actor);
-    this.assertWindow(input.availableFrom, input.availableTo, input.dueAt);
-    await this.assertTargets(courseId, input.targets);
+    return this.db.runInTransaction(async () => {
+      await this.scope.assertAssigned(courseId, actor);
+      this.assertWindow(input.availableFrom, input.availableTo, input.dueAt);
+      await this.assertTargets(courseId, input.targets);
 
-    const assessment = await this.assessmentRepo.create({
-      courseId,
-      lessonId: input.lessonId,
-      title: input.title,
-      description: input.description,
-      instructions: input.instructions,
-      type: input.type,
-      topics: input.topics,
-      availableFrom: input.availableFrom,
-      availableTo: input.availableTo,
-      dueAt: input.dueAt,
-      maxScore: input.maxScore,
-      allowedFileTypes: input.allowedFileTypes,
-      maxFileSizeBytes: input.maxFileSizeBytes,
-    });
-    const targets = await this.assessmentRepo.setTargets(
-      assessment.id,
-      input.targets,
-    );
+      const assessment = await this.assessmentRepo.create({
+        courseId,
+        lessonId: input.lessonId,
+        title: input.title,
+        description: input.description,
+        instructions: input.instructions,
+        type: input.type,
+        topics: input.topics,
+        availableFrom: input.availableFrom,
+        availableTo: input.availableTo,
+        dueAt: input.dueAt,
+        maxScore: input.maxScore,
+        allowedFileTypes: input.allowedFileTypes,
+        maxFileSizeBytes: input.maxFileSizeBytes,
+      });
+      const targets = await this.assessmentRepo.setTargets(
+        assessment.id,
+        input.targets,
+      );
 
-    await this.audit.record({
-      actorId: actor.id,
-      actorRole: this.actorRole(actor),
-      action: 'assessment.created',
-      targetType: 'assessment',
-      targetId: assessment.id,
-      courseId,
-      before: null,
-      after: {
-        title: assessment.title,
-        type: assessment.type,
-        dueAt: assessment.dueAt,
-        maxScore: assessment.maxScore,
-        // The audience, as a count and a list of ids joined into one scalar -
-        // §5.4's snapshots are flat and scalar on purpose, and "who was this
-        // set for" is the question a dispute actually turns on.
-        targetGroups: targets.map((target) => target.groupId).join(','),
-      },
+      await this.audit.record({
+        actorId: actor.id,
+        actorRole: this.actorRole(actor),
+        action: 'assessment.created',
+        targetType: 'assessment',
+        targetId: assessment.id,
+        courseId,
+        before: null,
+        after: {
+          title: assessment.title,
+          type: assessment.type,
+          dueAt: assessment.dueAt,
+          maxScore: assessment.maxScore,
+          // The audience, as a count and a list of ids joined into one scalar -
+          // §5.4's snapshots are flat and scalar on purpose, and "who was this
+          // set for" is the question a dispute actually turns on.
+          targetGroups: targets.map((target) => target.groupId).join(','),
+        },
+      });
+      return { ...assessment, targets };
     });
-    return { ...assessment, targets };
   }
 
   async update(
@@ -237,41 +242,43 @@ export class AssessmentAuthoringService {
     actor: StaffActor,
     update: AssessmentUpdate,
   ): Promise<AuthoredAssessment> {
-    const before = await this.loadInScope(assessmentId, actor);
-    this.assertWindow(
-      update.availableFrom ?? before.availableFrom,
-      update.availableTo ?? before.availableTo,
-      update.dueAt ?? before.dueAt,
-    );
+    return this.db.runInTransaction(async () => {
+      const before = await this.loadInScope(assessmentId, actor);
+      this.assertWindow(
+        update.availableFrom ?? before.availableFrom,
+        update.availableTo ?? before.availableTo,
+        update.dueAt ?? before.dueAt,
+      );
 
-    const after = await this.assessmentRepo.update(assessmentId, update);
-    if (!after) {
-      throw new NotFoundException('Assessment not found');
-    }
-    await this.audit.record({
-      actorId: actor.id,
-      actorRole: this.actorRole(actor),
-      action: 'assessment.updated',
-      targetType: 'assessment',
-      targetId: assessmentId,
-      courseId: before.courseId,
-      // Only what a reader needs to see the change. `before` is read before the
-      // write and both repositories return copies, so this pair really differs
-      // (§7.1 records finding the aliasing bug twice).
-      before: {
-        title: before.title,
-        dueAt: before.dueAt,
-        availableTo: before.availableTo,
-        maxScore: before.maxScore,
-      },
-      after: {
-        title: after.title,
-        dueAt: after.dueAt,
-        availableTo: after.availableTo,
-        maxScore: after.maxScore,
-      },
+      const after = await this.assessmentRepo.update(assessmentId, update);
+      if (!after) {
+        throw new NotFoundException('Assessment not found');
+      }
+      await this.audit.record({
+        actorId: actor.id,
+        actorRole: this.actorRole(actor),
+        action: 'assessment.updated',
+        targetType: 'assessment',
+        targetId: assessmentId,
+        courseId: before.courseId,
+        // Only what a reader needs to see the change. `before` is read before the
+        // write and both repositories return copies, so this pair really differs
+        // (§7.1 records finding the aliasing bug twice).
+        before: {
+          title: before.title,
+          dueAt: before.dueAt,
+          availableTo: before.availableTo,
+          maxScore: before.maxScore,
+        },
+        after: {
+          title: after.title,
+          dueAt: after.dueAt,
+          availableTo: after.availableTo,
+          maxScore: after.maxScore,
+        },
+      });
+      return { ...after, targets: await this.assessmentRepo.findTargets(assessmentId) };
     });
-    return { ...after, targets: await this.assessmentRepo.findTargets(assessmentId) };
   }
 
   /** Re-aims an existing task. Replaces the whole audience, never diffs it. */
@@ -280,22 +287,24 @@ export class AssessmentAuthoringService {
     actor: StaffActor,
     targets: NewAssessmentTarget[],
   ): Promise<AuthoredAssessment> {
-    const assessment = await this.loadInScope(assessmentId, actor);
-    await this.assertTargets(assessment.courseId, targets);
+    return this.db.runInTransaction(async () => {
+      const assessment = await this.loadInScope(assessmentId, actor);
+      await this.assertTargets(assessment.courseId, targets);
 
-    const before = await this.assessmentRepo.findTargets(assessmentId);
-    const after = await this.assessmentRepo.setTargets(assessmentId, targets);
-    await this.audit.record({
-      actorId: actor.id,
-      actorRole: this.actorRole(actor),
-      action: 'assessment.targeted',
-      targetType: 'assessment',
-      targetId: assessmentId,
-      courseId: assessment.courseId,
-      before: { targetGroups: before.map((x) => x.groupId).join(',') },
-      after: { targetGroups: after.map((x) => x.groupId).join(',') },
+      const before = await this.assessmentRepo.findTargets(assessmentId);
+      const after = await this.assessmentRepo.setTargets(assessmentId, targets);
+      await this.audit.record({
+        actorId: actor.id,
+        actorRole: this.actorRole(actor),
+        action: 'assessment.targeted',
+        targetType: 'assessment',
+        targetId: assessmentId,
+        courseId: assessment.courseId,
+        before: { targetGroups: before.map((x) => x.groupId).join(',') },
+        after: { targetGroups: after.map((x) => x.groupId).join(',') },
+      });
+      return { ...assessment, targets: after };
     });
-    return { ...assessment, targets: after };
   }
 
   /**
@@ -308,30 +317,32 @@ export class AssessmentAuthoringService {
    * mistyped-task case is what it is for.
    */
   async remove(assessmentId: string, actor: StaffActor): Promise<void> {
-    const assessment = await this.loadInScope(assessmentId, actor);
-    const submissions = await this.assessmentRepo.findSubmissionsForAssessments([
-      assessmentId,
-    ]);
-    if (submissions.length > 0) {
-      throw new BadRequestException(
-        'This assessment has submissions and cannot be deleted. ' +
-          'Close its availability window or re-target it instead.',
-      );
-    }
-    await this.assessmentRepo.remove(assessmentId);
-    await this.audit.record({
-      actorId: actor.id,
-      actorRole: this.actorRole(actor),
-      action: 'assessment.deleted',
-      targetType: 'assessment',
-      targetId: assessmentId,
-      courseId: assessment.courseId,
-      before: {
-        title: assessment.title,
-        type: assessment.type,
-        dueAt: assessment.dueAt,
-      },
-      after: null,
+    return this.db.runInTransaction(async () => {
+      const assessment = await this.loadInScope(assessmentId, actor);
+      const submissions = await this.assessmentRepo.findSubmissionsForAssessments([
+        assessmentId,
+      ]);
+      if (submissions.length > 0) {
+        throw new BadRequestException(
+          'This assessment has submissions and cannot be deleted. ' +
+            'Close its availability window or re-target it instead.',
+        );
+      }
+      await this.assessmentRepo.remove(assessmentId);
+      await this.audit.record({
+        actorId: actor.id,
+        actorRole: this.actorRole(actor),
+        action: 'assessment.deleted',
+        targetType: 'assessment',
+        targetId: assessmentId,
+        courseId: assessment.courseId,
+        before: {
+          title: assessment.title,
+          type: assessment.type,
+          dueAt: assessment.dueAt,
+        },
+        after: null,
+      });
     });
   }
 }
