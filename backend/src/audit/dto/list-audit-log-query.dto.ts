@@ -40,6 +40,10 @@ const AUDIT_ACTION_VALUES: Record<AuditAction, true> = {
   'group.course_removed': true,
   'group.student_assigned': true,
   'group.student_removed': true,
+  'assessment.created': true,
+  'assessment.updated': true,
+  'assessment.targeted': true,
+  'assessment.deleted': true,
 };
 
 const AUDIT_TARGET_TYPE_VALUES: Record<AuditTargetType, true> = {
@@ -51,6 +55,7 @@ const AUDIT_TARGET_TYPE_VALUES: Record<AuditTargetType, true> = {
   group: true,
   group_course: true,
   group_membership: true,
+  assessment: true,
 };
 
 export const AUDIT_ACTIONS = Object.keys(

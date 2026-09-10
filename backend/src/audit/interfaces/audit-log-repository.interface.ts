@@ -45,7 +45,15 @@ export type AuditAction =
   | 'group.course_added'
   | 'group.course_removed'
   | 'group.student_assigned'
-  | 'group.student_removed';
+  | 'group.student_removed'
+  // Authoring (§5.18). Reachable by an assistant as of 2026-09-10 - the client
+  // settled §11's open question in the wide direction - so these are TA
+  // mutations of the kind §5.4 was written for: they decide what students are
+  // set and when it is due.
+  | 'assessment.created'
+  | 'assessment.updated'
+  | 'assessment.targeted'
+  | 'assessment.deleted';
 
 /** What the action happened *to*. Grows with `AuditAction`, for the same reason. */
 export type AuditTargetType =
@@ -60,7 +68,11 @@ export type AuditTargetType =
   // that happened to this student's placement" are different questions, and
   // `audit_log (target_type, target_id, ...)` is indexed to answer either.
   | 'group_course'
-  | 'group_membership';
+  | 'group_membership'
+  // The task itself. Its *audience* is not a separate target type: re-aiming a
+  // task is a change to that task, and filing it elsewhere would split one
+  // question - "what happened to this assignment?" - across two reads.
+  | 'assessment';
 
 /**
  * One side of a before/after pair.

@@ -6,6 +6,7 @@ import { GradingService } from './grading.service.js';
 import { ManageRecordingsService } from './manage-recordings.service.js';
 import { ManageLiveSessionsService } from './manage-live-sessions.service.js';
 import { DirectoryService } from './directory.service.js';
+import { AssessmentAuthoringService } from './assessment-authoring.service.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { StaffModule } from '../staff/staff.module.js';
 import { CoursesModule } from '../courses/courses.module.js';
@@ -45,6 +46,9 @@ import { LiveSessionsModule } from '../live-sessions/live-sessions.module.js';
     ManageRecordingsService,
     ManageLiveSessionsService,
     DirectoryService,
+    // Authoring (§5.18). Needs no new import: ASSESSMENT_REPOSITORY comes from
+    // AssessmentsModule above, and GROUP_REPOSITORY is global.
+    AssessmentAuthoringService,
   ],
 })
 export class ManageModule {}

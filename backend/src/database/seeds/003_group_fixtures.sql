@@ -43,7 +43,20 @@ INSERT INTO group_memberships (id, group_id, student_id, assigned_by, assigned_a
   ('group-membership-3', 'group-2', 'student-1', 'teacher-1',   '2026-06-01T09:00:00Z')
 ON CONFLICT (group_id, student_id) DO NOTHING;
 
--- assessment_targets is deliberately left empty. The table exists (migration
--- 006) but nothing reads it yet - targeting lands with the authoring surface
--- (§5.18), and a seeded target would make the student assessment list look
--- filtered by something no code consults.
+-- Targeting (CLAUDE.md §5.16, wired 2026-09-10). All eight seeded assessments
+-- belong to course-1, and group-1 is the group that studies it, so all eight
+-- are set for group-1.
+--
+-- These rows are not decoration. After targeting, an assessment set for nobody
+-- is visible to nobody - so without them the whole student assessment surface
+-- renders empty against a seeded database, which looks like a bug rather than
+-- like the (correct) statement that no work has been set.
+--
+-- No window overrides on any of them: the common case is one deadline for
+-- everyone, and a seed that overrode it would leave the inherit path - the
+-- COALESCE every student read goes through - unexercised by hand.
+INSERT INTO assessment_targets (id, assessment_id, group_id, available_from, available_to, due_at)
+SELECT 'assessment-target-' || a.id, a.id, 'group-1', NULL, NULL, NULL
+  FROM assessments a
+ WHERE a.course_id = 'course-1'
+ON CONFLICT (assessment_id, group_id) DO NOTHING;

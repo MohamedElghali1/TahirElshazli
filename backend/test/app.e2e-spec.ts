@@ -605,6 +605,27 @@ describe('Student API (e2e)', () => {
     });
   });
 
+  describe('announcements reach the student end (§5.18)', () => {
+    it('lists the course announcements a student can read', async () => {
+      const list = await request(app.getHttpServer())
+        .get('/courses/course-1/announcements')
+        .set({ Authorization: `Bearer ${accessToken}` })
+        .expect(200);
+      // Nothing is seeded - an announcement is a message someone sent to real
+      // people, and seeding one would put words in Dr. Tahir's mouth. What this
+      // pins is that the route exists, is enrollment-gated, and answers with a
+      // list rather than a 404, which is what it did until 2026-09-10.
+      expect(Array.isArray(list.body)).toBe(true);
+    });
+
+    it('404s a course the student is not enrolled in', async () => {
+      await request(app.getHttpServer())
+        .get('/courses/course-3/announcements')
+        .set({ Authorization: `Bearer ${accessToken}` })
+        .expect(404);
+    });
+  });
+
   describe('classmates (§5.17)', () => {
     it('lists the other students in the caller own group, name only', async () => {
       const response = await request(app.getHttpServer())
@@ -676,6 +697,7 @@ describe('Student API (e2e)', () => {
       '/courses/course-1/live-sessions',
       '/courses/course-1/reports/summary',
       '/courses/course-1/classmates',
+      '/courses/course-1/announcements',
     ])('refuses a teacher token on the student route %s', async (route) => {
       await request(app.getHttpServer())
         .get(route)

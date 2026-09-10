@@ -4,6 +4,7 @@ import { COURSE_REPOSITORY } from '../courses/interfaces/course-repository.inter
 import type { LearningMode } from '../enrollments/interfaces/enrollment-repository.interface.js';
 import type { GroupRepository } from './interfaces/group-repository.interface.js';
 import { GROUP_REPOSITORY } from './interfaces/group-repository.interface.js';
+import { StudentGroupsService } from './student-groups.service.js';
 
 /**
  * Answers *how is this student taught this course* - recorded or live
@@ -36,6 +37,7 @@ export class LearningModeService {
   constructor(
     @Inject(GROUP_REPOSITORY) private readonly groupRepo: GroupRepository,
     @Inject(COURSE_REPOSITORY) private readonly courseRepo: CourseRepository,
+    private readonly studentGroups: StudentGroupsService,
   ) {}
 
   /**
@@ -48,16 +50,11 @@ export class LearningModeService {
    * the same host.
    */
   async resolve(courseId: string, studentId: string): Promise<LearningMode> {
-    const pairings = await this.groupRepo.findStudentGroupCourses(
-      studentId,
-      courseId,
-    );
-    // A student may legally sit in two groups studying one course. Taking the
-    // first is a real choice: the alternative is to fail, and a student whose
-    // staff put them in two cohorts should still see a working dashboard.
-    // `findStudentGroupCourses` orders by `enrolled_at`, so "the first" is the
-    // longest-standing placement rather than whichever row the driver returned
-    // first - stable across both drivers and across requests.
+    // A student may legally sit in two groups studying one course, so this
+    // needs a tie-break - and the same one the assessment window uses, or the
+    // student gets a live dashboard and a recorded cohort's due dates.
+    // `StudentGroupsService` owns that rule; see it for why it is not inlined.
+    const pairings = await this.studentGroups.pairingsFor(courseId, studentId);
     if (pairings.length > 0) {
       return pairings[0].learningMode;
     }

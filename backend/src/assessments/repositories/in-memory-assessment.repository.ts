@@ -3,9 +3,14 @@ import { randomUUID } from 'node:crypto';
 import type {
   AssessmentFilter,
   AssessmentRepository,
+  AssessmentTarget,
+  AssessmentUpdate,
+  NewAssessment,
+  NewAssessmentTarget,
   StoredAssessment,
   StoredSubmission,
   SubmissionRevision,
+  TargetedAssessment,
 } from '../interfaces/assessment-repository.interface.js';
 
 const PDF_ONLY = ['application/pdf'];
@@ -243,17 +248,181 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
 
   private revisions: SubmissionRevision[] = [];
 
+  /**
+   * A per-instance copy of the seed, not the module-level array.
+   *
+   * It read `STUB_ASSESSMENTS` directly until authoring landed on 2026-09-10,
+   * which was harmless while every method was a read. It stopped being harmless
+   * the moment `create`, `update` and `remove` existed: a test that writes an
+   * assessment would have leaked it into every later test in the run, and the
+   * failure would have surfaced somewhere else entirely. Same reasoning as
+   * `InMemoryEnrollmentRepository`.
+   */
+  private assessments: StoredAssessment[] = STUB_ASSESSMENTS.map((a) => ({ ...a }));
+
+  /**
+   * Who each task was set for (CLAUDE.md §5.16). Seeded so the eight stub
+   * assessments stay visible: they all belong to course-1, which `group-1`
+   * studies, and after targeting an untargeted assessment is set for nobody.
+   */
+  private targets: AssessmentTarget[] = STUB_ASSESSMENTS.map((a, index) => ({
+    id: `assessment-target-${index + 1}`,
+    assessmentId: a.id,
+    groupId: 'group-1',
+    // No overrides: the common case is one window for everyone, and a seed
+    // that overrode it would make the inherit path the untested one.
+    availableFrom: null,
+    availableTo: null,
+    dueAt: null,
+  }));
+
+  /** The assessment as one group sees it - the target's window, or its own. */
+  private resolve(
+    assessment: StoredAssessment,
+    target: AssessmentTarget,
+  ): TargetedAssessment {
+    const overridden =
+      target.availableFrom !== null ||
+      target.availableTo !== null ||
+      target.dueAt !== null;
+    return {
+      ...assessment,
+      availableFrom: target.availableFrom ?? assessment.availableFrom,
+      availableTo: target.availableTo ?? assessment.availableTo,
+      dueAt: target.dueAt ?? assessment.dueAt,
+      targetGroupId: target.groupId,
+      windowOverridden: overridden,
+    };
+  }
+
   async findByCourse(
     courseId: string,
     filter?: AssessmentFilter,
   ): Promise<StoredAssessment[]> {
-    return STUB_ASSESSMENTS.filter((a) => a.courseId === courseId)
+    return this.assessments
+      .filter((a) => a.courseId === courseId)
       .filter((a) => !filter?.type || a.type === filter.type)
-      .sort((a, b) => new Date(b.dueAt).getTime() - new Date(a.dueAt).getTime());
+      .sort((a, b) => new Date(b.dueAt).getTime() - new Date(a.dueAt).getTime())
+      .map((a) => ({ ...a }));
+  }
+
+  async findByCourseForGroups(
+    courseId: string,
+    groupIds: readonly string[],
+    filter?: AssessmentFilter,
+  ): Promise<TargetedAssessment[]> {
+    if (groupIds.length === 0) {
+      return [];
+    }
+    // Order matters: `groupIds` arrives longest-standing placement first, and
+    // the first target found wins, so a student in two groups given the same
+    // task sees one row on the same group's terms that `LearningModeService`
+    // picked. A due date and a learning mode resolving through different groups
+    // would be a genuinely baffling support call.
+    const seen = new Map<string, TargetedAssessment>();
+    for (const groupId of groupIds) {
+      for (const target of this.targets) {
+        if (target.groupId !== groupId || seen.has(target.assessmentId)) continue;
+        const assessment = this.assessments.find((a) => a.id === target.assessmentId);
+        if (!assessment || assessment.courseId !== courseId) continue;
+        if (filter?.type && assessment.type !== filter.type) continue;
+        seen.set(assessment.id, this.resolve(assessment, target));
+      }
+    }
+    return [...seen.values()].sort(
+      (a, b) => new Date(b.dueAt).getTime() - new Date(a.dueAt).getTime(),
+    );
+  }
+
+  async findByIdForGroups(
+    assessmentId: string,
+    groupIds: readonly string[],
+  ): Promise<TargetedAssessment | null> {
+    const assessment = this.assessments.find((a) => a.id === assessmentId);
+    if (!assessment) {
+      return null;
+    }
+    for (const groupId of groupIds) {
+      const target = this.targets.find(
+        (x) => x.assessmentId === assessmentId && x.groupId === groupId,
+      );
+      if (target) {
+        return this.resolve(assessment, target);
+      }
+    }
+    return null;
   }
 
   async findById(assessmentId: string): Promise<StoredAssessment | null> {
-    return STUB_ASSESSMENTS.find((a) => a.id === assessmentId) ?? null;
+    const found = this.assessments.find((a) => a.id === assessmentId);
+    // A copy: this feeds the `before` snapshot of an audited edit, and handing
+    // out the stored object would make before and after the same object - the
+    // defect CLAUDE.md §7.1 records finding twice.
+    return found ? { ...found } : null;
+  }
+
+  async create(input: NewAssessment): Promise<StoredAssessment> {
+    const stored: StoredAssessment = {
+      ...input,
+      id: randomUUID(),
+      createdAt: new Date().toISOString(),
+    };
+    this.assessments.push(stored);
+    return { ...stored };
+  }
+
+  async update(
+    assessmentId: string,
+    update: AssessmentUpdate,
+  ): Promise<StoredAssessment | null> {
+    const found = this.assessments.find((a) => a.id === assessmentId);
+    if (!found) {
+      return null;
+    }
+    for (const [key, value] of Object.entries(update)) {
+      if (value !== undefined) {
+        (found as unknown as Record<string, unknown>)[key] = value;
+      }
+    }
+    return { ...found };
+  }
+
+  async remove(assessmentId: string): Promise<boolean> {
+    const index = this.assessments.findIndex((a) => a.id === assessmentId);
+    if (index === -1) {
+      return false;
+    }
+    this.assessments.splice(index, 1);
+    // What the FK cascades do in Postgres, done by hand here so the two drivers
+    // leave the same state behind.
+    this.targets = this.targets.filter((x) => x.assessmentId !== assessmentId);
+    this.submissions = this.submissions.filter(
+      (s) => s.assessmentId !== assessmentId,
+    );
+    return true;
+  }
+
+  async setTargets(
+    assessmentId: string,
+    targets: readonly NewAssessmentTarget[],
+  ): Promise<AssessmentTarget[]> {
+    this.targets = this.targets.filter((x) => x.assessmentId !== assessmentId);
+    const written = targets.map((target) => ({
+      id: randomUUID(),
+      assessmentId,
+      groupId: target.groupId,
+      availableFrom: target.availableFrom ?? null,
+      availableTo: target.availableTo ?? null,
+      dueAt: target.dueAt ?? null,
+    }));
+    this.targets.push(...written);
+    return written.map((x) => ({ ...x }));
+  }
+
+  async findTargets(assessmentId: string): Promise<AssessmentTarget[]> {
+    return this.targets
+      .filter((x) => x.assessmentId === assessmentId)
+      .map((x) => ({ ...x }));
   }
 
   async findSubmission(
@@ -290,7 +459,7 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
     const wanted = new Set(courseIds);
     // assessment id -> course id, for the courses asked about only.
     const courseOf = new Map<string, string>();
-    for (const assessment of STUB_ASSESSMENTS) {
+    for (const assessment of this.assessments) {
       if (wanted.has(assessment.courseId)) {
         courseOf.set(assessment.id, assessment.courseId);
       }

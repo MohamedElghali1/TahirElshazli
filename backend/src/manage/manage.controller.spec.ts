@@ -7,6 +7,7 @@ import { GradingService } from './grading.service.js';
 import { ManageRecordingsService } from './manage-recordings.service.js';
 import { ManageLiveSessionsService } from './manage-live-sessions.service.js';
 import { DirectoryService } from './directory.service.js';
+import { AssessmentAuthoringService } from './assessment-authoring.service.js';
 import { StaffScopeService } from '../staff/staff-scope.service.js';
 import { COURSE_STAFF_REPOSITORY } from '../staff/interfaces/course-staff-repository.interface.js';
 import { InMemoryCourseStaffRepository } from '../staff/repositories/in-memory-course-staff.repository.js';
@@ -17,6 +18,7 @@ import { InMemoryEnrollmentRepository } from '../enrollments/repositories/in-mem
 import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interface.js';
 import { InMemoryGroupRepository } from '../groups/repositories/in-memory-group.repository.js';
 import { LearningModeService } from '../groups/learning-mode.service.js';
+import { StudentGroupsService } from '../groups/student-groups.service.js';
 import { ASSESSMENT_REPOSITORY } from '../assessments/interfaces/assessment-repository.interface.js';
 import { InMemoryAssessmentRepository } from '../assessments/repositories/in-memory-assessment.repository.js';
 import { RECORDING_REPOSITORY } from '../recordings/interfaces/recording-repository.interface.js';
@@ -57,6 +59,7 @@ describe('Manage surface', () => {
         ManageRecordingsService,
         ManageLiveSessionsService,
         DirectoryService,
+        AssessmentAuthoringService,
         StaffScopeService,
         AuditService,
         { provide: COURSE_STAFF_REPOSITORY, useClass: InMemoryCourseStaffRepository },
@@ -68,6 +71,7 @@ describe('Manage surface', () => {
         // then course default) is the part worth exercising.
         { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },
         LearningModeService,
+        StudentGroupsService,
         { provide: ASSESSMENT_REPOSITORY, useClass: InMemoryAssessmentRepository },
         { provide: RECORDING_REPOSITORY, useClass: InMemoryRecordingRepository },
         { provide: LIVE_SESSION_REPOSITORY, useClass: InMemoryLiveSessionRepository },

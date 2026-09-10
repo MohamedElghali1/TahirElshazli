@@ -6,6 +6,7 @@ import { ClassmatesController } from './classmates.controller.js';
 import { ClassmatesService } from './classmates.service.js';
 import { GroupsService } from './groups.service.js';
 import { LearningModeService } from './learning-mode.service.js';
+import { StudentGroupsService } from './student-groups.service.js';
 import { GROUP_REPOSITORY } from './interfaces/group-repository.interface.js';
 import { InMemoryGroupRepository } from './repositories/in-memory-group.repository.js';
 import { StaffScopeService } from '../staff/staff-scope.service.js';
@@ -61,6 +62,7 @@ describe('Groups', () => {
         GroupsService,
         ClassmatesService,
         LearningModeService,
+        StudentGroupsService,
         EnrollmentsService,
         StaffScopeService,
         AuditService,

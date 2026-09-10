@@ -118,13 +118,15 @@ capability did not.**
 student directory including unenroll, payments/refunds/discount codes, CMS, cross-course reports,
 TA-to-course assignment, and audit-log access.
 
-**Two powers the user-stories board grants a TA that this preset does not.** `ASG-10` reads
+**Two powers the user-stories board grants a TA that this preset did not.** `ASG-10` reads
 *"Create and publish assignments independently"* and `CRS-11` reads *"Schedule/share Zoom links for
-my sessions"* — both sit in the board's TA column, and neither appears above. The board is a peer of
-the prototype (§0 items 4 and 6), so this is a **disagreement between two reference artifacts, not a
-correction of one by the other**. Ship the preset as written — the narrower reading — and treat both
-as §11 questions. Neither is expensive to reverse if the answer is yes: they are two rows in the
-permission data, not a schema change, provided the preset is data (§11) rather than branches.
+my sessions"* — both sit in the board's TA column, and neither appeared above.
+
+**`ASG-10` was answered on 2026-09-10, in the board's favour: a TA may author both assignments
+and quizzes.** So authoring lives on `StaffManageController` with one role rule and no branch on
+the task's `type` — which matters, because the preset's literal reading (quizzes yes, assignments
+no) would have made a role check depend on a body field, exactly the shape this section warns
+against. `CRS-11` is still open and still shipped teacher-only (§11).
 
 Whether TAs can generate reports is **unresolved** — §5.9 grants it, the prototype and the board
 both withhold it. See §11.
@@ -225,16 +227,17 @@ unenrollment, account changes, course deletion — is logged without exception.
 interface has no update and no delete, which is where that is enforced. `AuditAction` and
 `AuditTargetType` are string *unions*, so adding a mutating endpoint cannot log until someone adds
 its action to the list; that compile error is the mechanism keeping "every TA mutation is logged"
-true as surfaces land. **Sixteen actions exist so far**, across staff assignment, grading, the
-recording library, live-session scheduling, announcements and groups:
+true as surfaces land. **Twenty actions exist so far**, across staff assignment, grading, the
+recording library, live-session scheduling, announcements, groups and authoring:
 
 `course_staff.assigned` · `course_staff.unassigned` · `submission.graded` · `recording.created` ·
 `recording.updated` · `recording.deleted` · `live_session.scheduled` · `live_session.updated` ·
 `live_session.cancelled` · `announcement.posted` · `group.created` · `group.renamed` ·
-`group.course_added` · `group.course_removed` · `group.student_assigned` · `group.student_removed`
+`group.course_added` · `group.course_removed` · `group.student_assigned` · `group.student_removed` ·
+`assessment.created` · `assessment.updated` · `assessment.targeted` · `assessment.deleted`
 
-Of those, `submission.graded`, `announcement.posted`, `group.student_assigned` and
-`group.student_removed` are reachable by an assistant; the rest are teacher-only today. `actorRole` is derived from the acting user rather than assumed, so if a
+Of those, `submission.graded`, `announcement.posted`, the two `group.student_*` and all four
+`assessment.*` are reachable by an assistant; the rest are teacher-only today. `actorRole` is derived from the acting user rather than assumed, so if a
 teacher-only write is later widened to TAs the log does not silently attribute an assistant's action
 to Dr. Tahir. That now holds in **every** audited service, `ManageRecordingsService` included — it
 derived nothing and hardcoded `Role.Teacher` until 2026-09-08. `StaffService` is the one remaining
@@ -514,21 +517,32 @@ thing that was just posted.
 
 Where that stands today (§7.1 is the fuller inventory):
 
+**Built 2026-09-10**, except the quiz engine. Where each piece stands:
+
 | Piece | Staff can author it | Student sees it |
 |---|---|---|
-| **Announcement** | Yes — `POST /admin/announcements` and `POST /staff/courses/:id/announcements`. | **Only as a notification.** There is no announcements page or list route on the student side; the body arrives through the mailbox fan-out and nowhere else. |
-| **Assignment / homework** | **No.** No create route exists anywhere — assessments are seed data. | Yes: `GET /courses/:id/assessments`, submission, revisions and server-derived status are all built. |
-| **Quiz** | **No.** No create route, and no engine behind it — `Question`, `QuestionOption`, `QuizAttempt` and `Answer` (§6) are unbuilt. `AssessmentType` has a `quiz` member that behaves exactly like an assignment. | Only as that degenerate assignment. |
+| **Announcement** | Yes — `POST /admin/announcements` and `POST /staff/courses/:id/announcements`. | Yes — the mailbox fan-out **and** `GET /courses/:id/announcements`, enrollment-gated. Course rows only: a platform-wide announcement already reached the mailbox, and filing it under a course heading would misdescribe it. |
+| **Assignment / homework** | Yes — `POST /staff/courses/:id/assessments`, `PATCH`/`DELETE /staff/assessments/:id`, `POST /staff/assessments/:id/targets`. TA-reachable. | Yes, and **only if it was set for one of their groups** (§5.16). |
+| **Quiz** | Yes, as a type — the same routes, `type: 'quiz'`. | As a submission with a mark. **The engine is still unbuilt**: `Question`, `QuestionOption`, `QuizAttempt` and `Answer` (§6) do not exist, and §11 still has "how rich must the quiz engine be at launch" open. Accepting the type now means the data is labelled correctly when it lands. |
 
-So the work is **two authoring surfaces and one student read surface**, not a rebuild: an assessment
-create/edit/publish route — writing it *decides* §11's "can a TA create assignments?" question, so
-ask before choosing the decorator — the quiz engine behind it, and a student-facing announcements
-list so a posted announcement has a page to link to. `Notification.link` is already page-shaped and
-nullable precisely because a platform-wide announcement has no page today; that null is what turns
-into a real route when this lands.
+Three rules the authoring surface enforces, each because getting it wrong is silent:
+
+- **At least one target group.** A task set for nobody is invisible to every student, and a
+  teacher should discover that on the form rather than on the due date.
+- **The window must be coherent** — `availableFrom < availableTo`, and `dueAt` inside it.
+  §5.10 derives every status from these, so an inverted window is a task that is permanently
+  `locked` with nothing anywhere to explain why. The check is deliberately compatible with all
+  three readings §11 leaves open for what `due_at` *does*.
+- **A targeted group must already study the course**, or the task appears for a cohort that does
+  not take the subject.
+
+**Deleting is refused once anything has been submitted.** A submission is a student's work and §6
+keeps history where history matters, so the honest correction to a live task is to re-aim it or
+close its window — not to erase the record. The FK would cascade happily; the service does not.
 
 Publication stays a **server-side clock decision** (§5.10, §5.13): an assessment appears when its
-`available_from` passes, never when a client decides it should.
+`available_from` passes — or its group's override does — never when a client decides it should.
+
 
 ---
 
@@ -654,10 +668,10 @@ Honest inventory, so nobody assumes a surface is there. Of the five roles in §2
 
 | Role | Backend status |
 |---|---|
-| **Student** | Built. 10 feature controllers, every route `@Roles(Role.Student)`, unit + e2e covered. `JwtAuthGuard` + `RolesGuard` are **global**, so a new controller is protected by default; `@Public()` (health, register, login, password reset) and `@AnyRole()` (logout) are the only exits. Includes the catalog and self-enrollment added 2026-09-07 ({S}7.2), and the aggregated **`GET /dashboard`** added 2026-09-09 - the whole Home screen in one request, composed from the same per-course services so its numbers cannot drift from the screens it links to ({S}7.3). The per-course `GET /courses/:id/dashboard` remains and still serves `/learn/[id]`. Plus `GET /courses/:id/classmates` (2026-09-10, {S}5.17) — the first read where one student learns another exists, group-scoped, name only. |
+| **Student** | Built. 10 feature controllers, every route `@Roles(Role.Student)`, unit + e2e covered. `JwtAuthGuard` + `RolesGuard` are **global**, so a new controller is protected by default; `@Public()` (health, register, login, password reset) and `@AnyRole()` (logout) are the only exits. Includes the catalog and self-enrollment added 2026-09-07 ({S}7.2), and the aggregated **`GET /dashboard`** added 2026-09-09 - the whole Home screen in one request, composed from the same per-course services so its numbers cannot drift from the screens it links to ({S}7.3). The per-course `GET /courses/:id/dashboard` remains and still serves `/learn/[id]`. Plus `GET /courses/:id/classmates` (2026-09-10, {S}5.17) — the first read where one student learns another exists, group-scoped, name only — and `GET /courses/:id/announcements` ({S}5.18), so a posted announcement has a page rather than only a mailbox line. The assessment list and detail are now **targeting-filtered**: a student sees only what was set for one of their groups. |
 | **Visitor** | **Partly built.** A `public` module serves `GET /public/courses` and `GET /public/courses/:slug` unauthenticated, gated on the `is_published` flag from migration `004_public_catalog.sql` so Dr. Tahir can draft a course without it appearing. The detail response carries the **full outline** — modules and lesson titles with durations — not just counts. Rate-limited separately from auth (browsing is the point, but every call is an unauthenticated database read). Still absent: blog, contact. |
 | **Parent** | None. Enum entry only; no `ParentLink`, no read-only views. |
-| **Teaching Assistant** | **Working console.** `CourseStaffAssignment` + `StaffScopeService` (§5.11) now carry a real surface: `/staff/overview`, `/staff/courses`, and per-course `roster`, `outline`, `submissions`, `recordings`, `live-sessions` and `announcements`, plus `POST /staff/submissions/:id/grade` and `POST /staff/courses/:id/announcements`. Every one is scoped, and an unassigned course 404s. Plus the group surface added 2026-09-10: `GET /staff/courses/:id/groups` (scoped), `GET /staff/groups/:id` and `/members`, and **placement** — `POST /staff/groups/:id/members` and `DELETE .../members/:studentId` — which {S}2.2 grants a TA explicitly. Still absent: attendance, quizzes, materials upload, messages. |
+| **Teaching Assistant** | **Working console.** `CourseStaffAssignment` + `StaffScopeService` (§5.11) now carry a real surface: `/staff/overview`, `/staff/courses`, and per-course `roster`, `outline`, `submissions`, `recordings`, `live-sessions` and `announcements`, plus `POST /staff/submissions/:id/grade` and `POST /staff/courses/:id/announcements`. Every one is scoped, and an unassigned course 404s. Plus the group surface added 2026-09-10: `GET /staff/courses/:id/groups` (scoped), `GET /staff/groups/:id` and `/members`, and **placement** — `POST /staff/groups/:id/members` and `DELETE .../members/:studentId` — which {S}2.2 grants a TA explicitly. Plus **assessment authoring** ({S}5.18, 2026-09-10): `GET`/`POST /staff/courses/:id/assessments`, `PATCH`/`DELETE /staff/assessments/:id` and `POST /staff/assessments/:id/targets`. Still absent: attendance, the quiz engine, materials upload, messages. |
 | **Teacher / Admin** | **Working console — a strict superset of the TA's.** The same `/staff/*` routes unscoped, plus admin-only `/admin/students`, `/admin/assistants`, TA-to-course assignment (`/admin/courses/:id/staff`), the recording library (`POST /admin/courses/:id/recordings`, `PATCH`/`DELETE /admin/recordings/:id`), live-session scheduling (`POST /admin/courses/:id/live-sessions`, `PATCH`/`DELETE /admin/live-sessions/:id`), platform-wide announcements (`GET`/`POST /admin/announcements`), the audit-log reader (`/admin/audit-log`) and, from 2026-09-10, **group CRUD** — `GET`/`POST /admin/groups`, `PATCH /admin/groups/:id`, and `POST`/`DELETE` on `/admin/groups/:id/courses`. Still absent: course CRUD, payments, CMS, reports. |
 
 The TA/admin work surface lives in `backend/src/manage/` — `ManageService` (overview, roster,
@@ -694,7 +708,7 @@ schema**, 59 integration tests green.
 | Piece | State |
 |---|---|
 | `groups`, `group_courses`, `group_memberships` | Built and read end to end — staff CRUD, placement, classmate list. |
-| `assessment_targets` | **DDL only.** The table is created and indexed; nothing writes or reads it. It lands with the authoring surface (§5.18), and the seed deliberately leaves it empty so the student assessment list is not filtered by something no code consults. |
+| `assessment_targets` | **Built and read end to end** (2026-09-10). `AssessmentAuthoringService` writes it, `findByCourseForGroups` / `findByIdForGroups` read it with the per-group window COALESCEd in SQL, and the seed targets all eight fixture assessments at `group-1` — without which a seeded database renders an empty assessment list that looks like a bug. |
 | `learning_mode` on `group_courses` | **Built and read end to end** (2026-09-10). `LearningModeService` resolves group → course default, every student-facing and staff-facing reader goes through it, and migration `007` dropped `enrollments.learning_mode` so there is no second copy to drift. |
 
 Code comments that say "group" and mean *course* — `EnrollmentRepository.countDistinctStudents`
@@ -710,10 +724,17 @@ spans courses and there is nothing to scope by — which is also the client's an
 flip is the course half, and it belongs behind a config switch inside `assertAssigned` because the
 client's own words were *"it might be changed"*.
 
-**No assessment authoring exists either** (§5.18). Every assessment in the system arrived as seed
-data; there is no create, edit or publish route on any controller, and the quiz engine behind
-`AssessmentType = 'quiz'` is unbuilt. Announcements *are* authorable, and reach the student only
-as a notification — there is no student-facing announcements route.
+**Assessment authoring exists as of 2026-09-10** (§5.18) — create, edit, re-target and a guarded
+delete, on `StaffManageController` and reachable by a TA, all four audited. What is still missing
+is the **quiz engine**: `Question`, `QuestionOption`, `QuizAttempt` and `Answer` do not exist, so
+`type: 'quiz'` is an assignment with a different label. That is deliberate rather than skipped —
+§11 still has "how rich must the quiz engine be at launch" open, and building a question model
+before that is answered is the definition of speculative (§9).
+
+**Enrollment alone no longer decides what a student may read here.** Work is set per group, so
+`AssessmentsService.loadForStudent` checks enrollment *and* targeting: without the second check an
+assessment id would be enough to read - and submit against - another cohort's task. Same class of
+hole §5.11 guards on the staff side, arrived at from the student side.
 
 **The learning-mode move is done** (migration `007`, §5.2). What remains is assessment targeting:
 `StoredAssessment.courseId` **stays put** — the 2026-09-10 authoring answer (write once, target
@@ -828,14 +849,14 @@ before a second implementation existed. That window closed some time ago:
 `findAll` and `findByIds` above each cost two implementors and an integration
 suite to add, which is the going rate now. Still worth doing, still not free.
 
-**Audit coverage is sixteen actions, and every mutating staff route is covered
-today.** The `@Global()` `AuditModule` is now injected in six services —
+**Audit coverage is twenty actions, and every mutating staff route is covered
+today.** The `@Global()` `AuditModule` is now injected in seven services —
 `StaffService`, `GradingService`, `ManageRecordingsService`,
-`ManageLiveSessionsService`, `AnnouncementsService` and `GroupsService` —
-wiring the sixteen actions §5.4 lists, one `audit.record` call per action.
-Verified by enumeration on 2026-09-10: every `@Post`/`@Patch`/`@Delete` on
-`StaffManageController`, `AdminManageController`, both announcement controllers
-and both group controllers reaches one. That is a property of today's tree, not
+`ManageLiveSessionsService`, `AnnouncementsService`, `GroupsService` and
+`AssessmentAuthoringService` — wiring the twenty actions §5.4 lists, one
+`audit.record` call per action. Verified by enumeration on 2026-09-10: every
+`@Post`/`@Patch`/`@Delete` on `StaffManageController`, `AdminManageController`,
+both announcement controllers and both group controllers reaches one. That is a property of today's tree, not
 a mechanism: each new staff or admin write must add its own call, and the moment
 one forgets, §5.4 is quietly broken with nothing failing. Attendance and
 payments are where this stops being theoretical.
@@ -1125,10 +1146,12 @@ logs, future subscriptions. Designed so **additional gateways drop in later**.
   before writing the `@Roles()` decorator** — and either way this is worth one question to the
   client, because `ReportRun.generated_by` (§6.1) exists precisely to record a TA as the author.
 
-- **Can a TA create assignments?** The board's `ASG-10` says yes, "independently"; §2.2's preset
-  omits it, granting only grading of work that already exists. Note the asymmetry the preset already
-  carries — a TA may build and publish *quizzes* (`QUZ-11`) but, on the preset's reading, not
-  assignments. If the client cannot articulate why those differ, the answer is probably yes to both.
+- ~~**Can a TA create assignments?**~~ **Answered 2026-09-10: yes, both assignments and quizzes.**
+  The board's `ASG-10` and `QUZ-11` win over §2.2's narrower preset. Shipped as one role rule on
+  `StaffManageController` rather than a check that branches on the task's `type` — the asymmetry
+  the preset carried would have made a role decision depend on a body field. Kept here struck
+  through rather than deleted, because the reasoning is what makes the next permission question
+  cheaper to answer.
 
 - **Can a TA schedule sessions and post Zoom links?** The board's `CRS-11` says yes; §2.2's preset
   omits it. This is entangled with the open Zoom question above — manual link + time vs. API

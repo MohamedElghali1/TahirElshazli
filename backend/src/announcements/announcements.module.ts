@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { StudentAnnouncementsController } from './student-announcements.controller.js';
 import { StaffAnnouncementsController } from './staff-announcements.controller.js';
 import { AdminAnnouncementsController } from './admin-announcements.controller.js';
 import { AnnouncementsService } from './announcements.service.js';
@@ -34,7 +35,11 @@ import { NotificationsModule } from '../notifications/notifications.module.js';
     EnrollmentsModule,
     NotificationsModule,
   ],
-  controllers: [StaffAnnouncementsController, AdminAnnouncementsController],
+  controllers: [
+    StaffAnnouncementsController,
+    AdminAnnouncementsController,
+    StudentAnnouncementsController,
+  ],
   providers: [
     AnnouncementsService,
     InMemoryAnnouncementRepository,

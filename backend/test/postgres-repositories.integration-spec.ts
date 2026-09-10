@@ -1015,4 +1015,143 @@ describeIfDb('Postgres repositories', () => {
       expect(await repo().findCourses(doomed.id)).toEqual([]);
     });
   });
+
+  /* Assessment targeting (CLAUDE.md §5.16). The assertions worth making against
+     a real database rather than an array: that DISTINCT ON really collapses a
+     student in two groups to one row and picks the group the caller ranked
+     first, that COALESCE really applies a per-group override, and that the
+     UNIQUE constraint - not the JavaScript in front of it - is what makes
+     setTargets idempotent. */
+  describe('assessment targeting', () => {
+    const repo = () => new PostgresAssessmentRepository(db);
+    const groups = () => new PostgresGroupRepository(db);
+
+    it('shows a student only what was set for a group they are in', async () => {
+      // The seed targets all eight of course-1's assessments at group-1.
+      const all = await repo().findByCourse('course-1');
+      const targeted = await repo().findByCourseForGroups('course-1', ['group-1']);
+      expect(targeted).toHaveLength(all.length);
+
+      // A group that studies course-1 but has been set nothing.
+      const empty = await groups().create({ name: 'Empty cohort', teacherId: 'teacher-1' });
+      await groups().addCourse({
+        groupId: empty.id,
+        courseId: 'course-1',
+        learningMode: 'live',
+        enrolledBy: 'teacher-1',
+      });
+      expect(await repo().findByCourseForGroups('course-1', [empty.id])).toEqual([]);
+
+      // And no group at all - the unplaced student (§7.2) - answers empty
+      // without a round trip.
+      expect(await repo().findByCourseForGroups('course-1', [])).toEqual([]);
+    });
+
+    it('coalesces a per-group override over the assessment window', async () => {
+      const base = (await repo().findById('assess-1'))!;
+      const other = await groups().create({ name: 'Override cohort', teacherId: 'teacher-1' });
+      await groups().addCourse({
+        groupId: other.id,
+        courseId: 'course-1',
+        learningMode: 'recorded',
+        enrolledBy: 'teacher-1',
+      });
+      await repo().setTargets('assess-1', [
+        { groupId: 'group-1' },
+        { groupId: other.id, dueAt: '2026-11-30T23:59:59.000Z' },
+      ]);
+
+      const inherited = await repo().findByIdForGroups('assess-1', ['group-1']);
+      expect(inherited?.dueAt).toBe(base.dueAt);
+      expect(inherited?.windowOverridden).toBe(false);
+
+      const overridden = await repo().findByIdForGroups('assess-1', [other.id]);
+      expect(overridden?.dueAt).toBe('2026-11-30T23:59:59.000Z');
+      expect(overridden?.windowOverridden).toBe(true);
+      // Only the overridden field moves; the rest still inherit.
+      expect(overridden?.availableFrom).toBe(base.availableFrom);
+
+      // Put the seed back: the suite shares one database across describes.
+      await repo().setTargets('assess-1', [{ groupId: 'group-1' }]);
+    });
+
+    it('gives a student in two targeted groups one row, on the first group terms', async () => {
+      const second = await groups().create({ name: 'Second cohort', teacherId: 'teacher-1' });
+      await groups().addCourse({
+        groupId: second.id,
+        courseId: 'course-1',
+        learningMode: 'live',
+        enrolledBy: 'teacher-1',
+      });
+      await repo().setTargets('assess-1', [
+        { groupId: 'group-1' },
+        { groupId: second.id, dueAt: '2026-10-15T23:59:59.000Z' },
+      ]);
+
+      // Caller order is the tie-break: longest-standing placement first.
+      const first = (
+        await repo().findByCourseForGroups('course-1', ['group-1', second.id])
+      ).filter((a) => a.id === 'assess-1');
+      expect(first).toHaveLength(1);
+      expect(first[0]!.targetGroupId).toBe('group-1');
+
+      const reversed = (
+        await repo().findByCourseForGroups('course-1', [second.id, 'group-1'])
+      ).filter((a) => a.id === 'assess-1');
+      expect(reversed).toHaveLength(1);
+      expect(reversed[0]!.targetGroupId).toBe(second.id);
+      expect(reversed[0]!.dueAt).toBe('2026-10-15T23:59:59.000Z');
+
+      await repo().setTargets('assess-1', [{ groupId: 'group-1' }]);
+    });
+
+    it('replaces the audience rather than accumulating it', async () => {
+      const second = await groups().create({ name: 'Replace cohort', teacherId: 'teacher-1' });
+      await groups().addCourse({
+        groupId: second.id,
+        courseId: 'course-1',
+        learningMode: 'live',
+        enrolledBy: 'teacher-1',
+      });
+      await repo().setTargets('assess-2', [{ groupId: 'group-1' }, { groupId: second.id }]);
+      expect(await repo().findTargets('assess-2')).toHaveLength(2);
+
+      await repo().setTargets('assess-2', [{ groupId: second.id }]);
+      const after = await repo().findTargets('assess-2');
+      expect(after.map((x) => x.groupId)).toEqual([second.id]);
+
+      await repo().setTargets('assess-2', [{ groupId: 'group-1' }]);
+    });
+
+    it('creates, edits partially, and cascades its targets away on delete', async () => {
+      const created = await repo().create({
+        courseId: 'course-1',
+        lessonId: null,
+        title: 'Integration-created task',
+        description: 'd',
+        instructions: 'i',
+        type: 'assignment',
+        topics: ['Kinetics'],
+        availableFrom: '2026-09-01T00:00:00.000Z',
+        availableTo: '2026-12-01T00:00:00.000Z',
+        dueAt: '2026-09-20T00:00:00.000Z',
+        maxScore: 30,
+        allowedFileTypes: ['application/pdf'],
+        maxFileSizeBytes: 10485760,
+      });
+      await repo().setTargets(created.id, [{ groupId: 'group-1' }]);
+
+      // A partial edit must leave everything it did not name alone - the
+      // COALESCE-per-column shape rather than a string-built SET list (§8).
+      const edited = await repo().update(created.id, { title: 'Renamed' });
+      expect(edited?.title).toBe('Renamed');
+      expect(edited?.maxScore).toBe(30);
+      expect(edited?.topics).toEqual(['Kinetics']);
+      expect(await repo().update('assess-nope', { title: 'x' })).toBeNull();
+
+      expect(await repo().remove(created.id)).toBe(true);
+      expect(await repo().findTargets(created.id)).toEqual([]);
+      expect(await repo().remove(created.id)).toBe(false);
+    });
+  });
 });

@@ -7,6 +7,9 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { RolesGuard } from '../auth/roles.guard.js';
 import { EnrollmentsService } from '../enrollments/enrollments.service.js';
 import { ENROLLMENT_REPOSITORY } from '../enrollments/interfaces/enrollment-repository.interface.js';
+import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interface.js';
+import { InMemoryGroupRepository } from '../groups/repositories/in-memory-group.repository.js';
+import { StudentGroupsService } from '../groups/student-groups.service.js';
 import { InMemoryEnrollmentRepository } from '../enrollments/repositories/in-memory-enrollment.repository.js';
 
 const STUDENT = {
@@ -29,6 +32,11 @@ describe('AssessmentsController', () => {
       providers: [
         EnrollmentsService,
         { provide: ENROLLMENT_REPOSITORY, useClass: InMemoryEnrollmentRepository },
+        // Work is set per group now (CLAUDE.md §5.16), so the student read
+        // filters through this. Real implementation, not a stub: the filter
+        // is the behaviour under test.
+        { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },
+        StudentGroupsService,
         AssessmentsService,
         { provide: ASSESSMENT_REPOSITORY, useClass: InMemoryAssessmentRepository },
       ],

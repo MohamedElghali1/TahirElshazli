@@ -63,12 +63,155 @@ export interface AssessmentFilter {
   type?: AssessmentType;
 }
 
+/**
+ * What a teacher supplies when writing a task. `id` and `createdAt` are the
+ * repository's to assign.
+ */
+export type NewAssessment = Omit<StoredAssessment, 'id' | 'createdAt'>;
+
+/** A partial edit; `undefined` leaves a field alone, matching `RecordingUpdate`. */
+export interface AssessmentUpdate {
+  title?: string;
+  description?: string;
+  instructions?: string;
+  topics?: string[];
+  availableFrom?: string;
+  availableTo?: string;
+  dueAt?: string;
+  maxScore?: number;
+  allowedFileTypes?: string[];
+  maxFileSizeBytes?: number;
+  lessonId?: string | null;
+}
+
+/**
+ * "This task was set for this group" (CLAUDE.md §5.16, answered 2026-09-10:
+ * *"he could make a task then to submit for one or more groups with his own
+ * selection."*).
+ *
+ * Read that carefully, because it is what this table is and is not. "Per group"
+ * means the **audience** is chosen per group - it does *not* mean the task is
+ * duplicated per group. So there is one `Assessment` row and one row here per
+ * targeted group, `assessments.course_id` stays where it always was, and §5.6's
+ * "average across all students" remains one average over one assessment rather
+ * than ten averages that cannot honestly be combined.
+ */
+export interface AssessmentTarget {
+  id: string;
+  assessmentId: string;
+  groupId: string;
+  /**
+   * **Overrides** of the assessment's own window, not copies of it. `null`
+   * means inherit, which is why they are nullable rather than defaulted - a
+   * default would freeze the inherited value at targeting time and silently
+   * stop tracking later edits to the assessment itself.
+   */
+  availableFrom: string | null;
+  availableTo: string | null;
+  dueAt: string | null;
+}
+
+/** One group's targeting, as the authoring surface supplies it. */
+export interface NewAssessmentTarget {
+  groupId: string;
+  availableFrom?: string | null;
+  availableTo?: string | null;
+  dueAt?: string | null;
+}
+
+/**
+ * An assessment as one student sees it: the row, plus the window that actually
+ * applies to them.
+ *
+ * The three timestamps on this shape are **already resolved** - the target's
+ * override where there is one, the assessment's own otherwise - so
+ * `computeStatus` (§5.10) needs no knowledge of targeting and there is exactly
+ * one place that does the coalescing. `targetGroupId` is carried so a reader
+ * can tell *why* they can see it, and so a support question about a wrong due
+ * date has an answer.
+ */
+export interface TargetedAssessment extends StoredAssessment {
+  targetGroupId: string;
+  /** True when the window above came from the target rather than the assessment. */
+  windowOverridden: boolean;
+}
+
 export interface AssessmentRepository {
+  /**
+   * Every assessment on a course, targeted or not.
+   *
+   * **This is the staff read.** It is deliberately *not* what a student sees:
+   * after targeting landed (§5.16) a student sees only what was set for a group
+   * they are in, which is `findByCourseForGroups` below. Keeping the two as
+   * separate methods rather than one with an optional filter is the point - an
+   * optional filter left off defaults to "show everything", and the failure
+   * mode of getting this wrong is one cohort reading another's work.
+   */
   findByCourse(
     courseId: string,
     filter?: AssessmentFilter,
   ): Promise<StoredAssessment[]>;
+  /**
+   * What a student sees: the assessments of this course that were targeted at
+   * any of these groups, with each one's window already resolved against the
+   * target's overrides.
+   *
+   * An empty `groupIds` returns nothing, and that is correct rather than
+   * defensive - a student who is enrolled but not yet placed (§7.2) has been
+   * set no work, and an empty course is what §5.16 says that state looks like.
+   *
+   * A student in two groups both given the same task sees it **once**, on the
+   * longest-standing placement's terms - the same tie-break
+   * `LearningModeService` uses, so a due date and a learning mode cannot
+   * resolve through different groups.
+   */
+  findByCourseForGroups(
+    courseId: string,
+    groupIds: readonly string[],
+    filter?: AssessmentFilter,
+  ): Promise<TargetedAssessment[]>;
+  /**
+   * One assessment as a student sees it, or null when it was not set for any
+   * of their groups.
+   *
+   * Null rather than the untargeted row, because the caller turns it into the
+   * same 404 an unenrolled student gets. Without this an assessment id would be
+   * enough to read another cohort's task - enrollment alone stopped being
+   * sufficient the moment work was set per group.
+   */
+  findByIdForGroups(
+    assessmentId: string,
+    groupIds: readonly string[],
+  ): Promise<TargetedAssessment | null>;
   findById(assessmentId: string): Promise<StoredAssessment | null>;
+  create(input: NewAssessment): Promise<StoredAssessment>;
+  /** Null when there is no such assessment; the caller turns that into a 404. */
+  update(
+    assessmentId: string,
+    update: AssessmentUpdate,
+  ): Promise<StoredAssessment | null>;
+  /**
+   * Removes an assessment and everything targeted or submitted against it.
+   *
+   * Guarded by the caller, not here: `AssessmentAuthoringService` refuses to
+   * delete anything with a submission, because a submission is a student's
+   * work and §6 keeps history where history matters. This method exists for
+   * the mistyped-task case and returns false when there was nothing to remove.
+   */
+  remove(assessmentId: string): Promise<boolean>;
+  /**
+   * Replaces the whole target set in one call - the audience is chosen as a
+   * set, so setting it is one operation and not add/remove bookkeeping the
+   * caller has to diff.
+   *
+   * Returns what the targeting now is.
+   */
+  setTargets(
+    assessmentId: string,
+    targets: readonly NewAssessmentTarget[],
+  ): Promise<AssessmentTarget[]>;
+  /** The staff read: who this task was set for. */
+  findTargets(assessmentId: string): Promise<AssessmentTarget[]>;
   findSubmission(
     assessmentId: string,
     studentId: string,

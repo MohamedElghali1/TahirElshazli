@@ -15,6 +15,7 @@ import type {
 } from './interfaces/assessment-repository.interface.js';
 import { ASSESSMENT_REPOSITORY } from './interfaces/assessment-repository.interface.js';
 import { EnrollmentsService } from '../enrollments/enrollments.service.js';
+import { StudentGroupsService } from '../groups/student-groups.service.js';
 
 export interface AssessmentListItem {
   id: string;
@@ -74,6 +75,13 @@ export class AssessmentsService {
     @Inject(ASSESSMENT_REPOSITORY)
     private readonly assessmentRepo: AssessmentRepository,
     private readonly enrollmentsService: EnrollmentsService,
+    /**
+     * Global (`GroupDataModule`). Work is set per group now (CLAUDE.md §5.16),
+     * so enrollment alone stopped being enough to decide what a student may
+     * read here - it says they hold the course, not that this task was set for
+     * them.
+     */
+    private readonly studentGroups: StudentGroupsService,
   ) {}
 
   /**
@@ -92,7 +100,25 @@ export class AssessmentsService {
         studentId,
       );
       if (enrollment) {
-        return assessment;
+        // Enrolled is necessary and, since 2026-09-10, no longer sufficient:
+        // the task also has to have been *set for* a group this student is in
+        // (§5.16). Without this second check an assessment id is enough to read
+        // - and submit against - another cohort's work, which is the same class
+        // of hole §5.11 guards on the staff side.
+        const groupIds = await this.studentGroups.groupIdsFor(
+          assessment.courseId,
+          studentId,
+        );
+        const targeted = await this.assessmentRepo.findByIdForGroups(
+          assessmentId,
+          groupIds,
+        );
+        if (targeted) {
+          // The targeted row, not the raw one: its window carries this group's
+          // overrides, so every downstream status and deadline decision
+          // (§5.10) is made on the terms this student was actually set.
+          return targeted;
+        }
       }
     }
     // One message and one status for both branches. Letting `assertEnrolled`
@@ -174,7 +200,15 @@ export class AssessmentsService {
   ): Promise<AssessmentListItem[]> {
     await this.enrollmentsService.assertEnrolled(courseId, studentId);
     const now = new Date();
-    const assessments = await this.assessmentRepo.findByCourse(courseId, filter);
+    // Only what was set for a group this student is in (§5.16). An unplaced
+    // student gets an empty list rather than an error - §7.2's state, and what
+    // §5.16 warns will look like a working course that happens to be empty.
+    const groupIds = await this.studentGroups.groupIdsFor(courseId, studentId);
+    const assessments = await this.assessmentRepo.findByCourseForGroups(
+      courseId,
+      groupIds,
+      filter,
+    );
     const submissions = await this.submissionsByAssessment(assessments, studentId);
     return assessments.map((assessment) =>
       this.toListItem(assessment, submissions.get(assessment.id) ?? null, now),
@@ -296,7 +330,14 @@ export class AssessmentsService {
     studentId: string,
   ): Promise<AssessmentPerformanceEntry[]> {
     const now = new Date();
-    const assessments = await this.assessmentRepo.findByCourse(courseId);
+    // Targeted, like the list - a report that averaged work the student was
+    // never set would be a lower mark than they earned, on a number §5.6 says
+    // the teacher reads as authoritative.
+    const groupIds = await this.studentGroups.groupIdsFor(courseId, studentId);
+    const assessments = await this.assessmentRepo.findByCourseForGroups(
+      courseId,
+      groupIds,
+    );
     const submissions = await this.submissionsByAssessment(assessments, studentId);
     return assessments.map((assessment) => {
       const submission = submissions.get(assessment.id) ?? null;

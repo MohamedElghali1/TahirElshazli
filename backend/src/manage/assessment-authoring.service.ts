@@ -1,0 +1,337 @@
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { AuditService } from '../audit/audit.service.js';
+import { Role } from '../auth/roles.enum.js';
+import type {
+  AssessmentRepository,
+  AssessmentTarget,
+  AssessmentType,
+  AssessmentUpdate,
+  NewAssessmentTarget,
+  StoredAssessment,
+} from '../assessments/interfaces/assessment-repository.interface.js';
+import { ASSESSMENT_REPOSITORY } from '../assessments/interfaces/assessment-repository.interface.js';
+import type { GroupRepository } from '../groups/interfaces/group-repository.interface.js';
+import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interface.js';
+import type { StaffActor } from '../staff/staff-scope.service.js';
+import { StaffScopeService } from '../staff/staff-scope.service.js';
+
+/** An assessment as the authoring screen sees it: the task and its audience. */
+export interface AuthoredAssessment extends StoredAssessment {
+  targets: AssessmentTarget[];
+}
+
+export interface CreateAssessmentInput {
+  title: string;
+  description: string;
+  instructions: string;
+  type: AssessmentType;
+  topics: string[];
+  lessonId: string | null;
+  availableFrom: string;
+  availableTo: string;
+  dueAt: string;
+  maxScore: number;
+  allowedFileTypes: string[];
+  maxFileSizeBytes: number;
+  targets: NewAssessmentTarget[];
+}
+
+/**
+ * Writing the work (CLAUDE.md §5.18, §5.16).
+ *
+ * **Who may use it, and how that was decided.** The client answered on
+ * 2026-09-10: a teaching assistant may author both assignments and quizzes.
+ * That settles the §11 question the prototype and the user-stories board
+ * disagreed on - `ASG-10` and `QUZ-11` on the board grant it, §2.2's preset
+ * omitted assignments - and it means these routes live on
+ * `StaffManageController` with one role rule rather than a check that branches
+ * on the task's `type`, which §2.2 explicitly warns against.
+ *
+ * **Targeting is the audience, not a copy.** §5.16's answer was *"make a task
+ * then submit for one or more groups with his own selection"*, so there is one
+ * assessment row and a set of target groups. At least one target is required at
+ * creation: a task set for nobody is invisible to every student, and letting it
+ * be created silently is how a teacher discovers on the due date that the work
+ * never appeared.
+ *
+ * Every write here is audited (§5.4). Authoring is a TA-reachable mutation that
+ * changes what students are set, which is squarely what the log exists for.
+ */
+@Injectable()
+export class AssessmentAuthoringService {
+  constructor(
+    @Inject(ASSESSMENT_REPOSITORY)
+    private readonly assessmentRepo: AssessmentRepository,
+    @Inject(GROUP_REPOSITORY) private readonly groupRepo: GroupRepository,
+    private readonly scope: StaffScopeService,
+    private readonly audit: AuditService,
+  ) {}
+
+  private actorRole(actor: StaffActor): Role {
+    // Derived from the caller, never assumed - this route is reachable by both
+    // roles, so a hardcoded role here would misattribute every TA's work to Dr.
+    // Tahir (§5.4).
+    return actor.role === Role.Teacher ? Role.Teacher : Role.Assistant;
+  }
+
+  /**
+   * The window has to make sense before it is stored, because §5.10 derives
+   * every status from it and an inverted window produces an assessment that is
+   * permanently `locked` with no error anywhere to explain why.
+   */
+  private assertWindow(from: string, to: string, due: string): void {
+    const [f, t, d] = [from, to, due].map((value) => new Date(value).getTime());
+    if (Number.isNaN(f) || Number.isNaN(t) || Number.isNaN(d)) {
+      throw new BadRequestException('Dates must be valid ISO timestamps');
+    }
+    if (f >= t) {
+      throw new BadRequestException('availableFrom must be before availableTo');
+    }
+    if (d < f || d > t) {
+      // A due date outside the window is not a rule the client set; it is a
+      // shape that cannot be satisfied. §11 leaves open what `due_at` *does* -
+      // advisory, hard cutoff, or late-penalty trigger - and this check is
+      // deliberately compatible with all three readings.
+      throw new BadRequestException(
+        'dueAt must fall inside the availability window',
+      );
+    }
+  }
+
+  /**
+   * Every targeted group must exist and must study this course.
+   *
+   * The second half is the one that matters: without it a task could be set for
+   * a cohort that does not take the subject, and it would appear on their
+   * course page through a join that never checked the pairing.
+   */
+  private async assertTargets(
+    courseId: string,
+    targets: readonly NewAssessmentTarget[],
+  ): Promise<void> {
+    if (targets.length === 0) {
+      throw new BadRequestException(
+        'An assessment must be set for at least one group',
+      );
+    }
+    const groupIds = new Set(targets.map((target) => target.groupId));
+    if (groupIds.size !== targets.length) {
+      throw new BadRequestException('A group can be targeted only once');
+    }
+    const studying = new Set(
+      (await this.groupRepo.findGroupCoursesByCourse(courseId)).map(
+        (pairing) => pairing.groupId,
+      ),
+    );
+    for (const groupId of groupIds) {
+      if (!studying.has(groupId)) {
+        throw new NotFoundException(
+          `Group ${groupId} is not enrolled in this course`,
+        );
+      }
+    }
+    for (const target of targets) {
+      // An override is all-or-nothing per field, but an inverted overridden
+      // window is the same trap as an inverted one on the assessment.
+      if (
+        target.availableFrom &&
+        target.availableTo &&
+        new Date(target.availableFrom) >= new Date(target.availableTo)
+      ) {
+        throw new BadRequestException(
+          'A target override must have availableFrom before availableTo',
+        );
+      }
+    }
+  }
+
+  /** Loads an assessment and proves the caller may act on its course (§5.11). */
+  private async loadInScope(
+    assessmentId: string,
+    actor: StaffActor,
+  ): Promise<StoredAssessment> {
+    const assessment = await this.assessmentRepo.findById(assessmentId);
+    if (!assessment) {
+      throw new NotFoundException('Assessment not found');
+    }
+    // Scoped on the assessment's *own* courseId, never on one supplied by the
+    // client - the same rule `AssessmentsService.loadForStudent` follows.
+    await this.scope.assertAssigned(assessment.courseId, actor);
+    return assessment;
+  }
+
+  async list(courseId: string, actor: StaffActor): Promise<AuthoredAssessment[]> {
+    await this.scope.assertAssigned(courseId, actor);
+    // The *staff* read: every assessment on the course, targeted or not. A
+    // teacher has to be able to see a task they have not finished aiming.
+    const assessments = await this.assessmentRepo.findByCourse(courseId);
+    const targets = await Promise.all(
+      assessments.map((assessment) =>
+        this.assessmentRepo.findTargets(assessment.id),
+      ),
+    );
+    return assessments.map((assessment, index) => ({
+      ...assessment,
+      targets: targets[index],
+    }));
+  }
+
+  async create(
+    courseId: string,
+    actor: StaffActor,
+    input: CreateAssessmentInput,
+  ): Promise<AuthoredAssessment> {
+    await this.scope.assertAssigned(courseId, actor);
+    this.assertWindow(input.availableFrom, input.availableTo, input.dueAt);
+    await this.assertTargets(courseId, input.targets);
+
+    const assessment = await this.assessmentRepo.create({
+      courseId,
+      lessonId: input.lessonId,
+      title: input.title,
+      description: input.description,
+      instructions: input.instructions,
+      type: input.type,
+      topics: input.topics,
+      availableFrom: input.availableFrom,
+      availableTo: input.availableTo,
+      dueAt: input.dueAt,
+      maxScore: input.maxScore,
+      allowedFileTypes: input.allowedFileTypes,
+      maxFileSizeBytes: input.maxFileSizeBytes,
+    });
+    const targets = await this.assessmentRepo.setTargets(
+      assessment.id,
+      input.targets,
+    );
+
+    await this.audit.record({
+      actorId: actor.id,
+      actorRole: this.actorRole(actor),
+      action: 'assessment.created',
+      targetType: 'assessment',
+      targetId: assessment.id,
+      courseId,
+      before: null,
+      after: {
+        title: assessment.title,
+        type: assessment.type,
+        dueAt: assessment.dueAt,
+        maxScore: assessment.maxScore,
+        // The audience, as a count and a list of ids joined into one scalar -
+        // §5.4's snapshots are flat and scalar on purpose, and "who was this
+        // set for" is the question a dispute actually turns on.
+        targetGroups: targets.map((target) => target.groupId).join(','),
+      },
+    });
+    return { ...assessment, targets };
+  }
+
+  async update(
+    assessmentId: string,
+    actor: StaffActor,
+    update: AssessmentUpdate,
+  ): Promise<AuthoredAssessment> {
+    const before = await this.loadInScope(assessmentId, actor);
+    this.assertWindow(
+      update.availableFrom ?? before.availableFrom,
+      update.availableTo ?? before.availableTo,
+      update.dueAt ?? before.dueAt,
+    );
+
+    const after = await this.assessmentRepo.update(assessmentId, update);
+    if (!after) {
+      throw new NotFoundException('Assessment not found');
+    }
+    await this.audit.record({
+      actorId: actor.id,
+      actorRole: this.actorRole(actor),
+      action: 'assessment.updated',
+      targetType: 'assessment',
+      targetId: assessmentId,
+      courseId: before.courseId,
+      // Only what a reader needs to see the change. `before` is read before the
+      // write and both repositories return copies, so this pair really differs
+      // (§7.1 records finding the aliasing bug twice).
+      before: {
+        title: before.title,
+        dueAt: before.dueAt,
+        availableTo: before.availableTo,
+        maxScore: before.maxScore,
+      },
+      after: {
+        title: after.title,
+        dueAt: after.dueAt,
+        availableTo: after.availableTo,
+        maxScore: after.maxScore,
+      },
+    });
+    return { ...after, targets: await this.assessmentRepo.findTargets(assessmentId) };
+  }
+
+  /** Re-aims an existing task. Replaces the whole audience, never diffs it. */
+  async setTargets(
+    assessmentId: string,
+    actor: StaffActor,
+    targets: NewAssessmentTarget[],
+  ): Promise<AuthoredAssessment> {
+    const assessment = await this.loadInScope(assessmentId, actor);
+    await this.assertTargets(assessment.courseId, targets);
+
+    const before = await this.assessmentRepo.findTargets(assessmentId);
+    const after = await this.assessmentRepo.setTargets(assessmentId, targets);
+    await this.audit.record({
+      actorId: actor.id,
+      actorRole: this.actorRole(actor),
+      action: 'assessment.targeted',
+      targetType: 'assessment',
+      targetId: assessmentId,
+      courseId: assessment.courseId,
+      before: { targetGroups: before.map((x) => x.groupId).join(',') },
+      after: { targetGroups: after.map((x) => x.groupId).join(',') },
+    });
+    return { ...assessment, targets: after };
+  }
+
+  /**
+   * Deletes a task **only while nobody has submitted to it.**
+   *
+   * A submission is a student's work, and §6's convention is to keep history
+   * where history matters. Once one exists the honest correction is to re-aim
+   * the task or close its window, not to erase the record - so this refuses
+   * rather than cascading, even though the FK would happily oblige. The
+   * mistyped-task case is what it is for.
+   */
+  async remove(assessmentId: string, actor: StaffActor): Promise<void> {
+    const assessment = await this.loadInScope(assessmentId, actor);
+    const submissions = await this.assessmentRepo.findSubmissionsForAssessments([
+      assessmentId,
+    ]);
+    if (submissions.length > 0) {
+      throw new BadRequestException(
+        'This assessment has submissions and cannot be deleted. ' +
+          'Close its availability window or re-target it instead.',
+      );
+    }
+    await this.assessmentRepo.remove(assessmentId);
+    await this.audit.record({
+      actorId: actor.id,
+      actorRole: this.actorRole(actor),
+      action: 'assessment.deleted',
+      targetType: 'assessment',
+      targetId: assessmentId,
+      courseId: assessment.courseId,
+      before: {
+        title: assessment.title,
+        type: assessment.type,
+        dueAt: assessment.dueAt,
+      },
+      after: null,
+    });
+  }
+}

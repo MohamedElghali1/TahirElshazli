@@ -892,4 +892,119 @@ describe('Staff and admin API (e2e)', () => {
       ).toBe(true);
     });
   });
+
+  describe('authoring: a TA may create both assignments and quizzes (§5.18)', () => {
+    const task = {
+      title: 'E2E kinetics set',
+      description: 'Rates and orders',
+      instructions: 'Upload a single PDF.',
+      type: 'assignment',
+      topics: ['Kinetics'],
+      availableFrom: '2026-09-01T00:00:00.000Z',
+      availableTo: '2026-12-01T23:59:59.000Z',
+      dueAt: '2026-09-20T23:59:59.000Z',
+      maxScore: 30,
+      allowedFileTypes: ['application/pdf'],
+      maxFileSizeBytes: 10485760,
+      targets: [{ groupId: 'group-1' }],
+    };
+
+    it('lets an assigned TA create one over HTTP', async () => {
+      const created = await request(app.getHttpServer())
+        .post('/staff/courses/course-1/assessments')
+        .set(bearer(assignedTaToken))
+        .send(task)
+        .expect(201);
+      expect(created.body.targets.map((t: { groupId: string }) => t.groupId)).toEqual([
+        'group-1',
+      ]);
+
+      // It appears for the student, which is what §5.18 actually asks for.
+      const studentList = await request(app.getHttpServer())
+        .get('/courses/course-1/assessments')
+        .set(bearer(studentToken))
+        .expect(200);
+      expect(studentList.body.map((a: { id: string }) => a.id)).toContain(
+        created.body.id,
+      );
+
+      await request(app.getHttpServer())
+        .delete(`/staff/assessments/${created.body.id}`)
+        .set(bearer(assignedTaToken))
+        .expect(204);
+    });
+
+    it('404s a course the TA does not hold', async () => {
+      await request(app.getHttpServer())
+        .post('/staff/courses/course-1/assessments')
+        .set(bearer(unassignedTaToken))
+        .send(task)
+        .expect(404);
+    });
+
+    it('refuses the whole authoring surface to a student token', async () => {
+      await request(app.getHttpServer())
+        .post('/staff/courses/course-1/assessments')
+        .set(bearer(studentToken))
+        .send(task)
+        .expect(403);
+    });
+
+    it('validates the body at the API boundary', async () => {
+      // No targets - a task set for nobody is invisible to everyone, and the
+      // teacher should learn that on the form rather than on the due date.
+      await request(app.getHttpServer())
+        .post('/staff/courses/course-1/assessments')
+        .set(bearer(adminToken))
+        .send({ ...task, targets: [] })
+        .expect(400);
+
+      // An inverted window would make the task permanently locked (§5.10).
+      await request(app.getHttpServer())
+        .post('/staff/courses/course-1/assessments')
+        .set(bearer(adminToken))
+        .send({ ...task, availableFrom: task.availableTo, availableTo: task.availableFrom })
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .post('/staff/courses/course-1/assessments')
+        .set(bearer(adminToken))
+        .send({ ...task, type: 'essay' })
+        .expect(400);
+    });
+
+    it('refuses to delete a task that has submissions', async () => {
+      // assess-3 carries a graded submission.
+      await request(app.getHttpServer())
+        .delete('/staff/assessments/assess-3')
+        .set(bearer(adminToken))
+        .expect(400);
+    });
+
+    it('records the authoring in the audit log with the TA as actor', async () => {
+      const created = await request(app.getHttpServer())
+        .post('/staff/courses/course-1/assessments')
+        .set(bearer(assignedTaToken))
+        .send({ ...task, title: 'E2E audited task' })
+        .expect(201);
+
+      const log = await request(app.getHttpServer())
+        .get('/admin/audit-log?action=assessment.created')
+        .set(bearer(adminToken))
+        .expect(200);
+      expect(
+        log.body.entries.some(
+          (e: { actorId: string; actorRole: string; targetId: string }) =>
+            e.targetId === created.body.id &&
+            e.actorId === 'assistant-1' &&
+            e.actorRole === 'assistant',
+        ),
+      ).toBe(true);
+
+      await request(app.getHttpServer())
+        .delete(`/staff/assessments/${created.body.id}`)
+        .set(bearer(adminToken))
+        .expect(204);
+    });
+  });
 });

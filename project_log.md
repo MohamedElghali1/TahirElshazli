@@ -36,9 +36,11 @@ course looks empty until a TA places them, which is the design note to carry int
 **Groups are specified and the foundation is built** (migration `006`, `backend/src/groups/`):
 four tables, a repository on both drivers, staff CRUD and placement, the student classmate list,
 and six new audit actions. The learning mode now resolves from the group - migration `007` dropped
-`enrollments.learning_mode`, so there is no second copy to drift. One piece stays knowingly inert:
-`assessment_targets` is DDL only until the authoring surface lands. **None of the group work has a
-frontend yet.**
+`enrollments.learning_mode`, so there is no second copy to drift. **Assessment authoring is built** (§5.18): a TA or teacher writes a task once and
+targets it at one or more groups, and a student sees only what was set for a group they are in.
+Announcements now have a student-facing page as well as a mailbox line. The **quiz engine is
+deliberately unbuilt** - §11 still has "how rich at launch" open. **None of the group or authoring
+work has a frontend yet.**
 
 **Backend — four of five roles now have a working API.** Of the five roles in `CLAUDE.md` §2,
 **Student**, **Assistant** and **Teacher** have full surfaces and **Visitor** now has a partial one
@@ -50,7 +52,7 @@ every TA endpoint joins through (§5.11); `manage` is the work surface built on 
 roster, grading, the recording library, live-session scheduling and the people directory;
 `announcements` carries the send-time audience resolution §5.14 requires; `public` is the only
 unauthenticated surface besides health and auth; `audit` owns the append-only log, now covering
-**sixteen actions**; `groups` (§5.16) owns cohorts, staff placement and the classmate list, with
+**twenty actions**; `groups` (§5.16) owns cohorts, staff placement and the classmate list, with
 `GroupDataModule` global so the learning mode can be resolved without a module cycle.
 
 **Persistence is driver-selected.** All fourteen repository interfaces have *two* implementations —
@@ -61,15 +63,15 @@ development and test and is **refused outright in production**. Seven migrations
 `004_public_catalog.sql`, `005_announcements.sql`, `006_groups.sql` and
 `007_learning_mode_moves_to_the_group.sql`.
 
-**The integration suite has now run in full.** It covers all fourteen repositories and holds 59
+**The integration suite has now run in full.** It covers all fourteen repositories and holds 64
 tests, and as of **2026-09-10 all seven migrations have been applied to a real PostgreSQL 15 from an
-empty schema with all 59 green** — the announcements DDL and both its CHECK constraints, the
+empty schema with all 64 green** — the announcements DDL and both its CHECK constraints, the
 `notifications_type_check` swap, 004's slug backfill, 003's learning-mode UPDATE, 006's four group
 tables with their UNIQUE constraints and cascades, and 007's column drop included. The CI guard that
 fails a job reporting no executed tests still matters, because the suite self-skips and exits 0
 wherever `TEST_DATABASE_URL` is unset.
 
-Test totals across the three suites: **299 unit, 170 e2e, 59 integration.**
+Test totals across the three suites: **315 unit, 179 e2e, 64 integration.**
 
 **Delivery is wired.** `npm install && npm run dev` runs the whole thing with no database and no
 config; CI lints, builds, and runs unit + e2e + integration (against a Postgres service) plus both
@@ -1770,3 +1772,102 @@ that the aggregate Home screen and the per-course screen agree, which is the gua
   placed" queue §5.16 calls a requirement does not exist anywhere yet, and it is what stands between
   a self-enrolled student and a course that looks empty.
 - `TA_SCOPE` flip and the §5.4 audit transaction gap: unchanged.
+
+---
+
+## 2026-09-10 — Authoring, and work that is set per group (§5.18, §5.16)
+
+`assessment_targets` had been a table with nothing reading it since migration `006`. This wires it,
+and adds the surface that writes it.
+
+**One permission question decided first, because writing the decorator decides it.** §11 had "can a
+TA create assignments?" open — the board's `ASG-10` said yes, §2.2's preset omitted it while
+granting quizzes. The client answered **yes to both**, which matters beyond the permission: the
+preset's literal reading (quizzes yes, assignments no) would have made a role check depend on a body
+field, and §2.2 warns against exactly that shape. Authoring therefore lives on
+`StaffManageController` under one role rule.
+
+**Targeting is an audience, not a copy.** One `Assessment` row, one `assessment_targets` row per
+group, and `assessments.course_id` untouched — so §5.6's "average across all students" stays one
+average over one task rather than ten that cannot honestly be combined. The per-group window lives
+on the join row as **nullable overrides**: a teacher setting one deadline for everyone writes none
+of them, and the COALESCE happens in SQL so `computeStatus` (§5.10) knows nothing about targeting at
+all.
+
+**The read side is where the security actually moved.** Enrollment used to be sufficient to read an
+assessment. It is not any more: `loadForStudent` now checks enrollment *and* that the task was set
+for a group the student is in. Without the second check an assessment id is enough to read — and
+submit against — another cohort's work, which is the same class of hole §5.11 guards on the staff
+side, arrived at from the student side. `findByCourse` (everything, for staff) and
+`findByCourseForGroups` (targeted, for students) are deliberately **two methods rather than one with
+an optional filter**: a filter left off defaults to "show everything", and the failure mode is one
+cohort reading another's work.
+
+**One tie-break, used twice.** A student may sit in two groups studying one course, which forces a
+choice about whose due date applies — and whose learning mode. `StudentGroupsService` now owns that
+rule (longest-standing placement first) and both `LearningModeService` and the assessment read go
+through it. If they picked differently the same student would get a live dashboard and a recorded
+cohort's deadlines, which is a support call nobody could answer. In Postgres it is
+`DISTINCT ON (a.id) … ORDER BY array_position($2, t.group_id)`; the integration suite asserts that
+reversing the caller's group order really does flip which window applies.
+
+**Three refusals, each because the failure is silent.** A task with no targets is rejected (invisible
+to everyone; the teacher finds out on the due date). An inverted window is rejected (§5.10 derives
+status from it, so the task is permanently `locked` with nothing to explain why). A target group
+that does not study the course is rejected. And **deleting is refused once anything has been
+submitted** — a submission is a student's work, §6 keeps history where history matters, and the
+honest correction to a live task is to re-aim it or close its window. The FK would cascade happily;
+the service does not.
+
+**Announcements finally reach a page.** `GET /courses/:id/announcements` is enrollment-gated and
+returns course rows only — a platform-wide announcement already arrived in the mailbox, and filing it
+under a course heading would misdescribe it. That was the last piece of §5.18's "authorable but not
+readable" gap.
+
+**What is deliberately not built: the quiz engine.** `type: 'quiz'` is accepted and behaves as an
+assignment with a mark. `Question`, `QuestionOption`, `QuizAttempt` and `Answer` do not exist,
+because §11 still has *how rich must the quiz engine be at launch* open and building a question
+model before that is answered is the definition of speculative (§9). Accepting the type now means
+the data is labelled correctly when it lands.
+
+```mermaid
+graph TD
+    A["Assessment<br/>one row, keeps course_id"] --> T1["assessment_targets<br/>group-1"]
+    A --> T2["assessment_targets<br/>group-2 + dueAt override"]
+    T1 --> S1["student in group-1<br/>inherits the window"]
+    T2 --> S2["student in group-2<br/>later deadline"]
+    X["student in neither"] -.->|"not targeted"| N["sees nothing -<br/>list empty, detail 404"]
+    A --> AVG["one average across<br/>all students (5.6)"]
+```
+
+**Why.** `CLAUDE.md` §5.18 (authoring reaches the student end), §5.16 (write once, target groups),
+§5.10 (status stays server-derived), §5.6 (one task, one average), §5.4 (four new audited actions),
+§2.2 and §11 (`ASG-10` answered). Traceability: `ASG-`, `QUZ-`, `COM-`, `CRS-`.
+
+**Verification.** All executed on this machine:
+
+| Check | Result |
+|---|---|
+| `npm run lint` | clean |
+| `npm run build` | clean |
+| `npm run test` (unit) | **315 passed** / 23 files — was 299, sixteen new |
+| e2e (`--no-file-parallelism`) | **179 passed** / 3 files — was 170, nine new |
+| `npm run test:integration` vs PostgreSQL 15 | **64 passed** — was 59, five new |
+
+The integration additions are the ones that could not be made against an array: that `DISTINCT ON`
+really collapses a doubly-targeted student to one row and picks the group the caller ranked first,
+that `COALESCE` really applies a per-group override while the untouched fields still inherit, and
+that a partial `UPDATE` leaves every column it did not name alone — the COALESCE-per-column shape
+that avoids assembling a `SET` list from strings (§8).
+
+**Follow-ups / debt.**
+
+- **The quiz engine is the open one**, and it is a §11 question before it is a build.
+- **`InMemoryAssessmentRepository` read a module-level array until today.** Harmless while every
+  method was a read; the moment `create`/`update`/`remove` existed it would have leaked writes
+  between tests, with the failure surfacing somewhere unrelated. It holds a per-instance copy now,
+  and that is worth checking the next time a stub repository grows its first write.
+- **No frontend for any of this** — authoring, targeting, groups, placement and the classmate list
+  are all backend-only. That is next.
+- `TA_SCOPE` flip and the §5.4 audit transaction gap: unchanged, now with four more write paths
+  depending on the latter.

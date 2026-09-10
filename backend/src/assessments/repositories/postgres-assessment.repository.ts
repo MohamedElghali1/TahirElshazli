@@ -5,10 +5,15 @@ import { iso, isoOrNull, num } from '../../database/database.types.js';
 import type {
   AssessmentFilter,
   AssessmentRepository,
+  AssessmentTarget,
   AssessmentType,
+  AssessmentUpdate,
+  NewAssessment,
+  NewAssessmentTarget,
   StoredAssessment,
   StoredSubmission,
   SubmissionRevision,
+  TargetedAssessment,
 } from '../interfaces/assessment-repository.interface.js';
 
 interface AssessmentRow {
@@ -27,6 +32,25 @@ interface AssessmentRow {
   allowed_file_types: string[];
   max_file_size_bytes: string;
   created_at: Date;
+}
+
+/**
+ * `findByCourseForGroups` and `findByIdForGroups` return the assessment with the
+ * window already coalesced, plus the two extra columns that say which group
+ * made it visible and whether the window came from that group's override.
+ */
+interface TargetedAssessmentRow extends AssessmentRow {
+  target_group_id: string;
+  window_overridden: boolean;
+}
+
+interface AssessmentTargetRow {
+  id: string;
+  assessment_id: string;
+  group_id: string;
+  available_from: Date | null;
+  available_to: Date | null;
+  due_at: Date | null;
 }
 
 interface SubmissionRow {
@@ -84,6 +108,29 @@ function toAssessment(row: AssessmentRow): StoredAssessment {
   };
 }
 
+function toTargetedAssessment(row: TargetedAssessmentRow): TargetedAssessment {
+  // The window on the row is already coalesced by the query, so this is
+  // `toAssessment` plus the two columns that say where it came from. Doing the
+  // COALESCE in SQL rather than here is what keeps `computeStatus` (CLAUDE.md
+  // §5.10) ignorant of targeting entirely.
+  return {
+    ...toAssessment(row),
+    targetGroupId: row.target_group_id,
+    windowOverridden: row.window_overridden,
+  };
+}
+
+function toTarget(row: AssessmentTargetRow): AssessmentTarget {
+  return {
+    id: row.id,
+    assessmentId: row.assessment_id,
+    groupId: row.group_id,
+    availableFrom: isoOrNull(row.available_from),
+    availableTo: isoOrNull(row.available_to),
+    dueAt: isoOrNull(row.due_at),
+  };
+}
+
 function toSubmission(row: SubmissionRow): StoredSubmission {
   return {
     id: row.id,
@@ -131,12 +178,227 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
     return rows.map(toAssessment);
   }
 
+  /**
+   * The student read (CLAUDE.md §5.16). One query: the assessments of this
+   * course targeted at any of these groups, with COALESCE applying each
+   * target's overrides.
+   *
+   * `DISTINCT ON (a.id)` with the ORDER BY below is what makes a student in two
+   * groups see one row rather than two, and see it on the *longest-standing*
+   * placement's terms: `array_position` ranks by the caller's group order,
+   * which arrives longest-standing first from `LearningModeService`'s own
+   * ordering. Without it a due date and a learning mode could resolve through
+   * different groups for the same student, which is a support call nobody could
+   * answer.
+   *
+   * The outer SELECT re-sorts, because DISTINCT ON dictates the inner order.
+   */
+  async findByCourseForGroups(
+    courseId: string,
+    groupIds: readonly string[],
+    filter?: AssessmentFilter,
+  ): Promise<TargetedAssessment[]> {
+    if (groupIds.length === 0) {
+      // A student with no group has been set no work (§5.16). Not a round trip
+      // for a known-empty answer, matching every other batch read here.
+      return [];
+    }
+    const rows = await this.db.query<TargetedAssessmentRow>(
+      `SELECT * FROM (
+         SELECT DISTINCT ON (a.id)
+                a.id, a.course_id, a.lesson_id, a.title, a.description,
+                a.instructions, a.type, a.topics,
+                COALESCE(t.available_from, a.available_from) AS available_from,
+                COALESCE(t.available_to,   a.available_to)   AS available_to,
+                COALESCE(t.due_at,         a.due_at)         AS due_at,
+                a.max_score, a.allowed_file_types, a.max_file_size_bytes,
+                a.created_at,
+                t.group_id AS target_group_id,
+                (t.available_from IS NOT NULL
+                  OR t.available_to IS NOT NULL
+                  OR t.due_at IS NOT NULL) AS window_overridden
+           FROM assessments a
+           JOIN assessment_targets t ON t.assessment_id = a.id
+          WHERE a.course_id = $1
+            AND t.group_id = ANY($2)
+            AND ($3::text IS NULL OR a.type = $3)
+          ORDER BY a.id, array_position($2::text[], t.group_id)
+       ) targeted
+       ORDER BY due_at DESC`,
+      [courseId, groupIds, filter?.type ?? null],
+    );
+    return rows.map(toTargetedAssessment);
+  }
+
+  async findByIdForGroups(
+    assessmentId: string,
+    groupIds: readonly string[],
+  ): Promise<TargetedAssessment | null> {
+    if (groupIds.length === 0) {
+      return null;
+    }
+    const row = await this.db.queryOne<TargetedAssessmentRow>(
+      `SELECT a.id, a.course_id, a.lesson_id, a.title, a.description,
+              a.instructions, a.type, a.topics,
+              COALESCE(t.available_from, a.available_from) AS available_from,
+              COALESCE(t.available_to,   a.available_to)   AS available_to,
+              COALESCE(t.due_at,         a.due_at)         AS due_at,
+              a.max_score, a.allowed_file_types, a.max_file_size_bytes,
+              a.created_at,
+              t.group_id AS target_group_id,
+              (t.available_from IS NOT NULL
+                OR t.available_to IS NOT NULL
+                OR t.due_at IS NOT NULL) AS window_overridden
+         FROM assessments a
+         JOIN assessment_targets t ON t.assessment_id = a.id
+        WHERE a.id = $1 AND t.group_id = ANY($2)
+        ORDER BY array_position($2::text[], t.group_id)
+        LIMIT 1`,
+      [assessmentId, groupIds],
+    );
+    return row ? toTargetedAssessment(row) : null;
+  }
+
   async findById(assessmentId: string): Promise<StoredAssessment | null> {
     const row = await this.db.queryOne<AssessmentRow>(
       `SELECT ${ASSESSMENT_COLUMNS} FROM assessments WHERE id = $1`,
       [assessmentId],
     );
     return row ? toAssessment(row) : null;
+  }
+
+  async create(input: NewAssessment): Promise<StoredAssessment> {
+    const row = await this.db.queryOne<AssessmentRow>(
+      `INSERT INTO assessments
+         (id, course_id, lesson_id, title, description, instructions, type,
+          topics, available_from, available_to, due_at, max_score,
+          allowed_file_types, max_file_size_bytes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+       RETURNING ${ASSESSMENT_COLUMNS}`,
+      [
+        randomUUID(),
+        input.courseId,
+        input.lessonId,
+        input.title,
+        input.description,
+        input.instructions,
+        input.type,
+        input.topics,
+        input.availableFrom,
+        input.availableTo,
+        input.dueAt,
+        input.maxScore,
+        input.allowedFileTypes,
+        input.maxFileSizeBytes,
+      ],
+    );
+    return toAssessment(row as AssessmentRow);
+  }
+
+  /**
+   * A partial edit. Every column is written unconditionally from a COALESCE
+   * against its own current value, so `undefined` leaves it alone without the
+   * query being assembled from string fragments (CLAUDE.md §8: no string-built
+   * SQL, ever, including the "safe" kind that only concatenates column names).
+   */
+  async update(
+    assessmentId: string,
+    update: AssessmentUpdate,
+  ): Promise<StoredAssessment | null> {
+    const row = await this.db.queryOne<AssessmentRow>(
+      `UPDATE assessments SET
+         title               = COALESCE($2, title),
+         description         = COALESCE($3, description),
+         instructions        = COALESCE($4, instructions),
+         topics              = COALESCE($5, topics),
+         available_from      = COALESCE($6, available_from),
+         available_to        = COALESCE($7, available_to),
+         due_at              = COALESCE($8, due_at),
+         max_score           = COALESCE($9, max_score),
+         allowed_file_types  = COALESCE($10, allowed_file_types),
+         max_file_size_bytes = COALESCE($11, max_file_size_bytes),
+         -- lesson_id is nullable and clearing it is meaningful, so it takes a
+         -- sentinel rather than COALESCE: $12 undefined means leave alone,
+         -- and an explicit null arrives as the string 'null' below.
+         lesson_id           = CASE WHEN $12::text IS NULL THEN lesson_id
+                                    WHEN $12 = 'null' THEN NULL
+                                    ELSE $12 END
+       WHERE id = $1
+       RETURNING ${ASSESSMENT_COLUMNS}`,
+      [
+        assessmentId,
+        update.title ?? null,
+        update.description ?? null,
+        update.instructions ?? null,
+        update.topics ?? null,
+        update.availableFrom ?? null,
+        update.availableTo ?? null,
+        update.dueAt ?? null,
+        update.maxScore ?? null,
+        update.allowedFileTypes ?? null,
+        update.maxFileSizeBytes ?? null,
+        update.lessonId === undefined
+          ? null
+          : (update.lessonId ?? 'null'),
+      ],
+    );
+    return row ? toAssessment(row) : null;
+  }
+
+  async remove(assessmentId: string): Promise<boolean> {
+    // Targets and submissions go with it through ON DELETE CASCADE.
+    const row = await this.db.queryOne<{ id: string }>(
+      'DELETE FROM assessments WHERE id = $1 RETURNING id',
+      [assessmentId],
+    );
+    return row !== null;
+  }
+
+  /**
+   * Replaces the audience in one transaction. Delete-then-insert rather than a
+   * diff: the audience is chosen as a set, and a half-applied change would set
+   * work for the wrong cohort - which is the one outcome worth a transaction
+   * here.
+   */
+  async setTargets(
+    assessmentId: string,
+    targets: readonly NewAssessmentTarget[],
+  ): Promise<AssessmentTarget[]> {
+    return this.db.transaction(async (client) => {
+      await client.query('DELETE FROM assessment_targets WHERE assessment_id = $1', [
+        assessmentId,
+      ]);
+      const written: AssessmentTarget[] = [];
+      for (const target of targets) {
+        const result = await client.query<AssessmentTargetRow>(
+          `INSERT INTO assessment_targets
+             (id, assessment_id, group_id, available_from, available_to, due_at)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id, assessment_id, group_id, available_from, available_to, due_at`,
+          [
+            randomUUID(),
+            assessmentId,
+            target.groupId,
+            target.availableFrom ?? null,
+            target.availableTo ?? null,
+            target.dueAt ?? null,
+          ],
+        );
+        written.push(toTarget(result.rows[0]));
+      }
+      return written;
+    });
+  }
+
+  async findTargets(assessmentId: string): Promise<AssessmentTarget[]> {
+    const rows = await this.db.query<AssessmentTargetRow>(
+      `SELECT id, assessment_id, group_id, available_from, available_to, due_at
+         FROM assessment_targets
+        WHERE assessment_id = $1
+        ORDER BY group_id`,
+      [assessmentId],
+    );
+    return rows.map(toTarget);
   }
 
   async findSubmission(

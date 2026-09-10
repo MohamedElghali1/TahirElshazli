@@ -204,4 +204,34 @@ export class AnnouncementsService {
   async listAll(limit: number, offset: number): Promise<Announcement[]> {
     return this.announcementRepo.findAll(limit, offset);
   }
+
+  /**
+   * What a **student** sees on a course they hold (CLAUDE.md §5.18).
+   *
+   * Until 2026-09-10 an announcement reached a student only as a notification -
+   * the body arrived in the mailbox and there was no page to click through to,
+   * which is why `Notification.link` is null for one. This is that page's read.
+   *
+   * The gate is enrollment, not the staff scope check: a student holds the
+   * course or they do not. Deliberately narrower than `listForCourse` in one
+   * respect - it returns only `course:<id>` rows, and never the platform-wide
+   * `all_students` ones. Those already reached this student's mailbox, and
+   * folding them into a course page would put an announcement about the
+   * platform under a heading about Chemistry.
+   */
+  async listForStudent(
+    courseId: string,
+    studentId: string,
+    limit: number,
+    offset: number,
+  ): Promise<Announcement[]> {
+    const enrollment = await this.enrollmentRepo.find(courseId, studentId);
+    if (!enrollment) {
+      // The same 404 an unenrolled student gets everywhere else, and for the
+      // same reason: it must not distinguish a course that exists from one
+      // that does not.
+      throw new NotFoundException('Course not found or student not enrolled');
+    }
+    return this.announcementRepo.findByCourse(courseId, limit, offset);
+  }
 }

@@ -38,6 +38,7 @@ import { InMemoryEnrollmentRepository } from '../enrollments/repositories/in-mem
 import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interface.js';
 import { InMemoryGroupRepository } from '../groups/repositories/in-memory-group.repository.js';
 import { LearningModeService } from '../groups/learning-mode.service.js';
+import { StudentGroupsService } from '../groups/student-groups.service.js';
 
 const STUDENT = {
   user: { sub: 'student-1', email: 'student@example.com', role: 'student', jti: 'j1' },
@@ -64,6 +65,7 @@ describe('DashboardController', () => {
         // then course default) is the part worth exercising.
         { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },
         LearningModeService,
+        StudentGroupsService,
         DashboardService,
         StudentsService,
         TokenDenylistService,

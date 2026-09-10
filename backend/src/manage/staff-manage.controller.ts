@@ -1,10 +1,12 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   Post,
   Query,
   Request,
@@ -27,8 +29,17 @@ import { ManageRecordingsService } from './manage-recordings.service.js';
 import { ManageLiveSessionsService } from './manage-live-sessions.service.js';
 import type { Recording } from '../recordings/interfaces/recording-repository.interface.js';
 import type { LiveSession } from '../live-sessions/interfaces/live-session-repository.interface.js';
+import {
+  AssessmentAuthoringService,
+  type AuthoredAssessment,
+} from './assessment-authoring.service.js';
 import { GradeSubmissionDto } from './dto/grade-submission.dto.js';
 import { ListGradingQueueQueryDto } from './dto/queries.dto.js';
+import {
+  CreateAssessmentDto,
+  SetAssessmentTargetsDto,
+  UpdateAssessmentDto,
+} from './dto/assessment.dto.js';
 
 /**
  * `/staff/*` - the surface both roles share, always TA-scoped and never scoped
@@ -50,6 +61,7 @@ export class StaffManageController {
     private readonly grading: GradingService,
     private readonly recordings: ManageRecordingsService,
     private readonly liveSessions: ManageLiveSessionsService,
+    private readonly authoring: AssessmentAuthoringService,
   ) {}
 
   private actor(req: { user: JwtPayload }) {
@@ -130,5 +142,80 @@ export class StaffManageController {
     @Request() req: { user: JwtPayload },
   ): Promise<LiveSession[]> {
     return this.liveSessions.list(courseId, this.actor(req));
+  }
+
+  /**
+   * Authoring (CLAUDE.md §5.18). On the **staff** controller, not the admin
+   * one, because the client settled §11's open question on 2026-09-10: a
+   * teaching assistant may create both assignments and quizzes. One role rule,
+   * no branch on the task's `type` - §2.2 warns against exactly that.
+   *
+   * Scoped like everything else here: the course in the path goes through
+   * `StaffScopeService` before anything is read or written.
+   */
+  @Get('courses/:courseId/assessments')
+  async listAssessments(
+    @Param('courseId') courseId: string,
+    @Request() req: { user: JwtPayload },
+  ): Promise<AuthoredAssessment[]> {
+    return this.authoring.list(courseId, this.actor(req));
+  }
+
+  @Post('courses/:courseId/assessments')
+  @HttpCode(HttpStatus.CREATED)
+  async createAssessment(
+    @Param('courseId') courseId: string,
+    @Body() body: CreateAssessmentDto,
+    @Request() req: { user: JwtPayload },
+  ): Promise<AuthoredAssessment> {
+    return this.authoring.create(courseId, this.actor(req), {
+      title: body.title,
+      description: body.description,
+      instructions: body.instructions,
+      type: body.type,
+      topics: body.topics,
+      lessonId: body.lessonId ?? null,
+      availableFrom: body.availableFrom,
+      availableTo: body.availableTo,
+      dueAt: body.dueAt,
+      maxScore: body.maxScore,
+      allowedFileTypes: body.allowedFileTypes,
+      maxFileSizeBytes: body.maxFileSizeBytes,
+      targets: body.targets,
+    });
+  }
+
+  /** No `courseId` in the path: it is read off the assessment and scoped on. */
+  @Patch('assessments/:assessmentId')
+  async updateAssessment(
+    @Param('assessmentId') assessmentId: string,
+    @Body() body: UpdateAssessmentDto,
+    @Request() req: { user: JwtPayload },
+  ): Promise<AuthoredAssessment> {
+    return this.authoring.update(assessmentId, this.actor(req), body);
+  }
+
+  /** Re-aims a task: the whole audience, replaced (§5.16). */
+  @Post('assessments/:assessmentId/targets')
+  async setAssessmentTargets(
+    @Param('assessmentId') assessmentId: string,
+    @Body() body: SetAssessmentTargetsDto,
+    @Request() req: { user: JwtPayload },
+  ): Promise<AuthoredAssessment> {
+    return this.authoring.setTargets(
+      assessmentId,
+      this.actor(req),
+      body.targets,
+    );
+  }
+
+  /** Refused once anything has been submitted - the service says why. */
+  @Delete('assessments/:assessmentId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteAssessment(
+    @Param('assessmentId') assessmentId: string,
+    @Request() req: { user: JwtPayload },
+  ): Promise<void> {
+    await this.authoring.remove(assessmentId, this.actor(req));
   }
 }

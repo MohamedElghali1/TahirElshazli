@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { LearningModeService } from './learning-mode.service.js';
+import { StudentGroupsService } from './student-groups.service.js';
 import type { GroupRepository } from './interfaces/group-repository.interface.js';
 import { GROUP_REPOSITORY } from './interfaces/group-repository.interface.js';
 import { InMemoryGroupRepository } from './repositories/in-memory-group.repository.js';
@@ -36,10 +37,11 @@ import { CoursesModule } from '../courses/courses.module.js';
   imports: [CoursesModule],
   providers: [
     LearningModeService,
+    StudentGroupsService,
     InMemoryGroupRepository,
     PostgresGroupRepository,
     repositoryProvider<GroupRepository>(GROUP_REPOSITORY, InMemoryGroupRepository, PostgresGroupRepository),
   ],
-  exports: [GROUP_REPOSITORY, LearningModeService],
+  exports: [GROUP_REPOSITORY, LearningModeService, StudentGroupsService],
 })
 export class GroupDataModule {}
