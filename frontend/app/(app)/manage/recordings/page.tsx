@@ -66,7 +66,7 @@ export default function RecordingLibraryPage() {
                       >
                         <span
                           aria-hidden
-                          className="flex h-[var(--h-lg)] w-[var(--h-lg)] shrink-0 items-center justify-center rounded-[var(--r-xs)] bg-[var(--bg-wash)] text-[var(--fg-tertiary)]"
+                          className="flex h-[var(--h-md)] w-[var(--h-md)] shrink-0 items-center justify-center rounded-[var(--r-sm)] bg-[var(--bg-wash)] text-[var(--fg-tertiary)]"
                         >
                           <VideoIcon size={16} />
                         </span>

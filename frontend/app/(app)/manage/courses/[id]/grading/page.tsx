@@ -265,7 +265,7 @@ function GradeDialog({
       aria-labelledby="grade-title"
       className="fixed inset-0 z-50 flex items-end justify-center bg-[var(--bg-scrim)] p-[var(--sp-4)] sm:items-center"
     >
-      <div className="w-full max-w-[520px] overflow-hidden rounded-[var(--r-sm)] border border-[var(--border-medium)] bg-[var(--bg-secondary)]">
+      <div className="w-full max-w-[520px] overflow-hidden rounded-[var(--r-md)] border border-[var(--border-medium)] bg-[var(--bg-secondary)]">
         <header className="flex items-start justify-between gap-[var(--sp-4)] border-b border-[var(--border-light)] px-[var(--sp-4)] py-[var(--sp-3)]">
           <div className="min-w-0">
             <h2
@@ -285,7 +285,7 @@ function GradeDialog({
 
         <form onSubmit={submit} noValidate className="flex flex-col gap-[var(--sp-4)] p-[var(--sp-4)]">
           {item.answerText && (
-            <div className="rounded-[var(--r-xs)] bg-[var(--bg-wash)] p-[var(--sp-3)] text-[var(--fs-xs)] leading-[var(--lh-base)] text-[var(--fg-secondary)]">
+            <div className="rounded-[var(--r-sm)] bg-[var(--bg-wash)] p-[var(--sp-3)] text-[var(--fs-xs)] leading-[var(--lh-base)] text-[var(--fg-secondary)]">
               {item.answerText}
             </div>
           )}

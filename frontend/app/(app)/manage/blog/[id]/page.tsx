@@ -438,7 +438,7 @@ function GalleryForm({
                 // a reorder, which an index key would not be - a reorder with
                 // index keys re-binds every caption input to the wrong row.
                 key={`${item.url}-${i}`}
-                className="flex flex-wrap items-center gap-[var(--sp-3)] rounded-[var(--r-xs)] border border-[var(--border-light)] bg-[var(--bg-primary)] p-[var(--sp-3)]"
+                className="flex flex-wrap items-center gap-[var(--sp-3)] rounded-[var(--r-sm)] border border-[var(--border-light)] bg-[var(--bg-primary)] p-[var(--sp-3)]"
               >
                 <Chip tone="neutral">{item.kind}</Chip>
 

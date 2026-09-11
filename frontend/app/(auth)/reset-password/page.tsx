@@ -98,7 +98,7 @@ function ResetPasswordForm() {
 
         {error && <FormError>{error}</FormError>}
 
-        <Button type="submit" variant="primary" size="lg" loading={busy}>
+        <Button type="submit" variant="primary" size="md" loading={busy}>
           Save password
         </Button>
       </form>

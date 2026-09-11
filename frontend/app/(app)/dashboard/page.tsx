@@ -433,7 +433,7 @@ function JoinSessionButton({
       target="_blank"
       rel="noreferrer noopener"
       className={cx(
-        'inline-flex h-[var(--h-lg)] items-center justify-center gap-[var(--sp-2)]',
+        'inline-flex h-[var(--h-md)] items-center justify-center gap-[var(--sp-2)]',
         'whitespace-nowrap rounded-[var(--r-md)] px-[var(--sp-4)] text-[var(--fs-base)] font-medium',
         'bg-[var(--accent)] text-[var(--accent-fg)] transition-[background-color]',
         'duration-[var(--dur-fast)] ease-[var(--ease)] hover:bg-[var(--accent-hover)]',
@@ -485,7 +485,7 @@ function Hero({
   const live = session && (phase === 'live' || phase === 'soon');
 
   return (
-    <section className="flex min-h-[228px] flex-col items-center justify-center rounded-[var(--r-sm)] border border-[var(--border-medium)] bg-[var(--bg-secondary)] px-[var(--sp-6)] py-[var(--sp-8)] text-center">
+    <section className="flex min-h-[228px] flex-col items-center justify-center rounded-[var(--r-md)] border border-[var(--border-medium)] bg-[var(--bg-secondary)] px-[var(--sp-6)] py-[var(--sp-8)] text-center">
       {live && session ? (
         <>
           <HeroBadge tone={phase === 'live' ? 'red' : 'amber'}>
@@ -708,7 +708,7 @@ function AccessRow({
       >
         <span
           aria-hidden
-          className="flex h-[20px] w-[20px] shrink-0 items-center justify-center rounded-[var(--r-xs)]"
+          className="flex h-[20px] w-[20px] shrink-0 items-center justify-center rounded-[var(--r-sm)]"
           style={{
             background: `var(--chip-${tone}-bg)`,
             color: `var(--chip-${tone}-fg)`,
@@ -758,7 +758,7 @@ function InboxPanel({
   const more = items.length - shown.length;
 
   return (
-    <section className="rounded-[var(--r-sm)] border border-[var(--border-medium)] bg-[var(--bg-secondary)] p-[var(--sp-4)]">
+    <section className="rounded-[var(--r-md)] border border-[var(--border-medium)] bg-[var(--bg-secondary)] p-[var(--sp-4)]">
       <header className="flex items-baseline justify-between gap-[var(--sp-3)]">
         <h2 className="text-[var(--fs-base)] font-semibold text-[var(--fg-primary)]">
           {items.length === 0
@@ -781,7 +781,7 @@ function InboxPanel({
               <Link
                 href={item.href}
                 className={cx(
-                  'block rounded-[var(--r-xs)] border border-[var(--border-medium)]',
+                  'block rounded-[var(--r-sm)] border border-[var(--border-medium)]',
                   'bg-[var(--bg-primary)] px-[var(--sp-4)] py-[var(--sp-3)]',
                   'transition-[border-color,background-color] duration-[var(--dur-fast)]',
                   'hover:border-[var(--border-strong)] hover:bg-[var(--bg-tertiary)]',
@@ -908,7 +908,7 @@ function CourseCard({ course }: { course: CourseListItem }) {
     >
       <Link
         href={`/learn/${course.id}`}
-        className="group flex h-full flex-col rounded-[var(--r-sm)] border border-[var(--border-medium)] bg-[var(--bg-secondary)] p-[var(--sp-4)] transition-[border-color,box-shadow] duration-[var(--dur-fast)] hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-sm)]"
+        className="group flex h-full flex-col rounded-[var(--r-md)] border border-[var(--border-medium)] bg-[var(--bg-secondary)] p-[var(--sp-4)] transition-[border-color,box-shadow] duration-[var(--dur-fast)] hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-sm)]"
       >
         <div className="flex items-start justify-between gap-[var(--sp-3)]">
           <div className="min-w-0">

@@ -6,7 +6,7 @@ the **Current state** block below is overwritten each update.
 
 ---
 
-## Current state (as of 2026-09-10)
+## Current state (as of 2026-09-12)
 
 The repository is a monorepo with a **NestJS backend** and a **Next.js frontend**, on the stack
 fixed in the signed agreement (Next.js + NestJS + PostgreSQL + Bunny Stream + Cloudflare R2 +
@@ -19,15 +19,12 @@ student-facing lists, no scoping cache, because on one replica per-process state
 than deficient. What it does *not* excuse is anything `O(N)` on a daily screen — the two that
 existed were both fixed on 2026-09-09.
 
-**A named gap, as of 2026-09-10: groups.** The client's instruction that day introduced an entity
-the schema has never had — a **group** is a cohort, a **course** is the curriculum, and several
-groups share one course. Nothing in the tree can express it: `Enrollment` is `(studentId,
-courseId)` and `LiveSession` keys on `courseId`. Classmate visibility and a student-facing
-announcements route do not exist either, and **no assessment authoring route exists at all** —
-every assessment in the system is seed data. `CLAUDE.md` §§5.16–5.18 record the requirement, and the last two
-entries in this log record the re-read that established the gap and the client answers that shaped
-it: a group is a **standalone class of students** enrolled into courses (no `course_id` on the
-group), students are **enrolled first and placed second**, and TAs currently **see everything** — a
+**Groups: specified on 2026-09-10 and since built.** The client's instruction that day introduced
+an entity the schema had never had — a **group** is a cohort, a **course** is the curriculum, and
+several groups share one course. `CLAUDE.md` §§5.16–5.18 record the requirement, and the client
+answers that shaped it: a group is a **standalone class of students** enrolled into courses (no
+`course_id` on the group), students are **enrolled first and placed second**, and TAs currently
+**see everything** — a
 posture the client may reverse, so §5.11's scoping machinery deliberately stays standing (§5.11.1).
 The shipped code still scopes TAs; that divergence is recorded, not reconciled.
 **A task is written once and targeted at selected groups** (`AssessmentTarget`), and the learning
@@ -110,6 +107,14 @@ marketing, `app/(app)` product shell — student LMS *and* `/manage/*` — and `
 authentication: **39 build routes**, a shared token system in `app/tokens.css`, and an API client
 in `lib/api.ts` covering every student, staff and admin route. One `AppShell` serves every signed-in
 role and picks its rail from `lib/roles.ts`. Builds, typechecks and lints clean.
+
+**Its design system is Twenty's, as of 2026-09-12**, and `docs/frontend-design-system.md` is the
+contract — tokens, component mapping, and which parts are deliberately ours. The accent is
+**indigo `#3E63DD`**, which replaces the brief's gold; `CLAUDE.md` §4.1 records that decision and
+that reverting it is one block of values. Primitives live in `components/ui/` (one per file, behind
+a barrel), the type scale is Inter at a 13px base with a four-tint text ramp carrying hierarchy
+instead of size, and focus is a global `outline` on `:focus-visible`. The marketing site keeps its
+own larger scale behind `[data-surface="site"]`.
 
 The blog adds six of those routes, and the path split is worth knowing because a route group adds no
 URL segment: the marketing site owns `/blog` and `/blog/[slug]`, so the in-app student surface is
@@ -2424,3 +2429,118 @@ every push, so it is also the gap most likely to close itself.
 - **Docker Desktop is installed outside the default path on this machine**
   (`%LOCALAPPDATA%\Programs\DockerDesktop`), which is why two earlier sessions concluded Docker was
   unavailable. It is not; it simply needs starting.
+
+---
+
+## 2026-09-12 — The frontend is rebuilt on the Twenty design system (CMS-, ACC-)
+
+**What changed.** The whole frontend now follows the Twenty design system as its
+visual reference, and `docs/frontend-design-system.md` is the contract between the
+two. This was not a skin: the token layer was corrected against the real values,
+`components/ui.tsx` was split into `components/ui/` one component per file, and
+every page was swept for the token names that changed meaning underneath it.
+
+The previous token file already claimed a "twenty.com lineage" and was right about
+the shape — the 4px grid, the four-tint text ramp, the four motion durations were
+all exact. What it had wrong was everything that needs a source to check against:
+the radius scale ran one step large throughout (8px buttons rendered as 16px
+pills), the type scale was approximated in px rather than derived, the surface and
+border greys had drifted a shade, and the font was Geist rather than **Inter**,
+which is the reference's own face.
+
+**The accent is now indigo `#3E63DD`, and that overrides the brief.** CLAUDE.md §4
+fixed the brand at black/white/dark-grey/**gold**; asked directly which source
+wins, the user chose the reference's indigo. §4 is amended rather than left
+contradicting the code, and §4.1 records that reverting is one block of
+`--accent-*` values. Gold survives as the amber *status* tag, which means
+something different: the accent is "the one action here", a tag is "the state of
+that thing".
+
+**Why.** The user's instruction on 2026-09-12, with the Figma file and the Twenty
+repository as the named references.
+
+**How the values were actually obtained, because the obvious route was closed.**
+The Figma MCP is unusable on this account: `whoami` reports a **View** seat, and
+every call returns *"you don't have edit access"* — Dev Mode MCP needs an edit
+seat. Rather than guess, the file was opened in a browser, where a View seat
+renders it. That established what the linked node even is: `114219-670481` is a
+frame called **"Settings Cards"** inside *08 · Settings* on the **Components**
+page — the link points at a component library, not a screen.
+
+Numbers then came from `twentyhq/twenty@main`,
+`packages/twenty-ui/src/theme/constants/*`, whose header says *"Generated from
+design-tokens by scripts/generateThemeTokens.ts"* — those files **are** the
+compiled Figma variables. The two sources were cross-checked where both could be
+read: the Foundations → Typography frame reads `Title 1 – SB 24px / Title 2 – SB
+20px / Title 3 – SB 16px / Base 13px / Small 12px`, which is exactly the rem scale
+in the source against its 13px root. Converting Twenty's `color(display-p3 …)`
+values to sRGB reproduced the Radix Colors scales they were built from — `#3E63DD`
+is Radix Blue 9 — which is itself a check on the conversion.
+
+```mermaid
+flowchart TD
+  F["Figma: Twenty<br/>node 114219-670481"] -->|MCP: refused, View seat| X["(blocked)"]
+  F -->|browser, view-only| V["Structure + type scale<br/>read visually"]
+  G["twentyhq/twenty@main<br/>twenty-ui/src/theme"] -->|'Generated from design-tokens'| N["Exact numeric tokens"]
+  V --> C{cross-check}
+  N --> C
+  C -->|agree| T["app/tokens.css<br/>sRGB base + P3 @supports"]
+  T --> U["components/ui/*"]
+  U --> P["39 routes"]
+```
+
+**Four bugs came out of the rebuild, and three of them predate it.**
+
+- **`--fs-sm` was never defined, and twelve elements referenced it.** It is not in
+  `tokens.css` at `HEAD` either — the product scale has always been
+  `xxs/xs/base/md/lg/xl`. `font-size: var(--fs-sm)` with no such variable is
+  invalid at computed-value time, so all twelve inherited the body's 13px instead
+  of the smaller size their author plainly intended (every one of them is
+  `--fg-tertiary` secondary text). They now use `--fs-xs`. This is the failure
+  mode that argues hardest for a token lint: it is invisible in the browser, in
+  `tsc`, in `eslint` and in the build, and the only reason it surfaced is that a
+  rename sweep made it worth diffing referenced tokens against defined ones. That
+  check is two `grep`s and a `comm`, and it is worth keeping.
+
+- **The course-management tab bar rendered twice.** `manage/courses/[id]/layout.tsx`
+  owns the tabs, and the `groups` and `assessments` pages each rendered a second
+  copy plus a second `<h1>`. From `c96d754`; the new full-width tab hairline is
+  what made it obvious. Those pages now use a new `SectionIntro` (`<h2>`), and the
+  layout keeps the tabs.
+- **`CourseCard`'s stretched link had no focus indicator** — `focus-visible:outline-none`
+  on the anchor with nothing put back. Pre-existing. The outline now moves to the
+  `::after` box that covers the card, so the whole card rings.
+- **The course search field lost its focus ring — that one I caused.** Retiring
+  `--focus-ring` left `course-filters.tsx` pairing `outline-none` with a
+  now-undefined box-shadow. It uses the shared `Input` and the global outline now.
+  The general rule is in CLAUDE.md §7.1: `outline-none` is only ever acceptable
+  next to a replacement that is visible.
+
+**Verified.** `tsc --noEmit` clean, `eslint` clean with **zero** warnings,
+`next build` green across all 39 routes. Signed in as student and as teacher
+against a live API and walked the dashboard, a course and its six tabs, the work
+list, the staff overview, courses, students, groups, recordings, activity log,
+blog authoring, grading, assistants, and the marketing home — no console errors,
+no horizontal overflow. Component geometry was measured in the page rather than
+eyeballed: rail item 32px/8px radius, Button 24px/8px/500, Tag 20px/4px/400,
+Panel 1px border, body Inter at 13px, `--accent` resolving through the P3 layer.
+
+**Follow-ups / debt.**
+
+- **Responsive behaviour was not verified by rendering.** The browser channel
+  could not resize the window — it reported success and the viewport stayed
+  1707×735 — so the mobile and tablet layouts were checked by reading the
+  breakpoint classes, not by looking at them. The breakpoint structure was not
+  changed by this work, so the risk is low, but it is unverified and should be
+  the first thing anyone checks on a real device.
+- **The Figma gap is still open.** An edit seat on that file would let the MCP
+  confirm `01 · Foundations` directly; nothing above should move, but it would
+  close the one place where a value was transcribed rather than fetched.
+- **No frontend test runner still.** Every check here is `tsc`, `eslint`,
+  `next build` and a pair of human eyes. The token-name changes in this commit are
+  exactly the class of thing a snapshot test would have caught for free.
+- **`tsc` and `eslint` OOM on this host while the dev server is running** — a
+  "Zone Allocation failed" system-memory error, not a V8 heap limit, with ~50 node
+  processes alive. Stop the dev server before running the checks.
+- Twenty's disabled primary button swaps the *background*; ours drops opacity to
+  45%, which is low contrast on indigo. Cosmetic, and worth a second look.

@@ -169,10 +169,35 @@ paid tiers are provisioned; make the code degrade sensibly when a service is not
 
 ## 4. Design & brand
 
-- Palette: **black, white, dark grey, gold accents**. Gold is an accent, not a background.
 - Premium, modern, uncluttered. Fully responsive: mobile, tablet, desktop.
 - Fast loading, SEO-friendly public pages.
 - Arabic/English content may appear; do not hardcode assumptions that break on RTL text.
+
+### 4.1 The accent is indigo, as of 2026-09-12 — this replaces the gold
+
+This section used to read *"Palette: black, white, dark grey, **gold accents**.
+Gold is an accent, not a background."* That came from the original brief, and it
+is no longer what the product uses.
+
+The user's instruction on 2026-09-12 was to rebuild the frontend against the
+**Twenty** design system (`figma.com/design/xt8O9mFeLl46C5InWwoMrN`) and, asked
+directly whether the reference's indigo or the brief's gold should win, chose
+**indigo** — *"go full indigo"*. Per §0 the user wins, so this section is amended
+rather than left contradicting the code.
+
+- **Accent: `#3E63DD`** (Radix Blue 9), the same value in both themes.
+  Surfaces stay black / white / dark grey, so the rest of the brief holds.
+- Gold survives in exactly one place and means something else there: the amber
+  status tag. Status colour is not the accent (`docs/frontend-design-system.md`
+  §2), and the *"Teacher"* chip in the rail is amber for that reason, not as a
+  leftover.
+- **Reverting is one block of `--accent-*` values in `app/tokens.css`.** Nothing
+  in the system depends on the hue, which is why it is worth saying that the
+  decision is reversible on one word from the client.
+
+The full contract — tokens, component mapping, what the reference says and what
+is deliberately ours — is `docs/frontend-design-system.md`. Read it before
+changing anything visual; it is the document this section defers to.
 
 ---
 
@@ -914,6 +939,25 @@ Hiding a nav entry or a tab is **courtesy, never access control**. `/admin/*` is
 `@Roles(Role.Teacher)` server-side and a TA who types the URL is refused by the
 guard regardless of what the rail renders ({S}8). The client-side redirect
 decides *where to send* someone, never *what they may read*.
+
+**The design system was rebuilt against Twenty on 2026-09-12** (§4.1), and
+`docs/frontend-design-system.md` is now the contract — read it before changing
+anything visual. Three things a later reader needs:
+
+- **`components/ui.tsx` is gone.** It is `components/ui/`, one component per
+  file behind a barrel, so `@/components/ui` imports are unchanged. `Tabs`,
+  `IconButton`, `Avatar` and `Separator` are new; every other export kept its
+  name and its props.
+- **The token *names* survived but several changed meaning**, which is the one
+  thing that will bite a stale branch. `--r-md` went 16px → **8px** (the
+  reference's radius scale ran one step small against ours throughout), the
+  `--h-*` scale was renamed around a 32px default, and `--focus-ring` was
+  **deleted** — focus is now a global `outline` on `:focus-visible`, which is
+  not clipped by an ancestor's `overflow: hidden` the way the old box-shadow
+  ring was. Anything still pairing `outline-none` with `var(--focus-ring)` has
+  no focus indicator at all; two such places were found and fixed.
+- **No dependency was added or removed**, and nothing under `lib/` was touched.
+  Inter replaces Geist through the same `next/font/google` call.
 
 **Persistence is driver-selected, and both drivers are real.** Every one of the
 fifteen repository interfaces has an `InMemory*Repository` and a

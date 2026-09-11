@@ -17,9 +17,8 @@ import {
   cx,
 } from '@/components/ui';
 import {
-  ManageCourseTabs,
   PageBody,
-  PageHeader,
+  SectionIntro,
 } from '@/components/app/page-parts';
 
 /**
@@ -43,8 +42,7 @@ export default function CourseGroupsPage({
   params: Promise<{ id: string }>;
 }) {
   const { id: courseId } = use(params);
-  const { token, user } = useSession();
-  const admin = user?.role === 'teacher';
+  const { token } = useSession();
 
   const groupsCall = useApi(
     (t) => api.staff.courseGroups(t, courseId),
@@ -54,12 +52,8 @@ export default function CourseGroupsPage({
 
   return (
     <>
-      <PageHeader
-        title="Groups"
-        subtitle="The cohorts this course is taught to, and who sits in each."
-      />
-      <ManageCourseTabs courseId={courseId} admin={admin} />
       <PageBody className="flex flex-col gap-[var(--sp-5)]">
+        <SectionIntro title="Groups" subtitle="The cohorts this course is taught to, and who sits in each." />
         {(groupsCall.loading || rosterCall.loading) && <RowsSkeleton rows={5} />}
 
         {groupsCall.error && (
@@ -397,7 +391,7 @@ function GroupCard({
                 <span className="text-[var(--fs-base)] text-[var(--fg-primary)]">
                   {member.name}
                 </span>
-                <span className="text-[var(--fs-sm)] text-[var(--fg-tertiary)]">
+                <span className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
                   {member.email} · placed {formatDate(member.assignedAt)}
                 </span>
               </span>

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { MagnifyingGlassIcon, XIcon } from '@phosphor-icons/react';
-import { cx } from '@/components/ui';
+import { cx, Input, IconButton } from '@/components/ui';
 
 const MODES = [
   { value: undefined, label: 'All courses' },
@@ -84,7 +84,7 @@ export function CourseFilters({
               scroll={false}
               aria-current={active ? 'true' : undefined}
               className={cx(
-                'inline-flex h-[var(--h-xl)] items-center rounded-[var(--r-full)] px-[var(--sp-4)]',
+                'inline-flex h-[var(--h-lg)] items-center rounded-[var(--r-full)] px-[var(--sp-4)]',
                 'text-[var(--fs-base)] font-medium transition-colors duration-[var(--dur-fast)]',
                 active
                   ? 'bg-[var(--accent-wash)] text-[var(--accent)] ring-1 ring-inset ring-[var(--accent-line)]'
@@ -132,29 +132,30 @@ export function CourseFilters({
             aria-hidden
             className="pointer-events-none absolute start-[var(--sp-3)] text-[var(--fg-tertiary)]"
           />
-          <input
+          {/* The shared control, so the search field cannot drift from every
+              other input on the site. It keeps the global `:focus-visible`
+              outline rather than suppressing it - an earlier version paired
+              `outline-none` with a box-shadow ring, which left the field with
+              no focus indicator at all once the ring token was retired. */}
+          <Input
             type="search"
             name="q"
+            uiSize="lg"
             value={value}
             onChange={(e) => setValue(e.target.value)}
             placeholder="Search courses"
             aria-label="Search courses"
-            className={cx(
-              'h-[var(--h-xl)] w-full min-w-[220px] rounded-[var(--r-md)] border border-[var(--border-medium)]',
-              'bg-[var(--bg-primary)] ps-[var(--sp-8)] pe-[var(--sp-8)] text-[var(--fs-base)] text-[var(--fg-primary)]',
-              'placeholder:text-[var(--fg-muted)] focus:border-[var(--border-strong)] focus:outline-none',
-              'focus-visible:shadow-[var(--focus-ring)]',
-            )}
+            className="min-w-[220px] ps-[var(--sp-8)] pe-[var(--sp-8)]"
           />
           {value && (
-            <button
-              type="button"
+            <IconButton
+              label="Clear search"
+              size="sm"
               onClick={() => setValue('')}
-              aria-label="Clear search"
-              className="absolute end-[var(--sp-2)] inline-flex h-[var(--h-md)] w-[var(--h-md)] items-center justify-center rounded-[var(--r-md)] text-[var(--fg-tertiary)] hover:bg-[var(--bg-wash)] hover:text-[var(--fg-primary)]"
+              className="absolute end-[var(--sp-2)]"
             >
               <XIcon size={14} />
-            </button>
+            </IconButton>
           )}
         </form>
       </div>

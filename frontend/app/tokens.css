@@ -1,21 +1,34 @@
 /* ============================================================
    Tahirelshazli.com - design tokens
 
-   Structure is the dense product-UI system supplied as reference
-   (twenty.com lineage): 4px grid, quantized control heights, a
-   four-tint text ramp carrying hierarchy instead of font size.
+   Values transcribed from the Twenty design system
+   (figma.com/design/xt8O9mFeLl46C5InWwoMrN, node 114219-670481 and
+   its "01 - Foundations" section), cross-checked against the
+   generated token source in twentyhq/twenty@main,
+   packages/twenty-ui/src/theme/constants/*.
 
-   Two things are ours, not the reference's:
-     1. The accent is GOLD, not indigo. CLAUDE.md §4 fixes the
-        brand at black / white / dark grey / gold, and states gold
-        is an accent, never a background.
-     2. A second, larger type scale sits alongside the 13px
-        workhorse, for the public marketing site. The LMS never
-        touches it; the marketing site never touches --fs-base.
+   Those files carry the header "Generated from design-tokens by
+   scripts/generateThemeTokens.ts", so they *are* the compiled Figma
+   variables. Where both could be read - the type scale - they agree.
+
+   Twenty ships every colour as color(display-p3 ...). The values
+   below are the exact sRGB conversions, which turn out to be the
+   Radix Colors scales they were built from (#3E63DD is Radix Blue 9).
+   sRGB is the base so nothing depends on wide-gamut support; the P3
+   originals are layered back on at the foot of this file.
+
+   Two things here are ours, not Twenty's, and both are marked:
+     1. A second, larger type scale for the public marketing site.
+        Twenty has no marketing design. The LMS never touches it;
+        the marketing site never touches --fs-base.
+     2. Font sizes are px, not rem on a 13px root. The computed
+        pixels are identical; px avoids re-basing every rem-valued
+        Tailwind utility in the app.
    ============================================================ */
 
 :root {
-  /* --- Motion: four durations, nothing else ------------------ */
+  /* --- Motion: four durations, nothing else ------------------
+     THEME_COMMON.animation.duration, seconds -> ms. */
   --dur-instant: 75ms;
   --dur-fast:    150ms;
   --dur-normal:  300ms;
@@ -23,52 +36,78 @@
   --ease:        cubic-bezier(0.2, 0, 0.2, 1);
   --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
 
-  /* --- Spacing: strict 4px grid ------------------------------ */
+  /* --- Spacing: strict 4px grid ------------------------------
+     THEME_COMMON.spacingMultiplicator = 4. */
   --sp-1:  4px;
   --sp-2:  8px;
   --sp-3:  12px;
   --sp-4:  16px;
+  --sp-5:  20px;
   --sp-6:  24px;
   --sp-8:  32px;
+  --sp-10: 40px;
   --sp-12: 48px;
   --sp-16: 64px;
   --sp-24: 96px;
   --sp-32: 128px;
 
-  /* --- Quantized control heights ----------------------------- */
-  --h-xs:  16px;  /* icons, chips inline        */
-  --h-sm:  24px;  /* buttons, toolbar controls  */
-  --h-md:  28px;  /* nav items                  */
-  --h-lg:  32px;  /* table rows, top bar        */
-  --h-xl:  40px;  /* marketing buttons, inputs  */
+  /* Twenty's betweenSiblingsGap - the 2px that separates adjacent
+     rows in a dense list without reading as a border. */
+  --gap-siblings: 2px;
 
-  /* --- Radii: small elements small, pill layer large --------- */
-  --r-xs:   4px;   /* inputs, cells             */
-  --r-sm:   8px;   /* cards, menus, popovers    */
-  --r-md:   16px;  /* buttons, nav pills, chips */
-  --r-lg:   32px;  /* panels                    */
+  /* --- Control heights ---------------------------------------
+     Button small 24 / medium 32, Input 32, Tab min 40, Tag 20. */
+  --h-tag: 20px;
+  --h-sm:  24px;
+  --h-md:  32px;   /* the default control: button, input, nav item */
+  --h-lg:  40px;   /* tabs, large button, marketing input          */
+  --h-xl:  48px;   /* marketing hero button                        */
+
+  /* OURS. The reference system's sidePanelWidth is 500px and its top bar is
+     shallower; this is a nav rail with a wordmark in it. Both live here so
+     the rail's own header and the top bar beside it cannot drift apart. */
+  --rail-w:   248px;
+  --topbar-h: 56px;
+
+  /* --- Radii: border.radius, exactly ------------------------- */
+  --r-xs:   2px;
+  --r-sm:   4px;   /* tags, chips            */
+  --r-md:   8px;   /* buttons, inputs, cards */
+  --r-lg:   16px;
+  --r-xl:   20px;
+  --r-xxl:  40px;
   --r-full: 999px;
 
+  /* --- Icons: icon.size / icon.stroke ------------------------ */
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --icon-lg: 20px;
+  --icon-xl: 24px;
+
   /* --- Type ---------------------------------------------------
-     One family. Geist for everything, Geist Mono for numerals -
-     scores, percentages, durations and dates need tabular
-     figures or columns stop lining up. Arabic falls through to
-     Noto Sans Arabic; CLAUDE.md §4 warns that content may be
+     font.family is 'Inter, sans-serif'. Arabic falls through to
+     Noto Sans Arabic; CLAUDE.md section 4 warns content may be
      bilingual, so nothing here may assume Latin metrics.
+
+     Geist Mono is kept for numerals only - scores, percentages,
+     durations and dates need tabular figures or columns stop
+     lining up. Twenty uses DM Mono, but only inside code blocks,
+     which this product does not have.
      ------------------------------------------------------------ */
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, "Noto Sans Arabic",
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, "Noto Sans Arabic",
                -apple-system, "Segoe UI", sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, monospace;
 
-  /* Product scale - the LMS lives entirely inside this */
-  --fs-xxs: 10px;
-  --fs-xs:  12px;
-  --fs-base:13px;   /* the workhorse            */
-  --fs-md:  15px;
-  --fs-lg:  17px;
-  --fs-xl:  22px;   /* reserve for page titles  */
+  /* Product scale - the LMS lives entirely inside this.
+     font.size on a 13px root: 0.85 / 0.92 / 1 / 1.23 / 1.54 / 1.85rem. */
+  --fs-xxs: 11px;   /* Label                    */
+  --fs-xs:  12px;   /* Small                    */
+  --fs-base:13px;   /* Base - the workhorse     */
+  --fs-md:  16px;   /* Title 3 / Big            */
+  --fs-lg:  20px;   /* Title 2                  */
+  --fs-xl:  24px;   /* Title 1                  */
 
-  /* Marketing scale - the public site lives entirely inside this */
+  /* OURS: marketing scale - the public site lives entirely inside this */
   --fs-body:   17px;
   --fs-lead:   20px;
   --fs-h3:     24px;
@@ -79,131 +118,190 @@
   --fw-regular: 400;
   --fw-medium:  500;
   --fw-semibold:600;
-  --lh-tight: 1.25;
+
+  /* text.lineHeight md 1.1 / lg 1.5 */
+  --lh-tight: 1.1;
   --lh-base:  1.5;
-  --lh-loose: 1.65;
-
-  /* --- Accent: ONE color, ONE primary action per screen ------
-     Gold reads as brass on dark and as ochre on light. It always
-     carries DARK text - white on gold fails AA at every weight. */
-  --accent:       #C9A227;
-  --accent-hover: #D8B23A;
-  --accent-press: #AC8919;
-  --accent-fg:    #17150E;  /* text ON gold                     */
-  --accent-wash:  rgba(201, 162, 39, 0.12);
-  --accent-line:  rgba(201, 162, 39, 0.28);
-
-  /* --- Focus ------------------------------------------------- */
-  --focus-ring: 0 0 0 2px var(--bg-primary), 0 0 0 4px var(--accent);
+  --lh-loose: 1.65;  /* OURS: marketing body copy */
 
   --maxw-site: 1200px;
   --maxw-prose: 65ch;
 }
 
-/* --- Dark: three surface steps inside a narrow luminance band -- */
+/* --- Dark: the default ---------------------------------------- */
 :root,
 :root[data-theme="dark"] {
-  --bg-primary:     #161616;  /* app shell, rail          */
+  --bg-primary:     #171717;  /* app shell, rail          */
   --bg-secondary:   #1B1B1B;  /* cards, panels            */
-  --bg-tertiary:    #1F1F1F;  /* raised / hovered surface */
-  --bg-wash:        rgba(255, 255, 255, 0.06);  /* hover  */
-  --bg-wash-subtle: rgba(255, 255, 255, 0.03);  /* stripe */
-  --bg-scrim:       rgba(10, 10, 10, 0.72);
+  --bg-tertiary:    #1D1D1D;  /* raised / hovered surface */
+  --bg-quaternary:  #222222;  /* pressed surface          */
+  /* background.transparent, white at 14.1 / 10.2 / 5.9 / 3.1% */
+  --bg-wash:        rgba(255, 255, 255, 0.102);
+  --bg-wash-subtle: rgba(255, 255, 255, 0.031);
+  --bg-wash-strong: rgba(255, 255, 255, 0.141);
+  --bg-scrim:       rgba(0, 0, 0, 0.72);
 
-  --border-light:  #1F1F1F;  /* hairline between rows     */
-  --border-medium: #262626;  /* card edge                 */
-  --border-strong: #484848;  /* hovered / editable outline*/
+  --border-light:  #1D1D1D;
+  --border-medium: #222222;
+  --border-strong: #484848;
 
-  /* Four-tint text ramp - this carries hierarchy, not size */
+  /* font.color: primary, secondary, tertiary, light, extraLight */
   --fg-primary:   #EBEBEB;
   --fg-secondary: #B3B3B3;
   --fg-tertiary:  #818181;
   --fg-muted:     #666666;
+  --fg-faint:     #4C4C4C;
+  --fg-inverted:  #171717;
+
+  /* accent.accent1..accent11 - Radix Blue, dark */
+  --accent-wash:  #11131F;
+  --accent-line:  #182449;
+  --accent-soft:  #1D2E61;
+  --accent:       #3E63DD;
+  --accent-hover: #5472E4;
+  --accent-press: #435DB2;
+  --accent-text:  #9DB1FF;  /* the accent as text on a dark surface */
+  --accent-fg:    #FFFFFF;  /* text ON the accent                   */
+  --accent-ring:  #182449;  /* the 3px focus halo Twenty draws       */
+
+  --danger:      #E5484D;
+  --danger-wash: #3B1219;
 
   --shadow-sm: 0 2px 4px rgba(0,0,0,0.04), 0 0 4px rgba(0,0,0,0.08);
   --shadow-lg: 2px 4px 16px rgba(0,0,0,0.16), 0 2px 4px rgba(0,0,0,0.08);
 }
 
-/* --- Light: same structure, inverted ------------------------- */
+/* --- Light: same structure, inverted -------------------------- */
 :root[data-theme="light"] {
   --bg-primary:     #FFFFFF;
   --bg-secondary:   #FCFCFC;
-  --bg-tertiary:    #F7F7F7;
-  --bg-wash:        rgba(0, 0, 0, 0.04);
+  --bg-tertiary:    #F1F1F1;
+  --bg-quaternary:  #EBEBEB;
+  /* background.transparent, black at 16.1 / 7.8 / 3.9 / 2% */
+  --bg-wash:        rgba(0, 0, 0, 0.078);
   --bg-wash-subtle: rgba(0, 0, 0, 0.02);
-  --bg-scrim:       rgba(255, 255, 255, 0.78);
+  --bg-wash-strong: rgba(0, 0, 0, 0.161);
+  --bg-scrim:       rgba(0, 0, 0, 0.361);
 
-  --border-light:  #F0F0F0;
-  --border-medium: #E4E4E4;
-  --border-strong: #C4C4C4;
+  --border-light:  #F1F1F1;
+  --border-medium: #EBEBEB;
+  --border-strong: #D6D6D6;
 
-  --fg-primary:   #1A1A1A;
-  --fg-secondary: #5C5C5C;
-  --fg-tertiary:  #8A8A8A;
-  --fg-muted:     #ADADAD;
+  --fg-primary:   #333333;
+  --fg-secondary: #666666;
+  --fg-tertiary:  #999999;
+  --fg-muted:     #B3B3B3;
+  --fg-faint:     #CCCCCC;
+  --fg-inverted:  #FFFFFF;
 
-  /* Gold needs to darken on white or it disappears into the page */
-  --accent:       #9A7A12;
-  --accent-hover: #866A0C;
-  --accent-press: #6E5709;
-  /* Dark text on gold in BOTH themes, per the rule above. White on the
-     light gold (#9A7A12) measures 4.07:1 - under the 4.5:1 AA floor for
-     normal text - and this token colours every primary button label and
-     the unread badge. The value below measures 4.58:1. Do not lighten it. */
-  --accent-fg:    #17150E;
-  --accent-wash:  rgba(154, 122, 18, 0.10);
-  --accent-line:  rgba(154, 122, 18, 0.30);
+  /* Radix Blue, light. accent9 is #3E63DD in both themes - that is
+     what a 9-step is for: the one value that holds either way. */
+  --accent-wash:  #F7F9FF;
+  --accent-line:  #E0E9FF;
+  --accent-soft:  #D2DEFF;
+  --accent:       #3E63DD;
+  --accent-hover: #3358D4;
+  --accent-press: #3A5BC7;
+  --accent-text:  #3A5BC7;
+  --accent-fg:    #FFFFFF;
+  --accent-ring:  #EDF2FE;
 
-  --shadow-sm: 0 2px 4px rgba(0,0,0,0.04), 0 0 4px rgba(0,0,0,0.06);
-  --shadow-lg: 2px 4px 16px rgba(0,0,0,0.10), 0 2px 4px rgba(0,0,0,0.06);
+  --danger:      #CE2C31;
+  --danger-wash: #FEEBEC;
+
+  --shadow-sm: 0 2px 4px rgba(0,0,0,0.039), 0 0 4px rgba(0,0,0,0.078);
+  --shadow-lg: 2px 4px 16px rgba(0,0,0,0.161), 0 2px 4px rgba(0,0,0,0.078);
 }
 
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-    --bg-primary:#FFFFFF; --bg-secondary:#FCFCFC; --bg-tertiary:#F7F7F7;
-    --bg-wash:rgba(0,0,0,.04); --bg-wash-subtle:rgba(0,0,0,.02);
-    --bg-scrim:rgba(255,255,255,.78);
-    --border-light:#F0F0F0; --border-medium:#E4E4E4; --border-strong:#C4C4C4;
-    --fg-primary:#1A1A1A; --fg-secondary:#5C5C5C; --fg-tertiary:#8A8A8A; --fg-muted:#ADADAD;
-    --accent:#9A7A12; --accent-hover:#866A0C; --accent-press:#6E5709; --accent-fg:#17150E;
-    --accent-wash:rgba(154,122,18,.10); --accent-line:rgba(154,122,18,.30);
-    --shadow-sm:0 2px 4px rgba(0,0,0,.04), 0 0 4px rgba(0,0,0,.06);
-    --shadow-lg:2px 4px 16px rgba(0,0,0,.10), 0 2px 4px rgba(0,0,0,.06);
-  }
-}
-
-/* --- Semantic chips: tinted bg + same-hue light fg -----------
-   Status colors are NOT the brand accent. Gold means "the one
-   action here"; these mean "this is the state of that thing".
-   Confusing the two is how a screen ends up with four golds. */
-:root {
-  --chip-blue-bg:#1B2540;  --chip-blue-fg:#B9C6F5;
-  --chip-green-bg:#132F26; --chip-green-fg:#9EE7C4;
-  --chip-red-bg:#3A1C24;   --chip-red-fg:#F0AFBB;
-  --chip-amber-bg:#3A2A10; --chip-amber-fg:#F0CE92;
-  --chip-violet-bg:#2A2358;--chip-violet-fg:#C6BDF7;
-  --chip-teal-bg:#0F2E2C;  --chip-teal-fg:#93DCD6;
-  --chip-neutral-bg:#232323;--chip-neutral-fg:#A8A8A8;
+/* --- Semantic tags: tag.background + tag.text -----------------
+   Status colours are NOT the accent. Indigo means "the one action
+   here"; these mean "this is the state of that thing". Blue appears
+   in both lists because Twenty's own tag scale includes it - a blue
+   tag is accent-*coloured*, never accent-*meaning*. */
+:root,
+:root[data-theme="dark"] {
+  --chip-neutral-bg:#191919; --chip-neutral-fg:#B3B3B3;
+  --chip-blue-bg:   #182449; --chip-blue-fg:   #9DB1FF;
+  --chip-green-bg:  #132D21; --chip-green-fg:  #3DD68C;
+  --chip-red-bg:    #3B1219; --chip-red-fg:    #FF8A88;
+  --chip-amber-bg:  #302008; --chip-amber-fg:  #FFC916;
+  --chip-violet-bg: #291F44; --chip-violet-fg: #BBA5FF;
+  --chip-teal-bg:   #0D2D2A; --chip-teal-fg:   #0AD8B6;
 }
 
 :root[data-theme="light"] {
-  --chip-blue-bg:#EDF1FD;  --chip-blue-fg:#2C3F7A;
-  --chip-green-bg:#E8F6EF; --chip-green-fg:#1C5C43;
-  --chip-red-bg:#FCECEF;   --chip-red-fg:#8C2237;
-  --chip-amber-bg:#FBF0DC; --chip-amber-fg:#7A5410;
-  --chip-violet-bg:#F0EDFD;--chip-violet-fg:#403383;
-  --chip-teal-bg:#E6F5F3;  --chip-teal-fg:#12564F;
-  --chip-neutral-bg:#F2F2F2;--chip-neutral-fg:#5C5C5C;
+  --chip-neutral-bg:#F9F9F9; --chip-neutral-fg:#666666;
+  --chip-blue-bg:   #EDF2FE; --chip-blue-fg:   #3A5BC7;
+  --chip-green-bg:  #E6F6EB; --chip-green-fg:  #00824D;
+  --chip-red-bg:    #FEEBEC; --chip-red-fg:    #CE2C31;
+  --chip-amber-bg:  #FFF7C2; --chip-amber-fg:  #AD6200;
+  --chip-violet-bg: #F4F0FE; --chip-violet-fg: #6550B9;
+  --chip-teal-bg:   #E0F8F3; --chip-teal-fg:   #00826D;
 }
 
+/* --- The system-preference fallback ---------------------------
+   No [data-theme] attribute means "follow the OS". Only the tokens
+   that differ are repeated; everything else is inherited from the
+   :root block above. */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
-    --chip-blue-bg:#EDF1FD;  --chip-blue-fg:#2C3F7A;
-    --chip-green-bg:#E8F6EF; --chip-green-fg:#1C5C43;
-    --chip-red-bg:#FCECEF;   --chip-red-fg:#8C2237;
-    --chip-amber-bg:#FBF0DC; --chip-amber-fg:#7A5410;
-    --chip-violet-bg:#F0EDFD;--chip-violet-fg:#403383;
-    --chip-teal-bg:#E6F5F3;  --chip-teal-fg:#12564F;
-    --chip-neutral-bg:#F2F2F2;--chip-neutral-fg:#5C5C5C;
+    --bg-primary:#FFFFFF; --bg-secondary:#FCFCFC; --bg-tertiary:#F1F1F1;
+    --bg-quaternary:#EBEBEB;
+    --bg-wash:rgba(0,0,0,.078); --bg-wash-subtle:rgba(0,0,0,.02);
+    --bg-wash-strong:rgba(0,0,0,.161); --bg-scrim:rgba(0,0,0,.361);
+    --border-light:#F1F1F1; --border-medium:#EBEBEB; --border-strong:#D6D6D6;
+    --fg-primary:#333333; --fg-secondary:#666666; --fg-tertiary:#999999;
+    --fg-muted:#B3B3B3; --fg-faint:#CCCCCC; --fg-inverted:#FFFFFF;
+    --accent-wash:#F7F9FF; --accent-line:#E0E9FF; --accent-soft:#D2DEFF;
+    --accent:#3E63DD; --accent-hover:#3358D4; --accent-press:#3A5BC7;
+    --accent-text:#3A5BC7; --accent-fg:#FFFFFF; --accent-ring:#EDF2FE;
+    --danger:#CE2C31; --danger-wash:#FEEBEC;
+    --shadow-sm:0 2px 4px rgba(0,0,0,.039), 0 0 4px rgba(0,0,0,.078);
+    --shadow-lg:2px 4px 16px rgba(0,0,0,.161), 0 2px 4px rgba(0,0,0,.078);
+
+    --chip-neutral-bg:#F9F9F9; --chip-neutral-fg:#666666;
+    --chip-blue-bg:   #EDF2FE; --chip-blue-fg:   #3A5BC7;
+    --chip-green-bg:  #E6F6EB; --chip-green-fg:  #00824D;
+    --chip-red-bg:    #FEEBEC; --chip-red-fg:    #CE2C31;
+    --chip-amber-bg:  #FFF7C2; --chip-amber-fg:  #AD6200;
+    --chip-violet-bg: #F4F0FE; --chip-violet-fg: #6550B9;
+    --chip-teal-bg:   #E0F8F3; --chip-teal-fg:   #00826D;
+  }
+}
+
+/* --- Wide gamut ------------------------------------------------
+   Twenty authors in display-p3 and these are its literal values.
+   The sRGB above is what every browser gets; this layer only fires
+   where P3 is both supported and displayable, so it can never leave
+   a colour undefined. Greys are omitted - they are identical in both
+   spaces, so repeating them would be noise. */
+@supports (color: color(display-p3 1 1 1)) {
+  :root,
+  :root[data-theme="dark"] {
+    --accent:       color(display-p3 0.276 0.384 0.837);
+    --accent-hover: color(display-p3 0.354 0.445 0.866);
+    --accent-press: color(display-p3 0.285 0.362 0.674);
+    --accent-text:  color(display-p3 0.63 0.69 1);
+    --danger:       color(display-p3 0.83 0.329 0.324);
+    --chip-blue-fg:   color(display-p3 0.63 0.69 1);
+    --chip-green-fg:  color(display-p3 0.434 0.828 0.573);
+    --chip-red-fg:    color(display-p3 1 0.57 0.55);
+    --chip-amber-fg:  color(display-p3 1 0.8 0.29);
+    --chip-violet-fg: color(display-p3 0.72 0.65 1);
+    --chip-teal-fg:   color(display-p3 0.388 0.835 0.719);
+  }
+
+  :root[data-theme="light"] {
+    --accent:       color(display-p3 0.276 0.384 0.837);
+    --accent-hover: color(display-p3 0.234 0.343 0.801);
+    --accent-press: color(display-p3 0.256 0.354 0.755);
+    --accent-text:  color(display-p3 0.256 0.354 0.755);
+    --danger:       color(display-p3 0.744 0.234 0.222);
+    --chip-blue-fg:   color(display-p3 0.256 0.354 0.755);
+    --chip-green-fg:  color(display-p3 0.19 0.5 0.32);
+    --chip-red-fg:    color(display-p3 0.744 0.234 0.222);
+    --chip-amber-fg:  color(display-p3 0.64 0.4 0);
+    --chip-violet-fg: color(display-p3 0.383 0.317 0.702);
+    --chip-teal-fg:   color(display-p3 0.08 0.5 0.43);
   }
 }

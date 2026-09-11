@@ -7,6 +7,7 @@
   --color-bg:          var(--bg-primary);
   --color-surface:     var(--bg-secondary);
   --color-raised:      var(--bg-tertiary);
+  --color-pressed:     var(--bg-quaternary);
   --color-wash:        var(--bg-wash);
   --color-line:        var(--border-light);
   --color-line-medium: var(--border-medium);
@@ -15,11 +16,18 @@
   --color-fg-2:        var(--fg-secondary);
   --color-fg-3:        var(--fg-tertiary);
   --color-fg-4:        var(--fg-muted);
+  --color-fg-5:        var(--fg-faint);
   --color-accent:      var(--accent);
   --color-accent-fg:   var(--accent-fg);
+  --color-danger:      var(--danger);
 
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
+
+  /* Twenty ships exactly one breakpoint: MOBILE_VIEWPORT = 768.
+     Tailwind's defaults stay available, but the design decisions in
+     this app are made at this one line. */
+  --breakpoint-mobile: 768px;
 }
 
 html {
@@ -35,7 +43,11 @@ body {
   font-size: var(--fs-base);
   line-height: var(--lh-base);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  /* Twenty sets this on body: it kills the 300ms tap delay without
+     disabling pinch-zoom, which a viewport meta would. */
+  touch-action: manipulation;
 }
 
 /* The public site opts out of the 13px product default. Marketing copy at
@@ -47,15 +59,18 @@ body {
 }
 
 ::selection {
-  background: var(--accent-wash);
+  background: var(--accent-line);
   color: var(--fg-primary);
 }
 
-/* One focus treatment for the whole product. Never `outline: none`. */
+/* One focus treatment for the whole product, and it is Twenty's:
+   a 2px outline at 1px offset rather than a box-shadow ring. An
+   outline follows the element's own border-radius and never gets
+   clipped by an ancestor's overflow:hidden, which the old ring did
+   on every row inside a Card. Never `outline: none`. */
 :focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-  border-radius: var(--r-xs);
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* Numerals in the app are tabular or columns of scores stop lining up. */
@@ -70,6 +85,10 @@ body {
   border-top: 1px solid var(--border-light);
 }
 
+/* A tap leaves :hover applied until the next tap lands elsewhere, so
+   anything that paints on hover is limited to pointers that can
+   actually hover. This mirrors Twenty's `hover-capable` mixin, and it
+   is why a tapped row on a phone does not stay highlighted. */
 @media (hover: hover) {
   .row:hover { background: var(--bg-wash); }
   .row:hover .reveal { opacity: 1; }

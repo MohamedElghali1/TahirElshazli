@@ -8,6 +8,12 @@ import { cx } from '@/components/ui';
  * tabular data. These give it real `<table>` semantics - a screen reader
  * announces "row 4, Average, 82%" instead of reading a wall of divs.
  *
+ * Geometry is the reference system's table: 8px of padding inside each cell,
+ * plus 8px of margin on the scroll container. That split is the reason it
+ * exists rather than one 16px value - the cell padding is the click target and
+ * the container margin is the optical alignment, so the first column's text
+ * lines up with a Panel's own 16px edge while the cells stay dense.
+ *
  * Alignment is a union rather than an interpolated class: Tailwind scans source
  * text, so `text-${align}` compiles to nothing and the column silently loses
  * its alignment in production while looking right in dev.
@@ -28,7 +34,7 @@ export function TableScroll({
   minWidth?: number;
 }) {
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto px-[var(--sp-2)]">
       <table
         className="w-full border-collapse"
         style={{ minWidth: `${minWidth}px` }}
@@ -52,7 +58,7 @@ export function Th({
     <th
       scope="col"
       className={cx(
-        'px-[var(--sp-4)] py-[var(--sp-3)] text-[var(--fs-xs)] font-medium',
+        'px-[var(--sp-2)] py-[var(--sp-2)] text-[var(--fs-xs)] font-medium',
         'whitespace-nowrap text-[var(--fg-tertiary)]',
         ALIGN[align],
         className,
@@ -75,7 +81,7 @@ export function Td({
   return (
     <td
       className={cx(
-        'px-[var(--sp-4)] py-[var(--sp-3)] text-[var(--fs-base)] text-[var(--fg-secondary)]',
+        'px-[var(--sp-2)] py-[var(--sp-2)] text-[var(--fs-base)] text-[var(--fg-secondary)]',
         ALIGN[align],
         className,
       )}
@@ -95,7 +101,7 @@ export function Tr({
   return (
     <tr
       className={cx(
-        'border-b border-[var(--border-light)] last:border-0',
+        'h-[var(--h-md)] border-b border-[var(--border-light)] last:border-0',
         className,
       )}
     >

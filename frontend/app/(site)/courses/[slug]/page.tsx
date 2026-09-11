@@ -181,7 +181,7 @@ export default async function CoursePage({
           </p>
 
           {course.modules.length === 0 ? (
-            <p className="mt-[var(--sp-8)] rounded-[var(--r-sm)] border border-[var(--border-medium)] p-[var(--sp-6)] text-[var(--fs-body)] text-[var(--fg-secondary)]">
+            <p className="mt-[var(--sp-8)] rounded-[var(--r-md)] border border-[var(--border-medium)] p-[var(--sp-6)] text-[var(--fs-body)] text-[var(--fg-secondary)]">
               The chapter list for this course is being finalised.
             </p>
           ) : (
@@ -311,7 +311,7 @@ export default async function CoursePage({
             ).map((line) => (
               <li
                 key={line}
-                className="flex items-start gap-[var(--sp-3)] rounded-[var(--r-sm)] border border-[var(--border-light)] bg-[var(--bg-secondary)] p-[var(--sp-4)] text-[var(--fs-base)] leading-[var(--lh-loose)] text-[var(--fg-secondary)]"
+                className="flex items-start gap-[var(--sp-3)] rounded-[var(--r-md)] border border-[var(--border-light)] bg-[var(--bg-secondary)] p-[var(--sp-4)] text-[var(--fs-base)] leading-[var(--lh-loose)] text-[var(--fg-secondary)]"
               >
                 <span aria-hidden className="mt-[7px] h-[6px] w-[6px] shrink-0 rounded-[var(--r-full)] bg-[var(--accent)]" />
                 {line}

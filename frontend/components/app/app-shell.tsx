@@ -19,10 +19,9 @@ import {
 } from '@phosphor-icons/react';
 import { api } from '@/lib/api';
 import { useSession, useApi } from '@/lib/session';
-import { initials } from '@/lib/format';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Wordmark } from '@/components/site/wordmark';
-import { cx, Chip } from '@/components/ui';
+import { cx, Chip, Avatar, IconButton } from '@/components/ui';
 import { isStaffRole } from '@/lib/roles';
 import type { Role } from '@/lib/types';
 
@@ -121,13 +120,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-[100dvh] bg-[var(--bg-primary)]">
       <aside
         className={cx(
-          'fixed inset-y-0 start-0 z-40 flex w-[248px] flex-col border-e border-[var(--border-light)]',
+          'fixed inset-y-0 start-0 z-40 flex w-[var(--rail-w)] flex-col border-e border-[var(--border-light)]',
           'bg-[var(--bg-primary)] transition-transform duration-[var(--dur-fast)] ease-[var(--ease)]',
           'lg:translate-x-0 rtl:lg:translate-x-0',
           open ? 'translate-x-0' : '-translate-x-full rtl:translate-x-full',
         )}
       >
-        <div className="flex h-[56px] items-center gap-[var(--sp-2)] px-[var(--sp-4)]">
+        <div className="flex h-[var(--topbar-h)] items-center gap-[var(--sp-2)] px-[var(--sp-4)]">
           <Link href={staff ? '/manage' : '/dashboard'} aria-label="Home">
             <Wordmark />
           </Link>
@@ -168,7 +167,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <Icon size={16} weight={active ? 'fill' : 'regular'} />
                 <span className="flex-1">{label}</span>
                 {href === '/notifications' && unread > 0 && (
-                  <span className="num rounded-[var(--r-full)] bg-[var(--accent)] px-[var(--sp-2)] text-[var(--fs-xxs)] font-semibold leading-[var(--h-xs)] text-[var(--accent-fg)]">
+                  <span className="num rounded-[var(--r-full)] bg-[var(--accent)] px-[var(--sp-2)] text-[var(--fs-xxs)] font-semibold leading-[var(--h-tag)] text-[var(--accent-fg)]">
                     {unread}
                   </span>
                 )}
@@ -179,12 +178,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <div className="border-t border-[var(--border-light)] p-[var(--sp-2)]">
           <div className="flex items-center gap-[var(--sp-3)] rounded-[var(--r-md)] px-[var(--sp-3)] py-[var(--sp-2)]">
-            <span
-              aria-hidden
-              className="num flex h-[var(--h-lg)] w-[var(--h-lg)] shrink-0 items-center justify-center rounded-[var(--r-full)] bg-[var(--bg-tertiary)] text-[var(--fs-xs)] font-semibold text-[var(--fg-secondary)]"
-            >
-              {user ? initials(user.name) : ''}
-            </span>
+            <Avatar name={user?.name ?? ''} />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[var(--fs-base)] text-[var(--fg-primary)]">
                 {user?.name}
@@ -193,14 +187,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 {user?.email}
               </span>
             </span>
-            <button
-              type="button"
+            <IconButton
+              label="Sign out"
+              size="sm"
               onClick={() => void signOut()}
-              aria-label="Sign out"
-              className="shrink-0 rounded-[var(--r-xs)] p-[var(--sp-1)] text-[var(--fg-tertiary)] transition-colors duration-[var(--dur-fast)] hover:bg-[var(--bg-wash)] hover:text-[var(--fg-primary)]"
             >
               <SignOutIcon size={16} />
-            </button>
+            </IconButton>
           </div>
         </div>
       </aside>
@@ -214,17 +207,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         />
       )}
 
-      <div className="flex min-w-0 flex-1 flex-col lg:ms-[248px]">
-        <header className="sticky top-0 z-20 flex h-[56px] items-center gap-[var(--sp-2)] border-b border-[var(--border-light)] bg-[var(--bg-primary)] px-[var(--sp-4)]">
-          <button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
+      <div className="flex min-w-0 flex-1 flex-col lg:ms-[var(--rail-w)]">
+        <header className="sticky top-0 z-20 flex h-[var(--topbar-h)] items-center gap-[var(--sp-2)] border-b border-[var(--border-light)] bg-[var(--bg-primary)] px-[var(--sp-4)]">
+          <IconButton
+            label={open ? 'Close navigation' : 'Open navigation'}
             aria-expanded={open}
-            aria-label={open ? 'Close navigation' : 'Open navigation'}
-            className="inline-flex h-[var(--h-lg)] w-[var(--h-lg)] items-center justify-center rounded-[var(--r-md)] text-[var(--fg-secondary)] hover:bg-[var(--bg-wash)] lg:hidden"
+            onClick={() => setOpen((v) => !v)}
+            className="lg:hidden"
           >
-            {open ? <XIcon size={18} /> : <ListIcon size={18} />}
-          </button>
+            {open ? <XIcon size={16} /> : <ListIcon size={16} />}
+          </IconButton>
           <div className="ms-auto flex items-center gap-[var(--sp-1)]">
             <ThemeToggle />
           </div>

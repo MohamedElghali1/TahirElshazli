@@ -96,7 +96,12 @@ export function CourseCard({ course }: { course: PublicCourseSummary }) {
               a nested-link card is unreadable to a screen reader. */}
           <Link
             href={`/courses/${course.slug}`}
-            className="after:absolute after:inset-0 after:content-[''] focus-visible:outline-none"
+            /* A stretched link: the anchor is the title, but its ::after covers
+               the whole card so the card is one target. Suppressing the
+               anchor's own outline is right - it would ring the title text
+               mid-card - but the outline has to move to the ::after box or a
+               keyboard user gets no focus indicator at all. */
+            className="after:absolute after:inset-0 after:rounded-[inherit] after:content-[''] focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-offset-2 focus-visible:after:outline-[var(--accent)]"
           >
             {course.title}
           </Link>

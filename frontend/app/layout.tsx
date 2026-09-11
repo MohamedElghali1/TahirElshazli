@@ -1,14 +1,19 @@
 import type { Metadata, Viewport } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
+import { Inter, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import { SessionProvider } from '@/lib/session';
 
-const geistSans = Geist({
-  variable: '--font-geist-sans',
+// Inter is the reference design system's own face (font.family is
+// 'Inter, sans-serif'), so it is not a substitution - it is the font the
+// type scale in app/tokens.css was measured against.
+const inter = Inter({
+  variable: '--font-inter',
   subsets: ['latin'],
   display: 'swap',
 });
 
+// Kept for numerals only. Inter's tabular figures are fine, but a distinct
+// mono face is what makes a column of marks scan as data rather than prose.
 const geistMono = Geist_Mono({
   variable: '--font-geist-mono',
   subsets: ['latin'],
@@ -39,7 +44,7 @@ export const viewport: Viewport = {
   // colours there means changing these two by hand or the browser chrome stops
   // matching the page.
   themeColor: [
-    { media: '(prefers-color-scheme: dark)', color: '#161616' },
+    { media: '(prefers-color-scheme: dark)', color: '#171717' },
     { media: '(prefers-color-scheme: light)', color: '#ffffff' },
   ],
 };
@@ -59,7 +64,7 @@ export default function RootLayout({
     <html
       lang="en"
       dir="ltr"
-      className={`${geistSans.variable} ${geistMono.variable} h-full`}
+      className={`${inter.variable} ${geistMono.variable} h-full`}
       suppressHydrationWarning
     >
       <head>
@@ -68,7 +73,7 @@ export default function RootLayout({
       <body className="min-h-full">
         <a
           href="#main"
-          className="sr-only focus:not-sr-only focus:absolute focus:left-[var(--sp-4)] focus:top-[var(--sp-4)] focus:z-50 focus:rounded-[var(--r-xs)] focus:bg-[var(--accent)] focus:px-[var(--sp-4)] focus:py-[var(--sp-2)] focus:text-[var(--accent-fg)]"
+          className="sr-only focus:not-sr-only focus:absolute focus:start-[var(--sp-4)] focus:top-[var(--sp-4)] focus:z-50 focus:rounded-[var(--r-md)] focus:bg-[var(--accent)] focus:px-[var(--sp-4)] focus:py-[var(--sp-2)] focus:text-[var(--accent-fg)]"
         >
           Skip to content
         </a>

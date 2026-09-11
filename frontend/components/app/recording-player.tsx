@@ -146,7 +146,7 @@ function FilePlayer({
         key={recording.id}
         src={recording.videoUrl}
         controls
-        className="aspect-video w-full rounded-[var(--r-sm)] bg-black"
+        className="aspect-video w-full rounded-[var(--r-md)] bg-black"
         onLoadedMetadata={() => {
           const video = videoRef.current;
           if (!video || resumedRef.current) return;
@@ -203,9 +203,9 @@ function EmbedPlayer({
         title={recording.title}
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
         allowFullScreen
-        className="aspect-video w-full rounded-[var(--r-sm)] border-0 bg-black"
+        className="aspect-video w-full rounded-[var(--r-md)] border-0 bg-black"
       />
-      <div className="flex flex-wrap items-center justify-between gap-[var(--sp-3)] rounded-[var(--r-sm)] border border-[var(--border-light)] bg-[var(--bg-tertiary)] px-[var(--sp-4)] py-[var(--sp-3)]">
+      <div className="flex flex-wrap items-center justify-between gap-[var(--sp-3)] rounded-[var(--r-md)] border border-[var(--border-light)] bg-[var(--bg-tertiary)] px-[var(--sp-4)] py-[var(--sp-3)]">
         <p className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
           {recording.completed
             ? 'Marked as watched.'
@@ -246,7 +246,7 @@ function LinkOutPlayer({
   const [marking, setMarking] = useState(false);
 
   return (
-    <div className="flex aspect-video w-full flex-col items-center justify-center gap-[var(--sp-4)] rounded-[var(--r-sm)] border border-[var(--border-medium)] bg-[var(--bg-tertiary)] px-[var(--sp-6)] text-center">
+    <div className="flex aspect-video w-full flex-col items-center justify-center gap-[var(--sp-4)] rounded-[var(--r-md)] border border-[var(--border-medium)] bg-[var(--bg-tertiary)] px-[var(--sp-6)] text-center">
       <p className="text-[var(--fs-md)] font-medium text-[var(--fg-primary)]">
         {recording.title}
       </p>

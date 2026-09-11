@@ -192,7 +192,7 @@ function GroupPanel({
           <Chip>
             {group.memberCount} {group.memberCount === 1 ? 'student' : 'students'}
           </Chip>
-          <span className="text-[var(--fs-sm)] text-[var(--fg-tertiary)]">
+          <span className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
             created {formatDate(group.createdAt)}
           </span>
         </div>
@@ -200,7 +200,7 @@ function GroupPanel({
     >
       {error && <FormError>{error}</FormError>}
 
-      <h3 className="mb-[var(--sp-2)] text-[var(--fs-sm)] font-medium text-[var(--fg-secondary)]">
+      <h3 className="mb-[var(--sp-2)] text-[var(--fs-xs)] font-medium text-[var(--fg-secondary)]">
         Studying
       </h3>
       {group.courses.length === 0 ? (
@@ -283,7 +283,7 @@ function GroupPanel({
         </form>
       )}
 
-      <p className="mt-[var(--sp-3)] text-[var(--fs-sm)] text-[var(--fg-tertiary)]">
+      <p className="mt-[var(--sp-3)] text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
         Adding a course here enrols nobody. Students enrol separately; placing
         them in this group decides which cohort they sit in and what work they
         are set.

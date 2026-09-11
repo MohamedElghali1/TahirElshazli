@@ -112,7 +112,7 @@ export default function SessionsPage({
 function UpcomingRow({ session }: { session: LiveSession }) {
   return (
     <div className="flex items-center gap-[var(--sp-4)] px-[var(--sp-4)] py-[var(--sp-4)]">
-      <div className="w-[52px] shrink-0 rounded-[var(--r-xs)] bg-[var(--bg-tertiary)] py-[var(--sp-2)] text-center">
+      <div className="w-[52px] shrink-0 rounded-[var(--r-sm)] bg-[var(--bg-tertiary)] py-[var(--sp-2)] text-center">
         <div className="num text-[var(--fs-lg)] leading-none text-[var(--fg-primary)]">
           {new Date(session.scheduledAt).getDate()}
         </div>

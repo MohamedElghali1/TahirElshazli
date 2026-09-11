@@ -78,6 +78,7 @@ export function ContactForm() {
       <div className="grid gap-[var(--sp-6)] sm:grid-cols-2">
         <Field label="Your name" htmlFor="name" error={errors.name}>
           <Input
+            uiSize="lg"
             id="name"
             name="name"
             autoComplete="name"
@@ -86,6 +87,7 @@ export function ContactForm() {
         </Field>
         <Field label="Email" htmlFor="email" error={errors.email}>
           <Input
+            uiSize="lg"
             id="email"
             name="email"
             type="email"
@@ -97,7 +99,7 @@ export function ContactForm() {
 
       <div className="grid gap-[var(--sp-6)] sm:grid-cols-2">
         <Field label="Course of interest" htmlFor="track">
-          <Select id="track" name="track" defaultValue="igcse">
+          <Select id="track" name="track" defaultValue="igcse" uiSize="lg">
             <option value="igcse">IGCSE English</option>
             <option value="ielts">IELTS Preparation</option>
             <option value="unsure">Not sure yet</option>
@@ -108,7 +110,7 @@ export function ContactForm() {
           htmlFor="level"
           hint="Optional"
         >
-          <Input id="level" name="level" placeholder="Year 11, or band 7" />
+          <Input id="level" name="level" placeholder="Year 11, or band 7" uiSize="lg" />
         </Field>
       </div>
 
@@ -118,6 +120,7 @@ export function ContactForm() {
         error={errors.message}
       >
         <Textarea
+            uiSize="lg"
           id="message"
           name="message"
           rows={5}

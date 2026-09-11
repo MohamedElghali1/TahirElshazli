@@ -219,7 +219,7 @@ function Tile({
 }) {
   return (
     <article
-      className="flex h-full flex-col overflow-hidden rounded-[var(--r-sm)] border border-[var(--border-medium)] bg-[var(--bg-primary)]"
+      className="flex h-full flex-col overflow-hidden rounded-[var(--r-md)] border border-[var(--border-medium)] bg-[var(--bg-primary)]"
       style={feature.tint ? { background: 'var(--accent-wash)' } : undefined}
     >
       {feature.image && (

@@ -80,7 +80,7 @@ export function SiteHeader() {
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
             aria-label={open ? 'Close menu' : 'Open menu'}
-            className="inline-flex h-[var(--h-lg)] w-[var(--h-lg)] items-center justify-center rounded-[var(--r-md)] text-[var(--fg-secondary)] hover:bg-[var(--bg-wash)] lg:hidden"
+            className="inline-flex h-[var(--h-md)] w-[var(--h-md)] items-center justify-center rounded-[var(--r-md)] text-[var(--fg-secondary)] hover:bg-[var(--bg-wash)] lg:hidden"
           >
             {open ? <XIcon size={20} /> : <ListIcon size={20} />}
           </button>

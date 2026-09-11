@@ -19,9 +19,8 @@ import {
   Textarea,
 } from '@/components/ui';
 import {
-  ManageCourseTabs,
   PageBody,
-  PageHeader,
+  SectionIntro,
 } from '@/components/app/page-parts';
 
 /**
@@ -44,20 +43,14 @@ export default function CourseAssessmentsPage({
   params: Promise<{ id: string }>;
 }) {
   const { id: courseId } = use(params);
-  const { user } = useSession();
-  const admin = user?.role === 'teacher';
 
   const list = useApi((t) => api.staff.assessments(t, courseId), [courseId]);
   const groups = useApi((t) => api.staff.courseGroups(t, courseId), [courseId]);
 
   return (
     <>
-      <PageHeader
-        title="Work"
-        subtitle="Homework, assignments and quizzes — written once, set for the groups you choose."
-      />
-      <ManageCourseTabs courseId={courseId} admin={admin} />
       <PageBody className="flex flex-col gap-[var(--sp-5)]">
+        <SectionIntro title="Work" subtitle="Homework, assignments and quizzes — written once, set for the groups you choose." />
         {groups.data && groups.data.length === 0 ? (
           <Panel bodyClassName="">
             <EmptyState
@@ -348,7 +341,7 @@ function NewAssessment({
             Set work
           </Button>
           {targets.length === 0 && (
-            <span className="text-[var(--fs-sm)] text-[var(--fg-tertiary)]">
+            <span className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
               Pick at least one group.
             </span>
           )}
@@ -401,7 +394,7 @@ function AssessmentRow({
           <Chip tone={assessment.type === 'quiz' ? 'teal' : 'neutral'}>
             {assessment.type}
           </Chip>
-          <span className="text-[var(--fs-sm)] text-[var(--fg-tertiary)]">
+          <span className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
             due {formatDate(assessment.dueAt)} · {assessment.maxScore} marks
           </span>
         </span>
@@ -411,7 +404,7 @@ function AssessmentRow({
       </div>
 
       <div className="flex flex-wrap items-center gap-[var(--sp-2)]">
-        <span className="text-[var(--fs-sm)] text-[var(--fg-tertiary)]">
+        <span className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
           Set for
         </span>
         {assessment.targets.length === 0 ? (

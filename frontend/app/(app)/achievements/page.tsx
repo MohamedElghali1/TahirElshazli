@@ -87,7 +87,7 @@ function PostRow({ post }: { post: PublicBlogPost }) {
           alt=""
           loading="lazy"
           decoding="async"
-          className="hidden h-[84px] w-[124px] shrink-0 rounded-[var(--r-sm)] border border-[var(--border-light)] bg-[var(--bg-tertiary)] object-cover sm:block"
+          className="hidden h-[84px] w-[124px] shrink-0 rounded-[var(--r-md)] border border-[var(--border-light)] bg-[var(--bg-tertiary)] object-cover sm:block"
         />
       )}
 

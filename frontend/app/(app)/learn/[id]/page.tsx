@@ -135,7 +135,7 @@ function AnnouncementsPanel({ courseId }: { courseId: string }) {
       )}
       {error && (
         <div className="p-[var(--sp-4)]">
-          <p className="text-[var(--fs-sm)] text-[var(--fg-tertiary)]">
+          <p className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
             Announcements could not be loaded.
           </p>
         </div>
@@ -158,7 +158,7 @@ function AnnouncementsPanel({ courseId }: { courseId: string }) {
                   {formatDate(announcement.postedAt)}
                 </span>
               </div>
-              <p className="mt-[var(--sp-1)] text-[var(--fs-sm)] text-[var(--fg-secondary)]">
+              <p className="mt-[var(--sp-1)] text-[var(--fs-xs)] text-[var(--fg-secondary)]">
                 {announcement.body}
               </p>
             </li>
@@ -200,7 +200,7 @@ function ClassmatesPanel({ courseId }: { courseId: string }) {
       )}
       {error && (
         <div className="p-[var(--sp-4)]">
-          <p className="text-[var(--fs-sm)] text-[var(--fg-tertiary)]">
+          <p className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
             Your class could not be loaded.
           </p>
         </div>
@@ -223,7 +223,7 @@ function ClassmatesPanel({ courseId }: { courseId: string }) {
                 {group.groupName}
               </p>
               {group.classmates.length === 0 ? (
-                <p className="mt-[var(--sp-1)] text-[var(--fs-sm)] text-[var(--fg-secondary)]">
+                <p className="mt-[var(--sp-1)] text-[var(--fs-xs)] text-[var(--fg-secondary)]">
                   You are the only student in this class so far.
                 </p>
               ) : (
@@ -231,7 +231,7 @@ function ClassmatesPanel({ courseId }: { courseId: string }) {
                   {group.classmates.map((classmate) => (
                     <li
                       key={classmate.studentId}
-                      className="rounded-[var(--r-full)] bg-[var(--bg-tertiary)] px-[var(--sp-3)] py-[var(--sp-1)] text-[var(--fs-sm)] text-[var(--fg-secondary)]"
+                      className="rounded-[var(--r-full)] bg-[var(--bg-tertiary)] px-[var(--sp-3)] py-[var(--sp-1)] text-[var(--fs-xs)] text-[var(--fg-secondary)]"
                     >
                       {classmate.name}
                     </li>

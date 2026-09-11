@@ -403,7 +403,7 @@ function CurriculumDrawer({
       aria-labelledby="curriculum-drawer-title"
       className="fixed inset-0 z-50 flex flex-col bg-[var(--bg-primary)] lg:hidden"
     >
-      <div className="flex h-[var(--h-lg)] items-center justify-between border-b border-[var(--border-light)] px-[var(--sp-4)]">
+      <div className="flex h-[var(--h-md)] items-center justify-between border-b border-[var(--border-light)] px-[var(--sp-4)]">
         <span
           id="curriculum-drawer-title"
           className="text-[var(--fs-base)] font-semibold text-[var(--fg-primary)]"
@@ -415,7 +415,7 @@ function CurriculumDrawer({
           type="button"
           onClick={onClose}
           aria-label="Close curriculum"
-          className="flex h-[var(--h-sm)] w-[var(--h-sm)] items-center justify-center rounded-[var(--r-xs)] text-[var(--fg-secondary)] hover:bg-[var(--bg-wash)]"
+          className="flex h-[var(--h-sm)] w-[var(--h-sm)] items-center justify-center rounded-[var(--r-sm)] text-[var(--fg-secondary)] hover:bg-[var(--bg-wash)]"
         >
           <XIcon size={16} />
         </button>

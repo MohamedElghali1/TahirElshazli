@@ -314,7 +314,7 @@ function Marking({ assessment }: { assessment: AssessmentDetail }) {
           href={submission.annotatedFileUrl}
           target="_blank"
           rel="noreferrer"
-          className="mt-[var(--sp-4)] inline-flex h-[var(--h-lg)] items-center gap-[var(--sp-2)] rounded-[var(--r-md)] border border-[var(--border-medium)] bg-[var(--bg-tertiary)] px-[var(--sp-4)] text-[var(--fs-base)] text-[var(--fg-primary)] transition-colors duration-[var(--dur-fast)] hover:border-[var(--border-strong)]"
+          className="mt-[var(--sp-4)] inline-flex h-[var(--h-md)] items-center gap-[var(--sp-2)] rounded-[var(--r-md)] border border-[var(--border-medium)] bg-[var(--bg-tertiary)] px-[var(--sp-4)] text-[var(--fs-base)] text-[var(--fg-primary)] transition-colors duration-[var(--dur-fast)] hover:border-[var(--border-strong)]"
         >
           <FileArrowDownIcon size={16} />
           Open the corrected copy

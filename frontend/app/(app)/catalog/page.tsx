@@ -76,7 +76,7 @@ export default function CatalogPage() {
         {failure && (
           <p
             role="alert"
-            className="rounded-[var(--r-sm)] border border-[var(--chip-red-bg)] bg-[var(--chip-red-bg)] px-[var(--sp-4)] py-[var(--sp-3)] text-[var(--fs-base)] text-[var(--chip-red-fg)]"
+            className="rounded-[var(--r-md)] border border-[var(--chip-red-bg)] bg-[var(--chip-red-bg)] px-[var(--sp-4)] py-[var(--sp-3)] text-[var(--fs-base)] text-[var(--chip-red-fg)]"
           >
             {failure}
           </p>
@@ -128,7 +128,7 @@ function CatalogCard({
   const isRecorded = course.learningMode === 'recorded';
 
   return (
-    <article className="flex flex-col rounded-[var(--r-sm)] border border-[var(--border-medium)] bg-[var(--bg-secondary)] p-[var(--sp-4)]">
+    <article className="flex flex-col rounded-[var(--r-md)] border border-[var(--border-medium)] bg-[var(--bg-secondary)] p-[var(--sp-4)]">
       <div className="flex items-start justify-between gap-[var(--sp-3)]">
         <div className="min-w-0">
           <h2 className="truncate text-[var(--fs-md)] font-semibold text-[var(--fg-primary)]">
