@@ -263,6 +263,49 @@ export function resolveAutoMigrate(raw = process.env.DB_AUTO_MIGRATE): boolean {
   return value === '1' || value === 'true';
 }
 
+/**
+ * Apply the development fixtures at boot.
+ *
+ * Separate from `DB_AUTO_MIGRATE`, and **refused in production**, because the
+ * two carry different risks. Migrations are forward-only DDL that a production
+ * database needs; the seeds insert `student@example.com` with a published
+ * password hash, so applying them to a real deployment is an account-takeover
+ * hole rather than a convenience (see MigrationRunner.seed, which says the same
+ * thing and is why seeding is a CLI step at all).
+ *
+ * It exists so the containerized development stack in docker-compose.yml comes
+ * up with data to click through. Without it the compose stack applies eight
+ * migrations to an empty database and there is no account to sign in with -
+ * a stack that boots healthy and is unusable.
+ *
+ * Re-running is safe: every seed file is idempotent (ON CONFLICT DO NOTHING),
+ * which is what lets this run on every boot rather than only the first.
+ */
+export function resolveAutoSeed(
+  nodeEnv: NodeEnv,
+  raw = process.env.DB_AUTO_SEED,
+): boolean {
+  const value = raw?.trim().toLowerCase();
+  if (!value) {
+    return false;
+  }
+  if (!['0', '1', 'true', 'false'].includes(value)) {
+    throw new Error(
+      `DB_AUTO_SEED must be 0, 1, true or false (got "${value}").`,
+    );
+  }
+  const enabled = value === '1' || value === 'true';
+  if (enabled && nodeEnv === 'production') {
+    throw new Error(
+      'DB_AUTO_SEED is refused in production. The fixtures insert known ' +
+        'accounts with a published password hash, so seeding a real database ' +
+        'hands out logins. Run `npm run db:seed` against a development ' +
+        'database instead.',
+    );
+  }
+  return enabled;
+}
+
 export function resolveCorsOrigins(
   nodeEnv: NodeEnv,
   raw = process.env.CORS_ORIGIN,
@@ -283,4 +326,69 @@ export function resolveCorsOrigins(
     );
   }
   return true;
+}
+
+/**
+ * Which file-storage driver the app wires up.
+ *
+ * `local` writes to a directory on the container filesystem and serves it back
+ * from `/uploads/*`. It exists so the blog's authoring UI (CLAUDE.md §5.19) has
+ * a working file picker before Cloudflare R2 is provisioned - §3 makes those
+ * subscriptions the client's responsibility and requires the code to degrade
+ * sensibly until they exist.
+ *
+ * `none` accepts no uploads at all and the upload endpoint answers 503. That is
+ * the production default, and the honest one: a URL field still works, so the
+ * blog is fully usable with media hosted anywhere, and nothing silently writes
+ * to a filesystem that is discarded on the next deploy.
+ *
+ * `local` in production is **refused**, for the same shape of reason
+ * `PERSISTENCE_DRIVER=memory` is. The failure would be quiet rather than loud:
+ * `blog_post_media` rows outlive the files they point at, so the gallery
+ * becomes broken images with no error anywhere, and with a second replica half
+ * the reads 404 regardless. `r2` is the value this grows to.
+ */
+export type StorageDriver = 'none' | 'local';
+
+const VALID_STORAGE_DRIVERS: StorageDriver[] = ['none', 'local'];
+
+export function resolveStorageDriver(
+  nodeEnv: NodeEnv,
+  raw = process.env.STORAGE_DRIVER,
+): StorageDriver {
+  const value = raw?.trim();
+  if (!value) {
+    return nodeEnv === 'production' ? 'none' : 'local';
+  }
+  if (!VALID_STORAGE_DRIVERS.includes(value as StorageDriver)) {
+    throw new Error(
+      `STORAGE_DRIVER must be one of ${VALID_STORAGE_DRIVERS.join(', ')} ` +
+        `(got "${value}").`,
+    );
+  }
+  if (value === 'local' && nodeEnv === 'production') {
+    throw new Error(
+      'STORAGE_DRIVER=local is refused in production. Uploaded files would be ' +
+        'lost on the next deploy while the rows pointing at them survived, and ' +
+        'a second replica would 404 half of them. Use a URL field until R2 is ' +
+        'configured.',
+    );
+  }
+  return value as StorageDriver;
+}
+
+/**
+ * Where the local driver writes.
+ *
+ * Relative paths are resolved against the process working directory by the
+ * driver, not here, so this stays a plain string that a Docker volume mount can
+ * point anywhere. The default sits outside `src/` deliberately: a watcher
+ * rebuilding on every upload is a surprising thing to debug.
+ */
+export function resolveUploadDir(raw = process.env.UPLOAD_DIR): string {
+  const value = raw?.trim();
+  if (!value) {
+    return 'var/uploads';
+  }
+  return value;
 }

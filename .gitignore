@@ -62,3 +62,10 @@ tmp/
 .swarm/hnsw.index
 .swarm/hnsw.metadata.json
 .claude-flow/swarm/
+
+# Locally-uploaded files (STORAGE_DRIVER=local, CLAUDE.md §5.19). Development
+# only - it is refused in production - and the contents are whatever the
+# developer dragged into the blog authoring form, so they belong to the machine
+# and never to the repository. UPLOAD_DIR can point anywhere; this covers the
+# default.
+backend/var/

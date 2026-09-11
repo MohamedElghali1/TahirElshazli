@@ -49,6 +49,14 @@ services:
       # one replica this becomes a CI/CD step (`npm run db:migrate`) instead,
       # or every instance races to apply the same DDL.
       DB_AUTO_MIGRATE: "1"
+      # Fixtures on every boot, so the stack comes up with something to sign in
+      # as. Without it the eight migrations land on an empty database and there
+      # is no account at all - a stack that reports healthy and cannot be used.
+      # Every seed file is idempotent, so a restart re-applies nothing.
+      #
+      # env.ts refuses this outright when NODE_ENV=production: the fixtures
+      # carry known logins with a published password hash.
+      DB_AUTO_SEED: "1"
       JWT_SECRET: dev-secret-key-change-in-production
       JWT_EXPIRY: 24h
       CORS_ORIGIN: http://localhost:3000
@@ -56,8 +64,32 @@ services:
       # here would let a client set X-Forwarded-For and get a fresh rate-limit
       # bucket per request.
       TRUSTED_PROXY_HOPS: 0
+      # Blog media uploads (CLAUDE.md 5.19). `local` writes to disk and is the
+      # non-production default anyway, but it is stated here because the volume
+      # below only makes sense alongside it - and because `none` is the value a
+      # real deploy uses until Cloudflare R2 is provisioned, at which point this
+      # becomes `r2` and the volume goes away. env.ts refuses `local` outright
+      # when NODE_ENV=production.
+      STORAGE_DRIVER: local
+      # Absolute on purpose. The driver resolves a relative path against the
+      # process working directory, which is /app/backend here - so the default
+      # `var/uploads` lands in the same place. Writing it out means the mount
+      # target below and the directory the app actually writes to cannot drift
+      # apart silently.
+      UPLOAD_DIR: /app/backend/var/uploads
     ports:
       - "3001:3001"
+    volumes:
+      # Uploaded files survive `docker compose up --build`. Without this an
+      # image rebuild discards every uploaded image while the blog_post_media
+      # rows pointing at them survive in the postgres volume - a gallery of
+      # broken images and no error anywhere, which is the exact failure
+      # env.ts describes when it refuses this driver in production.
+      #
+      # It does not make the driver production-safe: a volume is still one
+      # host's disk, so a second replica serves 404s for half the files. R2 is
+      # the answer there, not a bigger volume.
+      - upload_data:/app/backend/var/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -77,7 +109,21 @@ services:
         # API as http://backend:3001 would only work from inside the network.
         NEXT_PUBLIC_API_URL: http://localhost:3001
     container_name: tahirelshazli-web
-    # No `environment:` block on purpose. This service previously set
+    environment:
+      # Server-side rendering only, and deliberately not a NEXT_PUBLIC_ value.
+      #
+      # Two different networks: the browser reaches the API through the
+      # published port on the host (NEXT_PUBLIC_API_URL, inlined at build time
+      # in `args:` above), while a Server Component rendering *inside this
+      # container* has to use the compose service name. Pointing it at
+      # localhost:3001 makes it call Next.js itself - /courses/[slug] 500s and
+      # /blog renders "that did not load", with both the API and the database
+      # perfectly healthy.
+      #
+      # Unlike the NEXT_PUBLIC_ value this one is read at request time, so it
+      # belongs here rather than in `args:`.
+      INTERNAL_API_URL: http://backend:3001
+    # Nothing else belongs here. This service previously set
     # NEXT_PUBLIC_VIDEO_CDN and NEXT_PUBLIC_STORAGE_URL here, which did nothing:
     # NEXT_PUBLIC_* is inlined into the client bundle at build time, so a value
     # supplied to the *container* is never read. Nothing in frontend/ consumes
@@ -92,3 +138,4 @@ services:
 
 volumes:
   postgres_data:
+  upload_data:

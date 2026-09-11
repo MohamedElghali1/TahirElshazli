@@ -8,6 +8,7 @@ import {
   BooksIcon,
   ClockCounterClockwiseIcon,
   ListIcon,
+  NewspaperIcon,
   SignOutIcon,
   SquaresFourIcon,
   UserIcon,
@@ -34,6 +35,10 @@ interface NavItem {
 const STUDENT_NAV: NavItem[] = [
   { href: '/dashboard', label: 'My courses', Icon: SquaresFourIcon },
   { href: '/catalog', label: 'Browse courses', Icon: BooksIcon },
+  // The blog, read side (CLAUDE.md §5.19). Labelled for what the client asked
+  // for - "a place of teacher achievements the students can view" - rather
+  // than "Blog", which reads as marketing copy inside a student's console.
+  { href: '/achievements', label: 'Achievements', Icon: NewspaperIcon },
   { href: '/notifications', label: 'Notifications', Icon: BellIcon },
   { href: '/profile', label: 'Profile', Icon: UserIcon },
 ];
@@ -50,6 +55,11 @@ const STUDENT_NAV: NavItem[] = [
 const STAFF_NAV: NavItem[] = [
   { href: '/manage', label: 'Overview', Icon: SquaresFourIcon },
   { href: '/manage/courses', label: 'Courses', Icon: BooksIcon },
+  // Authoring the blog, and shared rather than admin-only: the client's
+  // instruction on 2026-09-10 named the assistant as an author too, which
+  // overrides §2.2's "a TA cannot touch the CMS" preset. An assistant may edit
+  // only their own posts, enforced server-side.
+  { href: '/manage/blog', label: 'Blog', Icon: NewspaperIcon },
 ];
 
 const ADMIN_NAV: NavItem[] = [

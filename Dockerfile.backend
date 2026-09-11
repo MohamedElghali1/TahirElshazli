@@ -48,6 +48,22 @@ RUN npm ci --omit=dev --workspace=backend \
 
 COPY --from=builder /app/backend/dist ./backend/dist
 
+# The local upload driver's write target, created here rather than at runtime.
+# Everything copied above is owned by root, and the process runs as `node`
+# below, so `LocalDiskStorage.mkdir` would fail with EACCES on the first upload
+# - a 500 on a working feature, from a permission bit. Pre-creating it owned by
+# `node` also decides the ownership of a Docker named volume mounted here:
+# Compose seeds an empty volume from the image path, ownership included, so an
+# empty root-owned volume is what you get if this line is removed.
+#
+# Note this directory stays unused in a real production deploy, where
+# STORAGE_DRIVER defaults to `none` and `local` is refused outright
+# (env.ts resolveStorageDriver). It exists for the containerized *development*
+# stack in docker-compose.yml, and as the mount point R2 replaces rather than
+# fills.
+RUN mkdir -p /app/backend/var/uploads \
+ && chown -R node:node /app/backend/var
+
 # node:alpine ships an unprivileged `node` user. Nothing here needs uid 0.
 USER node
 

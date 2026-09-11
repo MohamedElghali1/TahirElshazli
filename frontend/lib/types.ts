@@ -740,3 +740,91 @@ export interface Announcement {
   /** How many people it reached, counted at send time - never a stored list. */
   recipientCount: number;
 }
+
+/* ------------------------------------------------------------------------
+   The blog (CLAUDE.md §5.19) - Dr. Tahir's achievements, authored by the
+   teacher or an assistant and read by students and visitors alike.
+
+   Two shapes, and the difference is what each reader is trusted with.
+   `PublicBlogPost` is what the anonymous and student surfaces receive: no
+   `authorId`, no `status`, no `isLive`. `StaffBlogPost` adds them, because the
+   authoring console has to show drafts and know whose post it is.
+   ------------------------------------------------------------------------ */
+
+export type BlogCategory = 'achievement' | 'article' | 'resource';
+export type BlogPostStatus = 'draft' | 'scheduled' | 'published';
+
+/** How the page renders an item: an <img>, a player, or a download link. */
+export type BlogMediaKind = 'image' | 'video' | 'file';
+
+export interface BlogMedia {
+  id: string;
+  postId: string;
+  kind: BlogMediaKind;
+  url: string;
+  /** The per-item description. */
+  caption: string | null;
+  /** Null for externally-hosted media - we record only what we determined. */
+  mimeType: string | null;
+  sizeBytes: number | null;
+  position: number;
+  createdAt: string;
+}
+
+export interface PublicBlogPost {
+  id: string;
+  slug: string;
+  title: string;
+  excerpt: string | null;
+  body: string;
+  category: BlogCategory;
+  tags: string[];
+  publishAt: string;
+  createdAt: string;
+  updatedAt: string;
+  /** The byline. Resolved server-side so no client joins a user id. */
+  authorName: string;
+  /** `excerpt`, or the opening of `body` when there is none. */
+  summary: string;
+  media: BlogMedia[];
+}
+
+export interface StaffBlogPost extends PublicBlogPost {
+  authorId: string;
+  status: BlogPostStatus;
+  /**
+   * Whether it is visible to a reader **right now** - derived server-side,
+   * never stored. A `scheduled` post whose time has passed is live and the row
+   * still says `scheduled`, because nothing rewrites it; this is the field
+   * that tells them apart.
+   */
+  isLive: boolean;
+}
+
+/** One gallery item as the authoring form sends it. Position is the array's. */
+export interface BlogMediaInput {
+  kind: BlogMediaKind;
+  url: string;
+  caption?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+}
+
+/** What `POST /staff/uploads` answers with, ready to become a `BlogMediaInput`. */
+export interface UploadResult {
+  url: string;
+  sizeBytes: number;
+  mimeType: string;
+  kind: BlogMediaKind;
+}
+
+/**
+ * Whether this server accepts uploads at all. `STORAGE_DRIVER=none` is the
+ * production default, so the form renders a URL field instead of a file picker
+ * rather than offering one that 503s.
+ */
+export interface UploadConfig {
+  enabled: boolean;
+  maxBytes: number;
+  allowedMimeTypes: string[];
+}

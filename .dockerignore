@@ -50,6 +50,12 @@ context
 coverage
 .nyc_output
 
+# Locally uploaded blog media (CLAUDE.md 5.19). The host's copy has no business
+# in an image layer: the container writes to a Docker volume, and baking a
+# developer's test uploads into the build would ship them to every deploy.
+backend/var
+**/var/uploads
+
 # Container definitions themselves
 Dockerfile*
 .dockerignore

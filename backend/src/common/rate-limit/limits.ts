@@ -31,3 +31,11 @@ export const PUBLIC_BROWSE_LIMIT: RateLimitRule = {
   limit: 60,
   windowMs: 60_000,
 };
+
+/**
+ * Staff file uploads. Every call writes bytes to storage, which no JSON route
+ * does, so this is the one authenticated endpoint where an unbounded caller
+ * costs disk rather than CPU. Loose enough for a gallery of certificates in
+ * one sitting, tight enough that filling a volume takes deliberate effort.
+ */
+export const UPLOAD_LIMIT: RateLimitRule = { limit: 30, windowMs: 60_000 };

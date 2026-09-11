@@ -45,35 +45,53 @@ work now has screens too**: `/manage/groups`, a course Groups tab carrying place
 *Announcements* panels on the student course page.
 
 **Backend — four of five roles now have a working API.** Of the five roles in `CLAUDE.md` §2,
-**Student**, **Assistant** and **Teacher** have full surfaces and **Visitor** now has a partial one
-(the public catalog); only **Parent** has nothing. Seventeen feature modules (`auth`, `students`,
-`courses`, `enrollments`, `dashboard`, `assessments`, `materials`, `recordings`, `live-sessions`,
-`reports`, `notifications`, `staff`, `manage`, `announcements`, `public`, `audit`, plus `common`)
+**Student**, **Assistant** and **Teacher** have full surfaces and **Visitor** now has a real one
+(the public catalog *and* the blog); only **Parent** has nothing. Nineteen feature modules (`auth`,
+`students`, `courses`, `enrollments`, `dashboard`, `assessments`, `materials`, `recordings`,
+`live-sessions`, `reports`, `notifications`, `staff`, `manage`, `announcements`, `groups`, `blog`,
+`public`, `audit`, plus `common` — which now also holds `common/storage`)
 sit behind global `JwtAuthGuard` + `RolesGuard`. `staff` owns the `CourseStaffAssignment` scoping
 every TA endpoint joins through (§5.11); `manage` is the work surface built on it — overview,
 roster, grading, the recording library, live-session scheduling and the people directory;
 `announcements` carries the send-time audience resolution §5.14 requires; `public` is the only
 unauthenticated surface besides health and auth; `audit` owns the append-only log, now covering
-**twenty actions**; `groups` (§5.16) owns cohorts, staff placement and the classmate list, with
-`GroupDataModule` global so the learning mode can be resolved without a module cycle.
+**twenty-four actions**; `groups` (§5.16) owns cohorts, staff placement and the classmate list, with
+`GroupDataModule` global so the learning mode can be resolved without a module cycle; and `blog`
+(§5.19) owns Dr. Tahir's achievements — authored by a teacher *or an assistant*, read by students and
+anonymous visitors through **one** public endpoint, with publication decided by a clock comparison in
+SQL rather than by a background job. `common/storage` carries the first endpoint in this build that
+takes **bytes** rather than a URL (`POST /staff/uploads`), behind a `FileStorage` interface whose
+only implementation today is development-only and refused in production.
 
-**Persistence is driver-selected.** All fourteen repository interfaces have *two* implementations —
+**Persistence is driver-selected.** All fifteen repository interfaces have *two* implementations —
 an `InMemory*Repository` and a `Postgres*Repository` — bound through
 `database/repository.provider.ts` by the `PERSISTENCE_DRIVER` env var. `memory` is the default in
-development and test and is **refused outright in production**. Seven migrations:
+development and test and is **refused outright in production**. Eight migrations:
 `001_student_platform.sql`, `002_staff_and_audit.sql`, `003_course_catalog.sql`,
-`004_public_catalog.sql`, `005_announcements.sql`, `006_groups.sql` and
-`007_learning_mode_moves_to_the_group.sql`.
+`004_public_catalog.sql`, `005_announcements.sql`, `006_groups.sql`,
+`007_learning_mode_moves_to_the_group.sql` and `008_blog.sql`.
 
-**The integration suite has now run in full.** It covers all fourteen repositories and holds 64
-tests, and as of **2026-09-10 all seven migrations have been applied to a real PostgreSQL 15 from an
-empty schema with all 64 green** — the announcements DDL and both its CHECK constraints, the
-`notifications_type_check` swap, 004's slug backfill, 003's learning-mode UPDATE, 006's four group
-tables with their UNIQUE constraints and cascades, and 007's column drop included. The CI guard that
-fails a job reporting no executed tests still matters, because the suite self-skips and exits 0
-wherever `TEST_DATABASE_URL` is unset.
+**The integration suite has run in full for migrations 001-007.** It covers all fifteen
+repositories, and as of **2026-09-11 all eight migrations have been applied to a real PostgreSQL 15
+from an empty schema with all 79 green** — the announcements DDL and both its CHECK constraints,
+the `notifications_type_check` swap, 004's slug backfill, 003's learning-mode UPDATE, 006's four
+group tables with their UNIQUE constraints and cascades, 007's column drop and 008's two blog
+tables included. The CI guard that fails a job reporting no executed tests still matters, because
+the suite self-skips and exits 0 wherever `TEST_DATABASE_URL` is unset.
 
-Test totals across the three suites: **315 unit, 179 e2e, 67 integration.**
+**There is no longer an unverified migration.** `008_blog.sql` was the exception until 2026-09-11
+and has now been applied from an empty schema, with its **twelve** integration tests executed (the
+count was previously recorded as thirteen and was wrong). Its two CHECK constraints per table, the
+`blog_posts_live_idx` partial index, the `TEXT[]` default, the `BIGINT` round trip and the cascade
+to `blog_post_media` were also checked directly against the running database. For the first time in
+this project a migration's first real run found nothing wrong with the migration — what it found
+was in Docker (see the 2026-09-11 entry).
+
+**The whole stack now runs as containers**, not only as `npm run dev`: Postgres, the API on the
+postgres driver, and the web app, with migrations *and* idempotent seeds applied at boot
+(`DB_AUTO_SEED`, refused in production) and a named volume behind the upload driver.
+
+Test totals across the three suites: **369 unit, 179 e2e, 79 integration** — all executed.
 
 **The audit trail's one long-standing gap is closed** (2026-09-10). An action and its log entry now
 commit together: `DatabaseService` carries the in-flight transaction in `AsyncLocalStorage` so any
@@ -89,9 +107,15 @@ every push.
 
 **Frontend covers the marketing site, the student LMS and the TA/admin console.** `app/(site)`
 marketing, `app/(app)` product shell — student LMS *and* `/manage/*` — and `app/(auth)`
-authentication: **33 build routes**, a shared token system in `app/tokens.css`, and an API client
+authentication: **39 build routes**, a shared token system in `app/tokens.css`, and an API client
 in `lib/api.ts` covering every student, staff and admin route. One `AppShell` serves every signed-in
 role and picks its rail from `lib/roles.ts`. Builds, typechecks and lints clean.
+
+The blog adds six of those routes, and the path split is worth knowing because a route group adds no
+URL segment: the marketing site owns `/blog` and `/blog/[slug]`, so the in-app student surface is
+**`/achievements`** — `(site)/blog` and `(app)/blog` both resolving to `/blog` is a build error.
+Authoring is `/manage/blog` and `/manage/blog/[id]`, whose two panels (the post, the gallery) save
+independently so an upload cannot be lost to a validation error on the title.
 
 **Tooling:** the ruflo meta-harness (`.claude/`, `.claude-flow/`, `.mcp.json`) plus a
 project-specific 10-agent review swarm under `.claude/agents/tahir/`, driven by `/swarm-review`.
@@ -108,12 +132,14 @@ graph TD
     BE -->|"@Roles(Role.Student)"| STU["Student surface: 11 modules"]
     BE -->|"@Roles(Assistant, Teacher)"| TA["staff + manage<br/>scoped console"]
     BE -->|"@Roles(Teacher)"| ADM["manage /admin/*<br/>unscoped + audit log"]
-    BE -.->|not built| OTHERS["Visitor · Parent"]
+    BE -->|"@Public"| VIS["public catalog + blog<br/>anonymous, read-only"]
+    BE -.->|not built| OTHERS["Parent"]
     STU -->|"interface + Symbol token"| SEL{{"repositoryProvider()<br/>PERSISTENCE_DRIVER"}}
     TA --> SEL
     ADM --> SEL
-    SEL -->|memory| MEM["InMemory*Repository ×12"]
-    SEL -->|postgres| PG["Postgres*Repository ×12"]
+    VIS --> SEL
+    SEL -->|memory| MEM["InMemory*Repository ×15"]
+    SEL -->|postgres| PG["Postgres*Repository ×15"]
     PG --> DB[("PostgreSQL")]
 ```
 
@@ -2073,3 +2099,328 @@ an inner transaction joins the outer one rather than committing half of it.
   log that is now as reliable as the write it describes.
 - Editing a task is still API-only, the quiz engine is still a §11 question, and the `TA_SCOPE`
   flip is still unbuilt.
+
+---
+
+## 2026-09-10 — The blog: Dr. Tahir's achievements, and the first upload path
+
+**What changed.** A blog, asked for directly: *"a blog page where the teacher, or ta can upload data
+(images, videos..etc) with description and the students can view it — think of it like a place of
+teacher achievements the students can view."*
+
+Read as a **showcase**, not a CMS. `CLAUDE.md` §9 has a "blog/articles" wish-list line and §6.1 has
+a `BlogPost` entity, and it would have been easy to build the generic thing those describe. The
+client asked for something narrower: results, certificates, a clip of the results morning, each with
+a description. That reading is why `category` defaults to `achievement`, and why the media is a
+**list** rather than one `featured_image_url` — the client's word was plural, and one column cannot
+hold a video at all.
+
+Migration `008_blog.sql` adds two tables. `blog_posts` is §6.1's entity minus two things: no
+`featured_image_url` (the cover is the first image in the gallery, so there is one source of truth
+instead of a column that can disagree with the pictures beside it) and no `view_count` (a counter
+incremented on every anonymous read turns a cached, crawlable page into a write, and at §7.3's
+numbers nobody reads the figure). `blog_post_media` carries `kind`, `url`, `caption`, `position` —
+`caption` being the per-item description, because a gallery of five certificates with one paragraph
+between them does not answer what was asked.
+
+`backend/src/blog/` is the module: a repository on both drivers, `BlogService`, and two controllers
+carrying the whole role boundary at class level — `StaffBlogController` is
+`@Roles(Assistant, Teacher)` and `PublicBlogController` is `@Public()` and read-only.
+
+**Four decisions worth the space, because each closes off a worse version.**
+
+**One endpoint, two reading surfaces.** The client said students should see it; the existing `/blog`
+page on the marketing site was a hardcoded empty state waiting for exactly this content. Rather than
+build a student-scoped duplicate, both read `GET /public/blog`. A published achievement is marketing
+material — there is nothing a student may see here that a visitor may not — so a second route would
+only be a second place for the publication predicate to be got wrong. What differs is the rhythm:
+the marketing site renders it editorially, the console densely, and
+`components/blog/media-gallery.tsx` is shared between them because what it holds is not styling but
+what `kind` *means*.
+
+**Publication is a clock comparison on read; there is no background job.** §5.13 describes a job
+flipping `scheduled` to `published`. This does the same work in the `WHERE` clause —
+`status = 'published' OR (status = 'scheduled' AND publish_at <= now())` — against the *database's*
+clock, in one shared SQL fragment so the list and the by-slug read cannot drift. A post therefore
+goes live on time whether or not anything was running, and no row is rewritten for it to happen.
+The cost is that a live post can still *say* `scheduled`, which is accurate history; a derived
+`isLive` is what the console shows instead (§5.10). **If scheduled publishing is ever wanted for the
+CMS proper, copy this rather than building the job.**
+
+**A TA may author, which overrides §2.2's preset.** That preset said a TA "cannot touch the CMS";
+the client named both actors, and per §0 the user wins — §2.2 has been amended rather than left to
+contradict the instruction. It is a narrow breach: the *blog* is open to a TA, the rest of the CMS
+is not, and a TA may edit only posts they wrote. Nothing here is course-scoped and there is nothing
+to scope by — a post belongs to no course, so no `CourseStaffAssignment` row could answer "may this
+TA touch it". Authorship stands in, in one method (`assertMayMutate`), so widening it later is a
+line and a test rather than a re-audit. `BlogModule` imports no `StaffModule`, and that absence is
+the point.
+
+**The first endpoint in this build that takes bytes.** Materials, recordings and submissions all
+carry a URL string today, and `is-public-http-url.validator.ts` says in as many words that *"the
+real fix is for clients to stop supplying URLs at all — uploads should go through our own storage
+with a server-minted key."* `POST /staff/uploads` is that path, and it is deliberately generic
+rather than nested under `/staff/blog`, because those three want it next. It attaches nothing to
+anything: it stores a file and returns a URL, and turning that URL into a gallery item is a second,
+audited call — which is also why the upload itself logs nothing.
+
+Two properties of it are load-bearing. **The client's filename is never read**: the stored name is a
+server-minted UUID and its extension comes from the MIME whitelist, so path traversal and
+double-extension tricks are structurally impossible rather than things a sanitiser must keep
+catching. And **no SVG, no HTML, nothing executable** — these files come back from the API's own
+origin and an SVG can carry a script tag. Someone will ask for SVG; the answer is no until the files
+are served from a separate origin.
+
+```mermaid
+flowchart LR
+    subgraph author["Staff — teacher or assistant"]
+        F["/manage/blog/[id]<br/>two panels, saved separately"]
+    end
+    subgraph api["API"]
+        U["POST /staff/uploads<br/>whitelist, server-minted name<br/>logs nothing"]
+        SB["StaffBlogController<br/>Roles(Assistant, Teacher)<br/>assertMayMutate"]
+        PB["PublicBlogController<br/>Public, read-only"]
+        DB[("blog_posts<br/>blog_post_media")]
+        AL[("audit_log")]
+    end
+    subgraph read["Readers"]
+        M["/blog — marketing site"]
+        S["/achievements — student console"]
+    end
+    F -->|"bytes"| U
+    U -->|"url"| F
+    F -->|"media[] as a set"| SB
+    SB --> DB
+    SB -.->|"4 audit actions"| AL
+    DB --> PB
+    PB -->|"published, or scheduled<br/>and publish_at &lt;= now()"| M
+    PB --> S
+```
+
+**Why.** `CLAUDE.md` §5.19 is the new requirement and records the instruction verbatim. It touches
+§2.2 (the CMS clause, amended), §5.4 (four new audit actions), §5.10 and §5.13 (status and
+publication derived server-side), §6.1 (`BlogPost` built, and the `Post` vs `BlogPost` naming
+collision in §11 settled in favour of the specific spelling), §8 (upload validation, no executable
+content, no raw HTML sink) and §3 (storage behind an interface, because R2 is the client's to
+provision). Traceability: `CMS-`, `COM-`, `TA-R`.
+
+**Verification.** Executed on this machine:
+
+| Check | Result |
+|---|---|
+| backend `npx tsc --noEmit` | clean |
+| backend `npm run lint` | clean |
+| backend `npm run test` (unit) | **361 passed** / 24 files — was 315, **46 new** |
+| backend e2e (`--no-file-parallelism`) | **179 passed** / 3 files, unchanged |
+| frontend `npx tsc --noEmit` | clean |
+| frontend `npx eslint` | clean |
+| frontend `npm run build` | clean — **39 routes**, was 33 |
+| `npm run test:integration` | **not run** — see below |
+
+The build failure worth recording is the one that shaped the URLs: `(site)/blog` and `(app)/blog`
+both resolve to `/blog`, because a route group adds no path segment. Next refuses it at build time
+rather than at runtime, and the in-app surface became **`/achievements`** — which matches the nav
+label the client's own framing suggested anyway.
+
+Beyond the suites, the whole thing was **run end to end against a live API** on the memory driver:
+an assistant uploaded a real PNG (served back 200 `image/png`), had an SVG refused with a 400, was
+refused as a student with a 403, published a post carrying that image, and the post appeared on the
+public feed. A second assistant got **403** on editing it while the author and the teacher got 200,
+and an unknown id got **404 before** the authorship check rather than a 403 that would confirm the
+post exists. A post scheduled four seconds ahead 404-ed immediately and 200-ed six seconds later
+with **no job running**, still reading `scheduled` with `isLive: true`. The four new audit actions
+were confirmed present with `actorRole` correctly derived (assistant vs teacher) and a before/after
+pair that actually differs — and all four were confirmed to pass `/admin/audit-log?action=…`, which
+is the exact 400 that §5.4 records the `group.*` actions shipping with.
+
+**Follow-ups / debt.**
+
+- **`008_blog.sql` has never run against a real database.** Docker was unavailable on this machine,
+  so its DDL, both CHECK constraints, the `blog_posts_live_idx` partial index and the `TEXT[]` round
+  trip are exercised only by the in-memory driver and by `tsc`. **Thirteen integration tests for it
+  are written and wired into the same suite; they have not executed.** Run
+  `npm run test:integration` against a real Postgres before this ships — every previous first run of
+  a migration in this project found something, and the last one found a paging bug no unit test
+  could have. This is the single largest piece of unverified work in the change.
+- **`.env.example` was not updated** — it is outside this session's write permissions. Two variables
+  need adding: `STORAGE_DRIVER` (`none` | `local`; defaults to `none` in production and `local`
+  elsewhere, and `local` is *refused* in production) and `UPLOAD_DIR` (defaults to `var/uploads`,
+  now gitignored).
+- **Reordering the gallery needs a Save, and there is no drag-and-drop.** Up/down buttons, which are
+  keyboard-operable and cost nothing; a drag surface is the obvious later polish.
+- **Nothing reaps orphaned uploads.** Removing a media row deliberately leaves the bytes: another
+  post may reference the same URL, and an author who deletes an image by accident should be able to
+  paste it back. A lifecycle rule belongs with R2, not with a request handler.
+- **No pagination control on either reading surface.** The API pages (`limit`/`offset`, default 12,
+  max 50) and neither UI offers a "load more" yet. At §7.3's numbers that is some way off mattering.
+- **Five questions for the client**, all recorded in §11 and none blocking: may an assistant edit
+  another's post (shipped as no); may a TA *publish* or only draft (shipped as publish — the one
+  place a TA's action reaches anonymous visitors unreviewed); does the blog belong in the visitor
+  nav (it already was); is `resource` a category anyone wants (it was inference, and the one to
+  drop); and `R2Storage` behind `FileStorage` when the subscription exists.
+
+---
+
+## 2026-09-11 — The blog meets a real database, and the stack meets Docker
+
+**What changed.** Two things that sound like chores and were not: migration `008_blog.sql` was
+applied to a real PostgreSQL for the first time, and the whole application was brought up as
+containers for the first time. The first found nothing. The second found three bugs, one of which
+predates the blog entirely and has been shipping broken for as long as the compose file has existed.
+
+**The database half.** Docker Desktop was installed but not running on this machine — the same
+thing that blocked this on 2026-09-10. Started, then `postgres:15-alpine` from an empty schema:
+all eight migrations applied, all four seeds, **79 integration tests green**. The blog's own tests
+number **twelve**, not the thirteen recorded last time; that was a miscount and both documents are
+corrected.
+
+Beyond the suite, the shapes a test asserts only indirectly were checked against the live catalog:
+both CHECK constraints on each table, the `blog_posts_live_idx` partial index with its
+`WHERE status <> 'draft'`, the `TEXT[]` default, `size_bytes` coming back from `BIGINT` as a
+JavaScript number rather than a string, the `ON DELETE CASCADE` to `blog_post_media`, and the
+author FK that deliberately does *not* cascade. `publish_at` and `created_at` are `TIMESTAMPTZ(3)`,
+which is the precision rule the audit-log paging bug set in migration 002.
+
+Worth stating plainly because every previous first run in this project found something: **this one
+found nothing wrong with the migration.**
+
+**The Docker half, which is where the bugs were.**
+
+**1. The stack booted healthy and could not be used.** Compose applies migrations at boot
+(`DB_AUTO_MIGRATE=1`) but seeding is a separate CLI step — deliberately, because the fixtures carry
+`student@example.com` with a published password hash, and `MigrationRunner.seed` says so. The
+consequence nobody had hit: eight migrations land on an empty database, there is no account
+anywhere, and the API reports healthy. `DB_AUTO_SEED` is the fix, mirroring `DB_AUTO_MIGRATE` and
+**refused outright in production** by `resolveAutoSeed` — the same shape as
+`PERSISTENCE_DRIVER=memory` and `STORAGE_DRIVER=local`, and for a sharper reason than either, since
+seeding a real database hands out logins. Safe on every boot because every seed file is
+`ON CONFLICT DO NOTHING`, which was checked rather than assumed.
+
+**2. Uploads needed a volume and an owner.** The runtime image runs as `USER node` while everything
+`COPY`ed into it is root-owned, so `LocalDiskStorage`'s `mkdir` would have failed `EACCES` on the
+first upload — a 500 on a working feature, from a permission bit. The image now pre-creates
+`/app/backend/var/uploads` owned by `node`, which also decides the ownership of the named volume
+Compose seeds from that path. The `upload_data` volume is what makes a file survive
+`docker compose up --build`; without it a rebuild discards every uploaded file while the
+`blog_post_media` rows pointing at them survive in the Postgres volume. That is the exact failure
+`env.ts` describes when it refuses this driver in production, and a volume does not repeal it: one
+host's disk still 404s half the files from a second replica.
+
+**3. The frontend could not reach the API at all, and this one is not new.**
+`NEXT_PUBLIC_API_URL` is inlined into the client bundle at *build* time, so it has to be an origin
+the user's browser can resolve — `http://localhost:3001`. A Server Component rendering *inside* the
+web container resolves that to **itself**, and calls Next.js instead of Nest. `/courses/[slug]`
+returned **500** and `/blog` rendered "that did not load", with the API and the database both
+perfectly healthy.
+
+This predates the blog: `(site)/courses/[slug]` has always been a server-rendered API read. It went
+unnoticed because it was the *only* one, and nobody had run the stack in containers. `lib/api.ts`
+now resolves a second base URL, `INTERNAL_API_URL` — runtime, deliberately not `NEXT_PUBLIC_`,
+since a service name belongs to the private network and has no business in a browser bundle — and
+picks between the two on `typeof window`.
+
+One layer down, the same confusion in a different costume: an uploaded file's stored URL is
+root-relative (`/uploads/<name>`), which in a browser resolves against the **page's** origin on
+:3000 while the file is served by Nest on :3001. Proven rather than reasoned about: the same path
+returned 404 from :3000 and 200 from :3001. Every uploaded image would have rendered broken with
+the file perfectly intact. `mediaSrc()` resolves it against the browser API origin — and uses the
+*browser* value even during server rendering, because the result goes into an `src` the browser
+fetches. It stops being needed the day R2 makes every stored URL absolute.
+
+```mermaid
+flowchart TB
+    subgraph host["Developer's machine"]
+        B["Browser"]
+    end
+    subgraph net["compose network"]
+        W["web :3000<br/>Next.js"]
+        A["api :3001<br/>Nest"]
+        D[("postgres :5432<br/>postgres_data")]
+        V[("upload_data<br/>/app/backend/var/uploads")]
+    end
+    B -->|"page request"| W
+    W -->|"server render<br/>INTERNAL_API_URL<br/>http://backend:3001"| A
+    B -->|"client fetch + img src<br/>NEXT_PUBLIC_API_URL<br/>http://localhost:3001"| A
+    A --> D
+    A --> V
+```
+
+The rule the diagram encodes, and the one to carry forward: **the browser and the server reach the
+API on two different networks.** `npm run dev` cannot tell them apart, because there both are
+`localhost`. Anything added to `frontend/` that fetches during server rendering has to be checked
+against the compose stack, not only against the dev server.
+
+**Why.** `CLAUDE.md` §3 (the VPS must be migratable without code changes — which requires the
+containers to actually work), §5.19 and §7.1 (the blog's stated prerequisite was a real database
+run), §7.4 (new, describing the containerized stack), and §8 (the production refusals are security
+properties, and two of them now have tests).
+
+**Verification.** Executed on this machine, against real containers:
+
+| Check | Result |
+|---|---|
+| `npm run test:integration` vs. PostgreSQL 15.19 | **79 passed** — 8 migrations, 4 seeds, empty schema |
+| backend `npm run test` (unit) | **369 passed** / 25 files — was 361, 8 new |
+| backend e2e | **179 passed** / 3 files, unchanged |
+| frontend `tsc --noEmit` / `eslint` | clean |
+| `docker compose up --build` | postgres + api + web all start and report healthy |
+| API in Docker on the postgres driver | migrations + seeds at boot; `/public/blog` serves 2 of 3 posts |
+| upload → attach → anonymous read | PNG stored as `node`, served 200, gallery read back anonymously |
+| container recreate | uploaded file **and** post both survive; re-seed a no-op |
+| audit trail on real Postgres | `blog_post.created` + `blog_post.media_set`, `actor_role=assistant` |
+
+The scheduled-post behaviour was re-confirmed against the container's own clock rather than a test
+double: the 2099-dated fixture stays invisible to `/public/blog` with no job running anywhere.
+
+**One thing was not verified in a container, and it matters that it is stated plainly.** The two
+frontend fixes — `INTERNAL_API_URL` and `mediaSrc` — are proven, but not from inside the web image.
+Rebuilding that image runs `next build` inside the container, and on this host that exhausts memory
+and kills the Docker VM mid-build (twice; the second time the daemon returned
+`rpc error: ... EOF` and had to be restarted). The running web container therefore still carries
+the *pre-fix* image, and `grep` confirms neither `mediaSrc` nor `INTERNAL_API_URL` appears in its
+bundle — which is exactly why it still 500s, and is not evidence against the fix.
+
+What was proven instead, with the locally-built frontend serving against the **Dockerized,
+Postgres-backed** API:
+
+- `mediaSrc` — the rendered HTML carries
+  `src="http://localhost:3001/uploads/<uuid>.png"` rather than a root-relative path, and that URL
+  returns 200 `image/png`. Before the fix the same path returned **404 from :3000 and 200 from
+  :3001**, which is the whole bug in two numbers.
+- `INTERNAL_API_URL` — an A/B rather than an assertion. Pointed at a dead port
+  (`http://127.0.0.1:9`), `/courses/[slug]` returns **500** and `/blog` renders its error state;
+  unset, so it falls back to the API on :3001, the same two pages return **200** with real content
+  read out of Postgres. The server-side branch demonstrably reads the variable.
+
+The remaining gap is narrow — whether the image *build* picks it up — and CI builds that image on
+every push, so it is also the gap most likely to close itself.
+
+**Follow-ups / debt.**
+
+- **`.env.example` still cannot be written from this session** — it is outside the permission
+  boundary, and now needs *four* variables rather than two: `STORAGE_DRIVER` (`none` | `local`),
+  `UPLOAD_DIR` (default `var/uploads`), `DB_AUTO_SEED` (`0`/`1`, refused in production) and
+  `INTERNAL_API_URL` (frontend, server-side only).
+- **Nothing tests the two-origin split.** The `typeof window` branch in `lib/api.ts` is the kind of
+  thing that is correct today and silently regresses, and the frontend still has no test runner —
+  which is also why CI's `verify` job deliberately has no `--if-present` frontend test step.
+- **CI builds both images but never runs the compose stack**, so all three bugs above would still
+  pass CI today. A smoke job that brings the stack up and curls one server-rendered page would have
+  caught every one of them. Cheap, and the obvious next pipeline change — and it would also close
+  the one gap this session could not: rebuilding the web image needs more memory than this host has.
+- **`/blog` and `/` are prerendered when the *image* is built, and no API is running then.** Both
+  are static with a 5-minute revalidate; `/blog/[slug]` and `/courses/[slug]` are dynamic. So a CI-
+  built image ships `/blog` holding "that did not load" and `/` with no course grid, and the first
+  visitor sees that until ISR regenerates. It heals itself in five minutes and nothing is broken,
+  but it is a poor first impression on the two most public pages and no test we run can see it.
+  Three ways out — make them dynamic, give the build a live API, or accept it — and the choice is a
+  deployment decision rather than a code one. `fetchCatalog` swallowing the failure is *correct* and
+  should stay: an unhandled throw there takes the whole build down.
+- **A server-side fetch now times out after 10s** (`SERVER_FETCH_TIMEOUT_MS`). Added because an
+  unanswered socket is worse than a refused one: a half-started container accepts the connection and
+  says nothing, which hangs `next build` for 60s per attempt and fails it after three. A refused
+  connection surfaces instantly as the page's own error state. Browser requests are deliberately
+  left uncapped — there a human can see it spinning and navigate away.
+- **Docker Desktop is installed outside the default path on this machine**
+  (`%LOCALAPPDATA%\Programs\DockerDesktop`), which is why two earlier sessions concluded Docker was
+  unavailable. It is not; it simply needs starting.

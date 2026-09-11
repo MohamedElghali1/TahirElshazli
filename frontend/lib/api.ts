@@ -41,10 +41,71 @@ import type {
   StudentHomeResponse,
   StudentProfile,
   AppNotification,
+  BlogMediaInput,
+  BlogCategory,
+  BlogPostStatus,
+  PublicBlogPost,
+  StaffBlogPost,
+  UploadConfig,
+  UploadResult,
 } from './types';
 
+/**
+ * Where the *browser* reaches the API. Inlined into the client bundle at build
+ * time, so it has to be an origin the user's machine can resolve - which is
+ * why a container's service name can never go here.
+ */
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+
+/**
+ * Where *this process* reaches the API when it renders on the server.
+ *
+ * These are two different networks and conflating them is a real outage rather
+ * than a nicety. In Docker Compose the browser reaches the API on
+ * `http://localhost:3001` through a published port, while a Server Component
+ * rendering inside the web container resolves `localhost` to *itself* - so the
+ * fetch connects to Next.js, not to Nest, and the page 500s or renders its
+ * error state with nothing wrong at either end. `/courses/[slug]` did exactly
+ * that until this existed.
+ *
+ * Read at call time rather than at module scope: this is deliberately NOT a
+ * NEXT_PUBLIC_ variable, because a service name belongs to the private network
+ * and has no business in a bundle shipped to a browser. It is supplied to the
+ * *container* (docker-compose.yml), not to the build.
+ *
+ * Unset - `npm run dev`, or a deployment where both are the same origin - it
+ * falls back to the browser value, which is the single-origin case and stays
+ * correct.
+ */
+/**
+ * Absolute src for a media item.
+ *
+ * An uploaded file's stored URL is a root-relative path (`/uploads/<name>`)
+ * because the API mints it without knowing what origin will display it. In a
+ * browser that path resolves against the *page's* origin - the Next.js server
+ * on :3000 - while the file is served by Nest on :3001, so every uploaded
+ * image renders broken while the file itself is perfectly fine. Externally
+ * hosted media arrives as a full URL and is passed through untouched.
+ *
+ * This deliberately uses the browser origin even when called during server
+ * rendering: the result goes into an `src` attribute that the *browser*
+ * fetches, so the container-internal address would be unreachable and
+ * `baseUrl()` is the wrong helper here.
+ *
+ * It stops being needed the day media lives on R2 and every stored URL is
+ * absolute - at which point the `startsWith('/')` branch simply stops firing.
+ */
+export function mediaSrc(url: string): string {
+  return url.startsWith('/') ? `${API_URL}${url}` : url;
+}
+
+function baseUrl(): string {
+  if (typeof window !== 'undefined') {
+    return API_URL;
+  }
+  return process.env.INTERNAL_API_URL?.trim() || API_URL;
+}
 
 /**
  * A failed request the UI can render. `status` is what separates "your session
@@ -90,6 +151,23 @@ interface RequestOptions {
   revalidate?: number;
 }
 
+/**
+ * How long a *server-side* fetch waits before giving up.
+ *
+ * A caller-supplied `signal` always wins; this only fills the gap where there
+ * is none. It exists because an unanswered socket is a worse failure than a
+ * refused one: `next build` prerenders the public pages, so an API host that
+ * accepts the connection and then says nothing hangs the build for 60s per
+ * attempt and fails it after three - where a refused connection surfaces
+ * instantly as the page's own error state and the build carries on. That is
+ * not hypothetical; it is what a half-started container does.
+ *
+ * Server-side only. In a browser the request belongs to a user who can see it
+ * spinning and navigate away, and capping it there would turn a slow
+ * connection into a broken page.
+ */
+const SERVER_FETCH_TIMEOUT_MS = 10_000;
+
 async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, token, signal, cache, revalidate } = opts;
 
@@ -97,13 +175,19 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (token) headers.Authorization = `Bearer ${token}`;
 
+  // Only when the caller gave no signal of its own, and only on the server.
+  const timeout =
+    signal === undefined && typeof window === 'undefined'
+      ? AbortSignal.timeout(SERVER_FETCH_TIMEOUT_MS)
+      : undefined;
+
   let res: Response;
   try {
-    res = await fetch(`${API_URL}${path}`, {
+    res = await fetch(`${baseUrl()}${path}`, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal,
+      signal: signal ?? timeout,
       // `cache` and `next.revalidate` are mutually exclusive in Next - passing
       // both makes the revalidate silently lose.
       ...(revalidate === undefined
@@ -159,6 +243,50 @@ const qs = (params: Record<string, string | undefined>) => {
   return entries.length ? `?${new URLSearchParams(entries).toString()}` : '';
 };
 
+/**
+ * A multipart upload, which `request` above cannot express.
+ *
+ * Two things it must not do, and both are why this is separate rather than a
+ * flag on `RequestOptions`:
+ *
+ *  - **No `Content-Type` header.** `fetch` generates the multipart boundary
+ *    itself when handed a `FormData`, and setting the header by hand omits it,
+ *    which makes the server reject a body that is otherwise perfectly formed.
+ *  - **No JSON stringify.** The body is the `FormData`.
+ *
+ * The field name is `file`, matching `FileInterceptor('file')` on the server.
+ * The server does not read the filename at all - it mints its own from the
+ * validated MIME type - so nothing here needs to sanitise it.
+ */
+async function uploadFile(
+  token: string,
+  file: File,
+  signal?: AbortSignal,
+): Promise<UploadResult> {
+  const form = new FormData();
+  form.append('file', file);
+
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl()}/staff/uploads`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+      signal,
+    });
+  } catch (cause) {
+    if (cause instanceof DOMException && cause.name === 'AbortError') throw cause;
+    throw new ApiError(0, 'Could not reach the server. Check your connection.');
+  }
+
+  const text = await res.text();
+  const payload: unknown = text ? safeJson(text) : null;
+  if (!res.ok) {
+    throw new ApiError(res.status, messageFrom(payload, res.status), payload);
+  }
+  return payload as UploadResult;
+}
+
 /* ------------------------------------------------------------------------
    Every endpoint below is verified against the backend controllers.
 
@@ -198,6 +326,40 @@ export const api = {
       request<PublicCourseDetail>(
         `/public/courses/${encodeURIComponent(slug)}`,
         { revalidate: PUBLIC_REVALIDATE_SECONDS },
+      ),
+  },
+
+  /**
+   * The blog (CLAUDE.md §5.19) - Dr. Tahir's achievements.
+   *
+   * `@Public` and read-only, and **both** the marketing site and the student
+   * console read it from here. There is deliberately no student-scoped
+   * equivalent: a published achievement is marketing material, so a second
+   * route would only be a second place for the publication predicate to be got
+   * wrong. The two surfaces differ in styling, not in what they may see.
+   *
+   * Never returns a draft, and never a scheduled post whose time has not come -
+   * the server compares `publish_at` to its own clock on every read.
+   */
+  publicBlog: {
+    /**
+     * `live: false` asks for a cached read on the five-minute public window;
+     * `live: true` skips it. The marketing pages are Server Components and take
+     * the default; the in-app screens are Client Components, where Next's
+     * `next.revalidate` is inert and silently doing nothing would be a
+     * "why is this stale" question waiting to happen - so they say so.
+     */
+    list: (opts?: { limit?: number; live?: boolean }) =>
+      request<PublicBlogPost[]>(
+        `/public/blog${qs({ limit: opts?.limit?.toString() })}`,
+        opts?.live ? {} : { revalidate: PUBLIC_REVALIDATE_SECONDS },
+      ),
+
+    /** Keyed by slug. A draft and a slug that never existed 404 alike. */
+    get: (slug: string, opts?: { live?: boolean }) =>
+      request<PublicBlogPost>(
+        `/public/blog/${encodeURIComponent(slug)}`,
+        opts?.live ? {} : { revalidate: PUBLIC_REVALIDATE_SECONDS },
       ),
   },
 
@@ -543,6 +705,100 @@ export const api = {
         token,
         body,
       }),
+
+    /* --------------------------------------------------------------------
+       The blog (CLAUDE.md §5.19). On /staff/* and reachable by an assistant:
+       the client's instruction on 2026-09-10 named both actors, overriding
+       §2.2's "a TA cannot touch the CMS" preset.
+
+       None of these is course-scoped, and there is nothing to scope by - a
+       post belongs to no course. Authorship stands in for it server-side: a
+       TA may change only posts they wrote, and the API answers 403 if they
+       try otherwise. The UI reflects that rather than enforcing it.
+       -------------------------------------------------------------------- */
+
+    /** Every post, drafts and future-dated ones included. The public feed cannot
+     *  return these, which is why this is a separate route and not a filter. */
+    blog: (token: string) => request<StaffBlogPost[]>('/staff/blog', { token }),
+
+    /** By id, not slug: this is the editing surface and a draft has no address. */
+    blogPost: (token: string, postId: string) =>
+      request<StaffBlogPost>(`/staff/blog/${postId}`, { token }),
+
+    createBlogPost: (
+      token: string,
+      body: {
+        title: string;
+        excerpt?: string;
+        body: string;
+        category?: BlogCategory;
+        tags?: string[];
+        /** Defaults to `draft` server-side - publishing is deliberate. */
+        status?: BlogPostStatus;
+        /** Only consulted for `scheduled`. */
+        publishAt?: string;
+        media?: BlogMediaInput[];
+      },
+    ) => request<StaffBlogPost>('/staff/blog', { method: 'POST', token, body }),
+
+    /**
+     * Edit, publish or schedule. There is no separate publish call: `status` is
+     * an ordinary field and the audit entry's before/after pair carries the
+     * transition.
+     *
+     * Takes no `media` key by design. A PATCH that omitted it would have to
+     * mean either "leave it alone" or "delete it all", and whichever was chosen
+     * the other reading would eventually delete somebody's gallery.
+     */
+    updateBlogPost: (
+      token: string,
+      postId: string,
+      body: {
+        title?: string;
+        excerpt?: string;
+        body?: string;
+        category?: BlogCategory;
+        tags?: string[];
+        status?: BlogPostStatus;
+        publishAt?: string;
+      },
+    ) =>
+      request<StaffBlogPost>(`/staff/blog/${postId}`, {
+        method: 'PATCH',
+        token,
+        body,
+      }),
+
+    /** Replaces the whole gallery; it is a set, not a diff. */
+    setBlogMedia: (token: string, postId: string, media: BlogMediaInput[]) =>
+      request<StaffBlogPost>(`/staff/blog/${postId}/media`, {
+        method: 'POST',
+        token,
+        body: { media },
+      }),
+
+    deleteBlogPost: (token: string, postId: string) =>
+      request<void>(`/staff/blog/${postId}`, { method: 'DELETE', token }),
+
+    /**
+     * What this server will accept. Read before rendering the upload control,
+     * because `STORAGE_DRIVER=none` is the production default and the form has
+     * to offer a URL field rather than a file picker that 503s.
+     */
+    uploadConfig: (token: string) =>
+      request<UploadConfig>('/staff/uploads/config', { token }),
+
+    /**
+     * Bytes in, a URL out. Multipart, so it does not go through `request` -
+     * that helper JSON-stringifies its body and sets a Content-Type, and
+     * `fetch` must be left to set the multipart boundary itself.
+     *
+     * Attaches nothing to anything: the returned URL becomes a `BlogMediaInput`
+     * on the next `setBlogMedia` or `createBlogPost` call, which is the audited
+     * write. Uploading and publishing are deliberately two steps.
+     */
+    upload: (token: string, file: File, signal?: AbortSignal) =>
+      uploadFile(token, file, signal),
   },
 
   /* ----------------------------------------------------------------------

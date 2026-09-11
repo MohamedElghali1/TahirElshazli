@@ -98,6 +98,13 @@ course roster **read-only** (no edit, no unenroll), post course announcements, a
 enroll or unenroll a student, touch payments, touch the CMS, or see platform-wide data. Their
 dashboard counts are scoped to their own courses — never the full roster.
 
+> **The CMS clause is partly overtaken, as of 2026-09-10.** The client asked for a blog *"where the
+> teacher, or ta can upload data (images, videos..etc) with description"* — so a TA authors blog
+> posts and uploads files, which this list had withheld (§5.19). It is a narrow breach rather than
+> a general one: the *blog* is open to a TA, the rest of the CMS — pages, testimonials, FAQs, site
+> content — is not, and a TA may edit only posts they wrote themselves. Everything else in both
+> lists stands. Payments and accounts are untouched by this.
+
 **Placing a student in a group is a TA power** — the client said so directly on 2026-09-10 (§5.16):
 a student is assigned to a group "by the assistant or the teacher". Note that this sits right next
 to something the preset withholds: a TA still **cannot enroll or unenroll**. The two are different
@@ -227,17 +234,23 @@ unenrollment, account changes, course deletion — is logged without exception.
 interface has no update and no delete, which is where that is enforced. `AuditAction` and
 `AuditTargetType` are string *unions*, so adding a mutating endpoint cannot log until someone adds
 its action to the list; that compile error is the mechanism keeping "every TA mutation is logged"
-true as surfaces land. **Twenty actions exist so far**, across staff assignment, grading, the
-recording library, live-session scheduling, announcements, groups and authoring:
+true as surfaces land. **Twenty-four actions exist so far**, across staff assignment, grading, the
+recording library, live-session scheduling, announcements, groups, authoring and the blog:
 
 `course_staff.assigned` · `course_staff.unassigned` · `submission.graded` · `recording.created` ·
 `recording.updated` · `recording.deleted` · `live_session.scheduled` · `live_session.updated` ·
 `live_session.cancelled` · `announcement.posted` · `group.created` · `group.renamed` ·
 `group.course_added` · `group.course_removed` · `group.student_assigned` · `group.student_removed` ·
-`assessment.created` · `assessment.updated` · `assessment.targeted` · `assessment.deleted`
+`assessment.created` · `assessment.updated` · `assessment.targeted` · `assessment.deleted` ·
+`blog_post.created` · `blog_post.updated` · `blog_post.media_set` · `blog_post.deleted`
 
-Of those, `submission.graded`, `announcement.posted`, the two `group.student_*` and all four
-`assessment.*` are reachable by an assistant; the rest are teacher-only today. `actorRole` is derived from the acting user rather than assumed, so if a
+Of those, `submission.graded`, `announcement.posted`, the two `group.student_*` and all four of
+both `assessment.*` and `blog_post.*` are reachable by an assistant; the rest are teacher-only today.
+The `blog_post.*` four are the first audited actions whose output is read by **anonymous
+visitors** rather than by enrolled students, which is what earns them an entry even though a post
+carries no student data: *"which assistant published this under Dr. Tahir's byline"* is exactly the
+question §5.4 exists to answer. `blog_post.media_set` is its own action rather than folded into
+`updated` because losing a post's pictures and rewording its title are different mistakes. `actorRole` is derived from the acting user rather than assumed, so if a
 teacher-only write is later widened to TAs the log does not silently attribute an assistant's action
 to Dr. Tahir. That now holds in **every** audited service, `ManageRecordingsService` included — it
 derived nothing and hardcoded `Role.Teacher` until 2026-09-08. `StaffService` is the one remaining
@@ -553,6 +566,74 @@ close its window — not to erase the record. The FK would cascade happily; the 
 Publication stays a **server-side clock decision** (§5.10, §5.13): an assessment appears when its
 `available_from` passes — or its group's override does — never when a client decides it should.
 
+### 5.19 The blog — Dr. Tahir's achievements, with the pictures
+
+**Given by the client on 2026-09-10:** *"a blog page where the teacher, or ta can upload data
+(images, videos..etc) with description and the students can view it — think of it like a place of
+teacher achievements the students can view."*
+
+Read the framing carefully, because it is what makes this a feature and not a CMS. §9's wish list
+has a "blog/articles" line and §6.1 has a `BlogPost` entity, and it would be easy to build this as
+the generic CMS those describe. The client asked for something narrower and more specific: **a
+showcase**. Results, certificates, a clip of the results assembly, each with a description. That is
+why `category` defaults to `achievement` and why the media is a list rather than one
+`featured_image_url`.
+
+- **Both the teacher and an assistant may author.** The client named both actors, which
+  **overrides §2.2's preset** — that preset said a TA "cannot touch the CMS", and per §0 the user
+  wins. §2.2 has been amended rather than left to contradict this.
+- **A TA may edit only their own posts.** The client granted authoring and said nothing about
+  editing each other's work, and the feed carries Dr. Tahir's byline, so the narrow reading ships
+  — the same call made for live-session scheduling (§11). It is one method,
+  `BlogService.assertMayMutate`, so widening it is a line and a test rather than a re-audit.
+  A **403** here, not §5.11's 404: the post is listed on the caller's own console, so pretending it
+  does not exist would make the UI lie about a row it is showing.
+- **Nothing here is course-scoped, and there is nothing to scope by.** A post belongs to no course,
+  so no `CourseStaffAssignment` row can answer "may this TA touch it" — the same situation as the
+  group routes (§5.11.1). Authorship stands in for it. `BlogModule` imports no `StaffModule`, and
+  that absence is deliberate.
+- **Students *and* visitors read it, through one endpoint.** `GET /public/blog` and
+  `/public/blog/:slug` are anonymous, and the student console reads the same two routes. A
+  published achievement is marketing material, so a student-scoped duplicate would only be a
+  second place for the publication predicate to be got wrong. Two surfaces, one API: the marketing
+  site renders it editorially, the console densely.
+- **Publication is a clock comparison on read, and there is no background job.** §5.13 describes a
+  job flipping `scheduled` to `published`; this does the same work in the `WHERE` clause —
+  `status = 'published' OR (status = 'scheduled' AND publish_at <= now())`, using the *database's*
+  clock. A scheduled post therefore goes live on time whether or not anything was running, and no
+  row is rewritten for it to happen. The cost is that a live post can still *say* `scheduled`,
+  which is accurate history; a derived `isLive` is what the console shows instead (§5.10). **If
+  scheduled publishing is ever wanted for the CMS proper, copy this rather than building the job.**
+- **A draft, a future-dated post and a slug that never existed all 404 alike** — the rule migration
+  004 set for unpublished courses. The response must not confirm that a draft is sitting there.
+- **The body is plain text, rendered as paragraphs.** Never `dangerouslySetInnerHTML`. The authors
+  are trusted staff, but a stored-XSS hole against every reader of the public blog is not worth
+  italics; rich text needs a sanitiser and a schema, not a raw HTML sink (§8).
+- **The slug never changes after creation.** A retitled post keeps the address it was published
+  under, because a moving slug breaks every link already shared.
+
+**Uploads.** This is the first surface in the build that takes bytes rather than a URL — materials,
+recordings and submissions all carry a URL string today, and `is-public-http-url.validator.ts` says
+in as many words that *"the real fix is for clients to stop supplying URLs at all."*
+`POST /staff/uploads` is that path, and it is deliberately **generic and not under `/staff/blog`**,
+because the other three want it next. What it does not do is attach anything to anything: it stores
+a file and returns a URL, and turning that URL into a gallery item is a second, audited call.
+
+Two things about it are load-bearing:
+
+- **The filename is never read.** The stored name is a server-minted UUID and its extension comes
+  from the MIME whitelist, so path traversal and double-extension tricks are structurally
+  impossible rather than things a sanitiser has to keep catching.
+- **No SVG, no HTML, nothing executable** (`upload-types.ts`). These files come back from the API's
+  own origin and an SVG can carry `<script>`. Someone will ask for SVG; the answer is no until the
+  files are served from a separate origin.
+
+`STORAGE_DRIVER` selects the driver — `local` in development, `none` in production, `r2` when the
+client provisions it. **`local` is refused in production** for the same shape of reason
+`PERSISTENCE_DRIVER=memory` is: the failure is quiet, with uploaded files discarded on the next
+deploy while the `blog_post_media` rows pointing at them survive. With `none` the endpoint answers
+503 and the authoring form offers a URL field instead — which is not a degraded mode, since
+CDN-hosted media is the intended long-term shape anyway.
 
 ---
 
@@ -642,6 +723,24 @@ These **extend** the entities above rather than duplicating them — same `User`
   status (draft|scheduled|published), publish_at, author_id, view_count`) · `VideoAsset` ·
   `Testimonial` · `FAQ` · `MediaAsset`. These supersede the generic `Post` placeholder in §6 (§11).
 
+  **`BlogPost` is built as of 2026-09-10** (migration 008, §5.19), and it landed with two
+  deliberate departures from the shape above:
+
+  - **No `featured_image_url`.** Replaced by **`BlogPostMedia`** — `id, post_id,
+    kind (image|video|file), url, caption, mime_type, size_bytes, position, created_at`. The client
+    asked for *"images, videos..etc"*, plural, and a single column cannot hold a video at all. The
+    cover is simply the first image in that table, so there is one source of truth rather than a
+    column that can disagree with the gallery beside it. `caption` is the per-item description; a
+    gallery of five certificates with one paragraph between them does not answer the ask.
+  - **No `view_count`.** Incrementing a counter on every anonymous read turns a cached, crawlable
+    page into a write, and at §7.3's numbers nobody is reading the figure. §9's rule applies — it
+    was listed, not asked for. Adding it later is a column and an `UPDATE`.
+
+  Everything else is as written, and the three statuses are unchanged. `category` is
+  `achievement | article | resource`, defaulting to `achievement` — the client's own framing.
+  This is also the entity that **settles the `Post` vs `BlogPost` collision** below, in favour of
+  the specific spelling.
+
 ---
 
 ## 7. Phases
@@ -678,11 +777,11 @@ Honest inventory, so nobody assumes a surface is there. Of the five roles in §2
 
 | Role | Backend status |
 |---|---|
-| **Student** | Built. 10 feature controllers, every route `@Roles(Role.Student)`, unit + e2e covered. `JwtAuthGuard` + `RolesGuard` are **global**, so a new controller is protected by default; `@Public()` (health, register, login, password reset) and `@AnyRole()` (logout) are the only exits. Includes the catalog and self-enrollment added 2026-09-07 ({S}7.2), and the aggregated **`GET /dashboard`** added 2026-09-09 - the whole Home screen in one request, composed from the same per-course services so its numbers cannot drift from the screens it links to ({S}7.3). The per-course `GET /courses/:id/dashboard` remains and still serves `/learn/[id]`. Plus `GET /courses/:id/classmates` (2026-09-10, {S}5.17) — the first read where one student learns another exists, group-scoped, name only — and `GET /courses/:id/announcements` ({S}5.18), so a posted announcement has a page rather than only a mailbox line. The assessment list and detail are now **targeting-filtered**: a student sees only what was set for one of their groups. |
-| **Visitor** | **Partly built.** A `public` module serves `GET /public/courses` and `GET /public/courses/:slug` unauthenticated, gated on the `is_published` flag from migration `004_public_catalog.sql` so Dr. Tahir can draft a course without it appearing. The detail response carries the **full outline** — modules and lesson titles with durations — not just counts. Rate-limited separately from auth (browsing is the point, but every call is an unauthenticated database read). Still absent: blog, contact. |
+| **Student** | Built. 10 feature controllers, every route `@Roles(Role.Student)`, unit + e2e covered. `JwtAuthGuard` + `RolesGuard` are **global**, so a new controller is protected by default; `@Public()` (health, register, login, password reset) and `@AnyRole()` (logout) are the only exits. Includes the catalog and self-enrollment added 2026-09-07 ({S}7.2), and the aggregated **`GET /dashboard`** added 2026-09-09 - the whole Home screen in one request, composed from the same per-course services so its numbers cannot drift from the screens it links to ({S}7.3). The per-course `GET /courses/:id/dashboard` remains and still serves `/learn/[id]`. Plus `GET /courses/:id/classmates` (2026-09-10, {S}5.17) — the first read where one student learns another exists, group-scoped, name only — and `GET /courses/:id/announcements` ({S}5.18), so a posted announcement has a page rather than only a mailbox line. The assessment list and detail are now **targeting-filtered**: a student sees only what was set for one of their groups. Plus `/achievements` and `/achievements/[slug]` (2026-09-10, §5.19) - the blog, read inside the console off the *public* endpoint, because a published achievement is identical for a student and a visitor and a second route would only be a second place to get the publication predicate wrong. |
+| **Visitor** | **Partly built.** A `public` module serves `GET /public/courses` and `GET /public/courses/:slug` unauthenticated, gated on the `is_published` flag from migration `004_public_catalog.sql` so Dr. Tahir can draft a course without it appearing. The detail response carries the **full outline** — modules and lesson titles with durations — not just counts. Rate-limited separately from auth (browsing is the point, but every call is an unauthenticated database read). **The blog landed 2026-09-10** (§5.19): `GET /public/blog` and `/public/blog/:slug` serve Dr. Tahir's achievements with their galleries, anonymous and cached on a five-minute window, and the same two routes back the student console. A draft, a future-dated post and an unknown slug 404 alike. Still absent: contact. |
 | **Parent** | None. Enum entry only; no `ParentLink`, no read-only views. |
-| **Teaching Assistant** | **Working console.** `CourseStaffAssignment` + `StaffScopeService` (§5.11) now carry a real surface: `/staff/overview`, `/staff/courses`, and per-course `roster`, `outline`, `submissions`, `recordings`, `live-sessions` and `announcements`, plus `POST /staff/submissions/:id/grade` and `POST /staff/courses/:id/announcements`. Every one is scoped, and an unassigned course 404s. Plus the group surface added 2026-09-10: `GET /staff/courses/:id/groups` (scoped), `GET /staff/groups/:id` and `/members`, and **placement** — `POST /staff/groups/:id/members` and `DELETE .../members/:studentId` — which {S}2.2 grants a TA explicitly. Plus **assessment authoring** ({S}5.18, 2026-09-10): `GET`/`POST /staff/courses/:id/assessments`, `PATCH`/`DELETE /staff/assessments/:id` and `POST /staff/assessments/:id/targets`. Still absent: attendance, the quiz engine, materials upload, messages. |
-| **Teacher / Admin** | **Working console — a strict superset of the TA's.** The same `/staff/*` routes unscoped, plus admin-only `/admin/students`, `/admin/assistants`, TA-to-course assignment (`/admin/courses/:id/staff`), the recording library (`POST /admin/courses/:id/recordings`, `PATCH`/`DELETE /admin/recordings/:id`), live-session scheduling (`POST /admin/courses/:id/live-sessions`, `PATCH`/`DELETE /admin/live-sessions/:id`), platform-wide announcements (`GET`/`POST /admin/announcements`), the audit-log reader (`/admin/audit-log`) and, from 2026-09-10, **group CRUD** — `GET`/`POST /admin/groups`, `PATCH /admin/groups/:id`, and `POST`/`DELETE` on `/admin/groups/:id/courses`. Still absent: course CRUD, payments, CMS, reports. |
+| **Teaching Assistant** | **Working console.** `CourseStaffAssignment` + `StaffScopeService` (§5.11) now carry a real surface: `/staff/overview`, `/staff/courses`, and per-course `roster`, `outline`, `submissions`, `recordings`, `live-sessions` and `announcements`, plus `POST /staff/submissions/:id/grade` and `POST /staff/courses/:id/announcements`. Every one is scoped, and an unassigned course 404s. Plus the group surface added 2026-09-10: `GET /staff/courses/:id/groups` (scoped), `GET /staff/groups/:id` and `/members`, and **placement** — `POST /staff/groups/:id/members` and `DELETE .../members/:studentId` — which {S}2.2 grants a TA explicitly. Plus **assessment authoring** ({S}5.18, 2026-09-10): `GET`/`POST /staff/courses/:id/assessments`, `PATCH`/`DELETE /staff/assessments/:id` and `POST /staff/assessments/:id/targets`. Plus the **blog** (§5.19, 2026-09-10): `GET`/`POST /staff/blog`, `GET`/`PATCH`/`DELETE /staff/blog/:id` and `POST /staff/blog/:id/media`, none of them course-scoped because a post belongs to no course - authorship gates it instead, and a TA may edit only their own. Plus `POST /staff/uploads`, the first endpoint in the build that takes **bytes** rather than a URL, deliberately generic so materials and recordings can use it next. Still absent: attendance, the quiz engine, materials upload, messages. |
+| **Teacher / Admin** | **Working console — a strict superset of the TA's.** The same `/staff/*` routes unscoped, plus admin-only `/admin/students`, `/admin/assistants`, TA-to-course assignment (`/admin/courses/:id/staff`), the recording library (`POST /admin/courses/:id/recordings`, `PATCH`/`DELETE /admin/recordings/:id`), live-session scheduling (`POST /admin/courses/:id/live-sessions`, `PATCH`/`DELETE /admin/live-sessions/:id`), platform-wide announcements (`GET`/`POST /admin/announcements`), the audit-log reader (`/admin/audit-log`) and, from 2026-09-10, **group CRUD** — `GET`/`POST /admin/groups`, `PATCH /admin/groups/:id`, and `POST`/`DELETE` on `/admin/groups/:id/courses`. The blog is **not** in this list, and that is the point: it is on `/staff/*` and an assistant reaches it (§5.19, overriding §2.2's CMS clause). Still absent: course CRUD, payments, the rest of the CMS, reports. |
 
 The TA/admin work surface lives in `backend/src/manage/` — `ManageService` (overview, roster,
 outline), `GradingService`, `ManageRecordingsService`, `DirectoryService`, behind two controllers
@@ -765,7 +864,7 @@ widens, the three routes move from `AdminManageController` to `StaffManageContro
 admin.
 
 **Frontend:** built for the Visitor-facing marketing site, the Student LMS and
-the TA/Admin console — `app/(site)`, `app/(app)`, `app/(auth)`, 33 build routes,
+the TA/Admin console — `app/(site)`, `app/(app)`, `app/(auth)`, 39 build routes,
 typed against the backend's response shapes in `lib/types.ts`. The marketing
 pages read from `lib/site-content.ts` rather than an API, because there is no
 public API to read (the Visitor row above). **No Parent screens.**
@@ -781,9 +880,29 @@ course page a **Your class** panel ({S}5.17) and an **Announcements** panel
 teacher has not sorted you into a class yet" and "you are alone here" are the
 difference between a wait and a bug report.
 
+**The blog has six screens** (§5.19, 2026-09-10), and the path split matters
+because route groups add no URL segment: the marketing site owns `/blog` and
+`/blog/[slug]`, so the in-app student surface is **`/achievements`** and
+`/achievements/[slug]` — `(site)/blog` and `(app)/blog` both resolving to
+`/blog` is a build error, not a runtime surprise. Authoring is
+`/manage/blog` (list, with a draft/scheduled/live chip, plus a minimal create
+form) and `/manage/blog/[id]` (the editor). The editor's **two panels save
+independently** — the post and the gallery — because uploading five
+certificates and then losing them to a validation error on the title is the
+failure that shape rules out, and the API agrees by taking no `media` key on
+its PATCH. `components/blog/media-gallery.tsx` is shared by both reading
+surfaces, which is the one place crossing the two-surface boundary is right:
+what it holds is not styling but what `kind` *means*, plus the decisions that
+must not be made twice and differently — a plain `<img>` rather than
+`next/image` (author-supplied hosts cannot be enumerated in
+`images.remotePatterns`), captions as real `<figcaption>`s rather than alt
+text, and the body rendered as paragraphs and **never** through
+`dangerouslySetInnerHTML`.
+
 **One shell, two consoles.** `AppShell` is shared by every signed-in role and
 picks its rail from `lib/roles.ts`: students get `/dashboard`, `/catalog`,
-`/notifications`, `/profile`; a TA gets `/manage` and `/manage/courses`; the
+`/achievements`, `/notifications`, `/profile`; a TA gets `/manage`,
+`/manage/courses` and `/manage/blog`; the
 teacher gets those plus `/manage/students`, `/manage/recordings` and
 `/manage/activity`. `app/(app)/layout.tsx` redirects each role into its own
 console, which is what fixed the old symptom where signing in as
@@ -797,7 +916,7 @@ guard regardless of what the rail renders ({S}8). The client-side redirect
 decides *where to send* someone, never *what they may read*.
 
 **Persistence is driver-selected, and both drivers are real.** Every one of the
-fourteen repository interfaces has an `InMemory*Repository` and a
+fifteen repository interfaces has an `InMemory*Repository` and a
 `Postgres*Repository`; `database/repository.provider.ts` binds the `Symbol`
 token from `PERSISTENCE_DRIVER`, read once at wiring time. `memory` is the
 default in development and test and is **refused in production** — an unset
@@ -808,17 +927,32 @@ student surface), `002_staff_and_audit.sql` (`course_staff_assignments`,
 `audit_log`), `003_course_catalog.sql` (`default_learning_mode`),
 `004_public_catalog.sql` (`slug`, `is_published`), `005_announcements.sql`,
 `006_groups.sql` (`groups`, `group_courses`, `group_memberships`,
-`assessment_targets`) and `007_learning_mode_moves_to_the_group.sql` (drops
+`assessment_targets`), `007_learning_mode_moves_to_the_group.sql` (drops
 `enrollments.learning_mode` — the only destructive migration so far, and the
-file says why the dropped value is derivable), applied by `MigrationRunner` via
+file says why the dropped value is derivable) and `008_blog.sql` (`blog_posts`,
+`blog_post_media` — §5.19), applied by `MigrationRunner` via
 `npm run db:migrate` or `DB_AUTO_MIGRATE=1` on a single-container deploy.
-`test/postgres-repositories.integration-spec.ts` covers all fourteen and skips
-itself when no `TEST_DATABASE_URL` is set. As of **2026-09-10 all seven
+`test/postgres-repositories.integration-spec.ts` covers all fifteen and skips
+itself when no `TEST_DATABASE_URL` is set. As of **2026-09-11 all eight
 migrations have run against a real PostgreSQL 15** from an empty schema, with
-the suite's **59 tests green** — so the announcements DDL, both of its CHECK
+the suite's **79 tests green** — so the announcements DDL, both of its CHECK
 constraints, the `notifications_type_check` swap, the 004 slug backfill, 003's
-learning-mode UPDATE and 006's four tables with their UNIQUE constraints and
-cascades are all exercised rather than merely written. CI runs
+learning-mode UPDATE, 006's four tables with their UNIQUE constraints and
+cascades, and 008's two tables are all exercised rather than merely written.
+
+**`008_blog.sql` stopped being the exception on 2026-09-11.** It had been
+written but never applied anywhere real, because Docker was unavailable on the
+machine that built it. It has now been applied from an empty schema and its
+**twelve** integration tests executed — the count was recorded as thirteen and
+was wrong. Verified directly against the running database rather than only
+through the suite: both CHECK constraints on each table, the
+`blog_posts_live_idx` partial index (`WHERE status <> 'draft'`), the `TEXT[]`
+default, the `BIGINT` `size_bytes` round trip, the `ON DELETE CASCADE` to
+`blog_post_media` and the author FK that deliberately does *not* cascade. The
+`publish_at`/`created_at` columns are `TIMESTAMPTZ(3)`, matching the precision
+rule the audit-log paging bug set below. **Unlike every previous first run in
+this project, this one found nothing in the migration itself** — what it did
+find was in Docker, not in SQL (see §7.4). CI runs
 the same suite on every push against a Postgres service container, with a guard
 step that fails the job if the suite reports no executed tests (a suite that
 self-skips is otherwise indistinguishable from one that passes).
@@ -870,14 +1004,21 @@ before a second implementation existed. That window closed some time ago:
 `findAll` and `findByIds` above each cost two implementors and an integration
 suite to add, which is the going rate now. Still worth doing, still not free.
 
-**Audit coverage is twenty actions, and every mutating staff route is covered
-today.** The `@Global()` `AuditModule` is now injected in seven services —
+**Audit coverage is twenty-four actions, and every mutating staff route is covered
+today.** The `@Global()` `AuditModule` is now injected in eight services —
 `StaffService`, `GradingService`, `ManageRecordingsService`,
-`ManageLiveSessionsService`, `AnnouncementsService`, `GroupsService` and
-`AssessmentAuthoringService` — wiring the twenty actions §5.4 lists, one
+`ManageLiveSessionsService`, `AnnouncementsService`, `GroupsService`,
+`AssessmentAuthoringService` and `BlogService` — wiring the twenty-four actions
+§5.4 lists, one
 `audit.record` call per action. Verified by enumeration on 2026-09-10: every
 `@Post`/`@Patch`/`@Delete` on `StaffManageController`, `AdminManageController`,
-both announcement controllers and both group controllers reaches one. That is a property of today's tree, not
+both announcement controllers, both group controllers and
+`StaffBlogController` reaches one — and `blog.controller.spec.ts` carries an
+enumerating test that walks all four blog writes and asserts the actions they
+logged, which is the closest thing here to holding that property in place.
+The one mutating staff route that deliberately logs **nothing** is
+`POST /staff/uploads`: it stores bytes and attaches them to nothing, and the
+audited event is the `blog_post.media_set` that later references the URL. That is a property of today's tree, not
 a mechanism: each new staff or admin write must add its own call, and the moment
 one forgets, §5.4 is quietly broken with nothing failing. Attendance and
 payments are where this stops being theoretical.
@@ -1070,6 +1211,75 @@ copy for attendance and payments.
 
 ---
 
+## 7.4 The containerized stack — what `docker compose up` actually gives you
+
+Brought up end to end and exercised on **2026-09-11**, which is the first time the whole stack has
+run as containers rather than as `npm run dev`. `docker compose up -d --build` gives Postgres, the
+API on the postgres driver, and the web app; `npm run dev` from the repo root is still faster for
+clicking through the UI and needs no database at all.
+
+Three things it does that are worth knowing before changing any of it:
+
+- **Migrations run at boot, seeds now run beside them.** `DB_AUTO_MIGRATE=1` was already there.
+  `DB_AUTO_SEED=1` is new and is why the stack is usable: without it the eight migrations landed on
+  an empty database and **there was no account to sign in with** — a stack that reports healthy and
+  cannot be used. Every seed file is idempotent (`ON CONFLICT DO NOTHING`), which is what makes
+  running it on every boot safe rather than merely convenient.
+
+  `resolveAutoSeed` **refuses production outright**, the same shape as `PERSISTENCE_DRIVER=memory`
+  and `STORAGE_DRIVER=local`. The fixtures insert `student@example.com` with a *published* password
+  hash, so seeding a real database hands out logins — an account-takeover hole, not a convenience.
+  `MigrationRunner.seed` has always said so; the switch just makes it impossible to get wrong.
+
+- **Uploads need a volume and an owner.** `upload_data` is mounted at `/app/backend/var/uploads`
+  so files survive `--build`; without it an image rebuild discards every uploaded file while the
+  `blog_post_media` rows pointing at them survive in the Postgres volume — broken images and no
+  error anywhere, exactly the failure `env.ts` describes when it refuses this driver in production.
+  A volume does **not** make the driver production-safe: it is still one host's disk, so a second
+  replica 404s half the files. R2 is the answer there, not a bigger volume.
+
+  The image pre-creates that directory `chown`ed to `node`, because the runtime runs as `USER node`
+  while everything `COPY`ed is root-owned — the first upload would otherwise fail `EACCES`. It also
+  decides the ownership of the named volume, which Compose seeds from the image path.
+
+- **The browser and the server reach the API on two different networks, and conflating them is an
+  outage.** `NEXT_PUBLIC_API_URL` is inlined into the client bundle at *build* time and must be an
+  origin the user's machine can resolve, so a Compose service name can never go there. A Server
+  Component rendering *inside* the web container resolves `localhost` to itself, so it calls
+  Next.js instead of Nest. `INTERNAL_API_URL` (runtime, deliberately **not** `NEXT_PUBLIC_`) is the
+  second value, and `lib/api.ts` picks between them with a `typeof window` check.
+
+  This was not theoretical and it was not new: `/courses/[slug]` **500ed** in the containerized
+  stack and `/blog` rendered "that did not load", with the API and the database both perfectly
+  healthy. It went unnoticed because until the blog landed, the only server-rendered API read was
+  that one course page, and nobody had run the stack in containers.
+
+  The related trap is one layer down: an uploaded file's stored URL is root-relative
+  (`/uploads/<name>`), and in a browser that resolves against the **page's** origin — Next on
+  :3000 — while the file is served by Nest on :3001. Every uploaded image rendered broken while the
+  file itself was fine. `mediaSrc()` resolves it against the browser API origin, and it uses the
+  browser value even during server rendering, because the result goes into an `src` the *browser*
+  fetches. It stops being needed when R2 makes every stored URL absolute.
+
+- **`/blog` and `/` are prerendered at *image build* time, and no API is running then.** Both are
+  static with a 5-minute revalidate (`next build` marks them `○ … 5m`); `/blog/[slug]` and
+  `/courses/[slug]` are dynamic and render per request. So a container image built in CI ships
+  `/blog` with its "that did not load" state and `/` with its course grid missing, and the *first*
+  visitor sees that until ISR regenerates. Nothing is broken and it heals itself in five minutes,
+  but it is a poor first impression on a marketing page and it is invisible in every test we run.
+
+  Three ways out, none of them chosen yet because it is a deployment decision rather than a code
+  one: make the two pages dynamic, have the build reach a live API, or accept the stale first
+  render. `fetchCatalog` already swallows the failure deliberately so the *build* survives — that
+  much is correct and should stay (an unhandled throw there takes the whole build down).
+
+**The general rule this leaves behind:** a value consumed by the browser and a value consumed by
+the server are two settings even when they name the same service, and `npm run dev` cannot tell
+them apart because there both are `localhost`. Anything added to `frontend/` that fetches during
+server rendering must be checked against the compose stack, not only against `npm run dev`.
+
+---
+
 ## 8. Security requirements (treat as non-negotiable)
 
 The client named security a top priority. Every feature is built with these in place, not bolted on:
@@ -1232,13 +1442,31 @@ logs, future subscriptions. Designed so **additional gateways drop in later**.
   is in scope before Phase 2 closes** — adding them afterwards means a public write path on a
   codebase that currently has none.
 
+- **Open questions the blog (§5.19) leaves behind**, none of them blocking:
+  - **May an assistant edit another assistant's post, or Dr. Tahir's?** Shipped as *no* — the
+    client granted authoring and said nothing about editing each other's work, and the byline is
+    Dr. Tahir's. One method (`assertMayMutate`) decides it.
+  - **Should a TA be able to *publish*, or only draft?** Shipped as publish. The client said
+    "upload", which implies the thing becomes visible; requiring the teacher to approve every post
+    would be a review workflow nobody asked for. Worth a question, since it is the one place a TA's
+    action reaches anonymous visitors with no second pair of eyes.
+  - **Does the blog belong in the site navigation for visitors?** It is already in the marketing
+    header (that entry predates this work), so yes by default.
+  - **Is `resource` a category anyone wants?** `achievement` is the client's framing and `article`
+    is the obvious second. The third was inference and is the one to drop if the answer is no.
+  - **When R2 is provisioned**, `POST /staff/uploads` needs an `R2Storage` behind `FileStorage`
+    and `STORAGE_DRIVER=r2`. Nothing above that interface changes, and §8's "virus scan where
+    feasible" belongs with it rather than with the local driver.
+
 - Whether the Payments **page** should also hide transaction amounts, or only the dashboard does
   (§1). The prototype shows amounts on the page; nobody has ruled on it.
 - Whether TA permissions are per-TA configurable (§2 says "must be configurable") or the fixed
   preset the prototype shows (§2.2). Build the preset; keep it data-driven so this stays cheap.
-- Naming collisions to settle before the first migration: `Coupon` vs `DiscountCode`, and the
-  generic `Post` vs the specific `BlogPost`/`VideoAsset`/`Testimonial`/`FAQ`/`MediaAsset` (§6.1).
-  Carrying both spellings into schema is the failure mode; my recommendation is the specific ones.
+- Naming collisions: `Coupon` vs `DiscountCode` is still open. **The `Post` vs `BlogPost` half is
+  settled** — migration 008 ships `blog_posts` and `blog_post_media` (§5.19, §6.1), so the specific
+  spelling won, as recommended. The generic `Post` placeholder in §6 is dead; `VideoAsset`,
+  `Testimonial`, `FAQ` and `MediaAsset` remain unbuilt and keep their specific names when they land.
+  Carrying both spellings into schema is the failure mode, and that is now foreclosed for posts.
 - `Attendance` keying is **settled in the student build**: `AttendanceRecord` keys on `sessionId`
   (`live-sessions/interfaces/live-session-repository.interface.ts:10-15`), matching §6.1's own
   recommendation. Still open: the shipped record stores `attended: boolean`, which cannot encode

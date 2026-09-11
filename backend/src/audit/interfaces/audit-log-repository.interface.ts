@@ -53,7 +53,20 @@ export type AuditAction =
   | 'assessment.created'
   | 'assessment.updated'
   | 'assessment.targeted'
-  | 'assessment.deleted';
+  | 'assessment.deleted'
+  // The blog (CLAUDE.md §5.19). Reachable by an assistant - the client named
+  // both actors on 2026-09-10 - and the only TA-writable surface whose output
+  // is read by *anonymous visitors* rather than by enrolled students. That is
+  // what earns it an entry here even though a post carries no student data:
+  // "which assistant published this under Dr. Tahir's byline" is precisely the
+  // question §5.4 exists to answer.
+  | 'blog_post.created'
+  | 'blog_post.updated'
+  // The gallery, replaced as a set. Its own action rather than folded into
+  // `updated`, because losing a post's images and rewording its title are
+  // different mistakes and the log should distinguish them.
+  | 'blog_post.media_set'
+  | 'blog_post.deleted';
 
 /** What the action happened *to*. Grows with `AuditAction`, for the same reason. */
 export type AuditTargetType =
@@ -72,7 +85,12 @@ export type AuditTargetType =
   // The task itself. Its *audience* is not a separate target type: re-aiming a
   // task is a change to that task, and filing it elsewhere would split one
   // question - "what happened to this assignment?" - across two reads.
-  | 'assessment';
+  | 'assessment'
+  // The post. Its media is not a separate target type, for the same reason an
+  // assessment's audience is not: replacing a gallery is a change to that
+  // post, and filing it elsewhere would split "what happened to this post?"
+  // across two reads.
+  | 'blog_post';
 
 /**
  * One side of a before/after pair.

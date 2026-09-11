@@ -25,6 +25,8 @@ import { ManageModule } from './manage/manage.module.js';
 import { AnnouncementsModule } from './announcements/announcements.module.js';
 import { GroupsModule } from './groups/groups.module.js';
 import { GroupDataModule } from './groups/group-data.module.js';
+import { BlogModule } from './blog/blog.module.js';
+import { StorageModule } from './common/storage/storage.module.js';
 
 @Module({
   imports: [
@@ -44,6 +46,11 @@ import { GroupDataModule } from './groups/group-data.module.js';
     GroupDataModule,
     RateLimitModule,
     AuthModule,
+    // File storage and the one endpoint that writes to it. Early, and after
+    // AuthModule for the global guards' PassportModule: the blog's authoring
+    // form is the first thing to need an upload, but the endpoint is generic
+    // and materials, recordings and annotated submissions all want it next.
+    StorageModule,
     EnrollmentsModule,
     StudentsModule,
     CoursesModule,
@@ -68,6 +75,12 @@ import { GroupDataModule } from './groups/group-data.module.js';
     // repositories it borrows, and EnrollmentsModule for the gate the
     // classmate list checks first (§5.17).
     GroupsModule,
+    // The blog (CLAUDE.md §5.19) - Dr. Tahir's achievements, authored by the
+    // teacher or an assistant and read by students and anonymous visitors
+    // alike. It imports no StaffModule and that is deliberate: a post names no
+    // course, so there is nothing for `StaffScopeService` to scope by and
+    // authorship stands in for it.
+    BlogModule,
     // The anonymous Visitor surface - the public course catalog the marketing
     // site reads. After CoursesModule, whose COURSE_REPOSITORY it borrows.
     PublicModule,

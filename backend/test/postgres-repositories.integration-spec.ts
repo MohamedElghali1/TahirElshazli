@@ -16,6 +16,7 @@ import { PostgresCourseStaffRepository } from '../src/staff/repositories/postgre
 import { PostgresAuditLogRepository } from '../src/audit/repositories/postgres-audit-log.repository.js';
 import { PostgresAnnouncementRepository } from '../src/announcements/repositories/postgres-announcement.repository.js';
 import { PostgresGroupRepository } from '../src/groups/repositories/postgres-group.repository.js';
+import { PostgresBlogRepository } from '../src/blog/repositories/postgres-blog.repository.js';
 import { Role } from '../src/auth/roles.enum.js';
 
 /**
@@ -1161,6 +1162,188 @@ describeIfDb('Postgres repositories', () => {
      the action it describes down with it. It can only be made against a real
      database - the memory driver has no journal to unwind, which
      `runInTransaction` says plainly rather than pretending otherwise. */
+  describe('blog', () => {
+    const repo = () => new PostgresBlogRepository(db);
+
+    it('reads the seeded posts with their galleries attached', async () => {
+      const post = await repo().findById('blog-1');
+      expect(post?.slug).toBe('igcse-chemistry-results-june-2026');
+      expect(post?.title).toContain('34 A*');
+      // A real TEXT[] round trip, which the in-memory stub cannot exercise.
+      expect(post?.tags).toEqual(['IGCSE', 'Chemistry', 'Results']);
+      // The image and the video, in the author's order - the case a single
+      // `featured_image_url` column could not have held (CLAUDE.md §5.19).
+      expect(post?.media.map((m) => m.kind)).toEqual(['image', 'video']);
+      expect(post?.media.map((m) => m.position)).toEqual([0, 1]);
+      // BIGINT arrives from `pg` as a string; `numOrNull` is what makes this a
+      // number rather than the string '412338'.
+      expect(post?.media[0]?.sizeBytes).toBe(412338);
+      expect(typeof post?.media[0]?.sizeBytes).toBe('number');
+    });
+
+    it('applies the clock predicate in SQL, not in the process', async () => {
+      // `blog-2` is 'scheduled' with a 2026 date and `blog-3` with a 2099 one.
+      // Nothing flips either row, so this is the whole scheduling mechanism:
+      // if the WHERE clause is wrong, one of these assertions fails.
+      const slugs = (await repo().findLive(50, 0)).map((p) => p.slug);
+      expect(slugs).toContain('igcse-chemistry-results-june-2026');
+      expect(slugs).toContain('ielts-speaking-band-8-walkthrough');
+      expect(slugs).not.toContain('october-intake-open-evening');
+
+      // And the row still says 'scheduled' - it was never rewritten.
+      expect((await repo().findById('blog-2'))?.status).toBe('scheduled');
+    });
+
+    it('hides a draft and a future post from the by-slug read too', async () => {
+      // The predicate is shared between the two reads deliberately: a by-slug
+      // read that forgot it would serve an unpublished post to anyone holding
+      // the link, which a list-only test would never catch.
+      expect(await repo().findLiveBySlug('october-intake-open-evening')).toBeNull();
+
+      const draft = await repo().create({
+        slug: 'a-draft-for-the-integration-suite',
+        title: 'Draft',
+        excerpt: null,
+        body: 'x',
+        category: 'article',
+        tags: [],
+        status: 'draft',
+        publishAt: new Date('2020-01-01T00:00:00Z').toISOString(),
+        authorId: 'teacher-1',
+      });
+      expect(await repo().findLiveBySlug(draft.slug)).toBeNull();
+      // But the staff read finds it.
+      expect((await repo().findById(draft.id))?.status).toBe('draft');
+    });
+
+    it('pages the public feed newest first', async () => {
+      const firstPage = await repo().findLive(1, 0);
+      const secondPage = await repo().findLive(1, 1);
+      expect(firstPage).toHaveLength(1);
+      expect(secondPage).toHaveLength(1);
+      expect(firstPage[0]?.id).not.toBe(secondPage[0]?.id);
+      // blog-1 is dated 2026-08-22 and blog-2 2026-09-01, so the later one
+      // leads. `blog_posts_live_idx` is what serves this ordering.
+      expect(firstPage[0]?.slug).toBe('ielts-speaking-band-8-walkthrough');
+    });
+
+    it('refuses a status outside the union', async () => {
+      // The CHECK constraint, asserted rather than assumed: a union widened in
+      // TypeScript with no migration beside it would otherwise pass every unit
+      // test and fail on the first real write.
+      await expect(
+        db.query(
+          `INSERT INTO blog_posts (id, slug, title, body, status, author_id)
+           VALUES ('bad-status', 'bad-status', 't', 'b', 'live', 'teacher-1')`,
+        ),
+      ).rejects.toThrow();
+    });
+
+    it('refuses a media kind outside the union', async () => {
+      await expect(
+        db.query(
+          `INSERT INTO blog_post_media (id, post_id, kind, url)
+           VALUES ('bad-kind', 'blog-1', 'audio', 'https://cdn.example.com/a.mp3')`,
+        ),
+      ).rejects.toThrow();
+    });
+
+    it('refuses a duplicate slug', async () => {
+      // The constraint `uniqueSlug` leans on to settle a race it cannot win by
+      // checking first.
+      await expect(
+        repo().create({
+          slug: 'igcse-chemistry-results-june-2026',
+          title: 'Same address',
+          excerpt: null,
+          body: 'x',
+          category: 'achievement',
+          tags: [],
+          status: 'draft',
+          publishAt: new Date().toISOString(),
+          authorId: 'teacher-1',
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('updates only the columns supplied and always bumps updated_at', async () => {
+      const before = await repo().findById('blog-1');
+      const after = await repo().update('blog-1', { title: 'A new headline' });
+
+      expect(after?.title).toBe('A new headline');
+      // Untouched by a patch that named neither.
+      expect(after?.body).toBe(before?.body);
+      expect(after?.tags).toEqual(before?.tags);
+      expect(Date.parse(after?.updatedAt ?? '')).toBeGreaterThan(
+        Date.parse(before?.updatedAt ?? ''),
+      );
+      // The gallery survives an edit to the post.
+      expect(after?.media).toHaveLength(2);
+    });
+
+    it('returns the current row for an empty patch rather than failing', async () => {
+      // `UPDATE ... SET` with an empty list is a syntax error, so the
+      // repository short-circuits. Worth asserting because the alternative is
+      // a 500 on a form submitted with nothing changed.
+      expect((await repo().update('blog-1', {}))?.id).toBe('blog-1');
+    });
+
+    it('returns null when updating or deleting something that is not there', async () => {
+      expect(await repo().update('no-such-post', { title: 'x' })).toBeNull();
+      expect(await repo().remove('no-such-post')).toBe(false);
+      expect(await repo().removeMedia('no-such-media')).toBe(false);
+    });
+
+    it('cascades the gallery away with the post, and holds the author in place', async () => {
+      const created = await repo().create({
+        slug: 'cascade-check',
+        title: 'Cascade check',
+        excerpt: null,
+        body: 'x',
+        category: 'achievement',
+        tags: ['x'],
+        status: 'published',
+        publishAt: new Date().toISOString(),
+        authorId: 'assistant-1',
+      });
+      const item = await repo().addMedia({
+        postId: created.id,
+        kind: 'image',
+        url: '/uploads/b3f1c0de-0000-4000-8000-000000000001.png',
+        caption: null,
+        mimeType: 'image/png',
+        sizeBytes: 1234,
+        position: 0,
+      });
+
+      expect(await repo().remove(created.id)).toBe(true);
+      // ON DELETE CASCADE on `post_id`.
+      expect(await repo().findMedia(item.id)).toBeNull();
+
+      // The author, by contrast, is RESTRICT by omission: an account that has
+      // written posts cannot be deleted out from under them.
+      await expect(
+        db.query(`DELETE FROM users WHERE id = 'assistant-1'`),
+      ).rejects.toThrow();
+    });
+
+    it('attaches galleries in one query for a whole page, not one per post', async () => {
+      // The N+1 §7.3 still calls worth avoiding. Asserted through behaviour
+      // rather than a query count: every post on the page comes back with the
+      // media that belongs to it and nothing that does not.
+      const page = await repo().findAll(50, 0);
+      for (const post of page) {
+        for (const item of post.media) {
+          expect(item.postId).toBe(post.id);
+        }
+      }
+      expect(page.find((p) => p.id === 'blog-1')?.media).toHaveLength(2);
+      // A post with no media gets an empty array, not a missing key, so the
+      // response shape never varies on the client.
+      expect(page.find((p) => p.id === 'blog-3')?.media).toEqual([]);
+    });
+  });
+
   describe('runInTransaction', () => {
     it('rolls the action back when the audit write fails', async () => {
       const groups = new PostgresGroupRepository(db);
