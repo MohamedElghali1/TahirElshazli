@@ -1,19 +1,15 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowRightIcon } from '@phosphor-icons/react';
+import { ArrowRightIcon, BooksIcon } from '@phosphor-icons/react';
 import { api } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
 import { isAdminRole } from '@/lib/roles';
 import { formatDate } from '@/lib/format';
-import {
-  Chip,
-  EmptyState,
-  ErrorState,
-  Panel,
-  RowsSkeleton,
-} from '@/components/ui';
-import { PageBody, PageHeader } from '@/components/app/page-parts';
+import { Chip, EmptyState, ErrorState, RowsSkeleton } from '@/components/ui';
+import { PageBody } from '@/components/app/page-parts';
+import { PageTitle } from '@/components/app/page-chrome';
+import { TableScroll, Td, Th, Tr } from '@/components/app/table';
 
 /**
  * Every course the caller may work on.
@@ -33,65 +29,84 @@ export default function ManageCoursesPage() {
 
   return (
     <>
-      <PageHeader
-        title="Courses"
-        subtitle={
-          admin
-            ? 'Every course on the platform.'
-            : 'The courses you have been assigned to.'
-        }
-      />
-      <PageBody>
-        <Panel bodyClassName="">
-          {loading && <RowsSkeleton rows={5} />}
-          {error && <ErrorState message={error.message} onRetry={reload} />}
-          {data && data.courses.length === 0 && (
-            <EmptyState
-              title={admin ? 'No courses yet' : 'Nothing assigned to you'}
-              body={
-                admin
-                  ? 'Courses added to the platform will appear here.'
-                  : 'Ask Dr. Tahir to assign you to a course.'
-              }
-            />
-          )}
-          {data && data.courses.length > 0 && (
-            <ul className="rows">
+      <PageTitle icon={BooksIcon} title="Courses" />
+      <PageBody dense className="flex flex-col gap-[var(--sp-2)]">
+        {/* The view chip carries what the old subtitle said - Twenty has no
+            page subtitle, only this bar (TASK 4). */}
+        <div className="flex h-[var(--topbar-h)] items-center px-[var(--sp-2)]">
+          <span className="inline-flex h-[var(--h-sm)] items-center gap-[var(--sp-1)] rounded-[var(--r-lg)] bg-[var(--bg-primary)] py-[var(--sp-1)] ps-[var(--sp-1)] pe-[var(--sp-2)] text-[var(--fs-base)] font-medium text-[var(--fg-secondary)]">
+            {admin ? 'All courses' : 'Assigned to you'}
+            {data && (
+              <>
+                {' · '}
+                <span className="num">{data.courses.length}</span>
+              </>
+            )}
+          </span>
+        </div>
+
+        {loading && <RowsSkeleton rows={5} />}
+        {error && <ErrorState message={error.message} onRetry={reload} />}
+        {data && data.courses.length === 0 && (
+          <EmptyState
+            title={admin ? 'No courses yet' : 'Nothing assigned to you'}
+            body={
+              admin
+                ? 'Courses added to the platform will appear here.'
+                : 'Ask Dr. Tahir to assign you to a course.'
+            }
+          />
+        )}
+        {data && data.courses.length > 0 && (
+          <TableScroll minWidth={640}>
+            <thead>
+              <tr className="border-b border-[var(--border-medium)]">
+                <Th>Course</Th>
+                <Th>Teacher</Th>
+                <Th align="end">Students</Th>
+                <Th align="end">Recordings</Th>
+                <Th />
+              </tr>
+            </thead>
+            <tbody>
               {data.courses.map((course) => (
-                <li key={course.id}>
-                  <Link
-                    href={`/manage/courses/${course.id}`}
-                    className="flex items-center gap-[var(--sp-4)] px-[var(--sp-4)] py-[var(--sp-4)] transition-colors duration-[var(--dur-fast)] hover:bg-[var(--bg-wash-subtle)]"
-                  >
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[var(--fs-base)] font-medium text-[var(--fg-primary)]">
-                        {course.title}
-                      </span>
-                      <span className="mt-[var(--sp-1)] block text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
-                        {course.teacherName}
-                        {course.assignedAt &&
-                          ` · assigned ${formatDate(course.assignedAt)}`}
-                      </span>
+                <Tr key={course.id}>
+                  <Td>
+                    <Link
+                      href={`/manage/courses/${course.id}`}
+                      className="inline-flex h-[var(--h-tag)] max-w-full items-center gap-[var(--sp-1)] rounded-[var(--r-sm)] bg-[var(--bg-wash-nav)] px-[var(--sp-1)] text-[var(--fs-base)] font-medium text-[var(--fg-primary)] transition-colors duration-[var(--dur-fast)] hover:bg-[var(--bg-wash)]"
+                    >
+                      <span className="truncate">{course.title}</span>
+                    </Link>
+                  </Td>
+                  <Td>
+                    <span className="text-[var(--fg-tertiary)]">
+                      {course.teacherName}
+                      {course.assignedAt && ` · assigned ${formatDate(course.assignedAt)}`}
                     </span>
-                    <span className="num hidden shrink-0 text-[var(--fs-xs)] text-[var(--fg-tertiary)] sm:block">
-                      {course.studentCount} students
+                  </Td>
+                  <Td align="end">
+                    <span className="num">{course.studentCount}</span>
+                  </Td>
+                  <Td align="end">
+                    <span className="num">{course.recordingCount}</span>
+                  </Td>
+                  <Td align="end">
+                    <span className="flex items-center justify-end gap-[var(--sp-2)]">
+                      {course.awaitingGrading > 0 && (
+                        <Chip tone="amber">{course.awaitingGrading} to grade</Chip>
+                      )}
+                      <ArrowRightIcon
+                        size={14}
+                        className="shrink-0 text-[var(--fg-muted)] rtl:rotate-180"
+                      />
                     </span>
-                    <span className="num hidden shrink-0 text-[var(--fs-xs)] text-[var(--fg-tertiary)] md:block">
-                      {course.recordingCount} recordings
-                    </span>
-                    {course.awaitingGrading > 0 && (
-                      <Chip tone="amber">{course.awaitingGrading} to grade</Chip>
-                    )}
-                    <ArrowRightIcon
-                      size={14}
-                      className="shrink-0 text-[var(--fg-muted)] rtl:rotate-180"
-                    />
-                  </Link>
-                </li>
+                  </Td>
+                </Tr>
               ))}
-            </ul>
-          )}
-        </Panel>
+            </tbody>
+          </TableScroll>
+        )}
       </PageBody>
     </>
   );

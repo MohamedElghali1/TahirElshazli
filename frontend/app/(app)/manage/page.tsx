@@ -1,20 +1,20 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowRightIcon } from '@phosphor-icons/react';
+import { ArrowRightIcon, SquaresFourIcon } from '@phosphor-icons/react';
 import { api } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
 import { isAdminRole } from '@/lib/roles';
-import { formatDate } from '@/lib/format';
 import {
   Chip,
   EmptyState,
   ErrorState,
   Metric,
-  Panel,
   RowsSkeleton,
 } from '@/components/ui';
-import { PageBody, PageHeader, StatRow } from '@/components/app/page-parts';
+import { PageBody, StatRow } from '@/components/app/page-parts';
+import { PageTitle } from '@/components/app/page-chrome';
+import { TableScroll, Td, Th, Tr } from '@/components/app/table';
 
 /**
  * The management console's landing screen, shared by Dr. Tahir and his
@@ -44,15 +44,13 @@ export default function ManageOverviewPage() {
 
   return (
     <>
-      <PageHeader
-        title={firstName ? `Welcome back, ${firstName}` : 'Management'}
-        subtitle={
-          admin
+      <PageTitle icon={SquaresFourIcon} title={firstName ? `Welcome back, ${firstName}` : 'Management'} />
+      <PageBody dense className="flex flex-col gap-[var(--sp-4)]">
+        <p className="text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+          {admin
             ? 'Courses, students, recordings and grading across the platform.'
-            : 'Grade work, mark attendance and post materials for your courses.'
-        }
-      />
-      <PageBody className="flex flex-col gap-[var(--sp-6)]">
+            : 'Grade work, mark attendance and post materials for your courses.'}
+        </p>
         {loading && <RowsSkeleton rows={4} />}
         {error && <ErrorState message={error.message} onRetry={reload} />}
 
@@ -73,63 +71,75 @@ export default function ManageOverviewPage() {
               <Metric label="Recordings" value={data.recordingCount} />
             </StatRow>
 
-            <Panel
-              title="Courses"
-              action={
-                <Link
-                  href="/manage/courses"
-                  className="text-[var(--fs-xs)] text-[var(--fg-tertiary)] transition-colors duration-[var(--dur-fast)] hover:text-[var(--fg-primary)]"
-                >
-                  See all
-                </Link>
-              }
-              bodyClassName=""
-            >
-              {data.courses.length === 0 ? (
-                <EmptyState
-                  title={admin ? 'No courses yet' : 'Nothing assigned to you'}
-                  body={
-                    admin
-                      ? 'Courses added to the platform will appear here.'
-                      : 'Dr. Tahir assigns assistants to courses. Once you are on one, it shows up here.'
-                  }
-                />
-              ) : (
-                <ul className="rows">
+            {/* Twenty's own object-list idiom (TASK 4): a view chip and a
+                dense table instead of a bordered card - no earnings widget
+                either way (CLAUDE.md §1). */}
+            <div className="flex h-[var(--topbar-h)] items-center justify-between px-[var(--sp-2)]">
+              <span className="inline-flex h-[var(--h-sm)] items-center gap-[var(--sp-1)] rounded-[var(--r-lg)] bg-[var(--bg-primary)] py-[var(--sp-1)] ps-[var(--sp-1)] pe-[var(--sp-2)] text-[var(--fs-base)] font-medium text-[var(--fg-secondary)]">
+                {admin ? 'All courses' : 'Your courses'}
+                {' · '}
+                <span className="num">{data.courses.length}</span>
+              </span>
+              <Link
+                href="/manage/courses"
+                className="text-[var(--fs-base)] font-medium text-[var(--fg-secondary)] transition-colors duration-[var(--dur-fast)] hover:text-[var(--fg-primary)]"
+              >
+                See all
+              </Link>
+            </div>
+
+            {data.courses.length === 0 ? (
+              <EmptyState
+                title={admin ? 'No courses yet' : 'Nothing assigned to you'}
+                body={
+                  admin
+                    ? 'Courses added to the platform will appear here.'
+                    : 'Dr. Tahir assigns assistants to courses. Once you are on one, it shows up here.'
+                }
+              />
+            ) : (
+              <TableScroll minWidth={520}>
+                <thead>
+                  <tr className="border-b border-[var(--border-medium)]">
+                    <Th>Course</Th>
+                    <Th align="end">Students</Th>
+                    <Th align="end">Recordings</Th>
+                    <Th />
+                  </tr>
+                </thead>
+                <tbody>
                   {data.courses.map((course) => (
-                    <li key={course.id}>
-                      <Link
-                        href={`/manage/courses/${course.id}`}
-                        className="flex items-center gap-[var(--sp-4)] px-[var(--sp-4)] py-[var(--sp-3)] transition-colors duration-[var(--dur-fast)] hover:bg-[var(--bg-wash-subtle)]"
-                      >
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[var(--fs-base)] font-medium text-[var(--fg-primary)]">
-                            {course.title}
-                          </span>
-                          <span className="mt-[var(--sp-1)] block text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
-                            {course.studentCount} student
-                            {course.studentCount === 1 ? '' : 's'} ·{' '}
-                            {course.recordingCount} recording
-                            {course.recordingCount === 1 ? '' : 's'}
-                            {course.assignedAt &&
-                              ` · assigned ${formatDate(course.assignedAt)}`}
-                          </span>
+                    <Tr key={course.id}>
+                      <Td>
+                        <Link
+                          href={`/manage/courses/${course.id}`}
+                          className="inline-flex h-[var(--h-tag)] max-w-full items-center gap-[var(--sp-1)] rounded-[var(--r-sm)] bg-[var(--bg-wash-nav)] px-[var(--sp-1)] text-[var(--fs-base)] font-medium text-[var(--fg-primary)] transition-colors duration-[var(--dur-fast)] hover:bg-[var(--bg-wash)]"
+                        >
+                          <span className="truncate">{course.title}</span>
+                        </Link>
+                      </Td>
+                      <Td align="end">
+                        <span className="num">{course.studentCount}</span>
+                      </Td>
+                      <Td align="end">
+                        <span className="num">{course.recordingCount}</span>
+                      </Td>
+                      <Td align="end">
+                        <span className="flex items-center justify-end gap-[var(--sp-2)]">
+                          {course.awaitingGrading > 0 && (
+                            <Chip tone="amber">{course.awaitingGrading} to grade</Chip>
+                          )}
+                          <ArrowRightIcon
+                            size={14}
+                            className="shrink-0 text-[var(--fg-muted)] rtl:rotate-180"
+                          />
                         </span>
-                        {course.awaitingGrading > 0 && (
-                          <Chip tone="amber">
-                            {course.awaitingGrading} to grade
-                          </Chip>
-                        )}
-                        <ArrowRightIcon
-                          size={14}
-                          className="shrink-0 text-[var(--fg-muted)] rtl:rotate-180"
-                        />
-                      </Link>
-                    </li>
+                      </Td>
+                    </Tr>
                   ))}
-                </ul>
-              )}
-            </Panel>
+                </tbody>
+              </TableScroll>
+            )}
           </>
         )}
       </PageBody>

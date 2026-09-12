@@ -4,7 +4,8 @@ import { use } from 'react';
 import { api } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
 import { isAdminRole } from '@/lib/roles';
-import { ManageCourseTabs, PageHeader } from '@/components/app/page-parts';
+import { ManageCourseTabs } from '@/components/app/page-parts';
+import { PageTitle } from '@/components/app/page-chrome';
 
 /**
  * The course workspace: one header and one set of tabs for every section a TA
@@ -30,17 +31,16 @@ export default function ManageCourseLayout({
 
   return (
     <>
-      <PageHeader
+      <PageTitle
         title={data?.courseTitle ?? (error?.isNotFound ? 'Course not found' : ' ')}
-        subtitle={
-          data
-            ? `${data.entries.length} enrolled · ${data.assessmentCount} assessment${
-                data.assessmentCount === 1 ? '' : 's'
-              }`
-            : undefined
-        }
-        breadcrumb={[{ href: '/manage/courses', label: 'Courses' }]}
+        backHref="/manage/courses"
       />
+      {data && (
+        <p className="border-b border-[var(--border-light)] px-[var(--sp-4)] py-[var(--sp-2)] text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+          {data.entries.length} enrolled · {data.assessmentCount} assessment
+          {data.assessmentCount === 1 ? '' : 's'}
+        </p>
+      )}
       {!error?.isNotFound && <ManageCourseTabs courseId={id} admin={admin} />}
       {children}
     </>

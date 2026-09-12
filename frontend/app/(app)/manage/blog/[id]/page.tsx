@@ -30,7 +30,8 @@ import {
   Select,
   Textarea,
 } from '@/components/ui';
-import { PageBody, PageHeader } from '@/components/app/page-parts';
+import { PageBody } from '@/components/app/page-parts';
+import { PageTitle } from '@/components/app/page-chrome';
 
 const CATEGORIES: { value: BlogCategory; label: string }[] = [
   { value: 'achievement', label: 'Achievement' },
@@ -73,13 +74,14 @@ export default function EditBlogPostPage({
 
   return (
     <>
-      <PageHeader
-        title={data?.title ?? 'Post'}
-        subtitle={data ? `Posted by ${data.authorName}` : undefined}
-        breadcrumb={[{ href: '/manage/blog', label: 'Blog' }]}
-        action={data ? <StatusChip post={data} /> : undefined}
-      />
+      <PageTitle title={data?.title ?? 'Post'} backHref="/manage/blog" />
       <PageBody className="flex flex-col gap-[var(--sp-5)]">
+        {data && (
+          <div className="flex items-center gap-[var(--sp-2)] text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+            <span>Posted by {data.authorName}</span>
+            <StatusChip post={data} />
+          </div>
+        )}
         {loading && <RowsSkeleton rows={6} />}
         {error && (
           <ErrorState

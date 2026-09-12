@@ -50,7 +50,9 @@ export function Th({
   align = 'start',
   className,
 }: {
-  children: React.ReactNode;
+  // Optional: a trailing action column (an arrow, a menu) is routinely
+  // headed by nothing at all in the reference system's own tables.
+  children?: React.ReactNode;
   align?: Align;
   className?: string;
 }) {
@@ -58,7 +60,13 @@ export function Th({
     <th
       scope="col"
       className={cx(
-        'px-[var(--sp-2)] py-[var(--sp-2)] text-[var(--fs-xs)] font-medium',
+        // Height comes from the row, padding is horizontal only - the
+        // reference system's column header is a 32px band with 8px of inline
+        // padding, and stacking vertical padding on top of that makes the
+        // header taller than the rows it heads. 13px, like every other string
+        // in the product; the 12px this used to be was the one place the
+        // console dropped below the base size.
+        'h-[var(--h-md)] px-[var(--sp-2)] text-[var(--fs-base)] font-medium',
         'whitespace-nowrap text-[var(--fg-tertiary)]',
         ALIGN[align],
         className,
@@ -81,7 +89,11 @@ export function Td({
   return (
     <td
       className={cx(
-        'px-[var(--sp-2)] py-[var(--sp-2)] text-[var(--fs-base)] text-[var(--fg-secondary)]',
+        // Horizontal padding only, for the reason given on `Th`: the 32px on
+        // `Tr` is a *floor* in table layout, so 8px of vertical padding on
+        // every cell pushes the real row height past it and the dense table
+        // stops being dense.
+        'px-[var(--sp-2)] text-[var(--fs-base)] text-[var(--fg-secondary)]',
         ALIGN[align],
         className,
       )}
@@ -101,7 +113,11 @@ export function Tr({
   return (
     <tr
       className={cx(
-        'h-[var(--h-md)] border-b border-[var(--border-light)] last:border-0',
+        // Row divider is --border-medium, one step darker than the panel
+        // hairline (--border-light) - Twenty's own dense table uses the
+        // stronger of the two so a scanning eye can find the row boundary
+        // without a card around it (TASK 4).
+        'h-[var(--h-md)] border-b border-[var(--border-medium)] last:border-0',
         className,
       )}
     >

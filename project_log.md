@@ -2687,3 +2687,91 @@ sequenceDiagram
 - **Everything above authentication is still unbuilt**: `work_type` on
   assessments, the form binding, response sync, student matching by email, the
   unmatched-response queue, and both analytics surfaces.
+
+---
+
+## 2026-09-12 - The manage console takes Twenty's shape (shell, one header, dense lists)
+
+**Built, typechecking, linting and building clean; never measured in a
+browser.** That last clause is the whole caveat and it matters more than usual
+for a *visual* parity pass: the Chrome extension was not connected, and a
+second session was mid-edit on `backend/src/assessments/` in a state that did
+not compile, so the API could not be stood up to sign in either. Nothing below
+has been checked against `getComputedStyle` or compared to a screenshot. The
+numbers are right in the source; whether they are right on screen is unproven.
+
+### What changed
+
+A surgical pass, not a rewrite - the tokens were already correct, and the work
+was making the shell and the `/manage` screens actually use Twenty's own
+geometry.
+
+- **The shell is three layers now, not two.** An outer `--shell-bg` (`#191919`
+  dark / `#F9F9F9` light), a 220px rail that is *transparent* and has no
+  border, and a main panel carrying `--bg-primary`, a 32px cut on its leading
+  top corner and a 1px ring drawn as a box-shadow. The corner and the ring are
+  the most recognisable thing about the reference's chrome and this build had
+  neither.
+- **The two stacked header bars became one 40px bar.** `AppShell` used to draw
+  a near-empty 56px bar and every page drew its own `PageHeader` underneath it.
+  `components/app/page-chrome.tsx` is the plumbing that collapses them: a
+  context the shell reads and a page writes via `<PageTitle>`, plus
+  `<PageActions>` set once by the new `app/(app)/manage/layout.tsx` for every
+  route beneath it. All nine `/manage` routes moved across.
+- **`+ Live Session`**, the blue action in that bar - `Button` `primary`/`sm`,
+  which gained the reference's 16px radius and 1px `--accent-edge` fill border.
+- **The rail** gained a workspace chip, a search/collapse pair and section
+  labels, and dropped to 28px nav rows at 4px radius on the 5.9% wash.
+- **Four screens left the card idiom** for the dense object-table: Overview,
+  Courses, Recordings, Students. Three did not - Groups, Blog and Activity are
+  Panel-and-form screens and were left alone deliberately, which does mean the
+  console currently speaks two visual languages.
+
+### Why
+
+The user's instruction, with every value measured off the running Twenty app
+and supplied directly. CLAUDE.md section 4.1 and `docs/frontend-design-system.md`
+are the standing contract this extends; section 11 is what decided the button's
+audience.
+
+### The button is teacher-only, and that is a decision
+
+`POST /admin/courses/:id/live-sessions` is `@Roles(Role.Teacher)` (section 11,
+still open) and is **per course**, which a global header has no course id to
+give. So the button routes to the course list behind a `TODO`, and an assistant
+does not see it at all. Showing a TA an action whose destination refuses them
+is a broken affordance wearing a feature's clothes; the user confirmed the
+gating explicitly.
+
+### Four defects found in review, all fixed
+
+Worth recording because three of them are shapes that will recur:
+
+- **The rail's collapse toggle was inside its own `!collapsed` guard**, so
+  collapsing the sidebar destroyed the only control that could expand it.
+- **Two equal-specificity Tailwind radius utilities on one element.**
+  `IconButton` emitted `rounded-[var(--r-md)]` and five call sites appended
+  `rounded-[var(--r-sm)]`; with equal specificity the winner is decided by
+  *stylesheet source order*, not by the order in the class string. The
+  component now emits exactly one radius. **This is the general hazard of
+  merging a `className` into a component that already sets the same property.**
+- **`rounded-tl` on the panel is physical**, so the cut corner stayed top-left
+  in Arabic while the rail moved right (section 4). Now `rounded-ss`, with a
+  mirrored `--shadow-panel-rtl` behind the `rtl:` variant, because a
+  box-shadow offset has no logical form.
+- Three view chips on `pl-`/`pr-`, now `ps-`/`pe-`.
+
+### Follow-ups / debt
+
+- **No browser verification.** The computed-geometry pass and the side-by-side
+  screenshot both still owe. Do them before calling `/manage` pixel-accurate.
+- **The student console still has the double header this pass removed from
+  `/manage`** - its pages never register a chrome title, so the 40px bar
+  renders with no `<h1>` and each page draws its own `PageHeader` below. That
+  predates this work rather than being caused by it, but the fix now exists and
+  is unapplied on one of the two consoles.
+- **Groups, Blog and Activity are still card screens.** A deliberate stop, not
+  an oversight, but a half-migrated console is exactly the tell a design review
+  looks for.
+- `--sp-nav-x` is 6px and is the only value in `tokens.css` off the 4px grid.
+  It is measured, and it is named so the exception has one home.

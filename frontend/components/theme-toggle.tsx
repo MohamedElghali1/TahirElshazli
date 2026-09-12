@@ -79,7 +79,15 @@ function applyAttribute(theme: Theme) {
   document.documentElement.setAttribute('data-theme', theme);
 }
 
-export function ThemeToggle({ className }: { className?: string }) {
+export function ThemeToggle({
+  className,
+  size = 'md',
+}: {
+  className?: string;
+  /** `sm` is the 24px/radius-4 icon button used in the app header's single
+   *  40px bar (TASK 2); every other caller keeps the original 32px control. */
+  size?: 'sm' | 'md';
+}) {
   const theme = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   // True only after hydration, so the button does not render an icon the
   // server could not have known was correct.
@@ -112,8 +120,10 @@ export function ThemeToggle({ className }: { className?: string }) {
       onClick={toggle}
       aria-label={theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}
       className={
-        'inline-flex h-[var(--h-md)] w-[var(--h-md)] items-center justify-center ' +
-        'rounded-[var(--r-md)] text-[var(--fg-tertiary)] transition-colors ' +
+        (size === 'sm'
+          ? 'inline-flex h-[var(--h-sm)] w-[var(--h-sm)] items-center justify-center rounded-[var(--r-sm)] '
+          : 'inline-flex h-[var(--h-md)] w-[var(--h-md)] items-center justify-center rounded-[var(--r-md)] ') +
+        'text-[var(--fg-tertiary)] transition-colors ' +
         'duration-[var(--dur-fast)] hover:bg-[var(--bg-wash)] hover:text-[var(--fg-primary)] ' +
         (className ?? '')
       }

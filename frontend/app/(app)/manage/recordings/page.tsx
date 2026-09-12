@@ -4,14 +4,10 @@ import Link from 'next/link';
 import { ArrowRightIcon, VideoIcon } from '@phosphor-icons/react';
 import { api } from '@/lib/api';
 import { useApi } from '@/lib/session';
-import {
-  EmptyState,
-  ErrorState,
-  Metric,
-  Panel,
-  RowsSkeleton,
-} from '@/components/ui';
-import { PageBody, PageHeader, StatRow } from '@/components/app/page-parts';
+import { EmptyState, ErrorState, Metric, RowsSkeleton } from '@/components/ui';
+import { PageBody, StatRow } from '@/components/app/page-parts';
+import { PageTitle } from '@/components/app/page-chrome';
+import { TableScroll, Td, Th, Tr } from '@/components/app/table';
 
 /**
  * The recording library, by course.
@@ -31,11 +27,11 @@ export default function RecordingLibraryPage() {
 
   return (
     <>
-      <PageHeader
-        title="Recordings"
-        subtitle="Recorded lessons students watch on demand. Pick a course to upload or manage its library."
-      />
-      <PageBody className="flex flex-col gap-[var(--sp-6)]">
+      <PageTitle icon={VideoIcon} title="Recordings" />
+      <PageBody dense className="flex flex-col gap-[var(--sp-4)]">
+        <p className="text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+          Recorded lessons students watch on demand. Pick a course to upload or manage its library.
+        </p>
         {loading && <RowsSkeleton rows={4} />}
         {error && <ErrorState message={error.message} onRetry={reload} />}
 
@@ -50,43 +46,54 @@ export default function RecordingLibraryPage() {
               />
             </StatRow>
 
-            <Panel title="By course" bodyClassName="">
-              {data.courses.length === 0 ? (
-                <EmptyState
-                  title="No courses yet"
-                  body="Recordings are uploaded into a course, against a lesson in its outline."
-                />
-              ) : (
-                <ul className="rows">
+            <div className="flex h-[var(--topbar-h)] items-center px-[var(--sp-2)]">
+              <span className="inline-flex h-[var(--h-sm)] items-center gap-[var(--sp-1)] rounded-[var(--r-lg)] bg-[var(--bg-primary)] py-[var(--sp-1)] ps-[var(--sp-1)] pe-[var(--sp-2)] text-[var(--fs-base)] font-medium text-[var(--fg-secondary)]">
+                By course
+                {' · '}
+                <span className="num">{data.courses.length}</span>
+              </span>
+            </div>
+
+            {data.courses.length === 0 ? (
+              <EmptyState
+                title="No courses yet"
+                body="Recordings are uploaded into a course, against a lesson in its outline."
+              />
+            ) : (
+              <TableScroll minWidth={480}>
+                <thead>
+                  <tr className="border-b border-[var(--border-medium)]">
+                    <Th>Course</Th>
+                    <Th align="end">Recordings</Th>
+                    <Th />
+                  </tr>
+                </thead>
+                <tbody>
                   {data.courses.map((course) => (
-                    <li key={course.id}>
-                      <Link
-                        href={`/manage/courses/${course.id}/recordings`}
-                        className="flex items-center gap-[var(--sp-4)] px-[var(--sp-4)] py-[var(--sp-3)] transition-colors duration-[var(--dur-fast)] hover:bg-[var(--bg-wash-subtle)]"
-                      >
-                        <span
-                          aria-hidden
-                          className="flex h-[var(--h-md)] w-[var(--h-md)] shrink-0 items-center justify-center rounded-[var(--r-sm)] bg-[var(--bg-wash)] text-[var(--fg-tertiary)]"
+                    <Tr key={course.id}>
+                      <Td>
+                        <Link
+                          href={`/manage/courses/${course.id}/recordings`}
+                          className="inline-flex h-[var(--h-tag)] max-w-full items-center gap-[var(--sp-1)] rounded-[var(--r-sm)] bg-[var(--bg-wash-nav)] px-[var(--sp-1)] text-[var(--fs-base)] font-medium text-[var(--fg-primary)] transition-colors duration-[var(--dur-fast)] hover:bg-[var(--bg-wash)]"
                         >
-                          <VideoIcon size={16} />
-                        </span>
-                        <span className="min-w-0 flex-1 truncate text-[var(--fs-base)] text-[var(--fg-primary)]">
-                          {course.title}
-                        </span>
-                        <span className="num shrink-0 text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
-                          {course.recordingCount} recording
-                          {course.recordingCount === 1 ? '' : 's'}
-                        </span>
+                          <VideoIcon size={14} className="shrink-0 text-[var(--fg-tertiary)]" />
+                          <span className="truncate">{course.title}</span>
+                        </Link>
+                      </Td>
+                      <Td align="end">
+                        <span className="num">{course.recordingCount}</span>
+                      </Td>
+                      <Td align="end">
                         <ArrowRightIcon
                           size={14}
-                          className="shrink-0 text-[var(--fg-muted)] rtl:rotate-180"
+                          className="ms-auto shrink-0 text-[var(--fg-muted)] rtl:rotate-180"
                         />
-                      </Link>
-                    </li>
+                      </Td>
+                    </Tr>
                   ))}
-                </ul>
-              )}
-            </Panel>
+                </tbody>
+              </TableScroll>
+            )}
           </>
         )}
       </PageBody>

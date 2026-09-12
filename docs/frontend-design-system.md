@@ -151,6 +151,14 @@ Buttons, inputs, cards and nav items are all **`--r-md` (8px)**; tags are
 16px buttons reading as pills — and correcting that is the single most visible
 change in this rebuild.
 
+**Two exceptions, added in the 2026-09-12 shell pass.** `Button`
+`variant="primary"` at `size="sm"` - the reference's own small filled button,
+e.g. `+ Live Session` - carries `--r-lg` (16px) instead, with a 1px
+`--accent-edge` border replacing the transparent one every other size and
+variant keeps; every other primary size is unchanged. And the main panel's own
+top-left corner uses a radius with no step in the scale above it: `--r-panel`
+(32px), set once on the shell in `AppShell` and nowhere else.
+
 ## 5. Shadows
 
 `--shadow-sm` = `boxShadow.light`, `--shadow-lg` = `boxShadow.strong`. Used
@@ -172,13 +180,28 @@ by a viewport rule.
 |---|---|---|
 | `--h-tag` | 20px | `Chip` |
 | `--h-sm` | 24px | small `Button`, `IconButton size="sm"` |
-| `--h-md` | 32px | **the default control** — `Button`, `Input`, `Select`, rail item, `Avatar`, table row |
+| `--h-md` | 32px | **the default control** — `Button`, `Input`, `Select`, `Avatar`, table row |
 | `--h-lg` | 40px | `Tabs`, marketing `Button`, marketing control (`uiSize="lg"`) |
 | `--h-xl` | 48px | marketing hero button |
 
 Icons: `--icon-sm` 14 · `--icon-md` 16 · `--icon-lg` 20 · `--icon-xl` 24.
 
-Chrome (ours): `--rail-w` 248px, `--topbar-h` 56px.
+Chrome (ours), rebuilt to Twenty's own measurements in the 2026-09-12 shell
+pass: `--rail-w` 220px (was 248), `--topbar-h` 40px (was 56 - now the single
+page-header bar for `/manage/*`, via `components/app/page-chrome.tsx`),
+`--rail-w-collapsed` 56px (the rail's own icon-only state), `--h-nav` 28px (a
+nav row is shorter than the app's default 32px control and gets its own token
+rather than repurposing `--h-md`).
+
+`--sp-nav-x` (6px) is the **one value in the file off the 4px grid**, and it is
+measured rather than chosen: it is the nav item's inline padding in the
+reference's sidebar. It is named so that the exception lives in one place
+instead of as a `px-[6px]` somewhere in the shell.
+
+`Avatar` gained a third size in the same pass: `xs`, 16px, and the only one
+drawn as a rounded **square** (`--r-sm`) rather than a circle. It is the
+workspace mark in the rail's top chip — a circle there reads as a person, and
+what it stands for is an organisation.
 
 ---
 
@@ -203,8 +226,13 @@ Chrome (ours): `--rail-w` 248px, `--topbar-h` 56px.
 - `IconButton` takes a **required** `label` — an icon-only control with no
   accessible name is invisible to a screen reader, and a required prop is
   cheaper than remembering.
-- One `<h1>` per page: the layout's `PageHeader` owns it, and a tab's own body
-  uses `SectionIntro` (`<h2>`).
+- One `<h1>` per page. On the student LMS the page's own `PageHeader` still
+  owns it; on `/manage/*` (2026-09-12 shell pass) it moved into `AppShell`'s
+  single 40px header, set by the page via `<PageTitle>`
+  (`components/app/page-chrome.tsx`) rather than drawn in the page body - the
+  two consoles share one shell and only one of its headers, so the `<h1>`
+  cannot live in both places at once. A tab's own body uses `SectionIntro`
+  (`<h2>`) either way.
 - Rosters and grading queues are real `<table>`s, so a screen reader announces
   "row 4, Average, 82%" rather than a wall of divs.
 - Hiding a nav entry is **courtesy, never access control** (CLAUDE.md §8).

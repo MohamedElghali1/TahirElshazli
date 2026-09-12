@@ -55,6 +55,13 @@
      rows in a dense list without reading as a border. */
   --gap-siblings: 2px;
 
+  /* The rail's nav-item inline padding, and the one value in this file that
+     is deliberately OFF the 4px grid. It was measured at 6px on Twenty's own
+     sidebar; 4 reads cramped against the 16px icon and 8 pushes the labels
+     out of line with the section headings above them. Named rather than
+     inlined as `px-[6px]` so there is exactly one place to reconsider it. */
+  --sp-nav-x: 6px;
+
   /* --- Control heights ---------------------------------------
      Button small 24 / medium 32, Input 32, Tab min 40, Tag 20. */
   --h-tag: 20px;
@@ -63,11 +70,18 @@
   --h-lg:  40px;   /* tabs, large button, marketing input          */
   --h-xl:  48px;   /* marketing hero button                        */
 
+  /* The rail's own nav-item height, measured off Twenty's sidebar rather than
+     borrowed from --h-md - the app's *default* control (inputs, buttons)
+     genuinely is 32px, and a nav row is a different, shorter thing at 28px.
+     Repurposing --h-md would have quietly shrunk every input in the app. */
+  --h-nav: 28px;
+
   /* OURS. The reference system's sidePanelWidth is 500px and its top bar is
      shallower; this is a nav rail with a wordmark in it. Both live here so
      the rail's own header and the top bar beside it cannot drift apart. */
-  --rail-w:   248px;
-  --topbar-h: 56px;
+  --rail-w:           220px;
+  --rail-w-collapsed: 56px;  /* icon-only rail, TASK 3's collapse toggle */
+  --topbar-h: 40px;          /* the one page-header bar (TASK 2)        */
 
   /* --- Radii: border.radius, exactly ------------------------- */
   --r-xs:   2px;
@@ -77,6 +91,9 @@
   --r-xl:   20px;
   --r-xxl:  40px;
   --r-full: 999px;
+  /* OURS: the main panel's own top-left corner (TASK 1). Twenty's radius
+     scale has no step at 32 - this is the one place the shell asks for it. */
+  --r-panel: 32px;
 
   /* --- Icons: icon.size / icon.stroke ------------------------ */
   --icon-sm: 14px;
@@ -124,6 +141,18 @@
   --lh-base:  1.5;
   --lh-loose: 1.65;  /* OURS: marketing body copy */
 
+  /* OURS: the main panel's own edge (TASK 1) - a soft cast shadow plus the
+     1px ring that reads as the panel's border. The shadow's colour is flat
+     black at 3% in both themes (a shadow lightens instead of darkening on a
+     light surface, which reads as a highlight, not a shadow - Twenty's own
+     panel keeps this literal value either way), so one token covers both;
+     only the ring half depends on the active theme's --border-medium. */
+  --shadow-panel: -4px 0 4px rgba(0, 0, 0, 0.03), 0 0 0 1px var(--border-medium);
+  /* The same shadow with its offset mirrored, for RTL - the rail moves to the
+     right there, so the panel must cast to the right too. A box-shadow offset
+     has no logical form, which is why this is a token and not a `:dir()` rule. */
+  --shadow-panel-rtl: 4px 0 4px rgba(0, 0, 0, 0.03), 0 0 0 1px var(--border-medium);
+
   --maxw-site: 1200px;
   --maxw-prose: 65ch;
 }
@@ -131,6 +160,10 @@
 /* --- Dark: the default ---------------------------------------- */
 :root,
 :root[data-theme="dark"] {
+  /* OURS: the layer BEHIND the main panel (TASK 1) - the rail sits on this,
+     transparent, and the panel's own --bg-primary shows through as the
+     lighter surface in front of it. Twenty's shell colour, not a --bg-* step. */
+  --shell-bg:       #191919;
   --bg-primary:     #171717;  /* app shell, rail          */
   --bg-secondary:   #1B1B1B;  /* cards, panels            */
   --bg-tertiary:    #1D1D1D;  /* raised / hovered surface */
@@ -139,6 +172,7 @@
   --bg-wash:        rgba(255, 255, 255, 0.102);
   --bg-wash-subtle: rgba(255, 255, 255, 0.031);
   --bg-wash-strong: rgba(255, 255, 255, 0.141);
+  --bg-wash-nav:    rgba(255, 255, 255, 0.059);  /* nav item hover/active   */
   --bg-scrim:       rgba(0, 0, 0, 0.72);
 
   --border-light:  #1D1D1D;
@@ -163,6 +197,10 @@
   --accent-text:  #9DB1FF;  /* the accent as text on a dark surface */
   --accent-fg:    #FFFFFF;  /* text ON the accent                   */
   --accent-ring:  #182449;  /* the 3px focus halo Twenty draws       */
+  /* The 1px edge on a filled accent button (TASK 2) - white at 6%, the same
+     value in both themes because it is read against the accent fill itself,
+     which is identical (#3E63DD) in both. */
+  --accent-edge:  rgba(255, 255, 255, 0.06);
 
   --danger:      #E5484D;
   --danger-wash: #3B1219;
@@ -173,6 +211,7 @@
 
 /* --- Light: same structure, inverted -------------------------- */
 :root[data-theme="light"] {
+  --shell-bg:       #F9F9F9;
   --bg-primary:     #FFFFFF;
   --bg-secondary:   #FCFCFC;
   --bg-tertiary:    #F1F1F1;
@@ -181,6 +220,7 @@
   --bg-wash:        rgba(0, 0, 0, 0.078);
   --bg-wash-subtle: rgba(0, 0, 0, 0.02);
   --bg-wash-strong: rgba(0, 0, 0, 0.161);
+  --bg-wash-nav:    rgba(0, 0, 0, 0.04);
   --bg-scrim:       rgba(0, 0, 0, 0.361);
 
   --border-light:  #F1F1F1;
@@ -205,6 +245,7 @@
   --accent-text:  #3A5BC7;
   --accent-fg:    #FFFFFF;
   --accent-ring:  #EDF2FE;
+  --accent-edge:  rgba(255, 255, 255, 0.06);
 
   --danger:      #CE2C31;
   --danger-wash: #FEEBEC;
@@ -245,16 +286,19 @@
    :root block above. */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
+    --shell-bg:#F9F9F9;
     --bg-primary:#FFFFFF; --bg-secondary:#FCFCFC; --bg-tertiary:#F1F1F1;
     --bg-quaternary:#EBEBEB;
     --bg-wash:rgba(0,0,0,.078); --bg-wash-subtle:rgba(0,0,0,.02);
-    --bg-wash-strong:rgba(0,0,0,.161); --bg-scrim:rgba(0,0,0,.361);
+    --bg-wash-strong:rgba(0,0,0,.161); --bg-wash-nav:rgba(0,0,0,.04);
+    --bg-scrim:rgba(0,0,0,.361);
     --border-light:#F1F1F1; --border-medium:#EBEBEB; --border-strong:#D6D6D6;
     --fg-primary:#333333; --fg-secondary:#666666; --fg-tertiary:#999999;
     --fg-muted:#B3B3B3; --fg-faint:#CCCCCC; --fg-inverted:#FFFFFF;
     --accent-wash:#F7F9FF; --accent-line:#E0E9FF; --accent-soft:#D2DEFF;
     --accent:#3E63DD; --accent-hover:#3358D4; --accent-press:#3A5BC7;
     --accent-text:#3A5BC7; --accent-fg:#FFFFFF; --accent-ring:#EDF2FE;
+    --accent-edge:rgba(255,255,255,.06);
     --danger:#CE2C31; --danger-wash:#FEEBEC;
     --shadow-sm:0 2px 4px rgba(0,0,0,.039), 0 0 4px rgba(0,0,0,.078);
     --shadow-lg:2px 4px 16px rgba(0,0,0,.161), 0 2px 4px rgba(0,0,0,.078);

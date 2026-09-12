@@ -17,21 +17,23 @@ export function Metric({
 }) {
   const body = (
     <>
-      <div className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">{label}</div>
-      <div className="num mt-[var(--sp-1)] text-[var(--fs-xl)] leading-[var(--lh-tight)] text-[var(--fg-primary)]">
+      <div className="text-[var(--fs-base)] text-[var(--fg-tertiary)]">{label}</div>
+      <div className="num mt-[var(--sp-1)] text-[var(--fs-lg)] font-semibold leading-[var(--lh-tight)] text-[var(--fg-primary)]">
         {value}
       </div>
       {hint && (
-        <div className="mt-[var(--sp-2)] text-[var(--fs-xs)] text-[var(--fg-muted)]">
+        <div className="mt-[var(--sp-1)] text-[var(--fs-xs)] text-[var(--fg-muted)]">
           {hint}
         </div>
       )}
     </>
   );
 
+  // TASK 4: shrunk from the card gutters this used to carry - a stat tile is
+  // still a tile in the reference system, just not a 24px-padded one.
   const shell =
     'block rounded-[var(--r-md)] border border-[var(--border-medium)] ' +
-    'bg-[var(--bg-secondary)] p-[var(--sp-4)]';
+    'bg-[var(--bg-secondary)] p-[var(--sp-3)]';
 
   return href ? (
     <Link

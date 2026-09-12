@@ -19,7 +19,9 @@ import {
   Select,
   Textarea,
 } from '@/components/ui';
-import { PageBody, PageHeader } from '@/components/app/page-parts';
+import { NewspaperIcon } from '@phosphor-icons/react';
+import { PageBody } from '@/components/app/page-parts';
+import { PageTitle } from '@/components/app/page-chrome';
 
 /**
  * The blog console (CLAUDE.md §5.19).
@@ -47,11 +49,11 @@ export default function ManageBlogPage() {
 
   return (
     <>
-      <PageHeader
-        title="Blog"
-        subtitle="Achievements, results and articles. Students and visitors read the published ones."
-      />
+      <PageTitle icon={NewspaperIcon} title="Blog" />
       <PageBody className="flex flex-col gap-[var(--sp-5)]">
+        <p className="text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+          Achievements, results and articles. Students and visitors read the published ones.
+        </p>
         <CreatePost onCreated={reload} />
 
         {loading && <RowsSkeleton rows={4} />}

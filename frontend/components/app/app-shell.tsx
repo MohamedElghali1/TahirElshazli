@@ -1,14 +1,18 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import {
+  ArrowLeftIcon,
   BellIcon,
   BooksIcon,
+  CaretUpDownIcon,
   ClockCounterClockwiseIcon,
   ListIcon,
+  MagnifyingGlassIcon,
   NewspaperIcon,
+  SidebarSimpleIcon,
   SignOutIcon,
   SquaresFourIcon,
   UserIcon,
@@ -20,8 +24,8 @@ import {
 import { api } from '@/lib/api';
 import { useSession, useApi } from '@/lib/session';
 import { ThemeToggle } from '@/components/theme-toggle';
-import { Wordmark } from '@/components/site/wordmark';
 import { cx, Chip, Avatar, IconButton } from '@/components/ui';
+import { PageChromeProvider, usePageChrome } from '@/components/app/page-chrome';
 import { isStaffRole } from '@/lib/roles';
 import type { Role } from '@/lib/types';
 
@@ -78,18 +82,38 @@ function navFor(role: Role | undefined): NavItem[] {
 }
 
 /**
- * The product shell: a fixed rail at --sp-* widths, a 56px top bar, and the
- * page in between. Everything here is the dense token scale - the marketing
- * site's rhythm has no business inside the app.
+ * The product shell, rebuilt to Twenty's own three-layer chrome (2026-09-12
+ * visual-parity pass, `docs/frontend-design-system.md`):
  *
- * One shell for every signed-in role. The student LMS and the TA/admin console
- * are the same application wearing a different rail, which is what keeps the
- * teacher from having to sign in somewhere else to do their job.
+ *   1. An outer `--shell-bg` layer that is neither the rail's colour nor the
+ *      page's - the rail sits transparent on top of it.
+ *   2. The rail itself: 220px, no border, the shell colour showing through.
+ *   3. The main panel: `--bg-primary`, rounded on its top-left corner only
+ *      (`--r-panel`) with a 1px ring drawn as a box-shadow rather than a
+ *      border, so the corner and the ring never fight each other's radius.
+ *
+ * One shell for every signed-in role. The student LMS and the TA/admin
+ * console are the same application wearing a different rail, which is what
+ * keeps the teacher from having to sign in somewhere else to do their job.
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
+  return (
+    <PageChromeProvider>
+      <AppShellInner>{children}</AppShellInner>
+    </PageChromeProvider>
+  );
+}
+
+function AppShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { user, signOut } = useSession();
+  const { chrome, actions } = usePageChrome();
   const [open, setOpen] = useState(false);
+  // Desktop-only icon rail (TASK 3's collapse toggle). Mobile ignores this -
+  // the off-canvas sheet always opens at full width, because a collapsed
+  // *overlay* has nothing left to click.
+  const [collapsed, setCollapsed] = useState(false);
   const staff = isStaffRole(user?.role);
   const NAV = navFor(user?.role);
 
@@ -116,77 +140,127 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   );
   const unread = notifications?.unreadCount ?? 0;
 
+  const ChromeIcon = chrome?.icon;
+
   return (
-    <div className="flex min-h-[100dvh] bg-[var(--bg-primary)]">
+    <div className="flex min-h-[100dvh] bg-[var(--shell-bg)]">
       <aside
         className={cx(
-          'fixed inset-y-0 start-0 z-40 flex w-[var(--rail-w)] flex-col border-e border-[var(--border-light)]',
-          'bg-[var(--bg-primary)] transition-transform duration-[var(--dur-fast)] ease-[var(--ease)]',
+          'fixed inset-y-0 start-0 z-40 flex w-[var(--rail-w)] flex-col',
+          'bg-transparent transition-transform duration-[var(--dur-fast)] ease-[var(--ease)]',
           'lg:translate-x-0 rtl:lg:translate-x-0',
           open ? 'translate-x-0' : '-translate-x-full rtl:translate-x-full',
+          collapsed ? 'lg:w-[var(--rail-w-collapsed)]' : 'lg:w-[var(--rail-w)]',
         )}
       >
-        <div className="flex h-[var(--topbar-h)] items-center gap-[var(--sp-2)] px-[var(--sp-4)]">
-          <Link href={staff ? '/manage' : '/dashboard'} aria-label="Home">
-            <Wordmark />
+        <div className="flex flex-1 flex-col gap-[var(--sp-1)] pt-[var(--sp-1)] pb-[var(--sp-4)] pe-0 ps-[var(--sp-2)]">
+          {/* The workspace chip - Twenty's own top-of-rail control. There is
+              one workspace here, so it never opens anything; it still carries
+              the account identity that used to sit in the footer, which is
+              why sign-out is what remains down there. */}
+          <Link
+            href={staff ? '/manage' : '/dashboard'}
+            className={cx(
+              'flex h-[var(--h-sm)] items-center gap-[var(--sp-1)] rounded-[var(--r-sm)]',
+              'px-[var(--sp-1)] transition-colors duration-[var(--dur-fast)] hover:bg-[var(--bg-wash-nav)]',
+            )}
+          >
+            <Avatar name={user?.name ?? ''} size="xs" className="shrink-0" />
+            {!collapsed && (
+              <>
+                <span className="min-w-0 flex-1 truncate text-[var(--fs-base)] font-medium text-[var(--fg-primary)]">
+                  {user?.name}
+                </span>
+                <CaretUpDownIcon size={12} className="shrink-0 text-[var(--fg-muted)]" />
+              </>
+            )}
           </Link>
-          {/* Which console this is. A TA and the teacher share the shell, so
-              the rail says which set of powers is in play rather than leaving
-              it to be inferred from which links happen to be present. */}
-          {staff && (
-            <Chip tone={user?.role === 'teacher' ? 'amber' : 'teal'}>
-              {user?.role === 'teacher' ? 'Teacher' : 'Assistant'}
-            </Chip>
+
+          {/* The collapse toggle is deliberately OUTSIDE the `!collapsed`
+              guard that hides the search button: it is the only control that
+              can undo a collapse, so hiding it with the rest of the row left
+              the rail stuck narrow until a reload. */}
+          <div className="flex items-center gap-[var(--sp-1)] px-[var(--sp-1)]">
+            {/* Nothing exists to search yet - an honest disabled control
+                rather than a text field that goes nowhere. */}
+            {!collapsed && (
+              <IconButton
+                label="Search (coming soon)"
+                size="sm"
+                disabled
+              >
+                <MagnifyingGlassIcon size={16} />
+              </IconButton>
+            )}
+            <IconButton
+              label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              size="sm"
+              onClick={() => setCollapsed((v) => !v)}
+            >
+              <SidebarSimpleIcon size={16} />
+            </IconButton>
+          </div>
+
+          {!collapsed && (
+            <p className="mb-[var(--sp-1)] mt-[var(--sp-3)] ps-[var(--sp-3)] text-[var(--fs-xxs)] font-semibold uppercase tracking-wide text-[var(--fg-muted)]">
+              Workspace
+            </p>
           )}
+
+          <nav className={cx('flex flex-col gap-[var(--gap-siblings)]', collapsed ? 'mt-[var(--sp-3)]' : '')}>
+            {NAV.map(({ href, label, Icon }) => {
+              // Two exact-match cases, because both own deeper routes that
+              // belong to a *different* entry: /dashboard owns /learn/*, and
+              // /manage is the parent of every other staff link in this rail.
+              const active =
+                href === '/dashboard'
+                  ? pathname === '/dashboard' || pathname.startsWith('/learn')
+                  : href === '/manage'
+                    ? pathname === '/manage'
+                    : pathname.startsWith(href);
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  aria-current={active ? 'page' : undefined}
+                  title={collapsed ? label : undefined}
+                  className={cx(
+                    'flex h-[var(--h-nav)] items-center gap-[var(--sp-1)] rounded-[var(--r-sm)]',
+                    'px-[var(--sp-nav-x)] text-[var(--fs-base)] transition-colors duration-[var(--dur-fast)]',
+                    active
+                      ? 'bg-[var(--bg-wash-nav)] font-medium text-[var(--fg-primary)]'
+                      : 'text-[var(--fg-secondary)] hover:bg-[var(--bg-wash-nav)] hover:text-[var(--fg-primary)]',
+                  )}
+                >
+                  <Icon size={16} weight={active ? 'fill' : 'regular'} />
+                  {!collapsed && <span className="flex-1 truncate">{label}</span>}
+                  {!collapsed && href === '/notifications' && unread > 0 && (
+                    <span className="num rounded-[var(--r-full)] bg-[var(--accent)] px-[var(--sp-2)] text-[var(--fs-xxs)] font-semibold leading-[var(--h-tag)] text-[var(--accent-fg)]">
+                      {unread}
+                    </span>
+                  )}
+                </Link>
+              );
+            })}
+          </nav>
         </div>
 
-        <nav className="flex flex-1 flex-col gap-[var(--sp-1)] px-[var(--sp-2)] py-[var(--sp-2)]">
-          {NAV.map(({ href, label, Icon }) => {
-            // Two exact-match cases, because both own deeper routes that belong
-            // to a *different* entry: /dashboard owns /learn/*, and /manage is
-            // the parent of every other staff link in this rail.
-            const active =
-              href === '/dashboard'
-                ? pathname === '/dashboard' || pathname.startsWith('/learn')
-                : href === '/manage'
-                  ? pathname === '/manage'
-                  : pathname.startsWith(href);
-            return (
-              <Link
-                key={href}
-                href={href}
-                aria-current={active ? 'page' : undefined}
-                className={cx(
-                  'flex h-[var(--h-md)] items-center gap-[var(--sp-3)] rounded-[var(--r-md)]',
-                  'px-[var(--sp-3)] text-[var(--fs-base)] transition-colors duration-[var(--dur-fast)]',
-                  active
-                    ? 'bg-[var(--bg-wash)] font-medium text-[var(--fg-primary)]'
-                    : 'text-[var(--fg-secondary)] hover:bg-[var(--bg-wash-subtle)] hover:text-[var(--fg-primary)]',
-                )}
-              >
-                <Icon size={16} weight={active ? 'fill' : 'regular'} />
-                <span className="flex-1">{label}</span>
-                {href === '/notifications' && unread > 0 && (
-                  <span className="num rounded-[var(--r-full)] bg-[var(--accent)] px-[var(--sp-2)] text-[var(--fs-xxs)] font-semibold leading-[var(--h-tag)] text-[var(--accent-fg)]">
-                    {unread}
-                  </span>
-                )}
-              </Link>
-            );
-          })}
-        </nav>
-
-        <div className="border-t border-[var(--border-light)] p-[var(--sp-2)]">
-          <div className="flex items-center gap-[var(--sp-3)] rounded-[var(--r-md)] px-[var(--sp-3)] py-[var(--sp-2)]">
-            <Avatar name={user?.name ?? ''} />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[var(--fs-base)] text-[var(--fg-primary)]">
-                {user?.name}
-              </span>
-              <span className="block truncate text-[var(--fs-xxs)] text-[var(--fg-muted)]">
-                {user?.email}
-              </span>
-            </span>
+        <div className="p-[var(--sp-2)]">
+          <div
+            className={cx(
+              'flex items-center gap-[var(--sp-1)] rounded-[var(--r-sm)] px-[var(--sp-1)]',
+              collapsed ? 'flex-col' : '',
+            )}
+          >
+            {/* Which console this is. A TA and the teacher share the shell, so
+                the rail says which set of powers is in play rather than
+                leaving it to be inferred from which links happen to be
+                present. */}
+            {staff && !collapsed && (
+              <Chip tone={user?.role === 'teacher' ? 'amber' : 'teal'} className="flex-1">
+                {user?.role === 'teacher' ? 'Teacher' : 'Assistant'}
+              </Chip>
+            )}
             <IconButton
               label="Sign out"
               size="sm"
@@ -207,18 +281,55 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         />
       )}
 
-      <div className="flex min-w-0 flex-1 flex-col lg:ms-[var(--rail-w)]">
-        <header className="sticky top-0 z-20 flex h-[var(--topbar-h)] items-center gap-[var(--sp-2)] border-b border-[var(--border-light)] bg-[var(--bg-primary)] px-[var(--sp-4)]">
-          <IconButton
-            label={open ? 'Close navigation' : 'Open navigation'}
-            aria-expanded={open}
-            onClick={() => setOpen((v) => !v)}
-            className="lg:hidden"
-          >
-            {open ? <XIcon size={16} /> : <ListIcon size={16} />}
-          </IconButton>
-          <div className="ms-auto flex items-center gap-[var(--sp-1)]">
-            <ThemeToggle />
+      <div
+        className={cx(
+          'flex min-w-0 flex-1 flex-col bg-[var(--bg-primary)]',
+          // `rounded-ss` (start-start), not `rounded-tl`: the rail is on the
+          // right in Arabic, so the panel's cut corner has to follow it
+          // (CLAUDE.md §4). The cast shadow has to flip with it - a box-shadow
+          // offset cannot be expressed logically, so it is a second token
+          // behind the `rtl:` variant rather than a mirrored sign inline.
+          'lg:rounded-ss-[var(--r-panel)] lg:shadow-[var(--shadow-panel)]',
+          'rtl:lg:shadow-[var(--shadow-panel-rtl)]',
+          collapsed ? 'lg:ms-[var(--rail-w-collapsed)]' : 'lg:ms-[var(--rail-w)]',
+        )}
+      >
+        <header className="sticky top-0 z-20 flex h-[var(--topbar-h)] items-center justify-between gap-[var(--sp-2)] border-b border-[var(--border-light)] bg-[var(--bg-primary)] px-[var(--sp-3)]">
+          <div className="flex min-w-0 items-center gap-[var(--sp-2)]">
+            <IconButton
+              label={open ? 'Close navigation' : 'Open navigation'}
+              size="sm"
+              aria-expanded={open}
+              onClick={() => setOpen((v) => !v)}
+              className="lg:hidden"
+            >
+              {open ? <XIcon size={16} /> : <ListIcon size={16} />}
+            </IconButton>
+            {chrome?.backHref && (
+              <IconButton
+                label="Back"
+                size="sm"
+                onClick={() => router.push(chrome.backHref as string)}
+              >
+                <ArrowLeftIcon size={16} />
+              </IconButton>
+            )}
+            {ChromeIcon && (
+              <ChromeIcon size={16} className="shrink-0 text-[var(--fg-tertiary)]" />
+            )}
+            {/* Nothing here for a route that hasn't registered a chrome title
+                (the student pages, still on their own `PageHeader` below) -
+                an empty `<h1>` is a worse landmark than none, and that page
+                already has its own real one. */}
+            {chrome?.title && (
+              <h1 className="truncate text-[var(--fs-base)] font-semibold text-[var(--fg-primary)]">
+                {chrome.title}
+              </h1>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-[var(--sp-2)]">
+            {actions}
+            <ThemeToggle size="sm" />
           </div>
         </header>
 

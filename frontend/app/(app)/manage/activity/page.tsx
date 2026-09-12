@@ -14,7 +14,9 @@ import {
   RowsSkeleton,
 } from '@/components/ui';
 import type { ChipTone } from '@/components/ui';
-import { PageBody, PageHeader } from '@/components/app/page-parts';
+import { ClockCounterClockwiseIcon } from '@phosphor-icons/react';
+import { PageBody } from '@/components/app/page-parts';
+import { PageTitle } from '@/components/app/page-chrome';
 
 /**
  * The activity log - CLAUDE.md §5.4's actual ask: the teacher must be able to
@@ -65,11 +67,11 @@ export default function ActivityLogPage() {
 
   return (
     <>
-      <PageHeader
-        title="Activity log"
-        subtitle="Every recorded action by an assistant or admin, with who did it and when."
-      />
-      <PageBody>
+      <PageTitle icon={ClockCounterClockwiseIcon} title="Activity log" />
+      <PageBody className="flex flex-col gap-[var(--sp-3)]">
+        <p className="text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+          Every recorded action by an assistant or admin, with who did it and when.
+        </p>
         <Panel bodyClassName="">
           {loading && entries.length === 0 && <RowsSkeleton rows={6} />}
           {error && <ErrorState message={error.message} onRetry={reload} />}

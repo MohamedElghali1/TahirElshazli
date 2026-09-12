@@ -94,14 +94,28 @@ export function SectionIntro({
 export function PageBody({
   children,
   className,
+  dense,
 }: {
   children: React.ReactNode;
   className?: string;
+  /**
+   * The reference system's own list-screen padding is 8px, not the app's
+   * usual 24 - measured off Twenty's object table (TASK 4 of the 2026-09-12
+   * visual-parity pass). Opt-in rather than the new default: a screen still
+   * built from `Panel`s and forms (the groups and blog consoles, for one)
+   * wants the room a card needs to read as a card, and blanket-shrinking
+   * every `/(app)` route's gutter was more than this pass asked for.
+   */
+  dense?: boolean;
 }) {
   // The padding is merged with the caller's classes, never replaced by them:
   // every caller that passes a className is passing layout (`flex`, a gap),
   // and swapping the two would silently strip the page's own gutter.
-  return <div className={cx('p-[var(--sp-6)]', className)}>{children}</div>;
+  return (
+    <div className={cx(dense ? 'p-[var(--sp-2)]' : 'p-[var(--sp-6)]', className)}>
+      {children}
+    </div>
+  );
 }
 
 /**

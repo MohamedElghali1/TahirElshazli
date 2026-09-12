@@ -18,7 +18,9 @@ import {
   RowsSkeleton,
   Select,
 } from '@/components/ui';
-import { PageBody, PageHeader } from '@/components/app/page-parts';
+import { UsersFourIcon } from '@phosphor-icons/react';
+import { PageBody } from '@/components/app/page-parts';
+import { PageTitle } from '@/components/app/page-chrome';
 
 /**
  * Groups: create one, name it, and decide what it studies (CLAUDE.md §5.16).
@@ -41,11 +43,13 @@ export default function GroupsPage() {
 
   return (
     <>
-      <PageHeader
-        title="Groups"
-        subtitle="A group is a class of students. A course is taught to one or more of them."
-      />
+      <PageTitle icon={UsersFourIcon} title="Groups" />
       <PageBody className="flex flex-col gap-[var(--sp-5)]">
+        {/* The mental model, carried over from the old subtitle - Twenty's
+            header has no subtitle slot, only a title (TASK 2). */}
+        <p className="text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+          A group is a class of students. A course is taught to one or more of them.
+        </p>
         <CreateGroup onCreated={reload} />
 
         {loading && <RowsSkeleton rows={4} />}
