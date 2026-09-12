@@ -537,13 +537,50 @@ export interface CourseStaffMember {
 
 /* --- audit log (audit/interfaces/audit-log-repository) ------------------- */
 
+/**
+ * Mirrors the backend's own `AuditAction` union
+ * (`backend/src/audit/interfaces/audit-log-repository.interface.ts`).
+ *
+ * This list had drifted badly - it carried six of the backend's twenty-seven,
+ * so the activity log rendered a blank label and no tone for every group
+ * change, every authored assessment, every blog post, every announcement and
+ * every live session. `Record<AuditAction, string>` cannot catch that, because
+ * a union that is missing members is still perfectly satisfiable; the check
+ * only fires in the other direction.
+ *
+ * There is no compile-time link between the two files, so **adding an action
+ * on the backend means adding it here too** - the same hand-mirroring hazard
+ * CLAUDE.md §5.4 describes for the DTO's runtime arrays, one process boundary
+ * further out.
+ */
 export type AuditAction =
   | 'course_staff.assigned'
   | 'course_staff.unassigned'
   | 'submission.graded'
   | 'recording.created'
   | 'recording.updated'
-  | 'recording.deleted';
+  | 'recording.deleted'
+  | 'live_session.scheduled'
+  | 'live_session.updated'
+  | 'live_session.cancelled'
+  | 'announcement.posted'
+  | 'group.created'
+  | 'group.renamed'
+  | 'group.course_added'
+  | 'group.course_removed'
+  | 'group.student_assigned'
+  | 'group.student_removed'
+  | 'assessment.created'
+  | 'assessment.updated'
+  | 'assessment.targeted'
+  | 'assessment.deleted'
+  | 'external_result.attached'
+  | 'google.connected'
+  | 'google.disconnected'
+  | 'blog_post.created'
+  | 'blog_post.updated'
+  | 'blog_post.media_set'
+  | 'blog_post.deleted';
 
 export interface AuditLogEntry {
   id: string;

@@ -85,7 +85,7 @@ export default function CourseRecordingsPage({
             </Button>
           ) : (
             data && (
-              <span className="num text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+              <span className="num text-[var(--fs-xs)] text-fg-3">
                 {data.length}
               </span>
             )
@@ -166,20 +166,20 @@ function RecordingRow({
     <div className="flex flex-wrap items-center gap-[var(--sp-3)] px-[var(--sp-4)] py-[var(--sp-3)]">
       <span
         aria-hidden
-        className="flex h-[var(--h-md)] w-[var(--h-md)] shrink-0 items-center justify-center rounded-[var(--r-sm)] bg-[var(--bg-wash)] text-[var(--fg-tertiary)]"
+        className="flex h-[var(--h-md)] w-[var(--h-md)] shrink-0 items-center justify-center rounded-[var(--r-sm)] bg-[var(--bg-wash)] text-fg-3"
       >
         <VideoIcon size={16} />
       </span>
 
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[var(--fs-base)] font-medium text-[var(--fg-primary)]">
+        <span className="block truncate text-[var(--fs-base)] font-medium text-fg">
           {recording.title}
         </span>
-        <span className="mt-[var(--sp-1)] block truncate text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+        <span className="mt-[var(--sp-1)] block truncate text-[var(--fs-xs)] text-fg-3">
           {recording.chapter} · {formatDate(recording.lessonDate)}
         </span>
         {error && (
-          <span className="mt-[var(--sp-1)] block text-[var(--fs-xs)] text-[var(--chip-red-fg)]">
+          <span className="mt-[var(--sp-1)] block text-[var(--fs-xs)] text-chip-red-fg">
             {error}
           </span>
         )}
@@ -191,7 +191,7 @@ function RecordingRow({
         </Chip>
       ))}
 
-      <span className="num shrink-0 text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+      <span className="num shrink-0 text-[var(--fs-xs)] text-fg-3">
         {formatDuration(recording.durationSeconds)}
       </span>
 
@@ -201,7 +201,7 @@ function RecordingRow({
             {/* Deleting also destroys every student's watch progress for this
                 recording through the database cascade - a real loss of
                 history, which is why it asks first. */}
-            <span className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+            <span className="text-[var(--fs-xs)] text-fg-3">
               Delete for everyone?
             </span>
             <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>

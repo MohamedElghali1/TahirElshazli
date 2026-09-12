@@ -123,8 +123,8 @@ export function ThemeToggle({
         (size === 'sm'
           ? 'inline-flex h-[var(--h-sm)] w-[var(--h-sm)] items-center justify-center rounded-[var(--r-sm)] '
           : 'inline-flex h-[var(--h-md)] w-[var(--h-md)] items-center justify-center rounded-[var(--r-md)] ') +
-        'text-[var(--fg-tertiary)] transition-colors ' +
-        'duration-[var(--dur-fast)] hover:bg-[var(--bg-wash)] hover:text-[var(--fg-primary)] ' +
+        'text-fg-3 transition-colors ' +
+        'duration-[var(--dur-fast)] hover:bg-[var(--bg-wash)] hover:text-fg ' +
         (className ?? '')
       }
     >

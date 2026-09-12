@@ -60,10 +60,10 @@ export default function RegisterPage() {
 
   return (
     <>
-      <h1 className="text-[var(--fs-h2)] font-semibold tracking-[-0.02em] text-[var(--fg-primary)]">
+      <h1 className="text-[var(--fs-h2)] font-semibold tracking-[-0.02em] text-fg">
         Create your account
       </h1>
-      <p className="mt-[var(--sp-2)] text-[var(--fs-body)] text-[var(--fg-tertiary)]">
+      <p className="mt-[var(--sp-2)] text-[var(--fs-body)] text-fg-3">
         Once your place is confirmed, this is where your course appears.
       </p>
 
@@ -113,11 +113,11 @@ export default function RegisterPage() {
         </Button>
       </form>
 
-      <p className="mt-[var(--sp-6)] text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+      <p className="mt-[var(--sp-6)] text-[var(--fs-base)] text-fg-3">
         Already have an account?{' '}
         <Link
           href="/login"
-          className="text-[var(--fg-secondary)] underline underline-offset-4 hover:text-[var(--fg-primary)]"
+          className="text-fg-2 underline underline-offset-4 hover:text-fg"
         >
           Sign in
         </Link>

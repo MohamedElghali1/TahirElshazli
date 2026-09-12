@@ -168,10 +168,10 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
             <Avatar name={user?.name ?? ''} size="xs" className="shrink-0" />
             {!collapsed && (
               <>
-                <span className="min-w-0 flex-1 truncate text-[var(--fs-base)] font-medium text-[var(--fg-primary)]">
+                <span className="min-w-0 flex-1 truncate text-[var(--fs-base)] font-medium text-fg">
                   {user?.name}
                 </span>
-                <CaretUpDownIcon size={12} className="shrink-0 text-[var(--fg-muted)]" />
+                <CaretUpDownIcon size={12} className="shrink-0 text-fg-4" />
               </>
             )}
           </Link>
@@ -202,7 +202,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
           </div>
 
           {!collapsed && (
-            <p className="mb-[var(--sp-1)] mt-[var(--sp-3)] ps-[var(--sp-3)] text-[var(--fs-xxs)] font-semibold uppercase tracking-wide text-[var(--fg-muted)]">
+            <p className="mb-[var(--sp-1)] mt-[var(--sp-3)] ps-[var(--sp-3)] text-[var(--fs-xxs)] font-semibold uppercase tracking-wide text-fg-4">
               Workspace
             </p>
           )}
@@ -228,14 +228,14 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                     'flex h-[var(--h-nav)] items-center gap-[var(--sp-1)] rounded-[var(--r-sm)]',
                     'px-[var(--sp-nav-x)] text-[var(--fs-base)] transition-colors duration-[var(--dur-fast)]',
                     active
-                      ? 'bg-[var(--bg-wash-nav)] font-medium text-[var(--fg-primary)]'
-                      : 'text-[var(--fg-secondary)] hover:bg-[var(--bg-wash-nav)] hover:text-[var(--fg-primary)]',
+                      ? 'bg-[var(--bg-wash-nav)] font-medium text-fg'
+                      : 'text-fg-2 hover:bg-[var(--bg-wash-nav)] hover:text-fg',
                   )}
                 >
                   <Icon size={16} weight={active ? 'fill' : 'regular'} />
                   {!collapsed && <span className="flex-1 truncate">{label}</span>}
                   {!collapsed && href === '/notifications' && unread > 0 && (
-                    <span className="num rounded-[var(--r-full)] bg-[var(--accent)] px-[var(--sp-2)] text-[var(--fs-xxs)] font-semibold leading-[var(--h-tag)] text-[var(--accent-fg)]">
+                    <span className="num rounded-[var(--r-full)] bg-[var(--accent)] px-[var(--sp-2)] text-[var(--fs-xxs)] font-semibold leading-[var(--h-tag)] text-accent-fg">
                       {unread}
                     </span>
                   )}
@@ -248,7 +248,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
         <div className="p-[var(--sp-2)]">
           <div
             className={cx(
-              'flex items-center gap-[var(--sp-1)] rounded-[var(--r-sm)] px-[var(--sp-1)]',
+              'flex items-center justify-between gap-[var(--sp-1)] rounded-[var(--r-sm)] px-[var(--sp-1)]',
               collapsed ? 'flex-col' : '',
             )}
           >
@@ -257,7 +257,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                 leaving it to be inferred from which links happen to be
                 present. */}
             {staff && !collapsed && (
-              <Chip tone={user?.role === 'teacher' ? 'amber' : 'teal'} className="flex-1">
+              <Chip tone={user?.role === 'teacher' ? 'amber' : 'teal'}>
                 {user?.role === 'teacher' ? 'Teacher' : 'Assistant'}
               </Chip>
             )}
@@ -315,14 +315,14 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
               </IconButton>
             )}
             {ChromeIcon && (
-              <ChromeIcon size={16} className="shrink-0 text-[var(--fg-tertiary)]" />
+              <ChromeIcon size={16} className="shrink-0 text-fg-3" />
             )}
             {/* Nothing here for a route that hasn't registered a chrome title
                 (the student pages, still on their own `PageHeader` below) -
                 an empty `<h1>` is a worse landmark than none, and that page
                 already has its own real one. */}
             {chrome?.title && (
-              <h1 className="truncate text-[var(--fs-base)] font-semibold text-[var(--fg-primary)]">
+              <h1 className="truncate text-[var(--fs-base)] font-semibold text-fg">
                 {chrome.title}
               </h1>
             )}

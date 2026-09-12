@@ -43,7 +43,7 @@ export default function CourseRosterPage({
         title="Enrolled students"
         action={
           data && (
-            <span className="num text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+            <span className="num text-[var(--fs-xs)] text-fg-3">
               {data.entries.length}
             </span>
           )
@@ -83,10 +83,10 @@ export default function CourseRosterPage({
                 {data.entries.map((entry) => (
                   <Tr key={entry.studentId}>
                     <Td>
-                      <span className="block text-[var(--fs-base)] text-[var(--fg-primary)]">
+                      <span className="block text-[var(--fs-base)] text-fg">
                         {entry.name}
                       </span>
-                      <span className="block text-[var(--fs-xxs)] text-[var(--fg-muted)]">
+                      <span className="block text-[var(--fs-xxs)] text-fg-4">
                         {entry.email}
                       </span>
                     </Td>
@@ -98,7 +98,7 @@ export default function CourseRosterPage({
                     <Td align="end">
                       <span className="num">
                         {entry.submittedCount}
-                        <span className="text-[var(--fg-muted)]">
+                        <span className="text-fg-4">
                           /{data.assessmentCount}
                         </span>
                       </span>
@@ -109,12 +109,12 @@ export default function CourseRosterPage({
                     <Td align="end">
                       {/* A numeral, never a meter. Meters are for completion
                           only, so a grade can never be misread as progress. */}
-                      <span className="num text-[var(--fg-primary)]">
+                      <span className="num text-fg">
                         {formatPercent(entry.averageScorePercent)}
                       </span>
                     </Td>
                     <Td align="end">
-                      <span className="text-[var(--fg-tertiary)]">
+                      <span className="text-fg-3">
                         {formatDate(entry.enrolledAt)}
                       </span>
                     </Td>

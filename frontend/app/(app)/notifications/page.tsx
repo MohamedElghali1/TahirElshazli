@@ -130,7 +130,7 @@ function NotificationRow({
         weight={notification.read ? 'regular' : 'fill'}
         className={cx(
           'mt-[2px] shrink-0',
-          notification.read ? 'text-[var(--fg-muted)]' : 'text-[var(--accent)]',
+          notification.read ? 'text-fg-4' : 'text-accent',
         )}
       />
       <div className="min-w-0 flex-1">
@@ -138,17 +138,17 @@ function NotificationRow({
           className={cx(
             'text-[var(--fs-base)]',
             notification.read
-              ? 'text-[var(--fg-secondary)]'
-              : 'font-medium text-[var(--fg-primary)]',
+              ? 'text-fg-2'
+              : 'font-medium text-fg',
           )}
         >
           {notification.title}
         </p>
-        <p className="mt-[var(--sp-1)] text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+        <p className="mt-[var(--sp-1)] text-[var(--fs-xs)] text-fg-3">
           {notification.message}
         </p>
       </div>
-      <span className="num shrink-0 text-[var(--fs-xxs)] text-[var(--fg-muted)]">
+      <span className="num shrink-0 text-[var(--fs-xxs)] text-fg-4">
         {formatRelative(notification.createdAt)}
       </span>
     </div>

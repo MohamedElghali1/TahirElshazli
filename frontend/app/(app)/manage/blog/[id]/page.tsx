@@ -77,7 +77,7 @@ export default function EditBlogPostPage({
       <PageTitle title={data?.title ?? 'Post'} backHref="/manage/blog" />
       <PageBody className="flex flex-col gap-[var(--sp-5)]">
         {data && (
-          <div className="flex items-center gap-[var(--sp-2)] text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+          <div className="flex items-center gap-[var(--sp-2)] text-[var(--fs-xs)] text-fg-3">
             <span>Posted by {data.authorName}</span>
             <StatusChip post={data} />
           </div>
@@ -318,7 +318,7 @@ function PostForm({
           {saved && (
             <span
               role="status"
-              className="text-[var(--fs-base)] text-[var(--fg-tertiary)]"
+              className="text-[var(--fs-base)] text-fg-3"
             >
               Saved.
             </span>
@@ -328,7 +328,7 @@ function PostForm({
               href={`/blog/${post.slug}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-[var(--fs-base)] text-[var(--fg-primary)] underline underline-offset-4"
+              className="text-[var(--fs-base)] text-fg underline underline-offset-4"
             >
               View it live
             </a>
@@ -426,7 +426,7 @@ function GalleryForm({
     >
       <div className="flex flex-col gap-[var(--sp-4)]">
         {items.length === 0 && (
-          <p className="text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+          <p className="text-[var(--fs-base)] text-fg-3">
             Nothing attached yet. A post with only words is fine — add a
             certificate, a photo of the results board or a clip below.
           </p>
@@ -444,7 +444,7 @@ function GalleryForm({
               >
                 <Chip tone="neutral">{item.kind}</Chip>
 
-                <span className="min-w-[160px] flex-1 truncate font-[family-name:var(--font-mono)] text-[var(--fs-xxs)] text-[var(--fg-tertiary)]">
+                <span className="min-w-[160px] flex-1 truncate font-[family-name:var(--font-mono)] text-[var(--fs-xxs)] text-fg-3">
                   {item.url}
                 </span>
 
@@ -465,7 +465,7 @@ function GalleryForm({
                 />
 
                 {item.sizeBytes !== undefined && (
-                  <span className="font-[family-name:var(--font-mono)] text-[var(--fs-xxs)] tabular-nums text-[var(--fg-tertiary)]">
+                  <span className="font-[family-name:var(--font-mono)] text-[var(--fs-xxs)] tabular-nums text-fg-3">
                     {formatFileSize(item.sizeBytes)}
                   </span>
                 )}
@@ -515,7 +515,7 @@ function GalleryForm({
         </div>
 
         {dirty && (
-          <p className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+          <p className="text-[var(--fs-xs)] text-fg-3">
             Unsaved changes to the gallery.
           </p>
         )}
@@ -565,7 +565,7 @@ function UploadField({
     <div className="flex flex-col gap-[var(--sp-2)]">
       <label
         htmlFor="upload"
-        className="text-[var(--fs-xs)] font-medium text-[var(--fg-secondary)]"
+        className="text-[var(--fs-xs)] font-medium text-fg-2"
       >
         Add a picture, a video or a file
       </label>
@@ -580,19 +580,19 @@ function UploadField({
           accept={config.allowedMimeTypes.join(',')}
           onChange={pick}
           disabled={busy}
-          className="text-[var(--fs-base)] text-[var(--fg-secondary)] file:me-[var(--sp-3)] file:rounded-[var(--r-md)] file:border file:border-[var(--border-medium)] file:bg-[var(--bg-tertiary)] file:px-[var(--sp-3)] file:py-[var(--sp-2)] file:text-[var(--fs-xs)] file:text-[var(--fg-primary)]"
+          className="text-[var(--fs-base)] text-fg-2 file:me-[var(--sp-3)] file:rounded-[var(--r-md)] file:border file:border-[var(--border-medium)] file:bg-[var(--bg-tertiary)] file:px-[var(--sp-3)] file:py-[var(--sp-2)] file:text-[var(--fs-xs)] file:text-fg"
         />
         {busy && (
           <span
             role="status"
-            className="inline-flex items-center gap-[var(--sp-2)] text-[var(--fs-base)] text-[var(--fg-tertiary)]"
+            className="inline-flex items-center gap-[var(--sp-2)] text-[var(--fs-base)] text-fg-3"
           >
             <FileArrowUpIcon size={14} />
             Uploading…
           </span>
         )}
       </div>
-      <p className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+      <p className="text-[var(--fs-xs)] text-fg-3">
         Up to {formatFileSize(config.maxBytes)}. Uploading adds it to the list;
         it is only attached once you save the gallery.
       </p>
@@ -692,7 +692,7 @@ function DangerZone({ post }: { post: StaffBlogPost }) {
     <Panel title="Delete this post">
       {confirming ? (
         <div className="flex flex-col gap-[var(--sp-3)]">
-          <p className="text-[var(--fs-base)] text-[var(--fg-secondary)]">
+          <p className="text-[var(--fs-base)] text-fg-2">
             This removes the post and its gallery for good.
             {post.isLive && ' It is live right now, so the public link will stop working.'}
           </p>
@@ -707,7 +707,7 @@ function DangerZone({ post }: { post: StaffBlogPost }) {
         </div>
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-[var(--sp-3)]">
-          <p className="text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+          <p className="text-[var(--fs-base)] text-fg-3">
             Last edited {formatDateTime(post.updatedAt)}.
           </p>
           <Button variant="ghost" onClick={() => setConfirming(true)}>

@@ -51,7 +51,7 @@ export default function SessionsPage({
         title="Coming up"
         action={
           data && (
-            <span className="num text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+            <span className="num text-[var(--fs-xs)] text-fg-3">
               {data.upcoming.length}
             </span>
           )
@@ -81,7 +81,7 @@ export default function SessionsPage({
         title="Attendance record"
         action={
           data && (
-            <span className="num text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+            <span className="num text-[var(--fs-xs)] text-fg-3">
               {data.past.filter((s) => s.attended).length} / {data.past.length}
             </span>
           )
@@ -113,10 +113,10 @@ function UpcomingRow({ session }: { session: LiveSession }) {
   return (
     <div className="flex items-center gap-[var(--sp-4)] px-[var(--sp-4)] py-[var(--sp-4)]">
       <div className="w-[52px] shrink-0 rounded-[var(--r-sm)] bg-[var(--bg-tertiary)] py-[var(--sp-2)] text-center">
-        <div className="num text-[var(--fs-lg)] leading-none text-[var(--fg-primary)]">
+        <div className="num text-[var(--fs-lg)] leading-none text-fg">
           {new Date(session.scheduledAt).getDate()}
         </div>
-        <div className="mt-[var(--sp-1)] text-[var(--fs-xxs)] uppercase text-[var(--fg-tertiary)]">
+        <div className="mt-[var(--sp-1)] text-[var(--fs-xxs)] uppercase text-fg-3">
           {new Date(session.scheduledAt).toLocaleDateString(undefined, {
             month: 'short',
           })}
@@ -124,14 +124,14 @@ function UpcomingRow({ session }: { session: LiveSession }) {
       </div>
 
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[var(--fs-base)] font-medium text-[var(--fg-primary)]">
+        <p className="truncate text-[var(--fs-base)] font-medium text-fg">
           {session.title}
         </p>
-        <p className="num mt-[var(--sp-1)] text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+        <p className="num mt-[var(--sp-1)] text-[var(--fs-xs)] text-fg-3">
           {formatWeekday(session.scheduledAt)} {formatTime(session.scheduledAt)} ·{' '}
           {formatMinutes(session.durationMinutes)}
         </p>
-        <p className="mt-[var(--sp-1)] text-[var(--fs-xxs)] text-[var(--fg-muted)]">
+        <p className="mt-[var(--sp-1)] text-[var(--fs-xxs)] text-fg-4">
           Starts {formatRelative(session.scheduledAt)}
         </p>
       </div>
@@ -158,20 +158,20 @@ function PastRow({ session }: { session: LiveSessionWithAttendance }) {
         <CheckCircleIcon
           size={16}
           weight="fill"
-          className="shrink-0 text-[var(--chip-green-fg)]"
+          className="shrink-0 text-chip-green-fg"
         />
       ) : (
         <XCircleIcon
           size={16}
           weight="fill"
-          className="shrink-0 text-[var(--chip-red-fg)]"
+          className="shrink-0 text-chip-red-fg"
         />
       )}
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[var(--fs-base)] text-[var(--fg-primary)]">
+        <p className="truncate text-[var(--fs-base)] text-fg">
           {session.title}
         </p>
-        <p className="num mt-[var(--sp-1)] text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+        <p className="num mt-[var(--sp-1)] text-[var(--fs-xs)] text-fg-3">
           {formatDate(session.scheduledAt)}
         </p>
       </div>

@@ -19,8 +19,8 @@ function Notice({
 }) {
   return (
     <div className="rounded-[var(--r-lg)] border border-[var(--border-medium)] bg-[var(--bg-primary)] p-[var(--sp-12)]">
-      <p className="text-[var(--fs-lead)] text-[var(--fg-primary)]">{heading}</p>
-      <p className="mt-[var(--sp-3)] max-w-[52ch] text-[var(--fs-body)] leading-[var(--lh-loose)] text-[var(--fg-secondary)]">
+      <p className="text-[var(--fs-lead)] text-fg">{heading}</p>
+      <p className="mt-[var(--sp-3)] max-w-[52ch] text-[var(--fs-body)] leading-[var(--lh-loose)] text-fg-2">
         {body}
       </p>
       <ButtonLink href="/contact" variant="primary" size="lg" className="mt-[var(--sp-8)]">

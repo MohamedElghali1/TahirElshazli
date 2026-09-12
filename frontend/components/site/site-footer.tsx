@@ -29,7 +29,7 @@ export function SiteFooter() {
       <div className="mx-auto grid max-w-[var(--maxw-site)] gap-[var(--sp-12)] px-[var(--sp-6)] py-[var(--sp-16)] md:grid-cols-[2fr_1fr_1fr]">
         <div>
           <Wordmark />
-          <p className="mt-[var(--sp-4)] max-w-[38ch] text-[var(--fs-base)] leading-[var(--lh-loose)] text-[var(--fg-tertiary)]">
+          <p className="mt-[var(--sp-4)] max-w-[38ch] text-[var(--fs-base)] leading-[var(--lh-loose)] text-fg-3">
             IGCSE and IELTS preparation, with every piece of work marked and
             returned.
           </p>
@@ -37,7 +37,7 @@ export function SiteFooter() {
             href={CONTACT.whatsappUrl}
             target="_blank"
             rel="noreferrer"
-            className="mt-[var(--sp-6)] inline-flex items-center gap-[var(--sp-2)] text-[var(--fs-base)] text-[var(--fg-secondary)] transition-colors duration-[var(--dur-fast)] hover:text-[var(--fg-primary)]"
+            className="mt-[var(--sp-6)] inline-flex items-center gap-[var(--sp-2)] text-[var(--fs-base)] text-fg-2 transition-colors duration-[var(--dur-fast)] hover:text-fg"
           >
             <WhatsappLogoIcon size={18} />
             Message us on WhatsApp
@@ -46,7 +46,7 @@ export function SiteFooter() {
 
         {COLUMNS.map((col) => (
           <nav key={col.heading} aria-label={col.heading}>
-            <h2 className="text-[var(--fs-base)] font-semibold text-[var(--fg-primary)]">
+            <h2 className="text-[var(--fs-base)] font-semibold text-fg">
               {col.heading}
             </h2>
             <ul className="mt-[var(--sp-4)] flex flex-col gap-[var(--sp-3)]">
@@ -54,7 +54,7 @@ export function SiteFooter() {
                 <li key={link.href}>
                   <Link
                     href={link.href}
-                    className="text-[var(--fs-base)] text-[var(--fg-tertiary)] transition-colors duration-[var(--dur-fast)] hover:text-[var(--fg-primary)]"
+                    className="text-[var(--fs-base)] text-fg-3 transition-colors duration-[var(--dur-fast)] hover:text-fg"
                   >
                     {link.label}
                   </Link>
@@ -66,13 +66,13 @@ export function SiteFooter() {
       </div>
 
       <div className="border-t border-[var(--border-light)]">
-        <div className="mx-auto flex max-w-[var(--maxw-site)] flex-col gap-[var(--sp-2)] px-[var(--sp-6)] py-[var(--sp-6)] text-[var(--fs-xs)] text-[var(--fg-muted)] sm:flex-row sm:items-center sm:justify-between">
+        <div className="mx-auto flex max-w-[var(--maxw-site)] flex-col gap-[var(--sp-2)] px-[var(--sp-6)] py-[var(--sp-6)] text-[var(--fs-xs)] text-fg-4 sm:flex-row sm:items-center sm:justify-between">
           <p>&copy; {new Date().getFullYear()} Dr. Tahir Elshazli. All rights reserved.</p>
           <div className="flex gap-[var(--sp-6)]">
-            <Link href="/privacy" className="hover:text-[var(--fg-secondary)]">
+            <Link href="/privacy" className="hover:text-fg-2">
               Privacy
             </Link>
-            <Link href="/terms" className="hover:text-[var(--fg-secondary)]">
+            <Link href="/terms" className="hover:text-fg-2">
               Terms
             </Link>
           </div>

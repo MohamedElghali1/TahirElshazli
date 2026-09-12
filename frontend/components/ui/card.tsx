@@ -28,7 +28,7 @@ export function Panel({
     >
       {title && (
         <header className="flex min-h-[var(--h-lg)] items-center justify-between gap-[var(--sp-3)] border-b border-[var(--border-light)] px-[var(--sp-4)] py-[var(--sp-2)]">
-          <h2 className="text-[var(--fs-base)] font-semibold text-[var(--fg-primary)]">
+          <h2 className="text-[var(--fs-base)] font-semibold text-fg">
             {title}
           </h2>
           {action}

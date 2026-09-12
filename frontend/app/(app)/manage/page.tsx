@@ -46,7 +46,7 @@ export default function ManageOverviewPage() {
     <>
       <PageTitle icon={SquaresFourIcon} title={firstName ? `Welcome back, ${firstName}` : 'Management'} />
       <PageBody dense className="flex flex-col gap-[var(--sp-4)]">
-        <p className="text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+        <p className="text-[var(--fs-base)] text-fg-3">
           {admin
             ? 'Courses, students, recordings and grading across the platform.'
             : 'Grade work, mark attendance and post materials for your courses.'}
@@ -75,14 +75,14 @@ export default function ManageOverviewPage() {
                 dense table instead of a bordered card - no earnings widget
                 either way (CLAUDE.md §1). */}
             <div className="flex h-[var(--topbar-h)] items-center justify-between px-[var(--sp-2)]">
-              <span className="inline-flex h-[var(--h-sm)] items-center gap-[var(--sp-1)] rounded-[var(--r-lg)] bg-[var(--bg-primary)] py-[var(--sp-1)] ps-[var(--sp-1)] pe-[var(--sp-2)] text-[var(--fs-base)] font-medium text-[var(--fg-secondary)]">
+              <span className="inline-flex h-[var(--h-sm)] items-center gap-[var(--sp-1)] rounded-[var(--r-lg)] bg-[var(--bg-primary)] py-[var(--sp-1)] ps-[var(--sp-1)] pe-[var(--sp-2)] text-[var(--fs-base)] font-medium text-fg-2">
                 {admin ? 'All courses' : 'Your courses'}
                 {' · '}
                 <span className="num">{data.courses.length}</span>
               </span>
               <Link
                 href="/manage/courses"
-                className="text-[var(--fs-base)] font-medium text-[var(--fg-secondary)] transition-colors duration-[var(--dur-fast)] hover:text-[var(--fg-primary)]"
+                className="text-[var(--fs-base)] font-medium text-fg-2 transition-colors duration-[var(--dur-fast)] hover:text-fg"
               >
                 See all
               </Link>
@@ -113,7 +113,7 @@ export default function ManageOverviewPage() {
                       <Td>
                         <Link
                           href={`/manage/courses/${course.id}`}
-                          className="inline-flex h-[var(--h-tag)] max-w-full items-center gap-[var(--sp-1)] rounded-[var(--r-sm)] bg-[var(--bg-wash-nav)] px-[var(--sp-1)] text-[var(--fs-base)] font-medium text-[var(--fg-primary)] transition-colors duration-[var(--dur-fast)] hover:bg-[var(--bg-wash)]"
+                          className="inline-flex h-[var(--h-tag)] max-w-full items-center gap-[var(--sp-1)] rounded-[var(--r-sm)] bg-[var(--bg-wash-nav)] px-[var(--sp-1)] text-[var(--fs-base)] font-medium text-fg transition-colors duration-[var(--dur-fast)] hover:bg-[var(--bg-wash)]"
                         >
                           <span className="truncate">{course.title}</span>
                         </Link>
@@ -131,7 +131,7 @@ export default function ManageOverviewPage() {
                           )}
                           <ArrowRightIcon
                             size={14}
-                            className="shrink-0 text-[var(--fg-muted)] rtl:rotate-180"
+                            className="shrink-0 text-fg-4 rtl:rotate-180"
                           />
                         </span>
                       </Td>

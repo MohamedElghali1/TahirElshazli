@@ -87,8 +87,8 @@ export function CourseFilters({
                 'inline-flex h-[var(--h-lg)] items-center rounded-[var(--r-full)] px-[var(--sp-4)]',
                 'text-[var(--fs-base)] font-medium transition-colors duration-[var(--dur-fast)]',
                 active
-                  ? 'bg-[var(--accent-wash)] text-[var(--accent)] ring-1 ring-inset ring-[var(--accent-line)]'
-                  : 'text-[var(--fg-secondary)] hover:bg-[var(--bg-wash)] hover:text-[var(--fg-primary)]',
+                  ? 'bg-[var(--accent-wash)] text-accent ring-1 ring-inset ring-[var(--accent-line)]'
+                  : 'text-fg-2 hover:bg-[var(--bg-wash)] hover:text-fg',
               )}
             >
               {option.label}
@@ -100,18 +100,18 @@ export function CourseFilters({
       <div className="flex items-center gap-[var(--sp-4)]">
         <p
           aria-live="polite"
-          className="hidden whitespace-nowrap text-[var(--fs-base)] text-[var(--fg-tertiary)] sm:block"
+          className="hidden whitespace-nowrap text-[var(--fs-base)] text-fg-3 sm:block"
         >
           {filtered ? (
             <>
-              <span className="font-[family-name:var(--font-mono)] tabular-nums text-[var(--fg-primary)]">
+              <span className="font-[family-name:var(--font-mono)] tabular-nums text-fg">
                 {shown}
               </span>{' '}
               of {total}
             </>
           ) : (
             <>
-              <span className="font-[family-name:var(--font-mono)] tabular-nums text-[var(--fg-primary)]">
+              <span className="font-[family-name:var(--font-mono)] tabular-nums text-fg">
                 {total}
               </span>{' '}
               {total === 1 ? 'course' : 'courses'}
@@ -130,7 +130,7 @@ export function CourseFilters({
           <MagnifyingGlassIcon
             size={16}
             aria-hidden
-            className="pointer-events-none absolute start-[var(--sp-3)] text-[var(--fg-tertiary)]"
+            className="pointer-events-none absolute start-[var(--sp-3)] text-fg-3"
           />
           {/* The shared control, so the search field cannot drift from every
               other input on the site. It keeps the global `:focus-visible`

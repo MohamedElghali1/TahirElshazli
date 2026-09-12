@@ -76,7 +76,7 @@ export default function CatalogPage() {
         {failure && (
           <p
             role="alert"
-            className="rounded-[var(--r-md)] border border-[var(--chip-red-bg)] bg-[var(--chip-red-bg)] px-[var(--sp-4)] py-[var(--sp-3)] text-[var(--fs-base)] text-[var(--chip-red-fg)]"
+            className="rounded-[var(--r-md)] border border-[var(--chip-red-bg)] bg-[var(--chip-red-bg)] px-[var(--sp-4)] py-[var(--sp-3)] text-[var(--fs-base)] text-chip-red-fg"
           >
             {failure}
           </p>
@@ -131,10 +131,10 @@ function CatalogCard({
     <article className="flex flex-col rounded-[var(--r-md)] border border-[var(--border-medium)] bg-[var(--bg-secondary)] p-[var(--sp-4)]">
       <div className="flex items-start justify-between gap-[var(--sp-3)]">
         <div className="min-w-0">
-          <h2 className="truncate text-[var(--fs-md)] font-semibold text-[var(--fg-primary)]">
+          <h2 className="truncate text-[var(--fs-md)] font-semibold text-fg">
             {course.title}
           </h2>
-          <p className="mt-[var(--sp-1)] text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+          <p className="mt-[var(--sp-1)] text-[var(--fs-xs)] text-fg-3">
             {course.teacherName}
           </p>
         </div>
@@ -143,11 +143,11 @@ function CatalogCard({
         </Chip>
       </div>
 
-      <p className="mt-[var(--sp-3)] line-clamp-2 text-[var(--fs-base)] text-[var(--fg-secondary)]">
+      <p className="mt-[var(--sp-3)] line-clamp-2 text-[var(--fs-base)] text-fg-2">
         {course.description}
       </p>
 
-      <p className="num mt-[var(--sp-3)] text-[var(--fs-xxs)] text-[var(--fg-muted)]">
+      <p className="num mt-[var(--sp-3)] text-[var(--fs-xxs)] text-fg-4">
         {course.moduleCount} {course.moduleCount === 1 ? 'chapter' : 'chapters'}
         {' · '}
         {course.lessonCount} {course.lessonCount === 1 ? 'lesson' : 'lessons'}
@@ -156,13 +156,13 @@ function CatalogCard({
       <div className="mt-[var(--sp-4)] flex items-center justify-between gap-[var(--sp-3)] border-t border-[var(--border-light)] pt-[var(--sp-4)]">
         {course.enrolled ? (
           <>
-            <span className="inline-flex items-center gap-[var(--sp-2)] text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+            <span className="inline-flex items-center gap-[var(--sp-2)] text-[var(--fs-xs)] text-fg-3">
               <CheckIcon size={14} weight="bold" />
               Already enrolled
             </span>
             <Link
               href={`/learn/${course.id}`}
-              className="inline-flex items-center gap-[var(--sp-1)] text-[var(--fs-base)] font-medium text-[var(--fg-primary)] transition-colors duration-[var(--dur-fast)] hover:text-[var(--accent)]"
+              className="inline-flex items-center gap-[var(--sp-1)] text-[var(--fs-base)] font-medium text-fg transition-colors duration-[var(--dur-fast)] hover:text-accent"
             >
               Open course
               <ArrowRightIcon size={14} />
@@ -170,7 +170,7 @@ function CatalogCard({
           </>
         ) : (
           <>
-            <span className="text-[var(--fs-xs)] text-[var(--fg-muted)]">
+            <span className="text-[var(--fs-xs)] text-fg-4">
               Free while we are in testing
             </span>
             <Button

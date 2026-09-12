@@ -54,8 +54,8 @@ export function SiteHeader() {
                 className={cx(
                   'text-[var(--fs-md)] transition-colors duration-[var(--dur-fast)]',
                   active
-                    ? 'text-[var(--fg-primary)]'
-                    : 'text-[var(--fg-tertiary)] hover:text-[var(--fg-primary)]',
+                    ? 'text-fg'
+                    : 'text-fg-3 hover:text-fg',
                 )}
               >
                 {item.label}
@@ -68,7 +68,7 @@ export function SiteHeader() {
           <ThemeToggle />
           <Link
             href="/login"
-            className="hidden text-[var(--fs-md)] text-[var(--fg-secondary)] transition-colors duration-[var(--dur-fast)] hover:text-[var(--fg-primary)] sm:block"
+            className="hidden text-[var(--fs-md)] text-fg-2 transition-colors duration-[var(--dur-fast)] hover:text-fg sm:block"
           >
             Sign in
           </Link>
@@ -80,7 +80,7 @@ export function SiteHeader() {
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
             aria-label={open ? 'Close menu' : 'Open menu'}
-            className="inline-flex h-[var(--h-md)] w-[var(--h-md)] items-center justify-center rounded-[var(--r-md)] text-[var(--fg-secondary)] hover:bg-[var(--bg-wash)] lg:hidden"
+            className="inline-flex h-[var(--h-md)] w-[var(--h-md)] items-center justify-center rounded-[var(--r-md)] text-fg-2 hover:bg-[var(--bg-wash)] lg:hidden"
           >
             {open ? <XIcon size={20} /> : <ListIcon size={20} />}
           </button>
@@ -94,14 +94,14 @@ export function SiteHeader() {
               <Link
                 key={item.href}
                 href={item.href}
-                className="py-[var(--sp-3)] text-[var(--fs-lead)] text-[var(--fg-primary)]"
+                className="py-[var(--sp-3)] text-[var(--fs-lead)] text-fg"
               >
                 {item.label}
               </Link>
             ))}
             <Link
               href="/login"
-              className="py-[var(--sp-3)] text-[var(--fs-lead)] text-[var(--fg-secondary)]"
+              className="py-[var(--sp-3)] text-[var(--fs-lead)] text-fg-2"
             >
               Sign in
             </Link>

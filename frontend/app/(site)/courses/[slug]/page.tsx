@@ -109,24 +109,24 @@ export default async function CoursePage({
       >
         <div>
           <ModeBadge mode={course.learningMode} />
-          <h1 className="mt-[var(--sp-4)] text-[clamp(2.25rem,5vw,var(--fs-display))] font-semibold leading-[1.05] tracking-[-0.03em] text-[var(--fg-primary)]">
+          <h1 className="mt-[var(--sp-4)] text-[clamp(2.25rem,5vw,var(--fs-display))] font-semibold leading-[1.05] tracking-[-0.03em] text-fg">
             {course.title}
           </h1>
-          <p className="mt-[var(--sp-6)] max-w-[var(--maxw-prose)] text-[var(--fs-lead)] leading-[var(--lh-loose)] text-[var(--fg-secondary)]">
+          <p className="mt-[var(--sp-6)] max-w-[var(--maxw-prose)] text-[var(--fs-lead)] leading-[var(--lh-loose)] text-fg-2">
             {course.description}
           </p>
-          <p className="mt-[var(--sp-6)] text-[var(--fs-body)] text-[var(--fg-tertiary)]">
+          <p className="mt-[var(--sp-6)] text-[var(--fs-body)] text-fg-3">
             Taught by{' '}
-            <span className="text-[var(--fg-primary)]">{course.teacherName}</span>
+            <span className="text-fg">{course.teacherName}</span>
           </p>
 
           {/* The counted facts a buyer scans for first, repeated from the
               syllabus stats below because a header is where marketplace UX
               expects them - not a second claim, the same numbers twice. */}
-          <dl className="mt-[var(--sp-6)] flex flex-wrap gap-x-[var(--sp-6)] gap-y-[var(--sp-2)] text-[var(--fs-base)] text-[var(--fg-secondary)]">
+          <dl className="mt-[var(--sp-6)] flex flex-wrap gap-x-[var(--sp-6)] gap-y-[var(--sp-2)] text-[var(--fs-base)] text-fg-2">
             <div className="flex gap-[var(--sp-1)]">
               <dt className="sr-only">Lessons</dt>
-              <dd className="font-[family-name:var(--font-mono)] tabular-nums text-[var(--fg-primary)]">
+              <dd className="font-[family-name:var(--font-mono)] tabular-nums text-fg">
                 {course.lessonCount}
               </dd>
               <dd>{course.lessonCount === 1 ? 'lesson' : 'lessons'}</dd>
@@ -134,7 +134,7 @@ export default async function CoursePage({
             {showHours && (
               <div className="flex gap-[var(--sp-1)]">
                 <dt className="sr-only">Video</dt>
-                <dd className="font-[family-name:var(--font-mono)] tabular-nums text-[var(--fg-primary)]">
+                <dd className="font-[family-name:var(--font-mono)] tabular-nums text-fg">
                   {hoursLabel(course.totalDurationSeconds)}
                 </dd>
                 <dd>hours of video</dd>
@@ -162,17 +162,17 @@ export default async function CoursePage({
         className={`${shell} grid items-start gap-[var(--sp-12)] pb-[var(--sp-24)] lg:grid-cols-[7fr_4fr] lg:gap-[var(--sp-16)]`}
       >
         <div className="min-w-0">
-          <h2 className="text-[clamp(1.5rem,3vw,var(--fs-h2))] font-semibold leading-[1.1] tracking-[-0.02em] text-[var(--fg-primary)]">
+          <h2 className="text-[clamp(1.5rem,3vw,var(--fs-h2))] font-semibold leading-[1.1] tracking-[-0.02em] text-fg">
             What you will cover.
           </h2>
-          <p className="mt-[var(--sp-3)] text-[var(--fs-body)] text-[var(--fg-tertiary)]">
+          <p className="mt-[var(--sp-3)] text-[var(--fs-body)] text-fg-3">
             <Count n={course.moduleCount} one="chapter" many="chapters" />
             {' · '}
             <Count n={course.lessonCount} one="lesson" many="lessons" />
             {showHours && (
               <>
                 {' · '}
-                <span className="font-[family-name:var(--font-mono)] tabular-nums text-[var(--fg-secondary)]">
+                <span className="font-[family-name:var(--font-mono)] tabular-nums text-fg-2">
                   {hoursLabel(course.totalDurationSeconds)}
                 </span>{' '}
                 hours
@@ -181,7 +181,7 @@ export default async function CoursePage({
           </p>
 
           {course.modules.length === 0 ? (
-            <p className="mt-[var(--sp-8)] rounded-[var(--r-md)] border border-[var(--border-medium)] p-[var(--sp-6)] text-[var(--fs-body)] text-[var(--fg-secondary)]">
+            <p className="mt-[var(--sp-8)] rounded-[var(--r-md)] border border-[var(--border-medium)] p-[var(--sp-6)] text-[var(--fs-body)] text-fg-2">
               The chapter list for this course is being finalised.
             </p>
           ) : (
@@ -198,15 +198,15 @@ export default async function CoursePage({
                 >
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-[var(--sp-4)] bg-[var(--bg-secondary)] px-[var(--sp-6)] py-[var(--sp-4)] transition-colors duration-[var(--dur-fast)] hover:bg-[var(--bg-tertiary)] [&::-webkit-details-marker]:hidden">
                     <div className="min-w-0">
-                      <p className="text-[var(--fs-base)] uppercase tracking-[0.06em] text-[var(--fg-tertiary)]">
+                      <p className="text-[var(--fs-base)] uppercase tracking-[0.06em] text-fg-3">
                         {module.chapter}
                       </p>
-                      <p className="mt-[2px] text-[var(--fs-body)] font-medium text-[var(--fg-primary)]">
+                      <p className="mt-[2px] text-[var(--fs-body)] font-medium text-fg">
                         {module.title}
                       </p>
                     </div>
                     <div className="flex shrink-0 items-center gap-[var(--sp-4)]">
-                      <span className="text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+                      <span className="text-[var(--fs-base)] text-fg-3">
                         {module.lessons.length}{' '}
                         {module.lessons.length === 1 ? 'lesson' : 'lessons'}
                       </span>
@@ -218,7 +218,7 @@ export default async function CoursePage({
                   </summary>
 
                   {module.lessons.length === 0 ? (
-                    <p className="border-t border-[var(--border-light)] px-[var(--sp-6)] py-[var(--sp-4)] text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+                    <p className="border-t border-[var(--border-light)] px-[var(--sp-6)] py-[var(--sp-4)] text-[var(--fs-base)] text-fg-3">
                       Lessons for this chapter are still being added.
                     </p>
                   ) : (
@@ -236,20 +236,20 @@ export default async function CoursePage({
                           <PlayCircleIcon
                             size={18}
                             aria-hidden
-                            className="shrink-0 text-[var(--fg-muted)]"
+                            className="shrink-0 text-fg-4"
                           />
-                          <span className="min-w-0 flex-1 truncate text-[var(--fs-body)] text-[var(--fg-secondary)]">
+                          <span className="min-w-0 flex-1 truncate text-[var(--fs-body)] text-fg-2">
                             {lesson.title}
                           </span>
                           {lesson.durationSeconds > 0 && (
-                            <span className="shrink-0 font-[family-name:var(--font-mono)] text-[var(--fs-base)] tabular-nums text-[var(--fg-tertiary)]">
+                            <span className="shrink-0 font-[family-name:var(--font-mono)] text-[var(--fs-base)] tabular-nums text-fg-3">
                               {formatDuration(lesson.durationSeconds)}
                             </span>
                           )}
                           <LockSimpleIcon
                             size={14}
                             aria-label="Locked until you enroll"
-                            className="shrink-0 text-[var(--fg-muted)]"
+                            className="shrink-0 text-fg-4"
                           />
                         </li>
                       ))}
@@ -260,7 +260,7 @@ export default async function CoursePage({
             </div>
           )}
 
-          <h2 className="mt-[var(--sp-24)] text-[clamp(1.5rem,3vw,var(--fs-h2))] font-semibold leading-[1.1] tracking-[-0.02em] text-[var(--fg-primary)]">
+          <h2 className="mt-[var(--sp-24)] text-[clamp(1.5rem,3vw,var(--fs-h2))] font-semibold leading-[1.1] tracking-[-0.02em] text-fg">
             Included with every place.
           </h2>
           <div className="mt-[var(--sp-8)] grid gap-x-[var(--sp-12)] sm:grid-cols-2">
@@ -272,13 +272,13 @@ export default async function CoursePage({
                 <Icon
                   size={22}
                   aria-hidden
-                  className="mt-[2px] shrink-0 text-[var(--fg-tertiary)]"
+                  className="mt-[2px] shrink-0 text-fg-3"
                 />
                 <div>
-                  <h3 className="text-[var(--fs-body)] font-medium text-[var(--fg-primary)]">
+                  <h3 className="text-[var(--fs-body)] font-medium text-fg">
                     {title}
                   </h3>
-                  <p className="mt-[var(--sp-2)] text-[var(--fs-base)] leading-[var(--lh-loose)] text-[var(--fg-secondary)]">
+                  <p className="mt-[var(--sp-2)] text-[var(--fs-base)] leading-[var(--lh-loose)] text-fg-2">
                     {body}
                   </p>
                 </div>
@@ -291,7 +291,7 @@ export default async function CoursePage({
               per-course claims the backend has no field for yet - there is
               no "level" or "exam board" column to draw a real audience line
               from, so this stays general rather than inventing one. */}
-          <h2 className="mt-[var(--sp-24)] text-[clamp(1.5rem,3vw,var(--fs-h2))] font-semibold leading-[1.1] tracking-[-0.02em] text-[var(--fg-primary)]">
+          <h2 className="mt-[var(--sp-24)] text-[clamp(1.5rem,3vw,var(--fs-h2))] font-semibold leading-[1.1] tracking-[-0.02em] text-fg">
             What you will be able to do.
           </h2>
           <ul className="mt-[var(--sp-6)] grid gap-[var(--sp-3)] sm:grid-cols-2">
@@ -311,7 +311,7 @@ export default async function CoursePage({
             ).map((line) => (
               <li
                 key={line}
-                className="flex items-start gap-[var(--sp-3)] rounded-[var(--r-md)] border border-[var(--border-light)] bg-[var(--bg-secondary)] p-[var(--sp-4)] text-[var(--fs-base)] leading-[var(--lh-loose)] text-[var(--fg-secondary)]"
+                className="flex items-start gap-[var(--sp-3)] rounded-[var(--r-md)] border border-[var(--border-light)] bg-[var(--bg-secondary)] p-[var(--sp-4)] text-[var(--fs-base)] leading-[var(--lh-loose)] text-fg-2"
               >
                 <span aria-hidden className="mt-[7px] h-[6px] w-[6px] shrink-0 rounded-[var(--r-full)] bg-[var(--accent)]" />
                 {line}
@@ -324,7 +324,7 @@ export default async function CoursePage({
             static on mobile, where a stuck panel would eat the viewport. */}
         <Reveal className="lg:sticky lg:top-[calc(72px+var(--sp-6))]">
           <aside className="rounded-[var(--r-lg)] border border-[var(--accent-line)] bg-[var(--accent-wash)] p-[var(--sp-8)]">
-            <h2 className="text-[var(--fs-h3)] font-semibold tracking-[-0.01em] text-[var(--fg-primary)]">
+            <h2 className="text-[var(--fs-h3)] font-semibold tracking-[-0.01em] text-fg">
               This course includes
             </h2>
 
@@ -354,11 +354,11 @@ export default async function CoursePage({
             >
               Create an account to enroll
             </ButtonLink>
-            <p className="mt-[var(--sp-4)] text-center text-[var(--fs-base)] text-[var(--fg-secondary)]">
+            <p className="mt-[var(--sp-4)] text-center text-[var(--fs-base)] text-fg-2">
               Already have one?{' '}
               <Link
                 href={`/login?next=${next}`}
-                className="text-[var(--fg-primary)] underline underline-offset-4"
+                className="text-fg underline underline-offset-4"
               >
                 Sign in
               </Link>
@@ -382,16 +382,16 @@ export default async function CoursePage({
               className="h-[96px] w-[96px] shrink-0 rounded-[var(--r-full)] border border-[var(--border-medium)] object-cover"
             />
             <div>
-              <p className="text-[var(--fs-base)] text-[var(--fg-tertiary)]">Taught by</p>
-              <h2 className="mt-[2px] text-[var(--fs-h3)] font-semibold tracking-[-0.01em] text-[var(--fg-primary)]">
+              <p className="text-[var(--fs-base)] text-fg-3">Taught by</p>
+              <h2 className="mt-[2px] text-[var(--fs-h3)] font-semibold tracking-[-0.01em] text-fg">
                 {INSTRUCTOR.name}
               </h2>
-              <p className="mt-[var(--sp-3)] max-w-[var(--maxw-prose)] text-[var(--fs-body)] leading-[var(--lh-loose)] text-[var(--fg-secondary)]">
+              <p className="mt-[var(--sp-3)] max-w-[var(--maxw-prose)] text-[var(--fs-body)] leading-[var(--lh-loose)] text-fg-2">
                 {INSTRUCTOR.bio}
               </p>
               <Link
                 href="/about"
-                className="mt-[var(--sp-3)] inline-block text-[var(--fs-body)] font-medium text-[var(--fg-primary)] underline underline-offset-4"
+                className="mt-[var(--sp-3)] inline-block text-[var(--fs-body)] font-medium text-fg underline underline-offset-4"
               >
                 More about Dr. Tahir
               </Link>
@@ -406,7 +406,7 @@ export default async function CoursePage({
 function Count({ n, one, many }: { n: number; one: string; many: string }) {
   return (
     <>
-      <span className="font-[family-name:var(--font-mono)] tabular-nums text-[var(--fg-secondary)]">
+      <span className="font-[family-name:var(--font-mono)] tabular-nums text-fg-2">
         {n}
       </span>{' '}
       {n === 1 ? one : many}
@@ -417,8 +417,8 @@ function Count({ n, one, many }: { n: number; one: string; many: string }) {
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-baseline justify-between gap-[var(--sp-4)] border-b border-[var(--accent-line)] pb-[var(--sp-3)] last:border-b-0 last:pb-0">
-      <dt className="text-[var(--fg-secondary)]">{label}</dt>
-      <dd className="font-[family-name:var(--font-mono)] tabular-nums text-[var(--fg-primary)]">
+      <dt className="text-fg-2">{label}</dt>
+      <dd className="font-[family-name:var(--font-mono)] tabular-nums text-fg">
         {value}
       </dd>
     </div>

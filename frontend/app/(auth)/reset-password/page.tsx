@@ -26,16 +26,16 @@ function ResetPasswordForm() {
   if (!token) {
     return (
       <>
-        <h1 className="text-[var(--fs-h2)] font-semibold tracking-[-0.02em] text-[var(--fg-primary)]">
+        <h1 className="text-[var(--fs-h2)] font-semibold tracking-[-0.02em] text-fg">
           That link is incomplete
         </h1>
-        <p className="mt-[var(--sp-4)] text-[var(--fs-body)] leading-[var(--lh-loose)] text-[var(--fg-secondary)]">
+        <p className="mt-[var(--sp-4)] text-[var(--fs-body)] leading-[var(--lh-loose)] text-fg-2">
           Reset links expire after an hour and work once. Request a fresh one
           and use it straight away.
         </p>
         <Link
           href="/forgot-password"
-          className="mt-[var(--sp-8)] inline-block text-[var(--fs-base)] text-[var(--fg-secondary)] underline underline-offset-4 hover:text-[var(--fg-primary)]"
+          className="mt-[var(--sp-8)] inline-block text-[var(--fs-base)] text-fg-2 underline underline-offset-4 hover:text-fg"
         >
           Request a new link
         </Link>
@@ -71,10 +71,10 @@ function ResetPasswordForm() {
 
   return (
     <>
-      <h1 className="text-[var(--fs-h2)] font-semibold tracking-[-0.02em] text-[var(--fg-primary)]">
+      <h1 className="text-[var(--fs-h2)] font-semibold tracking-[-0.02em] text-fg">
         Set a new password
       </h1>
-      <p className="mt-[var(--sp-2)] text-[var(--fs-body)] text-[var(--fg-tertiary)]">
+      <p className="mt-[var(--sp-2)] text-[var(--fs-body)] text-fg-3">
         You will be signed out everywhere else once this is saved.
       </p>
 

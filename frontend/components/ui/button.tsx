@@ -44,20 +44,20 @@ const BUTTON_VARIANT: Record<ButtonVariant, string> = {
   // the larger marketing sizes keep the plain transparent border they always
   // had, so this map cannot say "border-transparent" for every size.
   primary:
-    'bg-[var(--accent)] text-[var(--accent-fg)] ' +
+    'bg-[var(--accent)] text-accent-fg ' +
     'hover:bg-[var(--accent-hover)] active:bg-[var(--accent-press)]',
   // secondary/default: transparent body, visible edge.
   secondary:
-    'border-[var(--border-medium)] bg-transparent text-[var(--fg-secondary)] ' +
-    'hover:bg-[var(--bg-wash-subtle)] hover:text-[var(--fg-primary)] ' +
+    'border-[var(--border-medium)] bg-transparent text-fg-2 ' +
+    'hover:bg-[var(--bg-wash-subtle)] hover:text-fg ' +
     'active:bg-[var(--bg-wash)]',
   // tertiary: no edge at all, for dense rows of controls.
   ghost:
-    'border-transparent bg-transparent text-[var(--fg-secondary)] ' +
-    'hover:bg-[var(--bg-wash-subtle)] hover:text-[var(--fg-primary)] ' +
+    'border-transparent bg-transparent text-fg-2 ' +
+    'hover:bg-[var(--bg-wash-subtle)] hover:text-fg ' +
     'active:bg-[var(--bg-wash)]',
   danger:
-    'border-transparent bg-[var(--danger)] text-[var(--fg-inverted)] ' +
+    'border-transparent bg-[var(--danger)] text-fg-inverted ' +
     'hover:opacity-90 active:opacity-80',
 };
 

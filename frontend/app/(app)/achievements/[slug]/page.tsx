@@ -47,7 +47,7 @@ export default function AchievementPage({
       <PageBody className="flex flex-col gap-[var(--sp-5)]">
         <Link
           href="/achievements"
-          className="inline-flex items-center gap-[var(--sp-2)] self-start text-[var(--fs-base)] text-[var(--fg-tertiary)] transition-colors duration-[var(--dur-fast)] hover:text-[var(--fg-primary)]"
+          className="inline-flex items-center gap-[var(--sp-2)] self-start text-[var(--fs-base)] text-fg-3 transition-colors duration-[var(--dur-fast)] hover:text-fg"
         >
           <ArrowLeftIcon size={14} />
           All posts
@@ -77,7 +77,7 @@ export default function AchievementPage({
               </Chip>
               <time
                 dateTime={data.publishAt}
-                className="text-[var(--fs-xxs)] text-[var(--fg-tertiary)]"
+                className="text-[var(--fs-xxs)] text-fg-3"
               >
                 {formatDate(data.publishAt)}
               </time>
@@ -87,14 +87,14 @@ export default function AchievementPage({
                 repeating the opening of the body immediately above that body
                 reads as a duplication bug. */}
             {data.excerpt && (
-              <p className="mt-[var(--sp-4)] text-[var(--fs-body)] leading-[var(--lh-loose)] text-[var(--fg-secondary)]">
+              <p className="mt-[var(--sp-4)] text-[var(--fs-body)] leading-[var(--lh-loose)] text-fg-2">
                 {data.excerpt}
               </p>
             )}
 
             <PostBody
               body={data.body}
-              className="mt-[var(--sp-4)] flex flex-col gap-[var(--sp-4)] text-[var(--fs-base)] leading-[var(--lh-loose)] text-[var(--fg-secondary)]"
+              className="mt-[var(--sp-4)] flex flex-col gap-[var(--sp-4)] text-[var(--fs-base)] leading-[var(--lh-loose)] text-fg-2"
             />
 
             <MediaGallery

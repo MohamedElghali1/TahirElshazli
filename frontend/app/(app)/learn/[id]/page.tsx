@@ -135,7 +135,7 @@ function AnnouncementsPanel({ courseId }: { courseId: string }) {
       )}
       {error && (
         <div className="p-[var(--sp-4)]">
-          <p className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+          <p className="text-[var(--fs-xs)] text-fg-3">
             Announcements could not be loaded.
           </p>
         </div>
@@ -151,14 +151,14 @@ function AnnouncementsPanel({ courseId }: { courseId: string }) {
           {data.map((announcement) => (
             <li key={announcement.id} className="px-[var(--sp-4)] py-[var(--sp-3)]">
               <div className="flex flex-wrap items-baseline justify-between gap-[var(--sp-2)]">
-                <span className="text-[var(--fs-base)] font-medium text-[var(--fg-primary)]">
+                <span className="text-[var(--fs-base)] font-medium text-fg">
                   {announcement.title}
                 </span>
-                <span className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+                <span className="text-[var(--fs-xs)] text-fg-3">
                   {formatDate(announcement.postedAt)}
                 </span>
               </div>
-              <p className="mt-[var(--sp-1)] text-[var(--fs-xs)] text-[var(--fg-secondary)]">
+              <p className="mt-[var(--sp-1)] text-[var(--fs-xs)] text-fg-2">
                 {announcement.body}
               </p>
             </li>
@@ -200,7 +200,7 @@ function ClassmatesPanel({ courseId }: { courseId: string }) {
       )}
       {error && (
         <div className="p-[var(--sp-4)]">
-          <p className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+          <p className="text-[var(--fs-xs)] text-fg-3">
             Your class could not be loaded.
           </p>
         </div>
@@ -219,11 +219,11 @@ function ClassmatesPanel({ courseId }: { courseId: string }) {
         <div className="flex flex-col">
           {data.map((group: ClassmateGroup) => (
             <div key={group.groupId} className="px-[var(--sp-4)] py-[var(--sp-3)]">
-              <p className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+              <p className="text-[var(--fs-xs)] text-fg-3">
                 {group.groupName}
               </p>
               {group.classmates.length === 0 ? (
-                <p className="mt-[var(--sp-1)] text-[var(--fs-xs)] text-[var(--fg-secondary)]">
+                <p className="mt-[var(--sp-1)] text-[var(--fs-xs)] text-fg-2">
                   You are the only student in this class so far.
                 </p>
               ) : (
@@ -231,7 +231,7 @@ function ClassmatesPanel({ courseId }: { courseId: string }) {
                   {group.classmates.map((classmate) => (
                     <li
                       key={classmate.studentId}
-                      className="rounded-[var(--r-full)] bg-[var(--bg-tertiary)] px-[var(--sp-3)] py-[var(--sp-1)] text-[var(--fs-xs)] text-[var(--fg-secondary)]"
+                      className="rounded-[var(--r-full)] bg-[var(--bg-tertiary)] px-[var(--sp-3)] py-[var(--sp-1)] text-[var(--fs-xs)] text-fg-2"
                     >
                       {classmate.name}
                     </li>
@@ -261,7 +261,7 @@ function ProgressPanel({
       <Panel
         title="Course completion"
         action={
-          <span className="num text-[var(--fs-base)] text-[var(--fg-secondary)]">
+          <span className="num text-[var(--fs-base)] text-fg-2">
             {progress.completedLessons} / {progress.totalLessons}
           </span>
         }
@@ -269,7 +269,7 @@ function ProgressPanel({
       >
         <div className="px-[var(--sp-4)] pb-[var(--sp-4)] pt-[var(--sp-4)]">
           <Meter value={progress.completionPercentage} label="Course completion" />
-          <p className="mt-[var(--sp-2)] text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+          <p className="mt-[var(--sp-2)] text-[var(--fs-xs)] text-fg-3">
             {formatPercent(progress.completionPercentage)} of lessons completed.
             This tracks how much of the course you have worked through, not your
             marks.
@@ -292,15 +292,15 @@ function ProgressPanel({
                   <CheckCircleIcon
                     size={16}
                     weight="fill"
-                    className="shrink-0 text-[var(--chip-green-fg)]"
+                    className="shrink-0 text-chip-green-fg"
                   />
                 ) : (
-                  <CircleIcon size={16} className="shrink-0 text-[var(--fg-muted)]" />
+                  <CircleIcon size={16} className="shrink-0 text-fg-4" />
                 )}
-                <span className="min-w-0 flex-1 truncate text-[var(--fs-base)] text-[var(--fg-primary)]">
+                <span className="min-w-0 flex-1 truncate text-[var(--fs-base)] text-fg">
                   {checkpoint.title}
                 </span>
-                <span className="num shrink-0 text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+                <span className="num shrink-0 text-[var(--fs-xs)] text-fg-3">
                   {checkpoint.completedAt ? formatDate(checkpoint.completedAt) : ''}
                 </span>
               </li>
@@ -309,7 +309,7 @@ function ProgressPanel({
         )}
 
         <div className="border-t border-[var(--border-light)] px-[var(--sp-4)] py-[var(--sp-3)]">
-          <p className="num text-[var(--fs-xs)] text-[var(--fg-muted)]">
+          <p className="num text-[var(--fs-xs)] text-fg-4">
             {done.length} checkpoint{done.length === 1 ? '' : 's'} reached
           </p>
         </div>
@@ -321,7 +321,7 @@ function ProgressPanel({
     <Panel
       title="Attendance"
       action={
-        <span className="num text-[var(--fs-base)] text-[var(--fg-secondary)]">
+        <span className="num text-[var(--fs-base)] text-fg-2">
           {progress.attendedSessions} / {progress.totalSessions}
         </span>
       }
@@ -329,7 +329,7 @@ function ProgressPanel({
     >
       <div className="px-[var(--sp-4)] py-[var(--sp-4)]">
         <Meter value={progress.attendancePercentage} label="Attendance" />
-        <p className="mt-[var(--sp-2)] text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+        <p className="mt-[var(--sp-2)] text-[var(--fs-xs)] text-fg-3">
           {formatPercent(progress.attendancePercentage)} of sessions attended.
           Attendance is a record of turning up, not a mark.
         </p>
@@ -351,19 +351,19 @@ function ProgressPanel({
                 <CheckCircleIcon
                   size={16}
                   weight="fill"
-                  className="shrink-0 text-[var(--chip-green-fg)]"
+                  className="shrink-0 text-chip-green-fg"
                 />
               ) : (
                 <XCircleIcon
                   size={16}
                   weight="fill"
-                  className="shrink-0 text-[var(--chip-red-fg)]"
+                  className="shrink-0 text-chip-red-fg"
                 />
               )}
-              <span className="min-w-0 flex-1 truncate text-[var(--fs-base)] text-[var(--fg-primary)]">
+              <span className="min-w-0 flex-1 truncate text-[var(--fs-base)] text-fg">
                 {entry.title}
               </span>
-              <span className="num shrink-0 text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+              <span className="num shrink-0 text-[var(--fs-xs)] text-fg-3">
                 {formatDate(entry.sessionDate)}
               </span>
             </li>
@@ -392,7 +392,7 @@ function NextSessionPanel({
   if (!session) {
     return (
       <Panel title="Next live session">
-        <p className="text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+        <p className="text-[var(--fs-base)] text-fg-3">
           Nothing scheduled. The next class appears here with its joining link
           as soon as it is set.
         </p>
@@ -406,19 +406,19 @@ function NextSessionPanel({
       action={
         <Link
           href={`/learn/${courseId}/sessions`}
-          className="text-[var(--fs-xs)] text-[var(--fg-tertiary)] hover:text-[var(--fg-primary)]"
+          className="text-[var(--fs-xs)] text-fg-3 hover:text-fg"
         >
           All sessions
         </Link>
       }
     >
-      <h3 className="text-[var(--fs-md)] font-medium text-[var(--fg-primary)]">
+      <h3 className="text-[var(--fs-md)] font-medium text-fg">
         {session.title}
       </h3>
-      <p className="num mt-[var(--sp-2)] text-[var(--fs-base)] text-[var(--fg-secondary)]">
+      <p className="num mt-[var(--sp-2)] text-[var(--fs-base)] text-fg-2">
         {formatDateTime(session.scheduledAt)}
       </p>
-      <p className="num mt-[var(--sp-1)] text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+      <p className="num mt-[var(--sp-1)] text-[var(--fs-xs)] text-fg-3">
         {formatMinutes(session.durationMinutes)}
       </p>
       <Button
@@ -431,7 +431,7 @@ function NextSessionPanel({
         <VideoCameraIcon size={14} weight="fill" />
         Join the class
       </Button>
-      <p className="mt-[var(--sp-2)] text-[var(--fs-xxs)] text-[var(--fg-muted)]">
+      <p className="mt-[var(--sp-2)] text-[var(--fs-xxs)] text-fg-4">
         Opens in a new tab.
       </p>
     </Panel>
@@ -465,10 +465,10 @@ function QuickAccessPanel({
                 href={`/learn/${courseId}/materials?category=${category}`}
                 className="row flex items-center justify-between gap-[var(--sp-3)] px-[var(--sp-4)] py-[var(--sp-3)] transition-colors duration-[var(--dur-fast)]"
               >
-                <span className="text-[var(--fs-base)] text-[var(--fg-primary)]">
+                <span className="text-[var(--fs-base)] text-fg">
                   {MATERIAL_CATEGORY_LABEL[category]}
                 </span>
-                <span className="num text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+                <span className="num text-[var(--fs-xs)] text-fg-3">
                   {count}
                 </span>
               </Link>

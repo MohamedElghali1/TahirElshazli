@@ -35,7 +35,7 @@ export function Avatar({
       data-size={size}
       className={cx(
         'num inline-flex shrink-0 items-center justify-center',
-        'bg-[var(--bg-quaternary)] font-semibold text-[var(--fg-secondary)]',
+        'bg-[var(--bg-quaternary)] font-semibold text-fg-2',
         AVATAR_SIZE[size],
         className,
       )}

@@ -87,7 +87,7 @@ function MaterialsList({ courseId }: { courseId: string }) {
               key={section.key}
               title={MATERIAL_CATEGORY_LABEL[section.key]}
               action={
-                <span className="num text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+                <span className="num text-[var(--fs-xs)] text-fg-3">
                   {section.items.length}
                 </span>
               }
@@ -114,31 +114,31 @@ function MaterialRow({ material }: { material: Material }) {
       rel="noreferrer"
       className="row flex items-center gap-[var(--sp-4)] px-[var(--sp-4)] py-[var(--sp-3)] transition-colors duration-[var(--dur-fast)]"
     >
-      <FileIcon size={16} className="shrink-0 text-[var(--fg-tertiary)]" />
+      <FileIcon size={16} className="shrink-0 text-fg-3" />
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-[var(--sp-2)]">
-          <span className="truncate text-[var(--fs-base)] text-[var(--fg-primary)]">
+          <span className="truncate text-[var(--fs-base)] text-fg">
             {material.title}
           </span>
           {material.chapter && <Chip tone="neutral">{material.chapter}</Chip>}
         </div>
         {material.description && (
-          <p className="mt-[var(--sp-1)] truncate text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+          <p className="mt-[var(--sp-1)] truncate text-[var(--fs-xs)] text-fg-3">
             {material.description}
           </p>
         )}
       </div>
 
-      <span className="num hidden shrink-0 text-[var(--fs-xs)] text-[var(--fg-tertiary)] sm:block">
+      <span className="num hidden shrink-0 text-[var(--fs-xs)] text-fg-3 sm:block">
         {material.fileType.toUpperCase()} · {formatFileSize(material.fileSizeBytes)}
       </span>
-      <span className="num hidden shrink-0 text-[var(--fs-xs)] text-[var(--fg-muted)] lg:block">
+      <span className="num hidden shrink-0 text-[var(--fs-xs)] text-fg-4 lg:block">
         {formatDate(material.uploadedAt)}
       </span>
       <DownloadSimpleIcon
         size={16}
-        className="reveal shrink-0 text-[var(--fg-secondary)]"
+        className="reveal shrink-0 text-fg-2"
       />
     </a>
   );

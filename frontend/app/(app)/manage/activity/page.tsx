@@ -10,12 +10,12 @@ import {
   Chip,
   EmptyState,
   ErrorState,
-  Panel,
   RowsSkeleton,
 } from '@/components/ui';
 import type { ChipTone } from '@/components/ui';
 import { ClockCounterClockwiseIcon } from '@phosphor-icons/react';
 import { PageBody } from '@/components/app/page-parts';
+import { TableScroll, Td, Th, Tr } from '@/components/app/table';
 import { PageTitle } from '@/components/app/page-chrome';
 
 /**
@@ -35,8 +35,35 @@ const ACTION_LABEL: Record<AuditAction, string> = {
   'recording.created': 'published a recording',
   'recording.updated': 'edited a recording',
   'recording.deleted': 'deleted a recording',
+  'live_session.scheduled': 'scheduled a session',
+  'live_session.updated': 'moved a session',
+  'live_session.cancelled': 'cancelled a session',
+  'announcement.posted': 'posted an announcement',
+  'group.created': 'created a group',
+  'group.renamed': 'renamed a group',
+  'group.course_added': 'enrolled a group in a course',
+  'group.course_removed': 'removed a group from a course',
+  'group.student_assigned': 'placed a student in a group',
+  'group.student_removed': 'removed a student from a group',
+  'assessment.created': 'created work',
+  'assessment.updated': 'edited work',
+  'assessment.targeted': 'changed which groups work is set for',
+  'assessment.deleted': 'deleted work',
+  'external_result.attached': 'attached an external result',
+  'google.connected': 'connected a Google account',
+  'google.disconnected': 'disconnected a Google account',
+  'blog_post.created': 'wrote an achievement post',
+  'blog_post.updated': 'edited an achievement post',
+  'blog_post.media_set': 'changed a post gallery',
+  'blog_post.deleted': 'deleted an achievement post',
 };
 
+/**
+ * Tone is by *consequence*, not by verb: green creates or grants, red removes
+ * or destroys, amber edits something that already existed, blue is a neutral
+ * record of work done. Reading a column of these should let Dr. Tahir find the
+ * destructive entries without reading a single label.
+ */
 const ACTION_TONE: Record<AuditAction, ChipTone> = {
   'course_staff.assigned': 'green',
   'course_staff.unassigned': 'red',
@@ -44,6 +71,30 @@ const ACTION_TONE: Record<AuditAction, ChipTone> = {
   'recording.created': 'green',
   'recording.updated': 'amber',
   'recording.deleted': 'red',
+  'live_session.scheduled': 'green',
+  'live_session.updated': 'amber',
+  'live_session.cancelled': 'red',
+  'announcement.posted': 'blue',
+  'group.created': 'green',
+  'group.renamed': 'amber',
+  'group.course_added': 'green',
+  'group.course_removed': 'red',
+  'group.student_assigned': 'green',
+  'group.student_removed': 'red',
+  'assessment.created': 'green',
+  'assessment.updated': 'amber',
+  'assessment.targeted': 'amber',
+  'assessment.deleted': 'red',
+  'external_result.attached': 'blue',
+  // Violet for the integration pair: connecting hands a third party a
+  // long-lived credential, which is neither a create nor an edit of anything
+  // inside this platform and should not read as routine (CLAUDE.md §5.4).
+  'google.connected': 'violet',
+  'google.disconnected': 'violet',
+  'blog_post.created': 'green',
+  'blog_post.updated': 'amber',
+  'blog_post.media_set': 'amber',
+  'blog_post.deleted': 'red',
 };
 
 export default function ActivityLogPage() {
@@ -68,68 +119,88 @@ export default function ActivityLogPage() {
   return (
     <>
       <PageTitle icon={ClockCounterClockwiseIcon} title="Activity log" />
-      <PageBody className="flex flex-col gap-[var(--sp-3)]">
-        <p className="text-[var(--fs-base)] text-[var(--fg-tertiary)]">
-          Every recorded action by an assistant or admin, with who did it and when.
-        </p>
-        <Panel bodyClassName="">
-          {loading && entries.length === 0 && <RowsSkeleton rows={6} />}
-          {error && <ErrorState message={error.message} onRetry={reload} />}
-          {!loading && !error && entries.length === 0 && (
-            <EmptyState
-              title="Nothing recorded yet"
-              body="Assigning an assistant, grading work or publishing a recording all leave an entry here."
-            />
-          )}
-          {entries.length > 0 && (
-            <>
-              <ul className="rows">
+      <PageBody dense className="flex flex-col gap-[var(--sp-2)]">
+        <div className="flex h-[var(--topbar-h)] items-center justify-between px-[var(--sp-2)]">
+          <span className="inline-flex h-[var(--h-sm)] items-center gap-[var(--sp-1)] rounded-[var(--r-lg)] bg-[var(--bg-primary)] py-[var(--sp-1)] ps-[var(--sp-1)] pe-[var(--sp-2)] text-[var(--fs-base)] font-medium text-fg-2">
+            Every recorded action
+          </span>
+          <span className="text-[var(--fs-base)] text-fg-3">
+            Who did it, and when
+          </span>
+        </div>
+
+        {loading && entries.length === 0 && <RowsSkeleton rows={6} />}
+        {error && <ErrorState message={error.message} onRetry={reload} />}
+        {!loading && !error && entries.length === 0 && (
+          <EmptyState
+            title="Nothing recorded yet"
+            body="Assigning an assistant, grading work or publishing a recording all leave an entry here."
+          />
+        )}
+        {entries.length > 0 && (
+          <>
+            <TableScroll minWidth={720}>
+              <thead>
+                <tr className="border-b border-[var(--border-medium)]">
+                  <Th>Who</Th>
+                  <Th>Action</Th>
+                  <Th>Target</Th>
+                  <Th align="end">Change</Th>
+                  <Th align="end">When</Th>
+                </tr>
+              </thead>
+              <tbody>
                 {entries.map((entry) => (
-                  <li key={entry.id}>
-                    <div className="flex flex-wrap items-center gap-[var(--sp-3)] px-[var(--sp-4)] py-[var(--sp-3)]">
+                  <Tr key={entry.id}>
+                    <Td>
                       <Chip tone={ACTION_TONE[entry.action] ?? 'neutral'}>
                         {entry.actorRole === 'teacher' ? 'Teacher' : 'Assistant'}
                       </Chip>
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-[var(--fs-base)] text-[var(--fg-primary)]">
-                          {ACTION_LABEL[entry.action] ?? entry.action}
-                        </span>
-                        <span className="mt-[var(--sp-1)] block truncate text-[var(--fs-xs)] text-[var(--fg-muted)]">
-                          {entry.actorId} · {entry.targetType} {entry.targetId}
-                          {entry.courseId && ` · ${entry.courseId}`}
-                        </span>
+                    </Td>
+                    <Td className="text-fg">
+                      {ACTION_LABEL[entry.action] ?? entry.action}
+                    </Td>
+                    <Td>
+                      <span className="block max-w-[32ch] truncate text-fg-4">
+                        {entry.targetType} {entry.targetId}
                       </span>
+                    </Td>
+                    <Td align="end">
                       <ScoreChange entry={entry} />
-                      <span className="shrink-0 text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+                    </Td>
+                    <Td align="end">
+                      <span className="whitespace-nowrap text-fg-3">
                         {formatDateTime(entry.createdAt)}
                       </span>
-                    </div>
-                  </li>
+                    </Td>
+                  </Tr>
                 ))}
-              </ul>
+              </tbody>
+            </TableScroll>
 
-              {(stack.length > 1 || data?.nextCursor) && (
-                <div className="flex items-center justify-between gap-[var(--sp-3)] border-t border-[var(--border-light)] p-[var(--sp-4)]">
-                  <Button
-                    disabled={stack.length === 1}
-                    onClick={() => setStack((s) => s.slice(0, -1))}
-                  >
-                    Newer
-                  </Button>
-                  <Button
-                    disabled={!data?.nextCursor}
-                    loading={loading}
-                    onClick={() =>
-                      setStack((s) => [...s, data?.nextCursor ?? undefined])
-                    }
-                  >
-                    Older
-                  </Button>
-                </div>
-              )}
-            </>
-          )}
-        </Panel>
+            {(stack.length > 1 || data?.nextCursor) && (
+              <div className="flex items-center justify-between gap-[var(--sp-3)] px-[var(--sp-2)] py-[var(--sp-2)]">
+                <Button
+                  size="sm"
+                  disabled={stack.length === 1}
+                  onClick={() => setStack((s) => s.slice(0, -1))}
+                >
+                  Newer
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={!data?.nextCursor}
+                  loading={loading}
+                  onClick={() =>
+                    setStack((s) => [...s, data?.nextCursor ?? undefined])
+                  }
+                >
+                  Older
+                </Button>
+              </div>
+            )}
+          </>
+        )}
       </PageBody>
     </>
   );
@@ -145,7 +216,7 @@ function ScoreChange({ entry }: { entry: AuditLogEntry }) {
   const after = entry.after?.score;
   if (after === undefined || after === null) return null;
   return (
-    <span className="num shrink-0 text-[var(--fs-xs)] text-[var(--fg-secondary)]">
+    <span className="num shrink-0 text-[var(--fs-xs)] text-fg-2">
       {before === null || before === undefined ? '--' : String(before)} → {String(after)}
     </span>
   );

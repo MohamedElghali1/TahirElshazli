@@ -286,3 +286,29 @@ the single 423-line file it replaced was split one component per file.
 **Two surfaces, one token file.** The LMS uses the 13px product scale; the
 marketing site opts out via `[data-surface="site"]`. Auth sits between the two —
 marketing typography, product-density controls — and says so in its layout.
+
+---
+
+## 12. Colour utilities: never `text-[var(--x)]`
+
+Use the named utilities — **`text-fg`, `text-fg-2`, `text-fg-3`, `text-fg-4`,
+`text-fg-5`, `text-accent`, `text-accent-fg`, `text-danger`,
+`text-fg-inverted`** — which `app/globals.css` defines in its `@theme inline`
+block from the same tokens as everything else.
+
+**`text-[var(--fg-secondary)]` silently emits no colour.** Tailwind's
+`text-[…]` is ambiguous between font-size and colour, a bare `var()` cannot be
+resolved at build time, and where an element also carries
+`text-[var(--fs-base)]` — nearly every element here does — the size wins and
+the colour is dropped. It typechecks, lints and builds; only the rendered
+stylesheet is wrong, which is why 478 of these shipped unnoticed until the
+first computed-style pass. `text-[color:var(--fg-secondary)]` does **not** fix
+it; that was measured too.
+
+Sizes stay as they are: `text-[var(--fs-base)]` is unambiguous in practice and
+correct.
+
+The same ambiguity is why a component must emit only **one** utility per
+property. Two `rounded-*` or two `text-*` in one class string are decided by
+stylesheet source order, not by the order you wrote them — see `buttonGeometry`
+/ `iconButtonGeometry` in `components/ui/button.tsx`.

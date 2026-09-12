@@ -87,7 +87,7 @@ export default function CourseGradingPage({
             <tbody>
               {data.assessments.map((assessment) => (
                 <Tr key={assessment.assessmentId}>
-                  <Td className="text-[var(--fg-primary)]">{assessment.title}</Td>
+                  <Td className="text-fg">{assessment.title}</Td>
                   <Td>
                     <Chip tone="neutral">
                       {ASSESSMENT_TYPE_LABEL[assessment.type]}
@@ -100,7 +100,7 @@ export default function CourseGradingPage({
                     <span className="num">{assessment.gradedCount}</span>
                   </Td>
                   <Td align="end">
-                    <span className="num text-[var(--fg-primary)]">
+                    <span className="num text-fg">
                       {formatPercent(assessment.averageScorePercent)}
                     </span>
                   </Td>
@@ -175,10 +175,10 @@ function SubmissionRow({
   return (
     <div className="flex flex-wrap items-center gap-[var(--sp-3)] px-[var(--sp-4)] py-[var(--sp-3)]">
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[var(--fs-base)] font-medium text-[var(--fg-primary)]">
+        <span className="block truncate text-[var(--fs-base)] font-medium text-fg">
           {item.studentName}
         </span>
-        <span className="mt-[var(--sp-1)] block truncate text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+        <span className="mt-[var(--sp-1)] block truncate text-[var(--fs-xs)] text-fg-3">
           {item.assessmentTitle} · submitted {formatDateTime(item.lastSubmittedAt)}
         </span>
       </span>
@@ -188,7 +188,7 @@ function SubmissionRow({
         {item.status === 'graded' ? 'Graded' : 'Awaiting'}
       </Chip>
 
-      <span className="num w-[68px] text-end text-[var(--fs-base)] text-[var(--fg-primary)]">
+      <span className="num w-[68px] text-end text-[var(--fs-base)] text-fg">
         {item.score === null ? '--' : `${item.score}/${item.maxScore}`}
       </span>
 
@@ -197,7 +197,7 @@ function SubmissionRow({
           href={item.fileUrl}
           target="_blank"
           rel="noreferrer noopener"
-          className="inline-flex items-center gap-[var(--sp-1)] text-[var(--fs-xs)] text-[var(--fg-tertiary)] transition-colors duration-[var(--dur-fast)] hover:text-[var(--fg-primary)]"
+          className="inline-flex items-center gap-[var(--sp-1)] text-[var(--fs-xs)] text-fg-3 transition-colors duration-[var(--dur-fast)] hover:text-fg"
         >
           Open work
           <ArrowSquareOutIcon size={12} />
@@ -270,11 +270,11 @@ function GradeDialog({
           <div className="min-w-0">
             <h2
               id="grade-title"
-              className="truncate text-[var(--fs-base)] font-semibold text-[var(--fg-primary)]"
+              className="truncate text-[var(--fs-base)] font-semibold text-fg"
             >
               {item.studentName}
             </h2>
-            <p className="mt-[var(--sp-1)] truncate text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+            <p className="mt-[var(--sp-1)] truncate text-[var(--fs-xs)] text-fg-3">
               {item.assessmentTitle} · out of {item.maxScore}
             </p>
           </div>
@@ -285,7 +285,7 @@ function GradeDialog({
 
         <form onSubmit={submit} noValidate className="flex flex-col gap-[var(--sp-4)] p-[var(--sp-4)]">
           {item.answerText && (
-            <div className="rounded-[var(--r-sm)] bg-[var(--bg-wash)] p-[var(--sp-3)] text-[var(--fs-xs)] leading-[var(--lh-base)] text-[var(--fg-secondary)]">
+            <div className="rounded-[var(--r-sm)] bg-[var(--bg-wash)] p-[var(--sp-3)] text-[var(--fs-xs)] leading-[var(--lh-base)] text-fg-2">
               {item.answerText}
             </div>
           )}

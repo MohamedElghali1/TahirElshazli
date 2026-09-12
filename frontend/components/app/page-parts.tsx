@@ -21,16 +21,16 @@ export function PageHeader({
       {breadcrumb && breadcrumb.length > 0 && (
         <nav
           aria-label="Breadcrumb"
-          className="mb-[var(--sp-3)] flex items-center gap-[var(--sp-1)] text-[var(--fs-xs)] text-[var(--fg-tertiary)]"
+          className="mb-[var(--sp-3)] flex items-center gap-[var(--sp-1)] text-[var(--fs-xs)] text-fg-3"
         >
           {breadcrumb.map((crumb, i) => (
             <span key={crumb.href} className="flex items-center gap-[var(--sp-1)]">
               {i > 0 && (
-                <CaretRightIcon size={10} className="text-[var(--fg-muted)] rtl:rotate-180" />
+                <CaretRightIcon size={10} className="text-fg-4 rtl:rotate-180" />
               )}
               <Link
                 href={crumb.href}
-                className="transition-colors duration-[var(--dur-fast)] hover:text-[var(--fg-primary)]"
+                className="transition-colors duration-[var(--dur-fast)] hover:text-fg"
               >
                 {crumb.label}
               </Link>
@@ -42,11 +42,11 @@ export function PageHeader({
         <div className="min-w-0">
           {/* Title 1: semibold at --fs-xl. The reference system's largest
               in-app size - anything above it belongs to the marketing site. */}
-          <h1 className="text-[var(--fs-xl)] font-semibold leading-[var(--lh-tight)] tracking-[-0.01em] text-[var(--fg-primary)]">
+          <h1 className="text-[var(--fs-xl)] font-semibold leading-[var(--lh-tight)] tracking-[-0.01em] text-fg">
             {title}
           </h1>
           {subtitle && (
-            <p className="mt-[var(--sp-2)] text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+            <p className="mt-[var(--sp-2)] text-[var(--fs-base)] text-fg-3">
               {subtitle}
             </p>
           )}
@@ -77,11 +77,11 @@ export function SectionIntro({
   return (
     <div className="flex flex-wrap items-start justify-between gap-[var(--sp-4)]">
       <div className="min-w-0">
-        <h2 className="text-[var(--fs-md)] font-semibold leading-[var(--lh-tight)] text-[var(--fg-primary)]">
+        <h2 className="text-[var(--fs-md)] font-semibold leading-[var(--lh-tight)] text-fg">
           {title}
         </h2>
         {subtitle && (
-          <p className="mt-[var(--sp-1)] text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+          <p className="mt-[var(--sp-1)] text-[var(--fs-base)] text-fg-3">
             {subtitle}
           </p>
         )}

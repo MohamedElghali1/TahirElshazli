@@ -44,12 +44,19 @@ export default function GroupsPage() {
   return (
     <>
       <PageTitle icon={UsersFourIcon} title="Groups" />
-      <PageBody className="flex flex-col gap-[var(--sp-5)]">
-        {/* The mental model, carried over from the old subtitle - Twenty's
-            header has no subtitle slot, only a title (TASK 2). */}
-        <p className="text-[var(--fs-base)] text-[var(--fg-tertiary)]">
-          A group is a class of students. A course is taught to one or more of them.
-        </p>
+      {/* Density, but not the object-table idiom the other console screens
+          took (TASK 4). A group here is not a uniform record in a list: each
+          one carries an editable set of course pairings with a per-row action
+          and an add form, which a flat 32px row cannot hold. Turning this into
+          Twenty's shape properly means splitting it into a table at
+          `/manage/groups` and a record page at `/manage/groups/[id]` - a
+          routing change, not a styling one, so it is not smuggled in here. */}
+      <PageBody dense className="flex flex-col gap-[var(--sp-2)]">
+        <div className="flex h-[var(--topbar-h)] items-center px-[var(--sp-2)]">
+          <span className="text-[var(--fs-base)] text-fg-3">
+            A group is a class of students. A course is taught to one or more of them.
+          </span>
+        </div>
         <CreateGroup onCreated={reload} />
 
         {loading && <RowsSkeleton rows={4} />}
@@ -196,7 +203,7 @@ function GroupPanel({
           <Chip>
             {group.memberCount} {group.memberCount === 1 ? 'student' : 'students'}
           </Chip>
-          <span className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+          <span className="text-[var(--fs-xs)] text-fg-3">
             created {formatDate(group.createdAt)}
           </span>
         </div>
@@ -204,27 +211,27 @@ function GroupPanel({
     >
       {error && <FormError>{error}</FormError>}
 
-      <h3 className="mb-[var(--sp-2)] text-[var(--fs-xs)] font-medium text-[var(--fg-secondary)]">
+      <h3 className="mb-[var(--sp-2)] text-[var(--fs-xs)] font-medium text-fg-2">
         Studying
       </h3>
       {group.courses.length === 0 ? (
-        <p className="mb-[var(--sp-4)] text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+        <p className="mb-[var(--sp-4)] text-[var(--fs-base)] text-fg-3">
           Nothing yet. A group with no course has members but no lessons, no
           timetable and no work.
         </p>
       ) : (
-        <ul className="mb-[var(--sp-4)] flex flex-col gap-[var(--sp-2)]">
+        <ul className="mb-[var(--sp-4)] rows">
           {group.courses.map((pairing) => {
             const course = courses.find((c) => c.id === pairing.courseId);
             return (
               <li
                 key={pairing.id}
-                className="flex flex-wrap items-center justify-between gap-[var(--sp-3)] rounded-[var(--r-md)] border border-[var(--border-light)] px-[var(--sp-3)] py-[var(--sp-2)]"
+                className="flex min-h-[var(--h-md)] flex-wrap items-center justify-between gap-[var(--sp-3)] px-[var(--sp-2)]"
               >
                 <span className="flex items-center gap-[var(--sp-2)]">
                   <Link
                     href={`/manage/courses/${pairing.courseId}/groups`}
-                    className="text-[var(--fs-base)] text-[var(--fg-primary)] underline-offset-2 hover:underline"
+                    className="text-[var(--fs-base)] text-fg underline-offset-2 hover:underline"
                   >
                     {course?.title ?? pairing.courseId}
                   </Link>
@@ -287,7 +294,7 @@ function GroupPanel({
         </form>
       )}
 
-      <p className="mt-[var(--sp-3)] text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+      <p className="mt-[var(--sp-3)] text-[var(--fs-xs)] text-fg-3">
         Adding a course here enrols nobody. Students enrol separately; placing
         them in this group decides which cohort they sit in and what work they
         are set.

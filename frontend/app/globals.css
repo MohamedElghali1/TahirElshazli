@@ -20,6 +20,9 @@
   --color-accent:      var(--accent);
   --color-accent-fg:   var(--accent-fg);
   --color-danger:      var(--danger);
+  --color-fg-inverted: var(--fg-inverted);
+  --color-chip-red-fg:   var(--chip-red-fg);
+  --color-chip-green-fg: var(--chip-green-fg);
 
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);

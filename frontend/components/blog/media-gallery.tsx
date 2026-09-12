@@ -43,7 +43,7 @@ export function MediaGallery({
                  while alt text is a replacement for the image - conflating
                  them means sighted readers lose the caption and screen-reader
                  users hear it twice. */
-              <figcaption className="mt-[var(--sp-2)] text-[var(--fs-base)] leading-[var(--lh-loose)] text-[var(--fg-tertiary)]">
+              <figcaption className="mt-[var(--sp-2)] text-[var(--fs-base)] leading-[var(--lh-loose)] text-fg-3">
                 {item.caption}
               </figcaption>
             )}
@@ -112,13 +112,13 @@ function MediaFile({ item }: { item: BlogMedia }) {
       <FileArrowDownIcon
         size={20}
         aria-hidden
-        className="shrink-0 text-[var(--fg-tertiary)]"
+        className="shrink-0 text-fg-3"
       />
-      <span className="min-w-0 flex-1 truncate text-[var(--fs-body)] text-[var(--fg-primary)]">
+      <span className="min-w-0 flex-1 truncate text-[var(--fs-body)] text-fg">
         {item.caption ?? 'Attached file'}
       </span>
       {item.sizeBytes !== null && (
-        <span className="shrink-0 font-[family-name:var(--font-mono)] text-[var(--fs-base)] tabular-nums text-[var(--fg-tertiary)]">
+        <span className="shrink-0 font-[family-name:var(--font-mono)] text-[var(--fs-base)] tabular-nums text-fg-3">
           {formatFileSize(item.sizeBytes)}
         </span>
       )}

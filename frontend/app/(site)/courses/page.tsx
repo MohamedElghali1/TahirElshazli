@@ -57,10 +57,10 @@ export default async function CoursesPage({
   return (
     <>
       <section className={`${shell} pb-[var(--sp-12)] pt-[var(--sp-16)] lg:pt-[var(--sp-24)]`}>
-        <h1 className="max-w-[16ch] text-[clamp(2.25rem,5vw,var(--fs-display))] font-semibold leading-[1.05] tracking-[-0.03em] text-[var(--fg-primary)]">
+        <h1 className="max-w-[16ch] text-[clamp(2.25rem,5vw,var(--fs-display))] font-semibold leading-[1.05] tracking-[-0.03em] text-fg">
           Every course, and what is in it.
         </h1>
-        <p className="mt-[var(--sp-6)] max-w-[56ch] text-[var(--fs-lead)] leading-[var(--lh-loose)] text-[var(--fg-secondary)]">
+        <p className="mt-[var(--sp-6)] max-w-[56ch] text-[var(--fs-lead)] leading-[var(--lh-loose)] text-fg-2">
           Each course is taught by Dr. Tahir directly. Open any one to read the
           full chapter and lesson list before you enroll.
         </p>
@@ -88,10 +88,10 @@ export default async function CoursesPage({
           <div className={`${shell} pb-[var(--sp-24)]`}>
             {filtered.length === 0 ? (
               <div className="rounded-[var(--r-lg)] border border-[var(--border-medium)] bg-[var(--bg-secondary)] p-[var(--sp-12)]">
-                <p className="text-[var(--fs-lead)] text-[var(--fg-primary)]">
+                <p className="text-[var(--fs-lead)] text-fg">
                   No courses match that.
                 </p>
-                <p className="mt-[var(--sp-3)] max-w-[52ch] text-[var(--fs-body)] leading-[var(--lh-loose)] text-[var(--fg-secondary)]">
+                <p className="mt-[var(--sp-3)] max-w-[52ch] text-[var(--fs-body)] leading-[var(--lh-loose)] text-fg-2">
                   Try clearing the filters, or tell us what you are preparing
                   for and we will point you at the right one.
                 </p>
@@ -119,7 +119,7 @@ export default async function CoursesPage({
 
       <section className="border-t border-[var(--border-light)] bg-[var(--bg-secondary)] py-[var(--sp-16)]">
         <div className={`${shell} flex flex-col items-start justify-between gap-[var(--sp-6)] md:flex-row md:items-center`}>
-          <p className="max-w-[48ch] text-[var(--fs-lead)] text-[var(--fg-secondary)]">
+          <p className="max-w-[48ch] text-[var(--fs-lead)] text-fg-2">
             Not sure which one fits? Send us the year group and the exam board
             and we will tell you.
           </p>

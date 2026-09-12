@@ -54,10 +54,10 @@ export default async function BlogPage() {
 
   return (
     <section className={`${shell} py-[var(--sp-16)] lg:py-[var(--sp-24)]`}>
-      <h1 className="max-w-[18ch] text-[clamp(2.25rem,5vw,var(--fs-display))] font-semibold leading-[1.05] tracking-[-0.03em] text-[var(--fg-primary)]">
+      <h1 className="max-w-[18ch] text-[clamp(2.25rem,5vw,var(--fs-display))] font-semibold leading-[1.05] tracking-[-0.03em] text-fg">
         Results, and how they happened.
       </h1>
-      <p className="mt-[var(--sp-6)] max-w-[54ch] text-[var(--fs-lead)] leading-[var(--lh-loose)] text-[var(--fg-secondary)]">
+      <p className="mt-[var(--sp-6)] max-w-[54ch] text-[var(--fs-lead)] leading-[var(--lh-loose)] text-fg-2">
         What the cohorts have achieved, worked examples from the papers, and
         what examiners are actually looking for.
       </p>
@@ -141,21 +141,21 @@ function PostCard({ post }: { post: PublicBlogPost }) {
           </Chip>
           <time
             dateTime={post.publishAt}
-            className="text-[var(--fs-base)] text-[var(--fg-tertiary)]"
+            className="text-[var(--fs-base)] text-fg-3"
           >
             {formatDate(post.publishAt)}
           </time>
         </div>
 
-        <h2 className="mt-[var(--sp-4)] text-[var(--fs-h3)] font-semibold leading-[1.2] tracking-[-0.01em] text-[var(--fg-primary)]">
+        <h2 className="mt-[var(--sp-4)] text-[var(--fs-h3)] font-semibold leading-[1.2] tracking-[-0.01em] text-fg">
           {post.title}
         </h2>
-        <p className="mt-[var(--sp-3)] flex-1 text-[var(--fs-body)] leading-[var(--lh-loose)] text-[var(--fg-secondary)]">
+        <p className="mt-[var(--sp-3)] flex-1 text-[var(--fs-body)] leading-[var(--lh-loose)] text-fg-2">
           {post.summary}
         </p>
 
-        <div className="mt-[var(--sp-6)] flex items-center gap-[var(--sp-4)] text-[var(--fs-base)] text-[var(--fg-tertiary)]">
-          <span className="text-[var(--fg-secondary)]">{post.authorName}</span>
+        <div className="mt-[var(--sp-6)] flex items-center gap-[var(--sp-4)] text-[var(--fs-base)] text-fg-3">
+          <span className="text-fg-2">{post.authorName}</span>
           {/* Counted, not just implied by the cover: "and a video" is the
               reason to open a post, and a single cover image hides it. */}
           {images > 1 && <MediaCount Icon={ImagesIcon} n={images} label="images" />}

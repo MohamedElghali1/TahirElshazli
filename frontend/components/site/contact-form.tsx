@@ -52,10 +52,10 @@ export function ContactForm() {
         role="status"
         className="flex flex-col items-start justify-center rounded-[var(--r-lg)] border border-[var(--accent-line)] bg-[var(--accent-wash)] p-[var(--sp-12)]"
       >
-        <h2 className="text-[var(--fs-h3)] font-semibold text-[var(--fg-primary)]">
+        <h2 className="text-[var(--fs-h3)] font-semibold text-fg">
           Thank you, that is with us.
         </h2>
-        <p className="mt-[var(--sp-3)] max-w-[44ch] text-[var(--fs-body)] leading-[var(--lh-loose)] text-[var(--fg-secondary)]">
+        <p className="mt-[var(--sp-3)] max-w-[44ch] text-[var(--fs-body)] leading-[var(--lh-loose)] text-fg-2">
           We reply within one working day. If it is urgent, WhatsApp is faster.
         </p>
         <Button
@@ -135,7 +135,7 @@ export function ContactForm() {
       )}
 
       <div className="flex items-center justify-between gap-[var(--sp-4)]">
-        <p className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+        <p className="text-[var(--fs-xs)] text-fg-3">
           We use your details to reply to this enquiry and nothing else.
         </p>
         <Button

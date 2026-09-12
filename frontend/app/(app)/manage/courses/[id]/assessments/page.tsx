@@ -295,10 +295,10 @@ function NewAssessment({
         </div>
 
         <fieldset className="flex flex-col gap-[var(--sp-2)]">
-          <legend className="text-[var(--fs-xs)] font-medium text-[var(--fg-secondary)]">
+          <legend className="text-[var(--fs-xs)] font-medium text-fg-2">
             Set for
           </legend>
-          <p className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+          <p className="text-[var(--fs-xs)] text-fg-3">
             One task, aimed at the groups you pick. Students in no selected
             group will not see it at all.
           </p>
@@ -312,8 +312,8 @@ function NewAssessment({
                     'flex cursor-pointer items-center gap-[var(--sp-2)] rounded-[var(--r-md)] ' +
                     'border px-[var(--sp-3)] py-[var(--sp-2)] text-[var(--fs-base)] ' +
                     (selected
-                      ? 'border-[var(--accent)] text-[var(--fg-primary)]'
-                      : 'border-[var(--border-light)] text-[var(--fg-secondary)]')
+                      ? 'border-[var(--accent)] text-fg'
+                      : 'border-[var(--border-light)] text-fg-2')
                   }
                 >
                   <input
@@ -341,7 +341,7 @@ function NewAssessment({
             Set work
           </Button>
           {targets.length === 0 && (
-            <span className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+            <span className="text-[var(--fs-xs)] text-fg-3">
               Pick at least one group.
             </span>
           )}
@@ -388,13 +388,13 @@ function AssessmentRow({
     <li className="flex flex-col gap-[var(--sp-2)] rounded-[var(--r-md)] border border-[var(--border-light)] px-[var(--sp-3)] py-[var(--sp-3)]">
       <div className="flex flex-wrap items-center justify-between gap-[var(--sp-3)]">
         <span className="flex flex-wrap items-center gap-[var(--sp-2)]">
-          <span className="text-[var(--fs-base)] text-[var(--fg-primary)]">
+          <span className="text-[var(--fs-base)] text-fg">
             {assessment.title}
           </span>
           <Chip tone={assessment.type === 'quiz' ? 'teal' : 'neutral'}>
             {assessment.type}
           </Chip>
-          <span className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+          <span className="text-[var(--fs-xs)] text-fg-3">
             due {formatDate(assessment.dueAt)} · {assessment.maxScore} marks
           </span>
         </span>
@@ -404,7 +404,7 @@ function AssessmentRow({
       </div>
 
       <div className="flex flex-wrap items-center gap-[var(--sp-2)]">
-        <span className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+        <span className="text-[var(--fs-xs)] text-fg-3">
           Set for
         </span>
         {assessment.targets.length === 0 ? (

@@ -63,7 +63,7 @@ function Fallback({ title }: { title: string }) {
       aria-hidden
       className="flex h-full w-full items-center justify-center bg-[var(--accent-wash)]"
     >
-      <span className="font-[family-name:var(--font-mono)] text-[clamp(2rem,6vw,3.25rem)] font-medium tracking-[-0.04em] text-[var(--accent)] opacity-70">
+      <span className="font-[family-name:var(--font-mono)] text-[clamp(2rem,6vw,3.25rem)] font-medium tracking-[-0.04em] text-accent opacity-70">
         {mark}
       </span>
     </div>
@@ -91,7 +91,7 @@ export function CourseCard({ course }: { course: PublicCourseSummary }) {
       </div>
 
       <div className="flex flex-1 flex-col p-[var(--sp-6)]">
-        <h3 className="text-[var(--fs-h3)] font-semibold leading-[1.2] tracking-[-0.01em] text-[var(--fg-primary)]">
+        <h3 className="text-[var(--fs-h3)] font-semibold leading-[1.2] tracking-[-0.01em] text-fg">
           {/* The whole card is one target, but only the title carries the href -
               a nested-link card is unreadable to a screen reader. */}
           <Link
@@ -107,37 +107,37 @@ export function CourseCard({ course }: { course: PublicCourseSummary }) {
           </Link>
         </h3>
 
-        <p className="mt-[var(--sp-3)] line-clamp-2 text-[var(--fs-base)] leading-[var(--lh-loose)] text-[var(--fg-secondary)]">
+        <p className="mt-[var(--sp-3)] line-clamp-2 text-[var(--fs-base)] leading-[var(--lh-loose)] text-fg-2">
           {course.description}
         </p>
 
-        <p className="mt-[var(--sp-4)] text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+        <p className="mt-[var(--sp-4)] text-[var(--fs-base)] text-fg-3">
           {course.teacherName}
         </p>
 
-        <dl className="mt-[var(--sp-6)] flex flex-wrap items-center gap-x-[var(--sp-3)] gap-y-[var(--sp-2)] border-t border-[var(--border-light)] pt-[var(--sp-4)] text-[var(--fs-base)] text-[var(--fg-secondary)]">
+        <dl className="mt-[var(--sp-6)] flex flex-wrap items-center gap-x-[var(--sp-3)] gap-y-[var(--sp-2)] border-t border-[var(--border-light)] pt-[var(--sp-4)] text-[var(--fs-base)] text-fg-2">
           <div className="flex gap-[var(--sp-1)]">
             <dt className="sr-only">Lessons</dt>
-            <dd className="font-[family-name:var(--font-mono)] tabular-nums text-[var(--fg-primary)]">
+            <dd className="font-[family-name:var(--font-mono)] tabular-nums text-fg">
               {course.lessonCount}
             </dd>
             <dd>{course.lessonCount === 1 ? 'lesson' : 'lessons'}</dd>
           </div>
-          <span aria-hidden className="text-[var(--fg-muted)]">·</span>
+          <span aria-hidden className="text-fg-4">·</span>
           <div className="flex gap-[var(--sp-1)]">
             <dt className="sr-only">Chapters</dt>
-            <dd className="font-[family-name:var(--font-mono)] tabular-nums text-[var(--fg-primary)]">
+            <dd className="font-[family-name:var(--font-mono)] tabular-nums text-fg">
               {course.moduleCount}
             </dd>
             <dd>{course.moduleCount === 1 ? 'chapter' : 'chapters'}</dd>
           </div>
         </dl>
 
-        <p className="mt-[var(--sp-2)] text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+        <p className="mt-[var(--sp-2)] text-[var(--fs-base)] text-fg-3">
           {courseLength(course.totalDurationSeconds)}
         </p>
 
-        <span className="mt-[var(--sp-6)] inline-flex items-center gap-[var(--sp-2)] text-[var(--fs-base)] font-medium text-[var(--fg-primary)] transition-colors duration-[var(--dur-fast)] group-hover:text-[var(--accent)]">
+        <span className="mt-[var(--sp-6)] inline-flex items-center gap-[var(--sp-2)] text-[var(--fs-base)] font-medium text-fg transition-colors duration-[var(--dur-fast)] group-hover:text-accent">
           View course
           <ArrowRightIcon size={16} className="transition-transform duration-[var(--dur-fast)] group-hover:translate-x-[2px]" />
         </span>

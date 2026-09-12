@@ -46,10 +46,10 @@ export default function LoginPage() {
 
   return (
     <>
-      <h1 className="text-[var(--fs-h2)] font-semibold tracking-[-0.02em] text-[var(--fg-primary)]">
+      <h1 className="text-[var(--fs-h2)] font-semibold tracking-[-0.02em] text-fg">
         Sign in
       </h1>
-      <p className="mt-[var(--sp-2)] text-[var(--fs-body)] text-[var(--fg-tertiary)]">
+      <p className="mt-[var(--sp-2)] text-[var(--fs-body)] text-fg-3">
         Use the email address your place was booked under.
       </p>
 
@@ -85,15 +85,15 @@ export default function LoginPage() {
       <div className="mt-[var(--sp-6)] flex flex-col gap-[var(--sp-3)] text-[var(--fs-base)]">
         <Link
           href="/forgot-password"
-          className="text-[var(--fg-secondary)] underline underline-offset-4 hover:text-[var(--fg-primary)]"
+          className="text-fg-2 underline underline-offset-4 hover:text-fg"
         >
           Forgot your password?
         </Link>
-        <p className="text-[var(--fg-tertiary)]">
+        <p className="text-fg-3">
           No account yet?{' '}
           <Link
             href="/register"
-            className="text-[var(--fg-secondary)] underline underline-offset-4 hover:text-[var(--fg-primary)]"
+            className="text-fg-2 underline underline-offset-4 hover:text-fg"
           >
             Create one
           </Link>

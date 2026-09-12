@@ -33,15 +33,15 @@ export default function AboutPage() {
     <>
       <section className={`${shell} grid items-center gap-[var(--sp-12)] pb-[var(--sp-24)] pt-[var(--sp-16)] lg:grid-cols-[5fr_4fr] lg:gap-[var(--sp-16)] lg:pt-[var(--sp-24)]`}>
         <div>
-          <h1 className="max-w-[16ch] text-[clamp(2.25rem,5vw,var(--fs-display))] font-semibold leading-[1.05] tracking-[-0.03em] text-[var(--fg-primary)]">
+          <h1 className="max-w-[16ch] text-[clamp(2.25rem,5vw,var(--fs-display))] font-semibold leading-[1.05] tracking-[-0.03em] text-fg">
             Dr. Tahir Elshazli
           </h1>
-          <p className="mt-[var(--sp-6)] max-w-[var(--maxw-prose)] text-[var(--fs-lead)] leading-[var(--lh-loose)] text-[var(--fg-secondary)]">
+          <p className="mt-[var(--sp-6)] max-w-[var(--maxw-prose)] text-[var(--fs-lead)] leading-[var(--lh-loose)] text-fg-2">
             Dr. Tahir has taught English to IGCSE and IELTS candidates for over
             a decade, working with students across Egypt and, since the classes
             moved online, further afield. He marks every submission himself.
           </p>
-          <p className="mt-[var(--sp-4)] max-w-[var(--maxw-prose)] text-[var(--fs-body)] leading-[var(--lh-loose)] text-[var(--fg-tertiary)]">
+          <p className="mt-[var(--sp-4)] max-w-[var(--maxw-prose)] text-[var(--fs-body)] leading-[var(--lh-loose)] text-fg-3">
             The platform exists because the marking was the bottleneck. Scripts
             were being photographed, annotated on paper and sent back over
             WhatsApp, and half of them were lost by exam season. Now the
@@ -63,7 +63,7 @@ export default function AboutPage() {
 
       <section className="border-y border-[var(--border-light)] bg-[var(--bg-secondary)] py-[var(--sp-24)]">
         <div className={shell}>
-          <h2 className="max-w-[20ch] text-[clamp(1.75rem,3.5vw,var(--fs-h1))] font-semibold leading-[1.1] tracking-[-0.02em] text-[var(--fg-primary)]">
+          <h2 className="max-w-[20ch] text-[clamp(1.75rem,3.5vw,var(--fs-h1))] font-semibold leading-[1.1] tracking-[-0.02em] text-fg">
             How the teaching works.
           </h2>
 
@@ -71,10 +71,10 @@ export default function AboutPage() {
             {PRINCIPLES.map((item, i) => (
               <Reveal key={item.title} delay={i * 0.06}>
                 <div className="grid gap-[var(--sp-4)] border-t border-[var(--border-light)] py-[var(--sp-8)] md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] md:gap-[var(--sp-12)]">
-                  <h3 className="text-[var(--fs-h3)] font-semibold leading-[1.2] tracking-[-0.01em] text-[var(--fg-primary)]">
+                  <h3 className="text-[var(--fs-h3)] font-semibold leading-[1.2] tracking-[-0.01em] text-fg">
                     {item.title}
                   </h3>
-                  <p className="self-center text-[var(--fs-body)] leading-[var(--lh-loose)] text-[var(--fg-secondary)]">
+                  <p className="self-center text-[var(--fs-body)] leading-[var(--lh-loose)] text-fg-2">
                     {item.body}
                   </p>
                 </div>
@@ -86,7 +86,7 @@ export default function AboutPage() {
 
       <section className={`${shell} py-[var(--sp-24)]`}>
         <div className="flex flex-col items-start gap-[var(--sp-6)] md:flex-row md:items-center md:justify-between">
-          <h2 className="max-w-[24ch] text-[clamp(1.5rem,3vw,var(--fs-h2))] font-semibold leading-[1.15] tracking-[-0.02em] text-[var(--fg-primary)]">
+          <h2 className="max-w-[24ch] text-[clamp(1.5rem,3vw,var(--fs-h2))] font-semibold leading-[1.15] tracking-[-0.02em] text-fg">
             See which course fits the year group you are in.
           </h2>
           <ButtonLink href="/courses" variant="primary" size="lg" className="shrink-0">

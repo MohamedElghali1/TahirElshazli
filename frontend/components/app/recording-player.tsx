@@ -171,7 +171,7 @@ function FilePlayer({
         }}
       />
       {initialWatchedSeconds > 0 && !recording.completed && (
-        <p className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+        <p className="text-[var(--fs-xs)] text-fg-3">
           Resumed from {formatDuration(initialWatchedSeconds)}.
         </p>
       )}
@@ -206,7 +206,7 @@ function EmbedPlayer({
         className="aspect-video w-full rounded-[var(--r-md)] border-0 bg-black"
       />
       <div className="flex flex-wrap items-center justify-between gap-[var(--sp-3)] rounded-[var(--r-md)] border border-[var(--border-light)] bg-[var(--bg-tertiary)] px-[var(--sp-4)] py-[var(--sp-3)]">
-        <p className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+        <p className="text-[var(--fs-xs)] text-fg-3">
           {recording.completed
             ? 'Marked as watched.'
             : "This player runs outside the platform, so we cannot see how far you've watched. Mark it once you're done."}
@@ -247,10 +247,10 @@ function LinkOutPlayer({
 
   return (
     <div className="flex aspect-video w-full flex-col items-center justify-center gap-[var(--sp-4)] rounded-[var(--r-md)] border border-[var(--border-medium)] bg-[var(--bg-tertiary)] px-[var(--sp-6)] text-center">
-      <p className="text-[var(--fs-md)] font-medium text-[var(--fg-primary)]">
+      <p className="text-[var(--fs-md)] font-medium text-fg">
         {recording.title}
       </p>
-      <p className="max-w-[42ch] text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+      <p className="max-w-[42ch] text-[var(--fs-xs)] text-fg-3">
         This recording opens in its own tab rather than playing here, so
         watch progress cannot be tracked automatically.
       </p>

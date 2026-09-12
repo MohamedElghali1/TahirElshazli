@@ -69,13 +69,13 @@ export default function StudentDirectoryPage() {
             <tbody>
               {data.map((student) => (
                 <Tr key={student.id}>
-                  <Td className="text-[var(--fg-primary)]">{student.name}</Td>
+                  <Td className="text-fg">{student.name}</Td>
                   <Td>{student.email}</Td>
                   <Td align="end">
                     <span className="num">{student.enrolledCourseCount}</span>
                   </Td>
                   <Td align="end">
-                    <span className="text-[var(--fg-tertiary)]">
+                    <span className="text-fg-3">
                       {formatDate(student.createdAt)}
                     </span>
                   </Td>

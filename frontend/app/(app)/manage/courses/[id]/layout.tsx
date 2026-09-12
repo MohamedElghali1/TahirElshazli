@@ -36,7 +36,7 @@ export default function ManageCourseLayout({
         backHref="/manage/courses"
       />
       {data && (
-        <p className="border-b border-[var(--border-light)] px-[var(--sp-4)] py-[var(--sp-2)] text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+        <p className="border-b border-[var(--border-light)] px-[var(--sp-4)] py-[var(--sp-2)] text-[var(--fs-xs)] text-fg-3">
           {data.entries.length} enrolled · {data.assessmentCount} assessment
           {data.assessmentCount === 1 ? '' : 's'}
         </p>

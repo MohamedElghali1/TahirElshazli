@@ -120,7 +120,7 @@ function DetailsPanel({
         {error && <FormError>{error}</FormError>}
 
         <div className="flex items-center justify-between gap-[var(--sp-4)] border-t border-[var(--border-light)] pt-[var(--sp-4)]">
-          <p className="num text-[var(--fs-xxs)] text-[var(--fg-muted)]">
+          <p className="num text-[var(--fs-xxs)] text-fg-4">
             {profile.enrolledCourseCount} course
             {profile.enrolledCourseCount === 1 ? '' : 's'} · joined{' '}
             {formatDate(profile.createdAt)}
@@ -129,7 +129,7 @@ function DetailsPanel({
             {saved && (
               <span
                 role="status"
-                className="text-[var(--fs-xs)] text-[var(--chip-green-fg)]"
+                className="text-[var(--fs-xs)] text-chip-green-fg"
               >
                 Saved
               </span>
@@ -219,7 +219,7 @@ function PasswordPanel() {
           {done && (
             <span
               role="status"
-              className="text-[var(--fs-xs)] text-[var(--chip-green-fg)]"
+              className="text-[var(--fs-xs)] text-chip-green-fg"
             >
               Password changed
             </span>

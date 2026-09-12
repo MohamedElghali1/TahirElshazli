@@ -73,7 +73,7 @@ export default function RootLayout({
       <body className="min-h-full">
         <a
           href="#main"
-          className="sr-only focus:not-sr-only focus:absolute focus:start-[var(--sp-4)] focus:top-[var(--sp-4)] focus:z-50 focus:rounded-[var(--r-md)] focus:bg-[var(--accent)] focus:px-[var(--sp-4)] focus:py-[var(--sp-2)] focus:text-[var(--accent-fg)]"
+          className="sr-only focus:not-sr-only focus:absolute focus:start-[var(--sp-4)] focus:top-[var(--sp-4)] focus:z-50 focus:rounded-[var(--r-md)] focus:bg-[var(--accent)] focus:px-[var(--sp-4)] focus:py-[var(--sp-2)] focus:text-accent-fg"
         >
           Skip to content
         </a>

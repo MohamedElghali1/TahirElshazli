@@ -34,7 +34,7 @@ export default function ManageCoursesPage() {
         {/* The view chip carries what the old subtitle said - Twenty has no
             page subtitle, only this bar (TASK 4). */}
         <div className="flex h-[var(--topbar-h)] items-center px-[var(--sp-2)]">
-          <span className="inline-flex h-[var(--h-sm)] items-center gap-[var(--sp-1)] rounded-[var(--r-lg)] bg-[var(--bg-primary)] py-[var(--sp-1)] ps-[var(--sp-1)] pe-[var(--sp-2)] text-[var(--fs-base)] font-medium text-[var(--fg-secondary)]">
+          <span className="inline-flex h-[var(--h-sm)] items-center gap-[var(--sp-1)] rounded-[var(--r-lg)] bg-[var(--bg-primary)] py-[var(--sp-1)] ps-[var(--sp-1)] pe-[var(--sp-2)] text-[var(--fs-base)] font-medium text-fg-2">
             {admin ? 'All courses' : 'Assigned to you'}
             {data && (
               <>
@@ -74,13 +74,13 @@ export default function ManageCoursesPage() {
                   <Td>
                     <Link
                       href={`/manage/courses/${course.id}`}
-                      className="inline-flex h-[var(--h-tag)] max-w-full items-center gap-[var(--sp-1)] rounded-[var(--r-sm)] bg-[var(--bg-wash-nav)] px-[var(--sp-1)] text-[var(--fs-base)] font-medium text-[var(--fg-primary)] transition-colors duration-[var(--dur-fast)] hover:bg-[var(--bg-wash)]"
+                      className="inline-flex h-[var(--h-tag)] max-w-full items-center gap-[var(--sp-1)] rounded-[var(--r-sm)] bg-[var(--bg-wash-nav)] px-[var(--sp-1)] text-[var(--fs-base)] font-medium text-fg transition-colors duration-[var(--dur-fast)] hover:bg-[var(--bg-wash)]"
                     >
                       <span className="truncate">{course.title}</span>
                     </Link>
                   </Td>
                   <Td>
-                    <span className="text-[var(--fg-tertiary)]">
+                    <span className="text-fg-3">
                       {course.teacherName}
                       {course.assignedAt && ` · assigned ${formatDate(course.assignedAt)}`}
                     </span>
@@ -98,7 +98,7 @@ export default function ManageCoursesPage() {
                       )}
                       <ArrowRightIcon
                         size={14}
-                        className="shrink-0 text-[var(--fg-muted)] rtl:rotate-180"
+                        className="shrink-0 text-fg-4 rtl:rotate-180"
                       />
                     </span>
                   </Td>

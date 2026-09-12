@@ -2775,3 +2775,282 @@ Worth recording because three of them are shapes that will recur:
   looks for.
 - `--sp-nav-x` is 6px and is the only value in `tokens.css` off the 4px grid.
   It is measured, and it is named so the exception has one home.
+
+---
+
+## 2026-09-12 — Work types, and analytics that do not name Google (migration `010`)
+
+**369 tests pass across 25 files.** That number also covers the previous entry's
+Google connection layer, which had never been test-run — so the two entries
+should be read together, and the earlier one's "not yet test-run" caveat is now
+discharged. What remains unverified is narrower and named at the bottom.
+
+### What changed
+
+An assessment could only ever be one thing: a window, a mark, and a student who
+uploads a file. It can now also be an external link or a Google Form, and the
+client asked for two properties that shaped almost every decision here — more
+kinds must be addable "without redesigning the entire system", and the analytics
+must not be hard-coded to one form.
+
+- **`010_work_types.sql`** — `assessments.work_type` + `external_url`,
+  `assessment_google_forms` (the binding and its sync state), `external_results`
+  (the mirrored responses), `users.google_email`.
+- **`assessments/interfaces/work-repository.interface.ts`** — `WorkRepository`
+  and the `ExternalWorkBinder` port, both drivers implemented.
+- **`GoogleFormSyncService`** — fetch, match, mirror. **`WorkAnalyticsService`**
+  — per-assessment and per-student reads.
+- **`WorkAnalyticsController`** + **`WorkAnalyticsGateService`** on `/staff/*`.
+- Audit gains `external_result.attached` and the `external_result` target type.
+
+### Why
+
+CLAUDE.md §5.8 (flexible submission types), §5.6 (averages), §5.10 (status
+derived server-side), §5.11 (scoping is a query filter), §5.4 (audited staff
+mutations), §7.1 (batch reads, no N+1).
+
+### The decision the whole thing rests on
+
+**`external_results` names no vendor.** A `provider` column, an opaque
+`external_id`, an identifier string, a score, and the raw payload. Adding
+Microsoft Forms or an LTI tool is a new `provider` value and a client class —
+no DDL, and no second analytics path. `WorkAnalyticsService` never mentions
+Google either; only the sync service does.
+
+It is deliberately **not** merged into `assessment_submissions`, for two reasons
+that each independently settle it. A submission is a student's own act that this
+platform witnessed and keeps immutable (§5.5); this is a mirror of a record
+owned elsewhere that a re-sync legitimately overwrites. And a response can
+arrive matching **no student at all** — which `student_id NOT NULL` cannot
+represent, and which is the single most important state in the table.
+
+### Matching identity, which is where the honesty lives
+
+Google hands over one fact: an email address, and only if the form was set to
+collect one. So:
+
+- Match on the student's LMS address **or** a recorded `google_email` — the
+  second is what makes this work in practice, since students fill school forms
+  in with personal accounts.
+- **Never guess.** No name matching. Unmatched responses are kept, counted, and
+  queued. Dropping them makes the completion count silently wrong; fuzzy
+  matching eventually attaches one student's mark to another.
+- `unmatched` is surfaced at the top level of the analytics payload, because a
+  non-zero value means every other number on the screen is *understated* —
+  somebody did the work and is being counted as not having done it. That is a
+  more urgent message than "three students haven't started".
+- Attributing a response records the address, so the same student is not
+  reconciled again every week. It is the difference between a queue that drains
+  and one that refills.
+
+### Two bugs the build caught in itself
+
+**The scope check that wasn't.** `attach` is addressed by *result* id, and the
+first draft had a comment claiming it resolved the course and scoped on it —
+while the code did no such thing. A TA could have attributed marks inside a
+course they do not hold, which is §5.11's exact failure. Fixed by adding
+`findResultById` and resolving result → assessment → course *before* anything
+else. A comment describing a check that isn't there is worse than no comment.
+
+**A port, forced by a test smell.** `AssessmentAuthoringService` first depended
+on `GoogleFormSyncService` directly, which dragged an OAuth client, a credential
+repository and an HTTP client into the graph of every test that creates an
+assignment. A test for "the availability window must be coherent" that has to
+stub Google is a test whose setup is lying about what the code depends on. The
+fix — `ExternalWorkBinder` — is also exactly the extensibility seam the client
+asked for, which is the usual sign the decoupling was right rather than merely
+convenient.
+
+```mermaid
+flowchart LR
+  A[assessments<br/>work_type] -->|google_form| B[assessment_google_forms<br/>binding + sync state]
+  B -->|sync| C[external_results<br/>provider-agnostic]
+  C -->|student_id set| D[analytics + student view]
+  C -->|student_id NULL| E[reconciliation queue]
+  E -->|staff attach| C
+  E -.records address.-> F[users.google_email]
+  F -.matches next time.-> C
+```
+
+### Follow-ups / debt
+
+- **Migration `010` has never run against a real database.** The suite defaults
+  to the in-memory driver, so none of its DDL, CHECKs or the partial index have
+  been exercised. Every previous first run in this project found something.
+  `TEST_DATABASE_URL` + the integration suite is the next step.
+- **Nothing has talked to Google, still.** `bind`, `sync` and `fetchResponses`
+  are unexercised against the real API; the credentials are placeholders
+  pending the client. `docs/google-forms-setup.md` T1–T4 is the script.
+- **No frontend.** Authoring cannot pick a work type, students see no form
+  button, and there is no analytics or reconciliation screen. All of it is
+  curl-only.
+- **`UpdateAssessmentDto` has no `workType`/`externalUrl`.** The repository and
+  service support changing a task's delivery; the DTO does not expose it, so
+  today it can only be set at creation.
+- **Sync is manual.** No scheduled sweep — deliberate (a poller spends Google's
+  quota on tasks nobody is looking at), but it means analytics are only as fresh
+  as the last press of Refresh, and the student's "completed" flag lags the same
+  way. `lastSyncedAt` travels to the UI so it can say so.
+- **No specs for the new code.** The 369 cover regressions, not this. The ones
+  worth writing first need no network: `parseFormId`'s three wrong-link cases,
+  the matching index, and `replaceResults` preserving a manual attribution
+  across a re-sync — that last one is a genuine silent-data-loss risk and is
+  currently guarded only by a COALESCE and a comment.
+
+---
+
+## 2026-09-12 (later) — The three gaps the requirements audit found
+
+**383 tests across 26 files.** A read of the client's requirements against what
+had actually been built, rather than against what the previous entry claimed.
+Three things were missing, and one of them was invisible from the code alone.
+
+**`WorkAnalyticsService.forStudent` had no route.** The client's requirement 4
+draws the per-student table explicitly — *Student: Ahmed | Work | Type | Status
+| Score | Result* — and the service method existed, fully written, called by
+nothing. It is the kind of gap that reads as done in a diff and is absent from
+the product. Now `GET /staff/courses/:courseId/students/:studentId/work`.
+
+The course id in that path is **access control, not decoration**: it is what
+`assertAssigned` scopes on, so a TA cannot read a student's record for a course
+they do not hold. A route keyed only on the student would have nothing to scope
+by and would hand any staff member every mark that student has ever received.
+The results are also filtered to the student's *groups*, the same way their own
+list is (§5.16) — a report listing tasks they were never set would show "not
+started" against work nobody asked them to do.
+
+**The "View" action had nothing behind it.** Per-question answers were stored in
+`external_results.raw` and no endpoint returned them. Now `GET /staff/results/
+:resultId`, scoped through the result's own assessment, and deliberately
+separate from the roster read: the roster is one row per student rendered for a
+whole cohort, and folding the raw payload into it would multiply a table of
+thirty by however many questions the form has, to populate a column nobody has
+clicked.
+
+**A task's work type could not be changed after creation.** The repository and
+the CHECK constraint supported it; `UpdateAssessmentDto` did not expose it. The
+fix matters less than the rule it needed: the payload is validated against the
+**merged** result, not the patch. Switching to `link` without sending a URL
+looks fine as a patch and is only incoherent in combination with what is stored
+— the same merge shape the window check has always used.
+
+### Also
+
+`work-types.spec.ts` — 14 tests, no network, covering the two paths that fail
+silently. The one that earns its place: **a manual attribution survives a
+re-sync.** Google knows nothing about a staff reconciliation, so it resends the
+response with no identity, and a naive overwrite would quietly undo the
+attribution — no error, the response drifting back into the unmatched queue, and
+a student's mark disappearing from the report between one refresh and the next.
+That behaviour was previously guarded by a `COALESCE` and a comment.
+
+### Follow-ups / debt
+
+Unchanged from the entry above, minus the three closed here. Still open and
+still the honest summary: **migrations 009 and 010 have never run against a real
+database**, **nothing has talked to Google**, and **there is no frontend for any
+of this** — work types, analytics, reconciliation and the student's form button
+are all curl-only. Requirement 1 (the Students tab) and requirement 5 (hybrid
+sessions, attendance, calendar) are untouched; the first is blocked on a
+permissions decision and the second on a truncated requirements document.
+
+---
+
+## 2026-09-12 - Every text colour in the app was dead, and a browser finally said so
+
+Found while doing the computed-geometry pass the previous entry admitted it
+owed. It is the most consequential thing in this project's front end so far and
+it had been shipping for some time.
+
+### What was wrong
+
+`text-[var(--fg-secondary)]` **emits no colour at all.** Nor does
+`text-[var(--fg-tertiary)]`, `text-[var(--fg-muted)]`, `text-[var(--accent-fg)]`
+or any of their 478 siblings. Every one of them silently fell back to the
+inherited body colour, so the entire product - both consoles *and* the
+marketing site - rendered in one flat `--fg-primary`. Labels, hints, captions,
+column headers, inactive nav items and the white text on the blue button were
+all the same near-white.
+
+The cause is Tailwind v4's arbitrary-value ambiguity. `text-[...]` can mean
+font-size or colour, and a bare `var()` is not resolvable at build time, so
+Tailwind has to guess. Where an element carried **both** - and in this codebase
+almost every element carries `text-[var(--fs-base)]` too - the size wins and
+the colour is dropped.
+
+**`text-[color:var(--fg-tertiary)]` does not fix it** - that was tried and
+measured, and it still produced the inherited colour. What works is the
+project's own `@theme inline` utilities, which `globals.css` had defined from
+the start and which nothing was using: `text-fg`, `text-fg-2`, `text-fg-3`,
+`text-fg-4`, `text-accent-fg`. Those emit a real `color` declaration and track
+the theme.
+
+So all 478 call sites moved across, and `globals.css` gained the three mappings
+it was missing (`--color-fg-inverted`, `--color-chip-red-fg`,
+`--color-chip-green-fg`).
+
+### Why it survived so long
+
+Because nothing that runs in CI can see it. It typechecks, it lints, it builds,
+and the class *names* are all correct - the defect exists only in the generated
+stylesheet. Every previous verification of this front end was a build, and a
+build cannot fail on a utility that quietly emits nothing.
+
+**The general rule: never write `text-[var(--x)]` for a colour.** Use the named
+`@theme` utility. The same ambiguity trap is why `IconButton` had two competing
+`rounded-*` utilities last commit - this codebase has now been bitten twice by
+one class of Tailwind behaviour, in two different properties.
+
+### Measured, at last
+
+At 1440px, against the production build, both themes:
+
+| | expected | measured |
+|---|---|---|
+| rail | 220px, transparent, no border | 220x786, `rgba(0,0,0,0)`, `0px` |
+| header | 40px, `0 12px` | 40px, `0px 12px` |
+| panel | `32px 0 0 0` + 1px ring | `32px 0px 0px`, ring present |
+| `+ Live Session` | 24px, r16, `#3E63DD`, 13/500, white | 24px, 16px, p3 accent, 13/500, `rgb(255,255,255)` |
+| shell / panel / nav / hint (dark) | `#191919` `#171717` `#b3b3b3` `#818181` | all four exact |
+| shell / panel / nav / hint (light) | `#F9F9F9` `#FFFFFF` `#666` `#999` | all four exact |
+
+The button's label measured `#EBEBEB` before this fix and `#FFFFFF` after,
+which is the single clearest proof of the bug and of the repair.
+
+### Two more defects the browser caught
+
+- **The role chip was stretched across the whole rail** by a `flex-1` that had
+  no business being there. It is a chip; it sizes to its text now.
+- **The theme toggle changes `data-theme` but does not repaint** - both palettes
+  are exactly right on load, and switching at runtime needs a reload to take
+  effect. **Pre-existing and not from this work**: `body`'s own hand-written
+  `background: var(--bg-primary)` in `globals.css` fails the same way and was
+  never touched. Left open deliberately rather than guessed at; it wants its
+  own session.
+
+### Also in this commit
+
+The three remaining card screens (CLAUDE.md §7.1's "console speaks two visual
+languages"): **Activity** and **Blog** became dense object-tables. **Groups**
+did not, and the code says why - each group carries an editable set of course
+pairings with a per-row action, which a 32px row cannot hold; doing it properly
+means splitting it into a table plus a `/manage/groups/[id]` record page, which
+is a routing change and not this pass's business. It took the dense gutter and
+the row idiom for its inner lists.
+
+And a bug found on the way: the front end's `AuditAction` union carried **six**
+of the backend's **twenty-seven**, so the activity log rendered a blank label
+and no tone for every group change, every authored assessment, every blog post,
+every announcement and every live session. `Record<AuditAction, string>` cannot
+catch this - a union missing members is still satisfiable, and the check only
+fires the other way. Synced, with labels and tones for all twenty-seven, and a
+comment saying the two files have no compile-time link.
+
+### Follow-ups / debt
+
+- **The theme toggle needs a reload.** Described above; open.
+- **The student console still renders its own `PageHeader` under the shell's
+  40px bar.** Unchanged from the previous entry, and now the only place the two
+  consoles disagree.
+- **Nothing stops `text-[var(--some-colour)]` coming back.** A lint rule
+  forbidding the pattern is the obvious guard and does not exist yet.

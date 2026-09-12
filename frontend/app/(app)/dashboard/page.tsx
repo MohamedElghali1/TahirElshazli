@@ -394,7 +394,7 @@ export default function DashboardPage() {
 
             {/* ---- the courses themselves ------------------------------ */}
             <section>
-              <h2 className="mb-[var(--sp-3)] text-[var(--fs-xs)] font-medium uppercase tracking-[0.06em] text-[var(--fg-tertiary)]">
+              <h2 className="mb-[var(--sp-3)] text-[var(--fs-xs)] font-medium uppercase tracking-[0.06em] text-fg-3">
                 Your courses
               </h2>
               <StaggerList
@@ -435,7 +435,7 @@ function JoinSessionButton({
       className={cx(
         'inline-flex h-[var(--h-md)] items-center justify-center gap-[var(--sp-2)]',
         'whitespace-nowrap rounded-[var(--r-md)] px-[var(--sp-4)] text-[var(--fs-base)] font-medium',
-        'bg-[var(--accent)] text-[var(--accent-fg)] transition-[background-color]',
+        'bg-[var(--accent)] text-accent-fg transition-[background-color]',
         'duration-[var(--dur-fast)] ease-[var(--ease)] hover:bg-[var(--accent-hover)]',
         'active:translate-y-[1px]',
       )}
@@ -494,10 +494,10 @@ function Hero({
           <Chip tone={phase === 'live' ? 'red' : 'amber'} className="mt-[var(--sp-4)]">
             {phase === 'live' ? 'Live now' : 'Starting soon'}
           </Chip>
-          <h2 className="mt-[var(--sp-3)] text-[var(--fs-md)] font-semibold text-[var(--fg-primary)]">
+          <h2 className="mt-[var(--sp-3)] text-[var(--fs-md)] font-semibold text-fg">
             {session.session.title}
           </h2>
-          <p className="mt-[var(--sp-1)] text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+          <p className="mt-[var(--sp-1)] text-[var(--fs-base)] text-fg-3">
             {session.courseTitle} ·{' '}
             <span className="num">
               {phase === 'live'
@@ -513,7 +513,7 @@ function Hero({
               className={cx(
                 'inline-flex h-[var(--h-sm)] items-center gap-[var(--sp-2)] rounded-[var(--r-md)]',
                 'bg-[var(--accent)] px-[var(--sp-3)] text-[var(--fs-xs)] font-medium',
-                'text-[var(--accent-fg)] transition-[background-color] duration-[var(--dur-fast)]',
+                'text-accent-fg transition-[background-color] duration-[var(--dur-fast)]',
                 'hover:bg-[var(--accent-hover)]',
               )}
             >
@@ -534,10 +534,10 @@ function Hero({
           <Chip tone="violet" className="mt-[var(--sp-4)]">
             Announcement
           </Chip>
-          <h2 className="mt-[var(--sp-3)] text-[var(--fs-md)] font-semibold text-[var(--fg-primary)]">
+          <h2 className="mt-[var(--sp-3)] text-[var(--fs-md)] font-semibold text-fg">
             {announcement.title}
           </h2>
-          <p className="mt-[var(--sp-1)] line-clamp-2 max-w-[46ch] text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+          <p className="mt-[var(--sp-1)] line-clamp-2 max-w-[46ch] text-[var(--fs-base)] text-fg-3">
             {announcement.message}
           </p>
           <div className="mt-[var(--sp-4)] flex flex-wrap items-center justify-center gap-[var(--sp-2)]">
@@ -555,14 +555,14 @@ function Hero({
         <>
           <span
             aria-hidden
-            className="flex h-[64px] w-[64px] items-center justify-center rounded-[var(--r-full)] bg-[var(--accent-wash)] text-[var(--fs-lg)] font-semibold text-[var(--accent)]"
+            className="flex h-[64px] w-[64px] items-center justify-center rounded-[var(--r-full)] bg-[var(--accent-wash)] text-[var(--fs-lg)] font-semibold text-accent"
           >
             {initials(firstName || 'Student')}
           </span>
-          <h2 className="mt-[var(--sp-4)] text-[var(--fs-md)] font-semibold text-[var(--fg-primary)]">
+          <h2 className="mt-[var(--sp-4)] text-[var(--fs-md)] font-semibold text-fg">
             {firstName ? `Welcome, ${firstName}.` : 'Welcome.'}
           </h2>
-          <p className="mt-[var(--sp-1)] text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+          <p className="mt-[var(--sp-1)] text-[var(--fs-base)] text-fg-3">
             {needsAction > 0
               ? `${needsAction} ${needsAction === 1 ? 'thing needs' : 'things need'} you today.`
               : 'Nothing is due. A good time to watch a lesson back.'}
@@ -615,8 +615,8 @@ function HeroLink({ href, children }: { href: string; children: React.ReactNode 
       className={cx(
         'inline-flex h-[var(--h-sm)] items-center gap-[var(--sp-2)] rounded-[var(--r-md)]',
         'border border-[var(--border-medium)] px-[var(--sp-3)] text-[var(--fs-xs)]',
-        'text-[var(--fg-secondary)] transition-colors duration-[var(--dur-fast)]',
-        'hover:border-[var(--border-strong)] hover:text-[var(--fg-primary)]',
+        'text-fg-2 transition-colors duration-[var(--dur-fast)]',
+        'hover:border-[var(--border-strong)] hover:text-fg',
       )}
     >
       {children}
@@ -717,22 +717,22 @@ function AccessRow({
           <Icon size={12} weight="fill" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[var(--fs-base)] font-medium text-[var(--fg-primary)]">
+          <span className="block truncate text-[var(--fs-base)] font-medium text-fg">
             {label}
           </span>
-          <span className="block truncate text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+          <span className="block truncate text-[var(--fs-xs)] text-fg-3">
             {sub}
           </span>
         </span>
         {count && (
-          <span className="num shrink-0 text-[var(--fs-xs)] text-[var(--fg-secondary)]">
+          <span className="num shrink-0 text-[var(--fs-xs)] text-fg-2">
             {count}
           </span>
         )}
         <CaretRightIcon
           size={12}
           aria-hidden
-          className="reveal shrink-0 text-[var(--fg-muted)]"
+          className="reveal shrink-0 text-fg-4"
         />
       </Link>
     </li>
@@ -760,18 +760,18 @@ function InboxPanel({
   return (
     <section className="rounded-[var(--r-md)] border border-[var(--border-medium)] bg-[var(--bg-secondary)] p-[var(--sp-4)]">
       <header className="flex items-baseline justify-between gap-[var(--sp-3)]">
-        <h2 className="text-[var(--fs-base)] font-semibold text-[var(--fg-primary)]">
+        <h2 className="text-[var(--fs-base)] font-semibold text-fg">
           {items.length === 0
             ? 'Nothing waiting'
             : `${items.length} ${items.length === 1 ? 'item' : 'items'} for you`}
         </h2>
-        <span className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+        <span className="text-[var(--fs-xs)] text-fg-3">
           across {courseCount} {courseCount === 1 ? 'course' : 'courses'}
         </span>
       </header>
 
       {items.length === 0 ? (
-        <p className="mt-[var(--sp-4)] text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+        <p className="mt-[var(--sp-4)] text-[var(--fs-base)] text-fg-3">
           No open work and no unread announcements. Anything new lands here.
         </p>
       ) : (
@@ -787,10 +787,10 @@ function InboxPanel({
                   'hover:border-[var(--border-strong)] hover:bg-[var(--bg-tertiary)]',
                 )}
               >
-                <p className="truncate text-[var(--fs-base)] font-medium text-[var(--fg-primary)]">
+                <p className="truncate text-[var(--fs-base)] font-medium text-fg">
                   {item.title}
                 </p>
-                <p className="mt-[var(--sp-1)] truncate text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+                <p className="mt-[var(--sp-1)] truncate text-[var(--fs-xs)] text-fg-3">
                   {item.meta}
                 </p>
                 <Chip tone={item.chipTone} className="mt-[var(--sp-2)]">
@@ -804,12 +804,12 @@ function InboxPanel({
 
       {(more > 0 || unread > 0) && (
         <div className="mt-[var(--sp-3)] flex items-center justify-between">
-          <span className="text-[var(--fs-xs)] text-[var(--fg-muted)]">
+          <span className="text-[var(--fs-xs)] text-fg-4">
             {more > 0 ? `${more} more` : ''}
           </span>
           <Link
             href="/notifications"
-            className="inline-flex items-center gap-[var(--sp-1)] text-[var(--fs-xs)] text-[var(--fg-tertiary)] transition-colors duration-[var(--dur-fast)] hover:text-[var(--fg-primary)]"
+            className="inline-flex items-center gap-[var(--sp-1)] text-[var(--fs-xs)] text-fg-3 transition-colors duration-[var(--dur-fast)] hover:text-fg"
           >
             Open inbox
             {unread > 0 && <span className="num">({unread})</span>}
@@ -860,7 +860,7 @@ function MaterialsPanel({ entries }: { entries: StudentHomeEntry[] }) {
     <Panel
       title="Materials"
       action={
-        <span className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+        <span className="text-[var(--fs-xs)] text-fg-3">
           Notes and files
         </span>
       }
@@ -870,7 +870,7 @@ function MaterialsPanel({ entries }: { entries: StudentHomeEntry[] }) {
         // No "still loading" branch any more: the counts arrive with the
         // courses in one response, so by the time this panel renders the
         // answer is known and an empty list really does mean empty.
-        <p className="p-[var(--sp-4)] text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+        <p className="p-[var(--sp-4)] text-[var(--fs-base)] text-fg-3">
           Nothing uploaded yet.
         </p>
       ) : (
@@ -912,10 +912,10 @@ function CourseCard({ course }: { course: CourseListItem }) {
       >
         <div className="flex items-start justify-between gap-[var(--sp-3)]">
           <div className="min-w-0">
-            <h3 className="truncate text-[var(--fs-md)] font-semibold text-[var(--fg-primary)]">
+            <h3 className="truncate text-[var(--fs-md)] font-semibold text-fg">
               {course.title}
             </h3>
-            <p className="mt-[var(--sp-1)] text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+            <p className="mt-[var(--sp-1)] text-[var(--fs-xs)] text-fg-3">
               {course.teacherName}
             </p>
           </div>
@@ -924,15 +924,15 @@ function CourseCard({ course }: { course: CourseListItem }) {
           </Chip>
         </div>
 
-        <p className="mt-[var(--sp-3)] line-clamp-2 text-[var(--fs-base)] text-[var(--fg-secondary)]">
+        <p className="mt-[var(--sp-3)] line-clamp-2 text-[var(--fs-base)] text-fg-2">
           {course.description}
         </p>
 
         <div className="mt-[var(--sp-4)] flex items-baseline justify-between">
-          <span className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+          <span className="text-[var(--fs-xs)] text-fg-3">
             {isRecorded ? 'Course completion' : 'Attendance'}
           </span>
-          <span className="num text-[var(--fs-md)] text-[var(--fg-primary)]">
+          <span className="num text-[var(--fs-md)] text-fg">
             {formatPercent(percentage)}
           </span>
         </div>
@@ -942,11 +942,11 @@ function CourseCard({ course }: { course: CourseListItem }) {
             label={isRecorded ? 'Course completion' : 'Attendance'}
           />
         </div>
-        <p className="num mt-[var(--sp-2)] text-[var(--fs-xxs)] text-[var(--fg-muted)]">
+        <p className="num mt-[var(--sp-2)] text-[var(--fs-xxs)] text-fg-4">
           {detail}
         </p>
 
-        <span className="mt-[var(--sp-4)] inline-flex items-center gap-[var(--sp-2)] text-[var(--fs-base)] text-[var(--fg-secondary)] transition-colors duration-[var(--dur-fast)] group-hover:text-[var(--fg-primary)]">
+        <span className="mt-[var(--sp-4)] inline-flex items-center gap-[var(--sp-2)] text-[var(--fs-base)] text-fg-2 transition-colors duration-[var(--dur-fast)] group-hover:text-fg">
           Open course
           <ArrowRightIcon size={14} />
         </span>

@@ -67,7 +67,7 @@ export function Th({
         // in the product; the 12px this used to be was the one place the
         // console dropped below the base size.
         'h-[var(--h-md)] px-[var(--sp-2)] text-[var(--fs-base)] font-medium',
-        'whitespace-nowrap text-[var(--fg-tertiary)]',
+        'whitespace-nowrap text-fg-3',
         ALIGN[align],
         className,
       )}
@@ -93,7 +93,7 @@ export function Td({
         // `Tr` is a *floor* in table layout, so 8px of vertical padding on
         // every cell pushes the real row height past it and the dense table
         // stops being dense.
-        'px-[var(--sp-2)] text-[var(--fs-base)] text-[var(--fg-secondary)]',
+        'px-[var(--sp-2)] text-[var(--fs-base)] text-fg-2',
         ALIGN[align],
         className,
       )}

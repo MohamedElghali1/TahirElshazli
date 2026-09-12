@@ -17,12 +17,12 @@ export function Metric({
 }) {
   const body = (
     <>
-      <div className="text-[var(--fs-base)] text-[var(--fg-tertiary)]">{label}</div>
-      <div className="num mt-[var(--sp-1)] text-[var(--fs-lg)] font-semibold leading-[var(--lh-tight)] text-[var(--fg-primary)]">
+      <div className="text-[var(--fs-base)] text-fg-3">{label}</div>
+      <div className="num mt-[var(--sp-1)] text-[var(--fs-lg)] font-semibold leading-[var(--lh-tight)] text-fg">
         {value}
       </div>
       {hint && (
-        <div className="mt-[var(--sp-1)] text-[var(--fs-xs)] text-[var(--fg-muted)]">
+        <div className="mt-[var(--sp-1)] text-[var(--fs-xs)] text-fg-4">
           {hint}
         </div>
       )}

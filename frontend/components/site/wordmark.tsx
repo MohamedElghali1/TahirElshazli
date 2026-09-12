@@ -35,13 +35,13 @@ export function Wordmark({ size = 'md' }: { size?: 'md' | 'lg' }) {
       <span className="flex flex-col leading-none">
         <span
           className={
-            'font-semibold tracking-[-0.01em] text-[var(--fg-primary)] ' +
+            'font-semibold tracking-[-0.01em] text-fg ' +
             (size === 'lg' ? 'text-[var(--fs-h3)]' : 'text-[var(--fs-md)]')
           }
         >
           Dr. Tahir Elshazli
         </span>
-        <span className="mt-[3px] text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+        <span className="mt-[3px] text-[var(--fs-xs)] text-fg-3">
           English Team
         </span>
       </span>

@@ -104,11 +104,11 @@ export default function AssessmentDetailPage({
 function Brief({ assessment }: { assessment: AssessmentDetail }) {
   return (
     <Panel title="What to do">
-      <p className="text-[var(--fs-base)] leading-[var(--lh-loose)] text-[var(--fg-secondary)]">
+      <p className="text-[var(--fs-base)] leading-[var(--lh-loose)] text-fg-2">
         {assessment.description}
       </p>
       {assessment.instructions && (
-        <p className="mt-[var(--sp-4)] whitespace-pre-line text-[var(--fs-base)] leading-[var(--lh-loose)] text-[var(--fg-secondary)]">
+        <p className="mt-[var(--sp-4)] whitespace-pre-line text-[var(--fs-base)] leading-[var(--lh-loose)] text-fg-2">
           {assessment.instructions}
         </p>
       )}
@@ -136,8 +136,8 @@ function Brief({ assessment }: { assessment: AssessmentDetail }) {
 function Fact({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-[var(--fs-xxs)] text-[var(--fg-tertiary)]">{label}</dt>
-      <dd className="num mt-[var(--sp-1)] text-[var(--fs-xs)] text-[var(--fg-primary)]">
+      <dt className="text-[var(--fs-xxs)] text-fg-3">{label}</dt>
+      <dd className="num mt-[var(--sp-1)] text-[var(--fs-xs)] text-fg">
         {value}
       </dd>
     </div>
@@ -168,7 +168,7 @@ function SubmitPanel({
   if (!assessment.canSubmit) {
     return (
       <Panel title="Your submission">
-        <p className="text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+        <p className="text-[var(--fs-base)] text-fg-3">
           {existing
             ? 'The submission window has closed. Your work is with Dr. Tahir.'
             : 'This is not open for submission. Check the dates above.'}
@@ -211,7 +211,7 @@ function SubmitPanel({
   return (
     <Panel title={existing ? 'Revise your submission' : 'Your submission'}>
       {existing && (
-        <p className="mb-[var(--sp-4)] text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+        <p className="mb-[var(--sp-4)] text-[var(--fs-xs)] text-fg-3">
           Submitted {formatDateTime(existing.lastSubmittedAt)}. Sending again
           replaces it, and the previous version is kept in your history.
         </p>
@@ -251,7 +251,7 @@ function SubmitPanel({
         {error && <FormError>{error}</FormError>}
 
         <div className="flex items-center justify-between gap-[var(--sp-4)]">
-          <p className="text-[var(--fs-xxs)] text-[var(--fg-muted)]">
+          <p className="text-[var(--fs-xxs)] text-fg-4">
             You can revise until the window closes.
           </p>
           <Button type="submit" variant="primary" loading={busy}>
@@ -272,7 +272,7 @@ function Marking({ assessment }: { assessment: AssessmentDetail }) {
   if (!submission || submission.correctedAt === null) {
     return (
       <Panel title="Marking">
-        <p className="text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+        <p className="text-[var(--fs-base)] text-fg-3">
           {submission
             ? 'Not marked yet. Your score and the corrected copy appear here once Dr. Tahir returns it.'
             : 'Nothing submitted yet.'}
@@ -289,22 +289,22 @@ function Marking({ assessment }: { assessment: AssessmentDetail }) {
   return (
     <Panel title="Marking">
       <div className="flex items-baseline gap-[var(--sp-3)]">
-        <span className="num text-[var(--fs-xl)] leading-none text-[var(--fg-primary)]">
+        <span className="num text-[var(--fs-xl)] leading-none text-fg">
           {submission.score ?? '--'}
-          <span className="text-[var(--fg-muted)]">/{assessment.maxScore}</span>
+          <span className="text-fg-4">/{assessment.maxScore}</span>
         </span>
         {percent !== null && (
-          <span className="num text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+          <span className="num text-[var(--fs-base)] text-fg-3">
             {percent}%
           </span>
         )}
       </div>
-      <p className="num mt-[var(--sp-2)] text-[var(--fs-xxs)] text-[var(--fg-muted)]">
+      <p className="num mt-[var(--sp-2)] text-[var(--fs-xxs)] text-fg-4">
         Returned {formatDateTime(submission.correctedAt)}
       </p>
 
       {submission.feedback && (
-        <p className="mt-[var(--sp-4)] whitespace-pre-line border-t border-[var(--border-light)] pt-[var(--sp-4)] text-[var(--fs-base)] leading-[var(--lh-loose)] text-[var(--fg-secondary)]">
+        <p className="mt-[var(--sp-4)] whitespace-pre-line border-t border-[var(--border-light)] pt-[var(--sp-4)] text-[var(--fs-base)] leading-[var(--lh-loose)] text-fg-2">
           {submission.feedback}
         </p>
       )}
@@ -314,7 +314,7 @@ function Marking({ assessment }: { assessment: AssessmentDetail }) {
           href={submission.annotatedFileUrl}
           target="_blank"
           rel="noreferrer"
-          className="mt-[var(--sp-4)] inline-flex h-[var(--h-md)] items-center gap-[var(--sp-2)] rounded-[var(--r-md)] border border-[var(--border-medium)] bg-[var(--bg-tertiary)] px-[var(--sp-4)] text-[var(--fs-base)] text-[var(--fg-primary)] transition-colors duration-[var(--dur-fast)] hover:border-[var(--border-strong)]"
+          className="mt-[var(--sp-4)] inline-flex h-[var(--h-md)] items-center gap-[var(--sp-2)] rounded-[var(--r-md)] border border-[var(--border-medium)] bg-[var(--bg-tertiary)] px-[var(--sp-4)] text-[var(--fs-base)] text-fg transition-colors duration-[var(--dur-fast)] hover:border-[var(--border-strong)]"
         >
           <FileArrowDownIcon size={16} />
           Open the corrected copy
@@ -339,13 +339,13 @@ function History({ submission }: { submission: SubmissionView }) {
           >
             <ClockCounterClockwiseIcon
               size={14}
-              className="mt-[2px] shrink-0 text-[var(--fg-muted)]"
+              className="mt-[2px] shrink-0 text-fg-4"
             />
             <div className="min-w-0 flex-1">
-              <p className="num text-[var(--fs-xs)] text-[var(--fg-secondary)]">
+              <p className="num text-[var(--fs-xs)] text-fg-2">
                 Sent {formatDateTime(revision.submittedAt)}
               </p>
-              <p className="num mt-[var(--sp-1)] text-[var(--fs-xxs)] text-[var(--fg-muted)]">
+              <p className="num mt-[var(--sp-1)] text-[var(--fs-xxs)] text-fg-4">
                 Replaced {formatDateTime(revision.replacedAt)}
               </p>
               {revision.fileUrl && (
@@ -353,7 +353,7 @@ function History({ submission }: { submission: SubmissionView }) {
                   href={revision.fileUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="mt-[var(--sp-2)] inline-block text-[var(--fs-xs)] text-[var(--fg-secondary)] underline underline-offset-2 hover:text-[var(--fg-primary)]"
+                  className="mt-[var(--sp-2)] inline-block text-[var(--fs-xs)] text-fg-2 underline underline-offset-2 hover:text-fg"
                 >
                   Open that file
                 </a>

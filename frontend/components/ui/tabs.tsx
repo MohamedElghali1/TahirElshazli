@@ -56,8 +56,8 @@ export function Tabs({
               'relative flex min-h-[var(--h-lg)] shrink-0 items-center whitespace-nowrap',
               'text-[var(--fs-base)] font-medium transition-colors duration-[var(--dur-fast)]',
               active
-                ? 'text-[var(--fg-primary)]'
-                : 'text-[var(--fg-secondary)] hover:text-[var(--fg-primary)]',
+                ? 'text-fg'
+                : 'text-fg-2 hover:text-fg',
             )}
           >
             <span

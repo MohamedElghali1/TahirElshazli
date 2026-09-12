@@ -35,16 +35,16 @@ export default function ForgotPasswordPage() {
   if (sent) {
     return (
       <div role="status">
-        <h1 className="text-[var(--fs-h2)] font-semibold tracking-[-0.02em] text-[var(--fg-primary)]">
+        <h1 className="text-[var(--fs-h2)] font-semibold tracking-[-0.02em] text-fg">
           Check your inbox
         </h1>
-        <p className="mt-[var(--sp-4)] text-[var(--fs-body)] leading-[var(--lh-loose)] text-[var(--fg-secondary)]">
+        <p className="mt-[var(--sp-4)] text-[var(--fs-body)] leading-[var(--lh-loose)] text-fg-2">
           If that address has an account, a reset link is on its way. The link
           works once and expires in an hour.
         </p>
         <Link
           href="/login"
-          className="mt-[var(--sp-8)] inline-block text-[var(--fs-base)] text-[var(--fg-secondary)] underline underline-offset-4 hover:text-[var(--fg-primary)]"
+          className="mt-[var(--sp-8)] inline-block text-[var(--fs-base)] text-fg-2 underline underline-offset-4 hover:text-fg"
         >
           Back to sign in
         </Link>
@@ -54,10 +54,10 @@ export default function ForgotPasswordPage() {
 
   return (
     <>
-      <h1 className="text-[var(--fs-h2)] font-semibold tracking-[-0.02em] text-[var(--fg-primary)]">
+      <h1 className="text-[var(--fs-h2)] font-semibold tracking-[-0.02em] text-fg">
         Reset your password
       </h1>
-      <p className="mt-[var(--sp-2)] text-[var(--fs-body)] text-[var(--fg-tertiary)]">
+      <p className="mt-[var(--sp-2)] text-[var(--fs-body)] text-fg-3">
         We will email you a link to set a new one.
       </p>
 
@@ -82,7 +82,7 @@ export default function ForgotPasswordPage() {
 
       <Link
         href="/login"
-        className="mt-[var(--sp-6)] inline-block text-[var(--fs-base)] text-[var(--fg-secondary)] underline underline-offset-4 hover:text-[var(--fg-primary)]"
+        className="mt-[var(--sp-6)] inline-block text-[var(--fs-base)] text-fg-2 underline underline-offset-4 hover:text-fg"
       >
         Back to sign in
       </Link>

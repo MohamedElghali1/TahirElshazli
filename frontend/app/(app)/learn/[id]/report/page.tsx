@@ -57,11 +57,11 @@ export default function ReportPage({
       <section aria-labelledby="performance-heading" className="flex flex-col gap-[var(--sp-3)]">
         <h2
           id="performance-heading"
-          className="text-[var(--fs-base)] font-semibold text-[var(--fg-primary)]"
+          className="text-[var(--fs-base)] font-semibold text-fg"
         >
           Performance
         </h2>
-        <p className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+        <p className="text-[var(--fs-xs)] text-fg-3">
           What you are scoring on marked work. Separate from how much of the
           course you have completed.
         </p>
@@ -107,7 +107,7 @@ export default function ReportPage({
         title="Report documents"
         action={
           documents.data && (
-            <span className="num text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+            <span className="num text-[var(--fs-xs)] text-fg-3">
               {documents.data.length}
             </span>
           )
@@ -137,16 +137,16 @@ export default function ReportPage({
                   rel="noreferrer"
                   className="row flex items-center gap-[var(--sp-4)] px-[var(--sp-4)] py-[var(--sp-3)] transition-colors duration-[var(--dur-fast)]"
                 >
-                  <FileTextIcon size={16} className="shrink-0 text-[var(--fg-tertiary)]" />
+                  <FileTextIcon size={16} className="shrink-0 text-fg-3" />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-[var(--fs-base)] text-[var(--fg-primary)]">
+                    <p className="truncate text-[var(--fs-base)] text-fg">
                       {doc.title}
                     </p>
-                    <p className="num mt-[var(--sp-1)] text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+                    <p className="num mt-[var(--sp-1)] text-[var(--fs-xs)] text-fg-3">
                       {doc.period} · issued {formatDate(doc.issuedAt)}
                     </p>
                   </div>
-                  <span className="num shrink-0 text-[var(--fs-base)] text-[var(--fg-primary)]">
+                  <span className="num shrink-0 text-[var(--fs-base)] text-fg">
                     {formatPercent(doc.overallPercentage)}
                   </span>
                 </a>
@@ -171,21 +171,21 @@ function ProgressSummary({ progress }: { progress: CourseProgress }) {
 
   return (
     <Panel title="Progress">
-      <p className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+      <p className="text-[var(--fs-xs)] text-fg-3">
         How far through the course you are. This is not a grade.
       </p>
       <div className="mt-[var(--sp-4)] flex items-baseline justify-between">
-        <span className="text-[var(--fs-base)] text-[var(--fg-secondary)]">
+        <span className="text-[var(--fs-base)] text-fg-2">
           {label}
         </span>
-        <span className="num text-[var(--fs-xl)] leading-none text-[var(--fg-primary)]">
+        <span className="num text-[var(--fs-xl)] leading-none text-fg">
           {formatPercent(value)}
         </span>
       </div>
       <div className="mt-[var(--sp-3)]">
         <Meter value={value} label={label} />
       </div>
-      <p className="num mt-[var(--sp-2)] text-[var(--fs-xs)] text-[var(--fg-muted)]">
+      <p className="num mt-[var(--sp-2)] text-[var(--fs-xs)] text-fg-4">
         {detail}
       </p>
     </Panel>
@@ -205,7 +205,7 @@ function TopicPanel({
     <Panel title={title} bodyClassName="">
       {topics.length === 0 ? (
         <div className="px-[var(--sp-4)] py-[var(--sp-6)]">
-          <p className="text-[var(--fs-base)] text-[var(--fg-muted)]">{empty}</p>
+          <p className="text-[var(--fs-base)] text-fg-4">{empty}</p>
         </div>
       ) : (
         <ul className="rows">
@@ -214,13 +214,13 @@ function TopicPanel({
               key={topic.topic}
               className="flex items-center gap-[var(--sp-4)] px-[var(--sp-4)] py-[var(--sp-3)]"
             >
-              <span className="min-w-0 flex-1 truncate text-[var(--fs-base)] text-[var(--fg-primary)]">
+              <span className="min-w-0 flex-1 truncate text-[var(--fs-base)] text-fg">
                 {topic.topic}
               </span>
-              <span className="num shrink-0 text-[var(--fs-xxs)] text-[var(--fg-muted)]">
+              <span className="num shrink-0 text-[var(--fs-xxs)] text-fg-4">
                 {topic.gradedCount} marked
               </span>
-              <span className="num w-[48px] shrink-0 text-end text-[var(--fs-base)] text-[var(--fg-primary)]">
+              <span className="num w-[48px] shrink-0 text-end text-[var(--fs-base)] text-fg">
                 {formatPercent(topic.percentage)}
               </span>
             </li>

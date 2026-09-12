@@ -125,7 +125,7 @@ export default function RecordingsPage({
       <div className="flex flex-wrap items-center justify-between gap-[var(--sp-3)]">
         <div className="flex flex-wrap gap-[var(--sp-3)]">
           <label className="flex items-center gap-[var(--sp-2)]">
-            <span className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+            <span className="text-[var(--fs-xs)] text-fg-3">
               Chapter
             </span>
             <Select
@@ -144,7 +144,7 @@ export default function RecordingsPage({
           </label>
 
           <label className="flex items-center gap-[var(--sp-2)]">
-            <span className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+            <span className="text-[var(--fs-xs)] text-fg-3">
               Topic
             </span>
             <Select
@@ -166,7 +166,7 @@ export default function RecordingsPage({
         {/* Completion only (§5.1) - a count of recordings finished, never a
             grade. Hidden until there is at least one recording to count. */}
         {recordings.length > 0 && (
-          <div className="flex items-center gap-[var(--sp-2)] text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+          <div className="flex items-center gap-[var(--sp-2)] text-[var(--fs-xs)] text-fg-3">
             <span className="num">
               {done} / {recordings.length} watched
             </span>
@@ -217,7 +217,7 @@ export default function RecordingsPage({
                 <div className="flex flex-wrap items-start justify-between gap-[var(--sp-4)]">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-[var(--sp-2)]">
-                      <h2 className="text-[var(--fs-lg)] font-medium text-[var(--fg-primary)]">
+                      <h2 className="text-[var(--fs-lg)] font-medium text-fg">
                         {selected.title}
                       </h2>
                       <Chip tone="neutral">{selected.chapter}</Chip>
@@ -225,12 +225,12 @@ export default function RecordingsPage({
                         <Chip tone="green">Watched</Chip>
                       )}
                     </div>
-                    <p className="num mt-[var(--sp-1)] text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+                    <p className="num mt-[var(--sp-1)] text-[var(--fs-xs)] text-fg-3">
                       {formatDate(selected.lessonDate)} ·{' '}
                       {formatDuration(selected.durationSeconds)}
                     </p>
                     {selected.topics.length > 0 && (
-                      <p className="mt-[var(--sp-2)] text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+                      <p className="mt-[var(--sp-2)] text-[var(--fs-xs)] text-fg-3">
                         {selected.topics.join(', ')}
                       </p>
                     )}
@@ -406,7 +406,7 @@ function CurriculumDrawer({
       <div className="flex h-[var(--h-md)] items-center justify-between border-b border-[var(--border-light)] px-[var(--sp-4)]">
         <span
           id="curriculum-drawer-title"
-          className="text-[var(--fs-base)] font-semibold text-[var(--fg-primary)]"
+          className="text-[var(--fs-base)] font-semibold text-fg"
         >
           Curriculum
         </span>
@@ -415,7 +415,7 @@ function CurriculumDrawer({
           type="button"
           onClick={onClose}
           aria-label="Close curriculum"
-          className="flex h-[var(--h-sm)] w-[var(--h-sm)] items-center justify-center rounded-[var(--r-sm)] text-[var(--fg-secondary)] hover:bg-[var(--bg-wash)]"
+          className="flex h-[var(--h-sm)] w-[var(--h-sm)] items-center justify-center rounded-[var(--r-sm)] text-fg-2 hover:bg-[var(--bg-wash)]"
         >
           <XIcon size={16} />
         </button>
@@ -487,13 +487,13 @@ function ChapterGroup({
         aria-expanded={open}
         className="row flex w-full items-center justify-between gap-[var(--sp-2)] px-[var(--sp-4)] py-[var(--sp-2)] text-left"
       >
-        <span className="truncate text-[var(--fs-xs)] font-medium uppercase tracking-[0.04em] text-[var(--fg-tertiary)]">
+        <span className="truncate text-[var(--fs-xs)] font-medium uppercase tracking-[0.04em] text-fg-3">
           {chapter}
         </span>
         <CaretDownIcon
           size={12}
           className={cx(
-            'shrink-0 text-[var(--fg-muted)] transition-transform duration-[var(--dur-fast)]',
+            'shrink-0 text-fg-4 transition-transform duration-[var(--dur-fast)]',
             !open && '-rotate-90',
           )}
         />
@@ -511,15 +511,15 @@ function ChapterGroup({
                   recording.id === selectedId && 'bg-[var(--bg-wash)]',
                 )}
               >
-                <span aria-hidden className="shrink-0 text-[var(--fg-tertiary)]">
+                <span aria-hidden className="shrink-0 text-fg-3">
                   {recording.completed ? (
                     <CheckCircleIcon
                       size={16}
                       weight="fill"
-                      className="text-[var(--chip-green-fg)]"
+                      className="text-chip-green-fg"
                     />
                   ) : recording.id === selectedId ? (
-                    <PlayIcon size={14} weight="fill" className="text-[var(--accent)]" />
+                    <PlayIcon size={14} weight="fill" className="text-accent" />
                   ) : (
                     <CircleIcon size={16} />
                   )}
@@ -529,8 +529,8 @@ function ChapterGroup({
                     className={cx(
                       'block truncate text-[var(--fs-xs)]',
                       recording.id === selectedId
-                        ? 'font-medium text-[var(--fg-primary)]'
-                        : 'text-[var(--fg-secondary)]',
+                        ? 'font-medium text-fg'
+                        : 'text-fg-2',
                     )}
                   >
                     {recording.title}
@@ -544,7 +544,7 @@ function ChapterGroup({
                     </span>
                   )}
                 </span>
-                <span className="num shrink-0 text-[var(--fs-xxs)] text-[var(--fg-muted)]">
+                <span className="num shrink-0 text-[var(--fs-xxs)] text-fg-4">
                   {formatDuration(recording.durationSeconds)}
                 </span>
               </button>

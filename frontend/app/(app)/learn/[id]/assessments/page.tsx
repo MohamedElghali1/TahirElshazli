@@ -75,8 +75,8 @@ export default function AssessmentsPage({
               'h-[var(--h-sm)] rounded-[var(--r-md)] px-[var(--sp-3)] text-[var(--fs-xs)]',
               'transition-colors duration-[var(--dur-fast)]',
               type === option.value
-                ? 'bg-[var(--bg-wash)] font-medium text-[var(--fg-primary)]'
-                : 'text-[var(--fg-tertiary)] hover:bg-[var(--bg-wash-subtle)] hover:text-[var(--fg-primary)]',
+                ? 'bg-[var(--bg-wash)] font-medium text-fg'
+                : 'text-fg-3 hover:bg-[var(--bg-wash-subtle)] hover:text-fg',
             )}
           >
             {option.label}
@@ -146,7 +146,7 @@ function Group({
     <Panel
       title={title}
       action={
-        <span className="num text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+        <span className="num text-[var(--fs-xs)] text-fg-3">
           {items.length}
         </span>
       }
@@ -154,7 +154,7 @@ function Group({
     >
       {items.length === 0 ? (
         <div className="px-[var(--sp-4)] py-[var(--sp-6)]">
-          <p className="text-[var(--fs-base)] text-[var(--fg-muted)]">{emptyBody}</p>
+          <p className="text-[var(--fs-base)] text-fg-4">{emptyBody}</p>
         </div>
       ) : (
         <ul className="rows">
@@ -188,7 +188,7 @@ function AssessmentRow({
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-[var(--sp-2)]">
-          <span className="truncate text-[var(--fs-base)] font-medium text-[var(--fg-primary)]">
+          <span className="truncate text-[var(--fs-base)] font-medium text-fg">
             {item.title}
           </span>
           <Chip tone={ASSESSMENT_STATUS_CHIP[item.status] as ChipTone}>
@@ -198,25 +198,25 @@ function AssessmentRow({
             <Chip tone="red">Past due</Chip>
           )}
         </div>
-        <p className="mt-[var(--sp-1)] truncate text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+        <p className="mt-[var(--sp-1)] truncate text-[var(--fs-xs)] text-fg-3">
           {ASSESSMENT_TYPE_LABEL[item.type]}
           {item.topics.length > 0 && ` · ${item.topics.join(', ')}`}
         </p>
       </div>
 
       <div className="hidden shrink-0 text-end sm:block">
-        <div className="num text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+        <div className="num text-[var(--fs-xs)] text-fg-3">
           Due {formatDate(item.dueAt)}
         </div>
       </div>
 
       <div className="w-[72px] shrink-0 text-end">
         {item.score === null ? (
-          <span className="num text-[var(--fs-xs)] text-[var(--fg-muted)]">--</span>
+          <span className="num text-[var(--fs-xs)] text-fg-4">--</span>
         ) : (
-          <span className="num text-[var(--fs-base)] text-[var(--fg-primary)]">
+          <span className="num text-[var(--fs-base)] text-fg">
             {item.score}
-            <span className="text-[var(--fg-muted)]">/{item.maxScore}</span>
+            <span className="text-fg-4">/{item.maxScore}</span>
           </span>
         )}
       </div>

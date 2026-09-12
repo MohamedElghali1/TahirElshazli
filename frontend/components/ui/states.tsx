@@ -45,10 +45,10 @@ export function EmptyState({
 }) {
   return (
     <div className="flex flex-col items-center px-[var(--sp-6)] py-[var(--sp-12)] text-center">
-      <p className="text-[var(--fs-md)] font-medium text-[var(--fg-primary)]">
+      <p className="text-[var(--fs-md)] font-medium text-fg">
         {title}
       </p>
-      <p className="mt-[var(--sp-2)] max-w-[42ch] text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+      <p className="mt-[var(--sp-2)] max-w-[42ch] text-[var(--fs-base)] text-fg-3">
         {body}
       </p>
       {action && <div className="mt-[var(--sp-4)]">{action}</div>}
@@ -68,10 +68,10 @@ export function ErrorState({
       role="alert"
       className="flex flex-col items-center px-[var(--sp-6)] py-[var(--sp-12)] text-center"
     >
-      <p className="text-[var(--fs-md)] font-medium text-[var(--fg-primary)]">
+      <p className="text-[var(--fs-md)] font-medium text-fg">
         That did not load
       </p>
-      <p className="mt-[var(--sp-2)] max-w-[42ch] text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+      <p className="mt-[var(--sp-2)] max-w-[42ch] text-[var(--fs-base)] text-fg-3">
         {message}
       </p>
       {onRetry && (

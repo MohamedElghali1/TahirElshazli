@@ -21,6 +21,7 @@ import {
 } from '@/components/ui';
 import { NewspaperIcon } from '@phosphor-icons/react';
 import { PageBody } from '@/components/app/page-parts';
+import { TableScroll, Td, Th, Tr } from '@/components/app/table';
 import { PageTitle } from '@/components/app/page-chrome';
 
 /**
@@ -50,32 +51,50 @@ export default function ManageBlogPage() {
   return (
     <>
       <PageTitle icon={NewspaperIcon} title="Blog" />
-      <PageBody className="flex flex-col gap-[var(--sp-5)]">
-        <p className="text-[var(--fs-base)] text-[var(--fg-tertiary)]">
-          Achievements, results and articles. Students and visitors read the published ones.
-        </p>
+      <PageBody dense className="flex flex-col gap-[var(--sp-2)]">
         <CreatePost onCreated={reload} />
 
         {loading && <RowsSkeleton rows={4} />}
         {error && <ErrorState message={error.message} onRetry={reload} />}
 
         {data && data.length === 0 && (
-          <Panel bodyClassName="">
-            <EmptyState
-              title="No posts yet"
-              body="Write one above. It starts as a draft, so nothing is public until you publish it."
-            />
-          </Panel>
+          <EmptyState
+            title="No posts yet"
+            body="Write one above. It starts as a draft, so nothing is public until you publish it."
+          />
         )}
 
         {data && data.length > 0 && (
-          <Panel title={`${data.length} ${data.length === 1 ? 'post' : 'posts'}`} bodyClassName="">
-            <ul>
-              {data.map((post) => (
-                <PostRow key={post.id} post={post} />
-              ))}
-            </ul>
-          </Panel>
+          <>
+            <div className="flex h-[var(--topbar-h)] items-center justify-between px-[var(--sp-2)]">
+              <span className="inline-flex h-[var(--h-sm)] items-center gap-[var(--sp-1)] rounded-[var(--r-lg)] bg-[var(--bg-primary)] py-[var(--sp-1)] ps-[var(--sp-1)] pe-[var(--sp-2)] text-[var(--fs-base)] font-medium text-fg-2">
+                All posts
+                {' · '}
+                <span className="num">{data.length}</span>
+              </span>
+              <span className="text-[var(--fs-base)] text-fg-3">
+                Students and visitors read the published ones
+              </span>
+            </div>
+
+            <TableScroll minWidth={760}>
+              <thead>
+                <tr className="border-b border-[var(--border-medium)]">
+                  <Th>Post</Th>
+                  <Th>Status</Th>
+                  <Th>Category</Th>
+                  <Th>Author</Th>
+                  <Th align="end">Media</Th>
+                  <Th align="end">Publishes</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.map((post) => (
+                  <PostRow key={post.id} post={post} />
+                ))}
+              </tbody>
+            </TableScroll>
+          </>
         )}
       </PageBody>
     </>
@@ -103,74 +122,54 @@ function PostRow({ post }: { post: StaffBlogPost }) {
   // this only decides whether to offer the link.
   const mayEdit = user?.role === 'teacher' || post.authorId === user?.id;
 
-  const meta = (
-    <>
-      <span>{post.authorName}</span>
-      <span aria-hidden>·</span>
-      <span>
-        {post.isLive ? 'Published ' : 'Goes live '}
-        {post.status === 'draft' ? '—' : formatDateTime(post.publishAt)}
-      </span>
-      {post.media.length > 0 && (
-        <>
-          <span aria-hidden>·</span>
-          <span>
-            {post.media.length}{' '}
-            {post.media.length === 1 ? 'attachment' : 'attachments'}
-          </span>
-        </>
-      )}
-    </>
-  );
-
-  const inner = (
-    <>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-[var(--sp-2)]">
-          <StatusChip post={post} />
-          <Chip tone={post.category === 'achievement' ? 'amber' : 'neutral'}>
-            {post.category}
-          </Chip>
-        </div>
-        <p className="mt-[var(--sp-2)] truncate text-[var(--fs-body)] font-medium text-[var(--fg-primary)]">
-          {post.title}
-        </p>
-        <p className="mt-[var(--sp-1)] flex flex-wrap items-center gap-[var(--sp-2)] text-[var(--fs-xxs)] text-[var(--fg-tertiary)]">
-          {meta}
-        </p>
-      </div>
-
-      {/* The public address, offered only once there is one to visit. A link
-          to a draft's slug would 404, which looks like a broken console
-          rather than the correct answer. */}
-      {post.isLive && (
-        <span className="shrink-0 text-[var(--fs-xxs)] text-[var(--fg-tertiary)]">
-          /blog/{post.slug}
-        </span>
-      )}
-    </>
-  );
+  // The record chip: the first column's title, carrying the link where there
+  // is one. A row a TA may not edit renders the same chip without the anchor
+  // and says why on hover, rather than vanishing - a TA seeing eleven posts on
+  // the public site and four here would reasonably think the console broke.
+  const chipClass =
+    'inline-flex h-[var(--h-tag)] max-w-full items-center gap-[var(--sp-1)] ' +
+    'rounded-[var(--r-sm)] bg-[var(--bg-wash-nav)] px-[var(--sp-1)] ' +
+    'text-[var(--fs-base)] font-medium text-fg';
 
   return (
-    <li className="border-b border-[var(--border-light)] last:border-b-0">
-      {mayEdit ? (
-        <Link
-          href={`/manage/blog/${post.id}`}
-          className="flex items-center gap-[var(--sp-4)] px-[var(--sp-4)] py-[var(--sp-3)] transition-colors duration-[var(--dur-fast)] hover:bg-[var(--bg-wash)]"
-        >
-          {inner}
-        </Link>
-      ) : (
-        <div
-          className="flex items-center gap-[var(--sp-4)] px-[var(--sp-4)] py-[var(--sp-3)]"
-          // Said out loud rather than left as a missing link, so a TA knows why
-          // this row does not open.
-          title="Only Dr. Tahir can edit a post written by someone else"
-        >
-          {inner}
-        </div>
-      )}
-    </li>
+    <Tr>
+      <Td>
+        {mayEdit ? (
+          <Link
+            href={`/manage/blog/${post.id}`}
+            className={`${chipClass} transition-colors duration-[var(--dur-fast)] hover:bg-[var(--bg-wash)]`}
+          >
+            <span className="truncate">{post.title}</span>
+          </Link>
+        ) : (
+          <span
+            className={`${chipClass} text-fg-2`}
+            title="Only Dr. Tahir can edit a post written by someone else"
+          >
+            <span className="truncate">{post.title}</span>
+          </span>
+        )}
+      </Td>
+      <Td>
+        <StatusChip post={post} />
+      </Td>
+      <Td>
+        <Chip tone={post.category === 'achievement' ? 'amber' : 'neutral'}>
+          {post.category}
+        </Chip>
+      </Td>
+      <Td>
+        <span className="block max-w-[20ch] truncate">{post.authorName}</span>
+      </Td>
+      <Td align="end">
+        <span className="num">{post.media.length}</span>
+      </Td>
+      <Td align="end">
+        <span className="whitespace-nowrap text-fg-3">
+          {post.status === 'draft' ? '--' : formatDateTime(post.publishAt)}
+        </span>
+      </Td>
+    </Tr>
   );
 }
 
@@ -281,7 +280,7 @@ function CreatePost({ onCreated }: { onCreated: () => void }) {
           {created && (
             <Link
               href={`/manage/blog/${created}`}
-              className="text-[var(--fs-base)] text-[var(--fg-primary)] underline underline-offset-4"
+              className="text-[var(--fs-base)] text-fg underline underline-offset-4"
             >
               Add pictures and publish it
             </Link>

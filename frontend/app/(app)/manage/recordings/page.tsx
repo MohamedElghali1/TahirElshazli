@@ -29,7 +29,7 @@ export default function RecordingLibraryPage() {
     <>
       <PageTitle icon={VideoIcon} title="Recordings" />
       <PageBody dense className="flex flex-col gap-[var(--sp-4)]">
-        <p className="text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+        <p className="text-[var(--fs-base)] text-fg-3">
           Recorded lessons students watch on demand. Pick a course to upload or manage its library.
         </p>
         {loading && <RowsSkeleton rows={4} />}
@@ -47,7 +47,7 @@ export default function RecordingLibraryPage() {
             </StatRow>
 
             <div className="flex h-[var(--topbar-h)] items-center px-[var(--sp-2)]">
-              <span className="inline-flex h-[var(--h-sm)] items-center gap-[var(--sp-1)] rounded-[var(--r-lg)] bg-[var(--bg-primary)] py-[var(--sp-1)] ps-[var(--sp-1)] pe-[var(--sp-2)] text-[var(--fs-base)] font-medium text-[var(--fg-secondary)]">
+              <span className="inline-flex h-[var(--h-sm)] items-center gap-[var(--sp-1)] rounded-[var(--r-lg)] bg-[var(--bg-primary)] py-[var(--sp-1)] ps-[var(--sp-1)] pe-[var(--sp-2)] text-[var(--fs-base)] font-medium text-fg-2">
                 By course
                 {' · '}
                 <span className="num">{data.courses.length}</span>
@@ -74,9 +74,9 @@ export default function RecordingLibraryPage() {
                       <Td>
                         <Link
                           href={`/manage/courses/${course.id}/recordings`}
-                          className="inline-flex h-[var(--h-tag)] max-w-full items-center gap-[var(--sp-1)] rounded-[var(--r-sm)] bg-[var(--bg-wash-nav)] px-[var(--sp-1)] text-[var(--fs-base)] font-medium text-[var(--fg-primary)] transition-colors duration-[var(--dur-fast)] hover:bg-[var(--bg-wash)]"
+                          className="inline-flex h-[var(--h-tag)] max-w-full items-center gap-[var(--sp-1)] rounded-[var(--r-sm)] bg-[var(--bg-wash-nav)] px-[var(--sp-1)] text-[var(--fs-base)] font-medium text-fg transition-colors duration-[var(--dur-fast)] hover:bg-[var(--bg-wash)]"
                         >
-                          <VideoIcon size={14} className="shrink-0 text-[var(--fg-tertiary)]" />
+                          <VideoIcon size={14} className="shrink-0 text-fg-3" />
                           <span className="truncate">{course.title}</span>
                         </Link>
                       </Td>
@@ -86,7 +86,7 @@ export default function RecordingLibraryPage() {
                       <Td align="end">
                         <ArrowRightIcon
                           size={14}
-                          className="ms-auto shrink-0 text-[var(--fg-muted)] rtl:rotate-180"
+                          className="ms-auto shrink-0 text-fg-4 rtl:rotate-180"
                         />
                       </Td>
                     </Tr>

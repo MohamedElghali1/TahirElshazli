@@ -98,20 +98,20 @@ function PostRow({ post }: { post: PublicBlogPost }) {
           </Chip>
           <time
             dateTime={post.publishAt}
-            className="text-[var(--fs-xxs)] text-[var(--fg-tertiary)]"
+            className="text-[var(--fs-xxs)] text-fg-3"
           >
             {formatDate(post.publishAt)}
           </time>
         </div>
 
-        <h2 className="mt-[var(--sp-2)] text-[var(--fs-body)] font-medium leading-[1.3] text-[var(--fg-primary)]">
+        <h2 className="mt-[var(--sp-2)] text-[var(--fs-body)] font-medium leading-[1.3] text-fg">
           {post.title}
         </h2>
-        <p className="mt-[var(--sp-1)] line-clamp-2 text-[var(--fs-base)] leading-[var(--lh-loose)] text-[var(--fg-secondary)]">
+        <p className="mt-[var(--sp-1)] line-clamp-2 text-[var(--fs-base)] leading-[var(--lh-loose)] text-fg-2">
           {post.summary}
         </p>
 
-        <div className="mt-[var(--sp-3)] flex items-center gap-[var(--sp-4)] text-[var(--fs-xxs)] text-[var(--fg-tertiary)]">
+        <div className="mt-[var(--sp-3)] flex items-center gap-[var(--sp-4)] text-[var(--fs-xxs)] text-fg-3">
           <span>{post.authorName}</span>
           {images > 0 && <Count Icon={ImagesIcon} n={images} label="images" />}
           {videos > 0 && <Count Icon={PlayCircleIcon} n={videos} label="videos" />}

@@ -29,16 +29,16 @@ export function Field({
     <div className="flex flex-col gap-[var(--sp-2)]">
       <label
         htmlFor={htmlFor}
-        className="text-[var(--fs-xs)] font-medium text-[var(--fg-secondary)]"
+        className="text-[var(--fs-xs)] font-medium text-fg-2"
       >
         {label}
       </label>
       {children}
       {hint && !error && (
-        <p className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">{hint}</p>
+        <p className="text-[var(--fs-xs)] text-fg-3">{hint}</p>
       )}
       {error && (
-        <p className="text-[var(--fs-xs)] text-[var(--danger)]">{error}</p>
+        <p className="text-[var(--fs-xs)] text-danger">{error}</p>
       )}
     </div>
   );
@@ -47,11 +47,11 @@ export function Field({
 const CONTROL =
   'w-full rounded-[var(--r-md)] border border-[var(--border-medium)] ' +
   'bg-[var(--bg-wash-subtle)] px-[var(--sp-2)] text-[var(--fs-base)] ' +
-  'text-[var(--fg-primary)] placeholder:font-medium placeholder:text-[var(--fg-muted)] ' +
+  'text-fg placeholder:font-medium placeholder:text-fg-4 ' +
   'transition-colors duration-[var(--dur-fast)] ' +
   'hover:border-[var(--border-strong)] focus:border-[var(--accent)] ' +
   'aria-[invalid=true]:border-[var(--danger)] ' +
-  'disabled:cursor-not-allowed disabled:text-[var(--fg-tertiary)] disabled:opacity-70';
+  'disabled:cursor-not-allowed disabled:text-fg-3 disabled:opacity-70';
 
 /**
  * Control height. `md` (32px) is the reference system's Input and is what the
@@ -117,7 +117,7 @@ export function FormError({ children }: { children: React.ReactNode }) {
   return (
     <p
       role="alert"
-      className="rounded-[var(--r-md)] bg-[var(--danger-wash)] px-[var(--sp-3)] py-[var(--sp-2)] text-[var(--fs-xs)] text-[var(--chip-red-fg)]"
+      className="rounded-[var(--r-md)] bg-[var(--danger-wash)] px-[var(--sp-3)] py-[var(--sp-2)] text-[var(--fs-xs)] text-chip-red-fg"
     >
       {children}
     </p>

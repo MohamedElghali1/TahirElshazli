@@ -216,7 +216,7 @@ function UnplacedPanel({
   if (students.length === 0) {
     return (
       <Panel title="Enrolled, not yet placed">
-        <p className="text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+        <p className="text-[var(--fs-base)] text-fg-3">
           Everyone enrolled in this course is in a group. Nothing to do here.
         </p>
       </Panel>
@@ -233,7 +233,7 @@ function UnplacedPanel({
         </Chip>
       }
     >
-      <p className="mb-[var(--sp-4)] text-[var(--fs-base)] text-[var(--fg-secondary)]">
+      <p className="mb-[var(--sp-4)] text-[var(--fs-base)] text-fg-2">
         These students hold this course but sit in no group, so they have been
         set no work and their course page looks empty. Place them to fix it.
       </p>
@@ -243,7 +243,7 @@ function UnplacedPanel({
             key={student.studentId}
             className="flex flex-wrap items-center justify-between gap-[var(--sp-3)] rounded-[var(--r-md)] border border-[var(--border-light)] px-[var(--sp-3)] py-[var(--sp-2)]"
           >
-            <span className="text-[var(--fs-base)] text-[var(--fg-primary)]">
+            <span className="text-[var(--fs-base)] text-fg">
               {student.name}
             </span>
             <PlaceStudent
@@ -372,7 +372,7 @@ function GroupCard({
       {error && <FormError>{error}</FormError>}
       {loading && <RowsSkeleton rows={2} />}
       {!loading && members.length === 0 && (
-        <p className="text-[var(--fs-base)] text-[var(--fg-tertiary)]">
+        <p className="text-[var(--fs-base)] text-fg-3">
           Nobody is in this group yet.
         </p>
       )}
@@ -388,10 +388,10 @@ function GroupCard({
               )}
             >
               <span className="flex flex-col">
-                <span className="text-[var(--fs-base)] text-[var(--fg-primary)]">
+                <span className="text-[var(--fs-base)] text-fg">
                   {member.name}
                 </span>
-                <span className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+                <span className="text-[var(--fs-xs)] text-fg-3">
                   {member.email} · placed {formatDate(member.assignedAt)}
                 </span>
               </span>

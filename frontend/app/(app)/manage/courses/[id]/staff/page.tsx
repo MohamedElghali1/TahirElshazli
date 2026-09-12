@@ -164,14 +164,14 @@ function StaffRow({
   return (
     <div className="flex flex-wrap items-center gap-[var(--sp-3)] px-[var(--sp-4)] py-[var(--sp-3)]">
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[var(--fs-base)] font-medium text-[var(--fg-primary)]">
+        <span className="block truncate text-[var(--fs-base)] font-medium text-fg">
           {member.name}
         </span>
-        <span className="mt-[var(--sp-1)] block truncate text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+        <span className="mt-[var(--sp-1)] block truncate text-[var(--fs-xs)] text-fg-3">
           {member.email} · assigned {formatDate(member.assignedAt)}
         </span>
         {error && (
-          <span className="mt-[var(--sp-1)] block text-[var(--fs-xs)] text-[var(--chip-red-fg)]">
+          <span className="mt-[var(--sp-1)] block text-[var(--fs-xs)] text-chip-red-fg">
             {error}
           </span>
         )}
@@ -179,7 +179,7 @@ function StaffRow({
 
       {confirming ? (
         <span className="flex shrink-0 items-center gap-[var(--sp-2)]">
-          <span className="text-[var(--fs-xs)] text-[var(--fg-tertiary)]">
+          <span className="text-[var(--fs-xs)] text-fg-3">
             Remove access?
           </span>
           <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>

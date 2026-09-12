@@ -76,7 +76,7 @@ export default async function BlogPostPage({
     <article className={`${shell} py-[var(--sp-16)] lg:py-[var(--sp-24)]`}>
       <Link
         href="/blog"
-        className="inline-flex items-center gap-[var(--sp-2)] text-[var(--fs-body)] text-[var(--fg-tertiary)] transition-colors duration-[var(--dur-fast)] hover:text-[var(--fg-primary)]"
+        className="inline-flex items-center gap-[var(--sp-2)] text-[var(--fs-body)] text-fg-3 transition-colors duration-[var(--dur-fast)] hover:text-fg"
       >
         <ArrowLeftIcon size={16} aria-hidden />
         All posts
@@ -89,13 +89,13 @@ export default async function BlogPostPage({
           </Chip>
           <time
             dateTime={post.publishAt}
-            className="text-[var(--fs-base)] text-[var(--fg-tertiary)]"
+            className="text-[var(--fs-base)] text-fg-3"
           >
             {formatDate(post.publishAt)}
           </time>
         </div>
 
-        <h1 className="mt-[var(--sp-4)] text-[clamp(2rem,4.5vw,var(--fs-h1))] font-semibold leading-[1.08] tracking-[-0.03em] text-[var(--fg-primary)]">
+        <h1 className="mt-[var(--sp-4)] text-[clamp(2rem,4.5vw,var(--fs-h1))] font-semibold leading-[1.08] tracking-[-0.03em] text-fg">
           {post.title}
         </h1>
 
@@ -104,20 +104,20 @@ export default async function BlogPostPage({
             reads as a duplication bug. `summary` still backs the card and the
             meta description, where there is nothing to repeat it against. */}
         {post.excerpt && (
-          <p className="mt-[var(--sp-6)] text-[var(--fs-lead)] leading-[var(--lh-loose)] text-[var(--fg-secondary)]">
+          <p className="mt-[var(--sp-6)] text-[var(--fs-lead)] leading-[var(--lh-loose)] text-fg-2">
             {post.excerpt}
           </p>
         )}
 
-        <p className="mt-[var(--sp-6)] border-t border-[var(--border-light)] pt-[var(--sp-4)] text-[var(--fs-body)] text-[var(--fg-tertiary)]">
+        <p className="mt-[var(--sp-6)] border-t border-[var(--border-light)] pt-[var(--sp-4)] text-[var(--fs-body)] text-fg-3">
           Posted by{' '}
-          <span className="text-[var(--fg-primary)]">{post.authorName}</span>
+          <span className="text-fg">{post.authorName}</span>
         </p>
       </header>
 
       <PostBody
         body={post.body}
-        className="mt-[var(--sp-12)] flex max-w-[var(--maxw-prose)] flex-col gap-[var(--sp-6)] text-[var(--fs-lead)] leading-[var(--lh-loose)] text-[var(--fg-secondary)]"
+        className="mt-[var(--sp-12)] flex max-w-[var(--maxw-prose)] flex-col gap-[var(--sp-6)] text-[var(--fs-lead)] leading-[var(--lh-loose)] text-fg-2"
       />
 
       {/* Wider than the prose column: a certificate or a results board is worth
@@ -142,10 +142,10 @@ export default async function BlogPostPage({
       )}
 
       <div className="mt-[var(--sp-16)] rounded-[var(--r-lg)] border border-[var(--accent-line)] bg-[var(--accent-wash)] p-[var(--sp-8)]">
-        <h2 className="text-[var(--fs-h3)] font-semibold tracking-[-0.01em] text-[var(--fg-primary)]">
+        <h2 className="text-[var(--fs-h3)] font-semibold tracking-[-0.01em] text-fg">
           Want results like these?
         </h2>
-        <p className="mt-[var(--sp-3)] max-w-[var(--maxw-prose)] text-[var(--fs-body)] leading-[var(--lh-loose)] text-[var(--fg-secondary)]">
+        <p className="mt-[var(--sp-3)] max-w-[var(--maxw-prose)] text-[var(--fs-body)] leading-[var(--lh-loose)] text-fg-2">
           The IGCSE and IELTS courses run in small groups with marked work
           returned inside a week.
         </p>

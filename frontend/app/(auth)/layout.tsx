@@ -21,20 +21,20 @@ export default function AuthLayout({
         </Link>
 
         <div>
-          <p className="max-w-[24ch] text-[clamp(1.75rem,3vw,var(--fs-h1))] font-semibold leading-[1.15] tracking-[-0.02em] text-[var(--fg-primary)]">
+          <p className="max-w-[24ch] text-[clamp(1.75rem,3vw,var(--fs-h1))] font-semibold leading-[1.15] tracking-[-0.02em] text-fg">
             Your classes, your marked work, and every recording in one place.
           </p>
-          <p className="mt-[var(--sp-6)] max-w-[42ch] text-[var(--fs-body)] leading-[var(--lh-loose)] text-[var(--fg-tertiary)]">
+          <p className="mt-[var(--sp-6)] max-w-[42ch] text-[var(--fs-body)] leading-[var(--lh-loose)] text-fg-3">
             Sign in to see what is due, join the next live session and read the
             corrections on your last submission.
           </p>
         </div>
 
-        <p className="text-[var(--fs-base)] text-[var(--fg-muted)]">
+        <p className="text-[var(--fs-base)] text-fg-4">
           Not enrolled yet?{' '}
           <Link
             href="/courses"
-            className="text-[var(--fg-secondary)] underline underline-offset-4 hover:text-[var(--fg-primary)]"
+            className="text-fg-2 underline underline-offset-4 hover:text-fg"
           >
             Browse courses
           </Link>
