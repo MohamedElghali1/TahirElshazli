@@ -3054,3 +3054,64 @@ comment saying the two files have no compile-time link.
   consoles disagree.
 - **Nothing stops `text-[var(--some-colour)]` coming back.** A lint rule
   forbidding the pattern is the obvious guard and does not exist yet.
+
+---
+
+## 2026-09-13 - The student Home screen takes the reference layout
+
+The client supplied an annotated screen and asked for the student dashboard to
+match it: one primary **Join Session** action in the header with the session's
+time beside it, a portrait card at the centre, and coloured icons in the rail.
+
+### What changed
+
+- **`components/app/join-session.tsx`** - the header action, in two forms.
+  With a session it is an `<a>` carrying the Zoom link; with none it is a
+  **`<span>`**, and that is the whole design of it. A disabled `<button>` or an
+  `<a>` with no destination is a control that looks live and goes nowhere; a
+  span is not focusable, is not announced as a control, and carries *"No
+  session right now"* as its own text. The stamp is a sibling rather than a
+  child, so the link does not announce as "Join Session 8:00PM 25/9/2026".
+- **`components/app/teacher-portrait.tsx`** - Dr. Tahir's illustration, with an
+  initials fallback on load failure. The asset is the client's, so it can be
+  genuinely absent from a checkout, and a broken-image glyph in the hero of the
+  first screen a student sees is much worse than initials. **The file belongs
+  at `frontend/public/teacher-portrait.png`;** until it is there the fallback
+  renders and the screen still reads as finished.
+- **The dashboard** is rebuilt into the reference's two columns: portrait card
+  over per-section shortcuts on the left, required tasks over enrolled courses
+  on the right. It is the first **student** page on `PageTitle`/`PageActions`,
+  so it is also the first without the stacked double header.
+- **The rail's icons are tinted**, one tone per entry, off the tag palette. The
+  classes are written out rather than interpolated - `text-chip-${tone}-fg`
+  compiles to nothing and loses every colour in production while looking right
+  in dev. `globals.css` gained the four chip mappings it was missing, for the
+  reason §12 of the design-system doc now gives.
+
+### Why
+
+A direct client instruction, and it supersedes nothing in CLAUDE.md. Two rules
+it did *not* get to override: progress is still per learning mode rather than
+one number (§5.1, §5.2 - "80% watched" and "80% attended" are different facts,
+which is why `CourseProgress` is a union), and every figure still comes from
+`GET /dashboard` rather than being arranged to fill the reference's shape.
+Where the reference had a control this product has no feature for, the row is
+absent rather than inert.
+
+### Verified in a browser
+
+Signed in as the seeded student against the production build. The empty state
+renders `SPAN`, no `href`, `tabIndex -1`, not focusable. A live session was
+then scheduled through `POST /admin/courses/:id/live-sessions` as the teacher
+and the header switched to the filled accent button reading
+`+ Join Session  12:31AM 13/9/2026`. The five rail icons measured five distinct
+colours.
+
+### Follow-ups / debt
+
+- **The portrait asset is not in the repo.** The fallback covers it; the screen
+  is not finished until the file lands.
+- **The student console is now half-converted**: the dashboard uses the shell's
+  40px header, every other student page still draws its own `PageHeader` below
+  an otherwise empty bar. That inconsistency is now visible rather than
+  theoretical.

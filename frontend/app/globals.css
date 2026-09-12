@@ -21,8 +21,17 @@
   --color-accent-fg:   var(--accent-fg);
   --color-danger:      var(--danger);
   --color-fg-inverted: var(--fg-inverted);
-  --color-chip-red-fg:   var(--chip-red-fg);
-  --color-chip-green-fg: var(--chip-green-fg);
+  /* The tag palette, also used to tint the sidebar's nav icons. Every tone is
+     mapped, not just the two the tags happened to need - a half-mapped scale
+     is how `text-[var(--chip-teal-fg)]` gets written and silently renders
+     nothing (see §12 of docs/frontend-design-system.md). */
+  --color-chip-neutral-fg: var(--chip-neutral-fg);
+  --color-chip-blue-fg:    var(--chip-blue-fg);
+  --color-chip-green-fg:   var(--chip-green-fg);
+  --color-chip-red-fg:     var(--chip-red-fg);
+  --color-chip-amber-fg:   var(--chip-amber-fg);
+  --color-chip-violet-fg:  var(--chip-violet-fg);
+  --color-chip-teal-fg:    var(--chip-teal-fg);
 
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);

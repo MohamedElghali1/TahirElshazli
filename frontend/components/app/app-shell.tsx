@@ -29,21 +29,48 @@ import { PageChromeProvider, usePageChrome } from '@/components/app/page-chrome'
 import { isStaffRole } from '@/lib/roles';
 import type { Role } from '@/lib/types';
 
+/**
+ * `tone` tints the nav icon, the way the reference product gives each object
+ * in its sidebar its own colour. It is decoration, not meaning - the label is
+ * what says where a link goes - so the tones are picked for distinguishability
+ * rather than mapped to the status vocabulary tags use (CLAUDE.md §4.1: status
+ * colour is not the accent, and this is neither).
+ *
+ * The classes are written out rather than interpolated: Tailwind scans source
+ * text, so `text-chip-${tone}-fg` compiles to nothing and every icon silently
+ * loses its colour in production while looking right in dev.
+ */
+type NavTone = 'blue' | 'green' | 'red' | 'amber' | 'violet' | 'teal';
+
+const NAV_TONE: Record<NavTone, string> = {
+  blue: 'text-chip-blue-fg',
+  green: 'text-chip-green-fg',
+  red: 'text-chip-red-fg',
+  amber: 'text-chip-amber-fg',
+  violet: 'text-chip-violet-fg',
+  teal: 'text-chip-teal-fg',
+};
+
 interface NavItem {
   href: string;
   label: string;
-  Icon: React.ComponentType<{ size?: number; weight?: 'fill' | 'regular' }>;
+  tone: NavTone;
+  Icon: React.ComponentType<{
+    size?: number;
+    weight?: 'fill' | 'regular';
+    className?: string;
+  }>;
 }
 
 const STUDENT_NAV: NavItem[] = [
-  { href: '/dashboard', label: 'My courses', Icon: SquaresFourIcon },
-  { href: '/catalog', label: 'Browse courses', Icon: BooksIcon },
+  { href: '/dashboard', label: 'My courses', tone: 'blue', Icon: SquaresFourIcon },
+  { href: '/catalog', label: 'Browse courses', tone: 'amber', Icon: BooksIcon },
   // The blog, read side (CLAUDE.md §5.19). Labelled for what the client asked
   // for - "a place of teacher achievements the students can view" - rather
   // than "Blog", which reads as marketing copy inside a student's console.
-  { href: '/achievements', label: 'Achievements', Icon: NewspaperIcon },
-  { href: '/notifications', label: 'Notifications', Icon: BellIcon },
-  { href: '/profile', label: 'Profile', Icon: UserIcon },
+  { href: '/achievements', label: 'Achievements', tone: 'violet', Icon: NewspaperIcon },
+  { href: '/notifications', label: 'Notifications', tone: 'red', Icon: BellIcon },
+  { href: '/profile', label: 'Profile', tone: 'teal', Icon: UserIcon },
 ];
 
 /**
@@ -56,23 +83,23 @@ const STUDENT_NAV: NavItem[] = [
  * the API regardless of what this array says (§8).
  */
 const STAFF_NAV: NavItem[] = [
-  { href: '/manage', label: 'Overview', Icon: SquaresFourIcon },
-  { href: '/manage/courses', label: 'Courses', Icon: BooksIcon },
+  { href: '/manage', label: 'Overview', tone: 'blue', Icon: SquaresFourIcon },
+  { href: '/manage/courses', label: 'Courses', tone: 'amber', Icon: BooksIcon },
   // Authoring the blog, and shared rather than admin-only: the client's
   // instruction on 2026-09-10 named the assistant as an author too, which
   // overrides §2.2's "a TA cannot touch the CMS" preset. An assistant may edit
   // only their own posts, enforced server-side.
-  { href: '/manage/blog', label: 'Blog', Icon: NewspaperIcon },
+  { href: '/manage/blog', label: 'Blog', tone: 'violet', Icon: NewspaperIcon },
 ];
 
 const ADMIN_NAV: NavItem[] = [
-  { href: '/manage/students', label: 'Students', Icon: UsersThreeIcon },
+  { href: '/manage/students', label: 'Students', tone: 'teal', Icon: UsersThreeIcon },
   // Creating a group and deciding what it studies is teacher-only; *placing*
   // students is not, and a TA reaches that through the course's Groups tab
   // (CLAUDE.md §5.16, §2.2).
-  { href: '/manage/groups', label: 'Groups', Icon: UsersFourIcon },
-  { href: '/manage/recordings', label: 'Recordings', Icon: VideoIcon },
-  { href: '/manage/activity', label: 'Activity log', Icon: ClockCounterClockwiseIcon },
+  { href: '/manage/groups', label: 'Groups', tone: 'green', Icon: UsersFourIcon },
+  { href: '/manage/recordings', label: 'Recordings', tone: 'red', Icon: VideoIcon },
+  { href: '/manage/activity', label: 'Activity log', tone: 'green', Icon: ClockCounterClockwiseIcon },
 ];
 
 function navFor(role: Role | undefined): NavItem[] {
@@ -208,7 +235,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
           )}
 
           <nav className={cx('flex flex-col gap-[var(--gap-siblings)]', collapsed ? 'mt-[var(--sp-3)]' : '')}>
-            {NAV.map(({ href, label, Icon }) => {
+            {NAV.map(({ href, label, tone, Icon }) => {
               // Two exact-match cases, because both own deeper routes that
               // belong to a *different* entry: /dashboard owns /learn/*, and
               // /manage is the parent of every other staff link in this rail.
@@ -232,7 +259,11 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                       : 'text-fg-2 hover:bg-[var(--bg-wash-nav)] hover:text-fg',
                   )}
                 >
-                  <Icon size={16} weight={active ? 'fill' : 'regular'} />
+                  <Icon
+                    size={16}
+                    weight={active ? 'fill' : 'regular'}
+                    className={NAV_TONE[tone]}
+                  />
                   {!collapsed && <span className="flex-1 truncate">{label}</span>}
                   {!collapsed && href === '/notifications' && unread > 0 && (
                     <span className="num rounded-[var(--r-full)] bg-[var(--accent)] px-[var(--sp-2)] text-[var(--fs-xxs)] font-semibold leading-[var(--h-tag)] text-accent-fg">
