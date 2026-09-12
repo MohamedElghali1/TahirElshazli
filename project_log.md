@@ -3082,6 +3082,13 @@ time beside it, a portrait card at the centre, and coloured icons in the rail.
   over per-section shortcuts on the left, required tasks over enrolled courses
   on the right. It is the first **student** page on `PageTitle`/`PageActions`,
   so it is also the first without the stacked double header.
+- **The two columns are locked to equal height** (client's follow-up note the
+  same day: *"I don't want one side longer than the other"*). The grid is
+  `items-stretch` and the trailing section in each column carries `flex-1`, so
+  whichever side is shorter absorbs the slack rather than ending above its
+  neighbour. Measured: both columns span 48-589, delta 0. The cost is a patch
+  of empty space inside whichever trailing card is shorter, which is the
+  bargain equal columns always makes and is what was asked for.
 - **The rail's icons are tinted**, one tone per entry, off the tag palette. The
   classes are written out rather than interpolated - `text-chip-${tone}-fg`
   compiles to nothing and loses every colour in production while looking right

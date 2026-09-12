@@ -217,8 +217,13 @@ export default function DashboardPage() {
         {loading && <RowsSkeleton rows={5} />}
         {error && <ErrorState message={error.message} onRetry={reload} />}
 
+        {/* `items-stretch` (the grid default, said out loud) makes both
+            columns the same height; the trailing section in each then carries
+            `flex-1` so it absorbs the slack instead of leaving one side
+            hanging below the other. That is what makes the four cards read as
+            one aligned block rather than two ragged stacks. */}
         {home && (
-          <div className="grid gap-[var(--sp-4)] lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
+          <div className="grid items-stretch gap-[var(--sp-4)] lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
             <div className="flex flex-col gap-[var(--sp-4)]">
               <WelcomeCard
                 firstName={firstName}
@@ -397,11 +402,11 @@ function Shortcuts({ entry }: { entry: StudentHomeEntry }) {
   ];
 
   return (
-    <section className="overflow-hidden rounded-[var(--r-md)] border border-[var(--border-medium)] bg-[var(--bg-secondary)]">
+    <section className="flex flex-1 flex-col overflow-hidden rounded-[var(--r-md)] border border-[var(--border-medium)] bg-[var(--bg-secondary)]">
       <p className="px-[var(--sp-3)] pt-[var(--sp-3)] text-[var(--fs-xxs)] font-semibold uppercase tracking-wide text-fg-4">
         {course.title}
       </p>
-      <ul className="rows mt-[var(--sp-2)]">
+      <ul className="rows mt-[var(--sp-2)] flex-1">
         {rows.map((row) => (
           <li key={row.href}>
             <Link
@@ -491,7 +496,7 @@ function TaskList({
 
 function CourseList({ entries }: { entries: StudentHomeEntry[] }) {
   return (
-    <section>
+    <section className="flex flex-1 flex-col">
       <h2 className="text-[var(--fs-base)] font-semibold text-fg">
         Your courses
       </h2>
@@ -500,7 +505,7 @@ function CourseList({ entries }: { entries: StudentHomeEntry[] }) {
       </p>
 
       {entries.length === 0 ? (
-        <p className="mt-[var(--sp-3)] rounded-[var(--r-md)] border border-[var(--border-medium)] px-[var(--sp-4)] py-[var(--sp-4)] text-[var(--fs-base)] text-fg-3">
+        <p className="mt-[var(--sp-3)] flex-1 rounded-[var(--r-md)] border border-[var(--border-medium)] px-[var(--sp-4)] py-[var(--sp-4)] text-[var(--fs-base)] text-fg-3">
           You are not enrolled on anything yet.{' '}
           <Link href="/catalog" className="text-accent underline-offset-2 hover:underline">
             Browse the catalog
@@ -508,7 +513,7 @@ function CourseList({ entries }: { entries: StudentHomeEntry[] }) {
           .
         </p>
       ) : (
-        <ul className="mt-[var(--sp-3)] overflow-hidden rounded-[var(--r-md)] border border-[var(--border-medium)]">
+        <ul className="mt-[var(--sp-3)] flex-1 overflow-hidden rounded-[var(--r-md)] border border-[var(--border-medium)]">
           {entries.map((entry, i) => (
             <li
               key={entry.course.id}
