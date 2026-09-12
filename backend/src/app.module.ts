@@ -4,6 +4,7 @@ import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { DatabaseModule } from './database/database.module.js';
 import { PublicModule } from './public/public.module.js';
+import { GoogleIntegrationModule } from './integrations/google/google-integration.module.js';
 import { RateLimitModule } from './common/rate-limit/rate-limit.module.js';
 import { RateLimitGuard } from './common/rate-limit/rate-limit.guard.js';
 import { AuthModule } from './auth/auth.module.js';
@@ -84,6 +85,10 @@ import { StorageModule } from './common/storage/storage.module.js';
     // The anonymous Visitor surface - the public course catalog the marketing
     // site reads. After CoursesModule, whose COURSE_REPOSITORY it borrows.
     PublicModule,
+    // The Google Forms integration. Inert unless GOOGLE_DRIVER=google, so it is
+    // registered unconditionally and decides for itself - the module is what
+    // knows how to be absent, rather than this list having to.
+    GoogleIntegrationModule,
   ],
   controllers: [AppController],
   providers: [

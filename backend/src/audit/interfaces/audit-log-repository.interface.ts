@@ -54,6 +54,15 @@ export type AuditAction =
   | 'assessment.updated'
   | 'assessment.targeted'
   | 'assessment.deleted'
+  // The Google integration. Teacher-only, and the only actions in this list
+  // that change what a *third party* may be asked for on Dr. Tahir's behalf:
+  // connecting stores a long-lived credential that can read every form his
+  // Google account owns. "Who connected this, when, and as which account" is
+  // the question §5.4 exists for, and it is also the entire history of the
+  // credential - the row itself is deleted on disconnect rather than
+  // soft-deleted, precisely because these two entries are the record.
+  | 'google.connected'
+  | 'google.disconnected'
   // The blog (CLAUDE.md §5.19). Reachable by an assistant - the client named
   // both actors on 2026-09-10 - and the only TA-writable surface whose output
   // is read by *anonymous visitors* rather than by enrolled students. That is
@@ -90,7 +99,12 @@ export type AuditTargetType =
   // assessment's audience is not: replacing a gallery is a change to that
   // post, and filing it elsewhere would split "what happened to this post?"
   // across two reads.
-  | 'blog_post';
+  | 'blog_post'
+  // The connected Google account. Its own target type rather than being filed
+  // under the user who connected it: the thing acted on is the *grant*, and it
+  // outlives any particular connect/disconnect cycle in a way that makes
+  // "everything that happened to this integration" the useful question.
+  | 'google_credential';
 
 /**
  * One side of a before/after pair.

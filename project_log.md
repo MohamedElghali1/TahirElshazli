@@ -2544,3 +2544,146 @@ Panel 1px border, body Inter at 13px, `--accent` resolving through the P3 layer.
   processes alive. Stop the dev server before running the checks.
 - Twenty's disabled primary button swaps the *background*; ours drops opacity to
   45%, which is low contrast on indigo. Cosmetic, and worth a second look.
+
+---
+
+## 2026-09-12 — The Google account connects (migration `009`, `backend/src/integrations/google/`)
+
+**Written, typechecking, and carrying no tests of its own; never run against
+Google.** Saying so up front because §13 asks for it and because the gap is
+unusually wide here: the whole point of this slice is an external round trip,
+and the external half has never happened. The suite is green — 25 files, 369
+tests — but none of them are *these* files, so what that proves is only that
+the new module broke nothing beside it. `tsc --noEmit` and that negative are
+the whole of the evidence.
+
+### What changed
+
+The client's answer on the Google Forms question was the **full API path**,
+chosen explicitly to minimise what Dr. Tahir has to do — *"my goal is to reduce
+the technical interaction for the teacher as possible"*. That decides the auth
+model. Of the three ways to read form responses, only OAuth makes the teacher's
+**recurring** work zero:
+
+| | Teacher setup | Teacher per form | Live data |
+|---|---|---|---|
+| **OAuth (chosen)** | one click, once | email collection on | yes |
+| Service account | none | **share every form** | yes |
+| CSV export | none | **export every time** | manual |
+
+The service-account path looks cheaper because it skips the consent screen, and
+it is the wrong trade: it charges a sharing step per form forever to save a
+one-time fifteen minutes of developer setup.
+
+This migration stops deliberately at **authentication** — no work types, no
+form bindings, no response data. The setup has an external lead time and is the
+part most likely to be misconfigured, so it is worth being able to connect an
+account and prove it can read a form *before* anything depends on it.
+
+- **`009_google_integration.sql`** — one table, `google_oauth_credentials`.
+- **`backend/src/integrations/google/`** — `GoogleOAuthService` (the OAuth
+  conversation, no database knowledge), `GoogleFormsClient` (two API reads),
+  `GoogleIntegrationService` (connect, disconnect, access token, probe),
+  `TokenCipher`, both repository drivers, and an admin controller.
+- **`docs/google-forms-setup.md`** — the runbook, split into what the developer
+  does once and what the teacher does.
+- Audit gains `google.connected` / `google.disconnected` and the
+  `google_credential` target type.
+
+### Why
+
+CLAUDE.md §3 (integrations behind interfaces, degrade without the
+subscription), §8 (sensitive data encrypted at rest), §5.4 (every mutating
+staff action audited), §2.2 (integration config is teacher-only).
+
+### Four decisions worth keeping
+
+**No `googleapis` dependency.** That package is tens of megabytes of generated
+clients; this needs four HTTP calls and Node 24 has `fetch`. It also keeps the
+promise that `pg` is the only heavy runtime dependency here.
+
+**`GOOGLE_DRIVER=none` is the default, including in production.** The same
+shape as `STORAGE_DRIVER`, and the same null-provider wiring: `GoogleOAuthService`
+and `TokenCipher` resolve to `null`, and the service answers 503 naming the
+setup document. Form work still functions as a link — completion tracking
+without scores — so this is a real degraded mode rather than a broken one.
+There is deliberately **no `mock` driver**: a driver returning plausible
+response data is precisely the thing that gets demonstrated to a client and
+mistaken for a working integration.
+
+**The OAuth callback is `@Public()`, and the signed `state` is what makes that
+safe.** It is reached by a top-level browser redirect carrying no
+`Authorization` header, so the global `JwtAuthGuard` would 401 it before any
+handler ran. `state` is a short-lived JWT holding the initiating teacher's id
+and role, with a `purpose` claim checked on the way back — without which a
+normal session token, signed with the same secret, would be accepted here and
+anyone reaching the URL could bind **their own** Google account as the
+platform's integration.
+
+**The credential row is deleted on disconnect, not soft-deleted.** §6 says
+soft-delete where history matters, and it does matter — but the history worth
+keeping is *who connected and disconnected this, and when*, which is exactly
+what the two audit actions record. Keeping the row would mean retaining a
+revoked bearer token forever, which is a liability rather than a record. This is
+the one place the codebase's soft-delete habit is wrong.
+
+### The two failure modes that will actually bite
+
+Both are documented in the runbook because neither is guessable:
+
+1. **A Google Form has two different ids.** `/forms/d/<id>/edit` is the one the
+   API wants; `/forms/d/e/<other>/viewform` is the link a teacher naturally
+   copies because it is the one they send students. Pasting the second gives a
+   404 with nothing to indicate the id was the wrong *kind*. `parseFormId`
+   detects it — and `forms.gle` short links — and returns a message saying what
+   to copy instead. The error messages are the feature here.
+2. **An OAuth consent screen in "Testing" status expires refresh tokens after
+   seven days.** The integration works, demos successfully, and dies a week
+   later looking like an unrelated bug. `last_error` on the credential exists so
+   the status screen can say what happened; the real fix is to publish the app.
+
+Plus the one that is not our bug and cannot be worked around: **responses carry
+no identity unless the form has "Collect email addresses" on.** No amount of API
+access recovers who submitted what. That is a per-form teacher setting, and the
+runbook's advice is to set it on a template and copy the form.
+
+```mermaid
+sequenceDiagram
+    participant T as Teacher (browser)
+    participant API as Nest API
+    participant G as Google
+    T->>API: POST /admin/integrations/google/connect
+    API-->>T: authUrl (state = signed JWT, 10 min)
+    T->>G: consent (access_type=offline, prompt=consent)
+    G->>API: GET /callback?code&state  [no Authorization header]
+    API->>API: verify state signature + purpose claim
+    API->>G: exchange code
+    G-->>API: refresh_token
+    API->>API: encrypt (AES-256-GCM), upsert + audit in one transaction
+    API-->>T: HTML "Connected as ..."
+```
+
+### Follow-ups / debt
+
+- **Nothing has talked to Google.** `tsc --noEmit` is clean; the OAuth round
+  trip, the token refresh and `fetchForm` are all unexercised. T1–T4 in
+  `docs/google-forms-setup.md` are the script for the first real run.
+- **The test suite was not run to completion.** The machine ran out of memory
+  (~700 MB free of 8 GB) and node could not reliably spawn; one run executed in
+  20s but its summary was lost to a failed pipe. **Re-run `npm test` before
+  trusting any of this.** There are also no specs for the new code yet — the
+  ones worth writing first are `parseFormId`'s three wrong-link cases and the
+  `state` purpose check, since both are security- or usability-load-bearing and
+  neither needs a network.
+- **No frontend.** There is no integration screen; `status`, `connect`,
+  `inspect` and `disconnect` are reachable by curl only.
+- **`inspect` is teacher-only and should move to the staff controller** when
+  authoring lands, since §2.2 lets a TA author. Widening later is cheaper than
+  narrowing.
+- **`collectsEmail` can return `null`.** The field's representation has moved
+  between Forms API revisions, so it is read where available and otherwise
+  inferred from whether responses actually carry an email. Confirm against the
+  live API on the first real run and tighten if it is reliably present.
+- **Everything above authentication is still unbuilt**: `work_type` on
+  assessments, the form binding, response sync, student matching by email, the
+  unmatched-response queue, and both analytics surfaces.

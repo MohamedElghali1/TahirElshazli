@@ -392,3 +392,148 @@ export function resolveUploadDir(raw = process.env.UPLOAD_DIR): string {
   }
   return value;
 }
+
+/**
+ * Which Google Forms integration is wired up.
+ *
+ * The same shape as `STORAGE_DRIVER`, and for the same reason (CLAUDE.md §3:
+ * the third-party subscriptions are the client's and the code degrades sensibly
+ * until they exist). `none` is the default everywhere - including production -
+ * because a Google Cloud project, an OAuth consent screen and a set of client
+ * credentials are things a human has to go and create, and nothing about this
+ * application should fail to boot because they have not yet.
+ *
+ * With `none` the integration endpoints answer 503 with a message the UI
+ * renders as "not configured", and a teacher authoring work can still paste a
+ * form link - they simply get completion tracking rather than scores. That is a
+ * real degraded mode rather than a broken one, which is what makes `none` a
+ * defensible production default rather than an oversight.
+ *
+ * There is deliberately **no `mock` driver.** The instruction was that
+ * analytics must not be faked, and a driver that returns plausible-looking
+ * response data is exactly the thing that gets demonstrated to a client and
+ * mistaken for a working integration.
+ */
+export type GoogleDriver = 'none' | 'google';
+
+const VALID_GOOGLE_DRIVERS: GoogleDriver[] = ['none', 'google'];
+
+export function resolveGoogleDriver(
+  raw = process.env.GOOGLE_DRIVER,
+): GoogleDriver {
+  const value = raw?.trim();
+  if (!value) {
+    return 'none';
+  }
+  if (!VALID_GOOGLE_DRIVERS.includes(value as GoogleDriver)) {
+    throw new Error(
+      `GOOGLE_DRIVER must be one of ${VALID_GOOGLE_DRIVERS.join(', ')} ` +
+        `(got "${value}").`,
+    );
+  }
+  return value as GoogleDriver;
+}
+
+export interface GoogleOAuthConfig {
+  clientId: string;
+  clientSecret: string;
+  /**
+   * Must match a redirect URI registered on the OAuth client **byte for byte**
+   * - Google compares it as a string, so a trailing slash or http-vs-https
+   * difference fails with `redirect_uri_mismatch` and no further explanation.
+   * It is validated as a URL here so that failure happens at boot, where the
+   * message can say which variable is wrong, rather than on the consent screen.
+   */
+  redirectUri: string;
+}
+
+/**
+ * The OAuth client credentials, required only when the driver is `google`.
+ *
+ * Returns null for `none` rather than throwing, so a developer who has not set
+ * any of this up never has to: the module wires a null provider and the service
+ * answers 503, exactly as `FILE_STORAGE` does without `STORAGE_DRIVER`.
+ */
+export function resolveGoogleOAuthConfig(
+  driver: GoogleDriver,
+  env = process.env,
+): GoogleOAuthConfig | null {
+  if (driver !== 'google') {
+    return null;
+  }
+  const clientId = env.GOOGLE_CLIENT_ID?.trim();
+  const clientSecret = env.GOOGLE_CLIENT_SECRET?.trim();
+  const redirectUri = env.GOOGLE_OAUTH_REDIRECT_URI?.trim();
+
+  const missing = [
+    !clientId && 'GOOGLE_CLIENT_ID',
+    !clientSecret && 'GOOGLE_CLIENT_SECRET',
+    !redirectUri && 'GOOGLE_OAUTH_REDIRECT_URI',
+  ].filter(Boolean);
+
+  if (missing.length) {
+    throw new Error(
+      `GOOGLE_DRIVER=google requires ${missing.join(', ')}. ` +
+        'Create an OAuth 2.0 Web application client at ' +
+        'https://console.cloud.google.com/apis/credentials and copy the values ' +
+        'across. See docs/google-forms-setup.md for the full walkthrough.',
+    );
+  }
+
+  try {
+    // eslint-disable-next-line no-new
+    new URL(redirectUri!);
+  } catch {
+    throw new Error(
+      `GOOGLE_OAUTH_REDIRECT_URI must be an absolute URL (got "${redirectUri}"). ` +
+        'It has to match the Authorized redirect URI on the OAuth client ' +
+        'exactly - Google compares the two as strings.',
+    );
+  }
+
+  return {
+    clientId: clientId!,
+    clientSecret: clientSecret!,
+    redirectUri: redirectUri!,
+  };
+}
+
+/**
+ * The key the stored Google refresh token is encrypted with.
+ *
+ * CLAUDE.md §8 requires sensitive data encrypted at rest, and a Google refresh
+ * token is about as sensitive as this database gets: it is a long-lived bearer
+ * credential for Dr. Tahir's Google account that does not expire on its own.
+ * A database backup that leaks one is materially worse than one that leaks the
+ * password hashes beside it.
+ *
+ * Required whenever the driver is `google`, in **every** environment rather
+ * than production only - which is the deliberate difference from
+ * `resolveJwtSecret`. A development default would mean the token in a developer
+ * database is decryptable by anyone holding this repository, and unlike a dev
+ * JWT secret (which signs tokens for fixture accounts) this one protects a real
+ * credential for a real third-party account the moment anybody clicks Connect.
+ */
+export function resolveGoogleTokenKey(
+  driver: GoogleDriver,
+  raw = process.env.GOOGLE_TOKEN_ENCRYPTION_KEY,
+): Buffer | null {
+  if (driver !== 'google') {
+    return null;
+  }
+  const value = raw?.trim();
+  if (!value) {
+    throw new Error(
+      'GOOGLE_DRIVER=google requires GOOGLE_TOKEN_ENCRYPTION_KEY. ' +
+        'Generate one with: openssl rand -base64 32',
+    );
+  }
+  const key = Buffer.from(value, 'base64');
+  if (key.length !== 32) {
+    throw new Error(
+      'GOOGLE_TOKEN_ENCRYPTION_KEY must be 32 bytes of base64 ' +
+        `(decoded to ${key.length}). Generate one with: openssl rand -base64 32`,
+    );
+  }
+  return key;
+}

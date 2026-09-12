@@ -39,3 +39,22 @@ export const PUBLIC_BROWSE_LIMIT: RateLimitRule = {
  * one sitting, tight enough that filling a volume takes deliberate effort.
  */
 export const UPLOAD_LIMIT: RateLimitRule = { limit: 30, windowMs: 60_000 };
+
+/**
+ * The Google OAuth callback.
+ *
+ * The only `@Public()` route in the build that is neither auth nor the public
+ * catalog, and the only one whose work is an outbound HTTP call to a third
+ * party. A request reaching it with a forged `state` is rejected by a signature
+ * check, but rejecting still costs a JWT verification, and a valid one costs
+ * two round trips to Google - so an unbounded caller here spends *our* request
+ * budget against *Google's* rate limits, which is a more annoying failure than
+ * a merely slow endpoint.
+ *
+ * Tight, because the legitimate traffic is genuinely tiny: one teacher
+ * connecting one account, a handful of times ever.
+ */
+export const OAUTH_CALLBACK_LIMIT: RateLimitRule = {
+  limit: 10,
+  windowMs: 60_000,
+};
