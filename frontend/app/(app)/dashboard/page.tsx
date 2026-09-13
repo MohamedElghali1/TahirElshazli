@@ -3,58 +3,120 @@
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import {
+  ArrowRightIcon,
+  ArrowSquareOutIcon,
+  BellIcon,
+  BooksIcon,
   CalendarBlankIcon,
+  CaretRightIcon,
   ChartLineIcon,
   ClipboardTextIcon,
   FileTextIcon,
   FolderSimpleIcon,
+  MegaphoneIcon,
   SquaresFourIcon,
   VideoCameraIcon,
 } from '@phosphor-icons/react';
 import { api } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
-import { formatPercent, formatRelative } from '@/lib/format';
+import {
+  MATERIAL_CATEGORY_LABEL,
+  formatDate,
+  formatPercent,
+  formatRelative,
+  formatTime,
+} from '@/lib/format';
 import type {
   AppNotification,
   AssessmentListItem,
+  CourseListItem,
   LiveSession,
+  MaterialCategory,
   StudentHomeEntry,
 } from '@/lib/types';
 import {
   Chip,
   type ChipTone,
+  EmptyState,
   ErrorState,
+  Meter,
+  Panel,
   RowsSkeleton,
+  ButtonLink,
   cx,
 } from '@/components/ui';
 import { PageBody } from '@/components/app/page-parts';
 import { PageActions, PageTitle } from '@/components/app/page-chrome';
 import { TeacherPortrait } from '@/components/app/teacher-portrait';
+import { JoinSessionAction, SessionStamp } from '@/components/app/join-session';
 import {
-  JoinSessionAction,
-  SessionStamp,
-  phaseOf,
-} from '@/components/app/join-session';
-import { PageTransition } from '@/components/app/motion';
+  PageTransition,
+  StaggerList,
+  StaggerItem,
+  motion,
+} from '@/components/app/motion';
 
 /* ========================================================================
-   Layout - cloned from the reference screen the client supplied (2026-09-13).
+   Layout note - where this shape came from.
 
-   Two columns, the left narrower: a portrait card over a list of section
-   shortcuts, and beside it the work that needs doing over the enrolled
-   courses. The header carries one primary action - Join Session - with the
-   session's time beside it, exactly as the reference places it.
+   Cloned from the reference screenshot the client annotated, four regions
+   in a two-column grid, right column wider than the left:
 
-   What is deliberately *not* cloned is the reference's data. Its cards are a
-   CRM's; ours are a student's, and every number below comes from `GET
-   /dashboard` rather than being arranged to fill a shape. Where the reference
-   had a control we have no feature for, the row is absent rather than inert.
+     left/top     hero      - live session if one is running or imminent,
+                              otherwise an urgent announcement, otherwise a
+                              greeting. Exactly the priority the annotation
+                              specifies.
+     left/bottom  quick access - the handful of destinations a student
+                              actually wants, so the rail is a fallback and
+                              not the only way through the app.
+     right/top    inbox     - work and announcements that need the student.
+     right/bottom materials - the course's files, one row per category.
+
+   The reference's trailing "+" on each quick-access row is an *add*
+   affordance in a CRM. Here every one of those rows navigates, so it
+   carries a caret instead: the affordance has to describe what the row
+   does, not what the reference's row did.
    ======================================================================== */
 
-/** How often the clock ticks. A minute is enough for "starts in 20 minutes". */
-const CLOCK_MS = 60_000;
-/** An announcement is "new" for this long. */
+/** A session inside this window counts as "starting soon" and takes the hero. */
+const SOON_MS = 60 * 60 * 1000;
+
+/** An announcement older than this is news, not an interruption. */
 const URGENT_MS = 48 * 60 * 60 * 1000;
+
+/** Due inside this window is worth an amber chip rather than a plain date. */
+const DUE_SOON_MS = 48 * 60 * 60 * 1000;
+
+const MAX_INBOX = 4;
+
+const MATERIAL_ICON: Record<MaterialCategory, typeof FileTextIcon> = {
+  course_notes: FileTextIcon,
+  study_materials: BooksIcon,
+  important_files: FolderSimpleIcon,
+};
+
+const MATERIAL_TONE: Record<MaterialCategory, ChipTone> = {
+  course_notes: 'blue',
+  study_materials: 'violet',
+  important_files: 'amber',
+};
+
+/* --- time ---------------------------------------------------------------
+   A clock read during render resolves one way on the server and another on
+   the client, and every time-dependent branch below - is the session live,
+   is this due soon - would hydrate differently. Same problem
+   `components/site/reveal.tsx` hit with `prefers-reduced-motion`, so the
+   same answer: `useSyncExternalStore`, whose server snapshot React reuses
+   for the hydrating render.
+
+   The snapshot is quantized to the tick interval rather than returning a
+   raw `Date.now()`. `getSnapshot` must be stable between store changes or
+   React re-renders forever chasing a value that moves every call; rounding
+   to the bucket makes it change exactly once per tick. `0` is the server
+   snapshot and means "no clock yet", which renders the greeting - the one
+   hero state that depends on no clock at all. */
+
+const CLOCK_MS = 30_000;
 
 function useNow(): number {
   const subscribe = useCallback((onStoreChange: () => void) => {
@@ -62,8 +124,6 @@ function useNow(): number {
     return () => clearInterval(id);
   }, []);
 
-  // The server has no clock the client agrees with, so SSR renders 0 and every
-  // time-dependent branch below reads it as "unknown" rather than "now".
   return useSyncExternalStore(
     subscribe,
     () => Math.floor(Date.now() / CLOCK_MS) * CLOCK_MS,
@@ -71,13 +131,28 @@ function useNow(): number {
   );
 }
 
-/* --- the task model ------------------------------------------------------
-   Assessments and announcements are two resources on the server and one idea
-   to a student: something addressed to them that they have not dealt with.
-   Normalised to one row shape so the panel sorts across both instead of
-   stacking two lists. */
+type SessionPhase = 'live' | 'soon' | 'scheduled';
 
-interface TaskItem {
+function phaseOf(session: LiveSession, now: number): SessionPhase {
+  if (now === 0) return 'scheduled';
+  const start = new Date(session.scheduledAt).getTime();
+  const end = start + session.durationMinutes * 60_000;
+  if (now >= start && now <= end) return 'live';
+  if (start > now && start - now <= SOON_MS) return 'soon';
+  return 'scheduled';
+}
+
+function minutesUntil(iso: string, now: number): number {
+  return Math.max(0, Math.round((new Date(iso).getTime() - now) / 60_000));
+}
+
+/* --- the inbox model ----------------------------------------------------
+   Assessments and announcements are different resources on the server and
+   the same thing to a student: something addressed to them that they have
+   not dealt with. They are normalised into one row shape here so the panel
+   can sort across both rather than showing two stacked lists. */
+
+interface InboxItem {
   key: string;
   href: string;
   title: string;
@@ -88,52 +163,91 @@ interface TaskItem {
   rank: number;
 }
 
-function assessmentTask(
+function assessmentItem(
   assessment: AssessmentListItem,
   courseTitle: string,
   now: number,
-): TaskItem | null {
-  // Status is the server's (CLAUDE.md §5.10) - never recomputed here.
-  if (assessment.status === 'corrected' || assessment.status === 'submitted') {
-    return null;
+): InboxItem | null {
+  const href = `/learn/${assessment.courseId}/assessments/${assessment.id}`;
+  const kind =
+    assessment.type === 'quiz'
+      ? 'Quiz'
+      : assessment.type === 'assignment'
+        ? 'Assignment'
+        : 'Homework';
+
+  // CLAUDE.md §5.10 - `status` is derived on the server and rendered here,
+  // never recomputed. `locked` and `submitted` are deliberately absent: one
+  // the student cannot act on, the other they already have.
+  if (assessment.status === 'corrected') {
+    return {
+      key: assessment.id,
+      href,
+      title: assessment.title,
+      meta: `${kind} · ${courseTitle} · marked`,
+      chipLabel:
+        assessment.scorePercentage === null
+          ? 'Result ready'
+          : `Scored ${formatPercent(assessment.scorePercentage)}`,
+      chipTone: 'green',
+      rank: 3,
+    };
   }
-  if (assessment.status === 'locked') return null;
 
-  const overdue = assessment.isOverdue;
-  const due = now === 0 ? '' : formatRelative(assessment.dueAt);
+  if (assessment.status !== 'available') return null;
 
+  const dueMs = new Date(assessment.dueAt).getTime() - now;
+
+  if (assessment.isOverdue) {
+    return {
+      key: assessment.id,
+      href,
+      title: assessment.title,
+      meta: `${kind} · ${courseTitle} · was due ${formatDate(assessment.dueAt)}`,
+      chipLabel: 'Overdue',
+      chipTone: 'red',
+      rank: 0,
+    };
+  }
+
+  const soon = now !== 0 && dueMs <= DUE_SOON_MS;
   return {
-    key: `a-${assessment.id}`,
-    href: `/learn/${assessment.courseId}/assessments/${assessment.id}`,
+    key: assessment.id,
+    href,
     title: assessment.title,
-    meta: overdue
-      ? `${courseTitle} · was due ${due}`
-      : `${courseTitle}${due ? ` · due ${due}` : ''}`,
-    chipLabel: overdue ? 'Overdue' : 'To do',
-    chipTone: overdue ? 'red' : 'amber',
-    rank: overdue ? 0 : 1,
+    meta: `${kind} · ${courseTitle} · due ${formatDate(assessment.dueAt)}`,
+    chipLabel: soon ? `Due ${formatRelative(assessment.dueAt, now)}` : 'To do',
+    chipTone: soon ? 'amber' : 'neutral',
+    rank: soon ? 1 : 2,
   };
 }
 
-function announcementTask(notification: AppNotification): TaskItem {
+function announcementItem(notification: AppNotification): InboxItem {
   return {
-    key: `n-${notification.id}`,
-    href: '/notifications',
+    key: notification.id,
+    href: notification.link ?? '/notifications',
     title: notification.title,
-    meta: notification.message,
-    chipLabel: 'Announcement',
-    chipTone: 'blue',
-    rank: 2,
+    meta: `Announcement · ${formatRelative(notification.createdAt)}`,
+    chipLabel: 'New',
+    chipTone: 'violet',
+    rank: 1,
   };
 }
+
+/* ======================================================================== */
 
 export default function DashboardPage() {
   const { user } = useSession();
   const now = useNow();
 
-  /* One request for the whole screen - `GET /dashboard` composes it from the
-     same per-course services the individual screens use, so these numbers
-     cannot drift from the pages they link to (CLAUDE.md §7.1). */
+  /* One request for the whole screen.
+
+     This used to be three `useApi` calls, the middle one fanning out over the
+     student's courses - `2N + 2` requests before the board could draw, and a
+     staged paint where the panels sat on "Loading files…" until the second
+     wave landed. `GET /dashboard` returns the same numbers, composed by the
+     same services server-side, so the screen is unchanged and the waterfall
+     is gone. */
   const {
     data: home,
     error,
@@ -142,11 +256,15 @@ export default function DashboardPage() {
   } = useApi((token) => api.dashboard.home(token), []);
 
   const entries = useMemo(() => home?.entries ?? [], [home]);
+  // `courses` and `mailbox` keep their old shapes so everything downstream -
+  // the cards, the panels, the inbox - reads exactly as it did.
+  const courses = useMemo(
+    () => (home ? entries.map((e) => e.course) : null),
+    [home, entries],
+  );
   const mailbox = home?.notifications ?? null;
-  const firstName = user?.name.split(' ')[0] ?? '';
-  const teacherName = entries[0]?.course.teacherName ?? 'Dr. Tahir Elshazli';
 
-  /* --- the one session the header speaks about ------------------------ */
+  /* --- the one session the hero and the header both speak about ------- */
   const nextSession = useMemo(() => {
     const upcoming = entries
       .filter((e): e is StudentHomeEntry & { nextLiveSession: LiveSession } =>
@@ -164,47 +282,50 @@ export default function DashboardPage() {
   const sessionPhase = nextSession
     ? phaseOf(nextSession.session, now)
     : 'scheduled';
+  const sessionIsImminent = sessionPhase === 'live' || sessionPhase === 'soon';
 
-  /* The course the left column's shortcuts point into: the one with the next
-     session if there is one, else the first enrolled. Named in each row's
-     subtitle, so a student with three courses is never guessing which one a
-     shortcut opens. */
-  const primary = useMemo(() => {
-    if (nextSession) {
-      const match = entries.find(
-        (e) => e.course.id === nextSession.session.courseId,
-      );
-      if (match) return match;
-    }
-    return entries[0] ?? null;
-  }, [entries, nextSession]);
-
-  /* --- tasks ----------------------------------------------------------- */
-  const tasks = useMemo(() => {
-    const items: TaskItem[] = [];
-    entries.forEach((entry) => {
-      entry.assessments.forEach((assessment) => {
-        const item = assessmentTask(assessment, entry.course.title, now);
-        if (item) items.push(item);
-      });
-    });
-    (mailbox?.notifications ?? [])
-      .filter(
+  /* --- the announcement that earns the hero when no session does ------ */
+  const urgentAnnouncement = useMemo(() => {
+    if (now === 0) return null;
+    return (
+      (mailbox?.notifications ?? []).find(
         (n) =>
           n.type === 'announcement' &&
           !n.read &&
-          (now === 0 || now - new Date(n.createdAt).getTime() <= URGENT_MS),
-      )
-      .forEach((n) => items.push(announcementTask(n)));
+          now - new Date(n.createdAt).getTime() <= URGENT_MS,
+      ) ?? null
+    );
+  }, [mailbox, now]);
+
+  /* --- inbox ---------------------------------------------------------- */
+  const inbox = useMemo(() => {
+    const items: InboxItem[] = [];
+
+    entries.forEach((entry) => {
+      entry.assessments.forEach((assessment) => {
+        const item = assessmentItem(assessment, entry.course.title, now);
+        if (item) items.push(item);
+      });
+    });
+
+    (mailbox?.notifications ?? [])
+      .filter((n) => n.type === 'announcement' && !n.read)
+      .forEach((n) => items.push(announcementItem(n)));
+
     return items.sort((a, b) => a.rank - b.rank);
   }, [entries, mailbox, now]);
 
-  const courseCount = entries.length;
+  const needsAction = inbox.filter((i) => i.rank <= 2).length;
+  const courseCount = courses?.length ?? 0;
+  const firstName = user?.name.split(' ')[0] ?? '';
 
   return (
     <PageTransition>
       <PageTitle icon={SquaresFourIcon} title="Dashboard" />
-      {/* Button first, stamp second - the order the reference sets. */}
+      {/* The reference's header: one primary action with the session's time
+          beside it. Button first, stamp second, and with no session the action
+          is a non-focusable span rather than a dead button - see
+          `components/app/join-session.tsx`. */}
       <PageActions>
         <JoinSessionAction
           session={nextSession?.session ?? null}
@@ -213,353 +334,575 @@ export default function DashboardPage() {
         <SessionStamp session={nextSession?.session ?? null} />
       </PageActions>
 
-      <PageBody dense className="flex flex-col gap-[var(--sp-4)]">
-        {loading && <RowsSkeleton rows={5} />}
+      <PageBody className="flex flex-col gap-[var(--sp-6)]">
+        {loading && <RowsSkeleton rows={4} />}
         {error && <ErrorState message={error.message} onRetry={reload} />}
 
-        {/* `items-stretch` (the grid default, said out loud) makes both
-            columns the same height; the trailing section in each then carries
-            `flex-1` so it absorbs the slack instead of leaving one side
-            hanging below the other. That is what makes the four cards read as
-            one aligned block rather than two ragged stacks. */}
-        {home && (
-          <div className="grid items-stretch gap-[var(--sp-4)] lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
-            <div className="flex flex-col gap-[var(--sp-4)]">
-              <WelcomeCard
-                firstName={firstName}
-                teacherName={teacherName}
-                taskCount={tasks.length}
-                courseCount={courseCount}
-                primary={primary}
-              />
-              {primary && <Shortcuts entry={primary} />}
+        {courses && courses.length === 0 && (
+          <EmptyState
+            title="No courses yet"
+            body="Pick a course from the catalog and it appears here with its timetable, work and recordings."
+            action={
+              <ButtonLink href="/catalog" variant="primary">
+                Browse courses
+              </ButtonLink>
+            }
+          />
+        )}
+
+        {courses && courses.length > 0 && (
+          <>
+            {/* ---- the two-column board -------------------------------- */}
+            {/* `items-stretch`, not `items-start`: the client asked for the four
+                boxes to line up rather than for one column to run longer than
+                the other. The trailing panel in each column carries `flex-1`
+                below, so whichever side is shorter absorbs the slack. */}
+            <div className="grid items-stretch gap-[var(--sp-4)] lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+              <StaggerList className="flex h-full flex-col gap-[var(--sp-4)]">
+                <StaggerItem>
+                  <Hero
+                    firstName={firstName}
+                    session={nextSession}
+                    phase={sessionPhase}
+                    announcement={sessionIsImminent ? null : urgentAnnouncement}
+                    needsAction={needsAction}
+                    now={now}
+                    primaryCourseId={courses[0].id}
+                  />
+                </StaggerItem>
+                <StaggerItem className="flex flex-1 flex-col">
+                  <QuickAccess entries={entries} />
+                </StaggerItem>
+              </StaggerList>
+
+              <StaggerList className="flex h-full flex-col gap-[var(--sp-4)]" delay={0.1}>
+                <StaggerItem>
+                  <InboxPanel
+                    items={inbox}
+                    courseCount={courseCount}
+                    unread={mailbox?.unreadCount ?? 0}
+                  />
+                </StaggerItem>
+                <StaggerItem className="flex flex-1 flex-col">
+                  <MaterialsPanel entries={entries} />
+                </StaggerItem>
+              </StaggerList>
             </div>
 
-            <div className="flex flex-col gap-[var(--sp-6)]">
-              <TaskList tasks={tasks} courseCount={courseCount} />
-              <CourseList entries={entries} />
-            </div>
-          </div>
+            {/* ---- the courses themselves ------------------------------ */}
+            <section>
+              <h2 className="mb-[var(--sp-3)] text-[var(--fs-xs)] font-medium uppercase tracking-[0.06em] text-fg-3">
+                Your courses
+              </h2>
+              <StaggerList
+                className="grid gap-[var(--sp-4)] lg:grid-cols-2"
+                delay={0.2}
+              >
+                {courses.map((course) => (
+                  <StaggerItem key={course.id}>
+                    <CourseCard course={course} />
+                  </StaggerItem>
+                ))}
+              </StaggerList>
+            </section>
+          </>
         )}
       </PageBody>
     </PageTransition>
   );
 }
 
-/* --- the portrait card ---------------------------------------------------
-   The reference's centred record card: an image, a greeting, one line of
-   context and a row of actions. */
+/* --- hero ---------------------------------------------------------------
+   Three states, in the priority the annotation sets: a session that is
+   running or imminent, else an urgent announcement, else a greeting. The
+   announcement is shown here *and* left in the inbox below - surfacing it
+   is not the same as reading it. */
 
-function WelcomeCard({
+function Hero({
   firstName,
-  teacherName,
-  taskCount,
-  courseCount,
-  primary,
+  session,
+  phase,
+  announcement,
+  needsAction,
+  now,
+  primaryCourseId,
 }: {
   firstName: string;
-  teacherName: string;
-  taskCount: number;
-  courseCount: number;
-  primary: StudentHomeEntry | null;
+  session: { session: LiveSession; courseTitle: string } | null;
+  phase: SessionPhase;
+  announcement: AppNotification | null;
+  needsAction: number;
+  now: number;
+  primaryCourseId: string;
 }) {
-  const line =
-    courseCount === 0
-      ? 'You are not enrolled on a course yet.'
-      : taskCount === 0
-        ? 'Nothing is waiting for you right now.'
-        : `${taskCount} ${taskCount === 1 ? 'thing needs' : 'things need'} your attention.`;
+  const live = session && (phase === 'live' || phase === 'soon');
 
   return (
-    <section className="flex flex-col items-center rounded-[var(--r-md)] border border-[var(--border-medium)] bg-[var(--bg-secondary)] px-[var(--sp-6)] py-[var(--sp-8)] text-center">
-      <TeacherPortrait name={teacherName} />
-      <h2 className="mt-[var(--sp-4)] text-[var(--fs-md)] font-semibold text-fg">
-        Welcome, {firstName || 'there'}.
-      </h2>
-      <p className="mt-[var(--sp-1)] text-[var(--fs-base)] text-fg-3">{line}</p>
-
-      <div className="mt-[var(--sp-4)] flex flex-wrap items-center justify-center gap-[var(--sp-2)]">
-        {primary ? (
-          <>
-            <CardAction
-              href={`/learn/${primary.course.id}/assessments`}
-              icon={<ClipboardTextIcon size={14} aria-hidden />}
+    <section className="flex min-h-[228px] flex-col items-center justify-center rounded-[var(--r-md)] border border-[var(--border-medium)] bg-[var(--bg-secondary)] px-[var(--sp-6)] py-[var(--sp-8)] text-center">
+      {live && session ? (
+        <>
+          <HeroBadge tone={phase === 'live' ? 'red' : 'amber'}>
+            <VideoCameraIcon size={24} weight="fill" />
+          </HeroBadge>
+          <Chip tone={phase === 'live' ? 'red' : 'amber'} className="mt-[var(--sp-4)]">
+            {phase === 'live' ? 'Live now' : 'Starting soon'}
+          </Chip>
+          <h2 className="mt-[var(--sp-3)] text-[var(--fs-md)] font-semibold text-fg">
+            {session.session.title}
+          </h2>
+          <p className="mt-[var(--sp-1)] text-[var(--fs-base)] text-fg-3">
+            {session.courseTitle} ·{' '}
+            <span className="num">
+              {phase === 'live'
+                ? `${formatTime(session.session.scheduledAt)} · ${session.session.durationMinutes} min`
+                : `starts in ${minutesUntil(session.session.scheduledAt, now)} min`}
+            </span>
+          </p>
+          <div className="mt-[var(--sp-4)] flex flex-wrap items-center justify-center gap-[var(--sp-2)]">
+            <a
+              href={session.session.zoomLink}
+              target="_blank"
+              rel="noreferrer noopener"
+              className={cx(
+                'inline-flex h-[var(--h-sm)] items-center gap-[var(--sp-2)] rounded-[var(--r-md)]',
+                'bg-[var(--accent)] px-[var(--sp-3)] text-[var(--fs-xs)] font-medium',
+                'text-accent-fg transition-[background-color] duration-[var(--dur-fast)]',
+                'hover:bg-[var(--accent-hover)]',
+              )}
             >
+              Join now
+              <ArrowSquareOutIcon size={12} />
+            </a>
+            <HeroLink href={`/learn/${session.session.courseId}/sessions`}>
+              <CalendarBlankIcon size={12} />
+              Timetable
+            </HeroLink>
+          </div>
+        </>
+      ) : announcement ? (
+        <>
+          <HeroBadge tone="violet">
+            <MegaphoneIcon size={24} weight="fill" />
+          </HeroBadge>
+          <Chip tone="violet" className="mt-[var(--sp-4)]">
+            Announcement
+          </Chip>
+          <h2 className="mt-[var(--sp-3)] text-[var(--fs-md)] font-semibold text-fg">
+            {announcement.title}
+          </h2>
+          <p className="mt-[var(--sp-1)] line-clamp-2 max-w-[46ch] text-[var(--fs-base)] text-fg-3">
+            {announcement.message}
+          </p>
+          <div className="mt-[var(--sp-4)] flex flex-wrap items-center justify-center gap-[var(--sp-2)]">
+            <HeroLink href={announcement.link ?? '/notifications'}>
+              Read it
+              <ArrowRightIcon size={12} />
+            </HeroLink>
+            <HeroLink href="/notifications">
+              <BellIcon size={12} />
+              All announcements
+            </HeroLink>
+          </div>
+        </>
+      ) : (
+        <>
+          {/* Dr. Tahir's illustration, as the client supplied it. It replaces
+              the student's own initials disc: the greeting is from the teacher,
+              and a student does not need their own monogram shown back to them. */}
+          <TeacherPortrait name="Dr. Tahir Elshazli" />
+          <h2 className="mt-[var(--sp-4)] text-[var(--fs-md)] font-semibold text-fg">
+            {firstName ? `Welcome, ${firstName}.` : 'Welcome.'}
+          </h2>
+          <p className="mt-[var(--sp-1)] text-[var(--fs-base)] text-fg-3">
+            {needsAction > 0
+              ? `${needsAction} ${needsAction === 1 ? 'thing needs' : 'things need'} you today.`
+              : 'Nothing is due. A good time to watch a lesson back.'}
+          </p>
+          <div className="mt-[var(--sp-4)] flex flex-wrap items-center justify-center gap-[var(--sp-2)]">
+            <HeroLink href={`/learn/${primaryCourseId}`}>
+              <ArrowRightIcon size={12} />
+              Continue
+            </HeroLink>
+            <HeroLink href={`/learn/${primaryCourseId}/assessments`}>
+              <ClipboardTextIcon size={12} />
               Work
-            </CardAction>
-            <CardAction
-              href={`/learn/${primary.course.id}/recordings`}
-              icon={<VideoCameraIcon size={14} aria-hidden />}
-            >
+            </HeroLink>
+            <HeroLink href={`/learn/${primaryCourseId}/recordings`}>
+              <VideoCameraIcon size={12} />
               Recordings
-            </CardAction>
-            <CardAction
-              href={`/learn/${primary.course.id}/materials`}
-              icon={<FileTextIcon size={14} aria-hidden />}
-            >
-              Materials
-            </CardAction>
-          </>
-        ) : (
-          <CardAction
-            href="/catalog"
-            icon={<FolderSimpleIcon size={14} aria-hidden />}
-          >
-            Browse courses
-          </CardAction>
-        )}
-      </div>
+            </HeroLink>
+          </div>
+        </>
+      )}
     </section>
   );
 }
 
-function CardAction({
-  href,
-  icon,
+function HeroBadge({
+  tone,
   children,
 }: {
-  href: string;
-  icon: React.ReactNode;
+  tone: ChipTone;
   children: React.ReactNode;
 }) {
+  return (
+    <span
+      aria-hidden
+      className="flex h-[64px] w-[64px] items-center justify-center rounded-[var(--r-full)]"
+      style={{
+        background: `var(--chip-${tone}-bg)`,
+        color: `var(--chip-${tone}-fg)`,
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function HeroLink({ href, children }: { href: string; children: React.ReactNode }) {
   return (
     <Link
       href={href}
       className={cx(
-        'inline-flex h-[var(--h-md)] items-center gap-[var(--sp-1)] rounded-[var(--r-md)]',
-        'border border-[var(--border-medium)] px-[var(--sp-3)]',
-        'text-[var(--fs-base)] font-medium text-fg-2',
-        'transition-colors duration-[var(--dur-fast)] ease-[var(--ease)]',
-        'hover:bg-[var(--bg-wash-nav)] hover:text-fg',
+        'inline-flex h-[var(--h-sm)] items-center gap-[var(--sp-2)] rounded-[var(--r-md)]',
+        'border border-[var(--border-medium)] px-[var(--sp-3)] text-[var(--fs-xs)]',
+        'text-fg-2 transition-colors duration-[var(--dur-fast)]',
+        'hover:border-[var(--border-strong)] hover:text-fg',
       )}
     >
-      {icon}
       {children}
     </Link>
   );
 }
 
-/* --- section shortcuts ---------------------------------------------------
-   The reference's list of related records, under the card. Each row names the
-   course it opens, because a student with three of them should not have to
-   guess which one a bare "Recordings" goes to. */
+/* --- quick access -------------------------------------------------------
+   The reference's second left-column block, and the reason it exists: the
+   four places a student goes most, one click from the landing screen
+   instead of a trip through the rail. With more than one course the
+   destination is ambiguous, so the sub-label names the course it opens. */
 
-function Shortcuts({ entry }: { entry: StudentHomeEntry }) {
-  const { course, stats, quickAccess } = entry;
-  const materialCount =
-    quickAccess.course_notes +
-    quickAccess.study_materials +
-    quickAccess.important_files;
+function QuickAccess({ entries }: { entries: StudentHomeEntry[] }) {
+  const primary = entries[0].course;
+  const stats = entries[0]?.stats;
+  const many = entries.length > 1;
+  const scope = many ? primary.title : null;
 
   const rows = [
     {
-      href: `/learn/${course.id}/recordings`,
-      tone: 'text-chip-red-fg',
-      icon: <VideoCameraIcon size={16} weight="fill" aria-hidden />,
-      title: 'Recordings',
-      body:
-        stats.newRecordings > 0
-          ? `${stats.newRecordings} new to watch`
-          : 'Catch up on any lesson',
+      href: `/learn/${primary.id}/recordings`,
+      icon: VideoCameraIcon,
+      tone: 'blue' as ChipTone,
+      label: 'Recordings',
+      sub: scope ?? 'Watch any lesson back',
+      count: stats?.newRecordings ? `${stats.newRecordings} new` : null,
     },
     {
-      href: `/learn/${course.id}/assessments`,
-      tone: 'text-chip-amber-fg',
-      icon: <ClipboardTextIcon size={16} weight="fill" aria-hidden />,
-      title: 'Work',
-      body:
-        stats.homeworkPending > 0
-          ? `${stats.homeworkPending} still to hand in`
-          : 'Everything is handed in',
+      href: `/learn/${primary.id}/assessments`,
+      icon: ClipboardTextIcon,
+      tone: 'amber' as ChipTone,
+      label: 'Work',
+      sub: scope ?? 'Homework, assignments and quizzes',
+      count: stats?.homeworkPending ? `${stats.homeworkPending} to do` : null,
     },
     {
-      href: `/learn/${course.id}/report`,
-      tone: 'text-chip-violet-fg',
-      icon: <ChartLineIcon size={16} weight="fill" aria-hidden />,
-      title: 'Report',
-      body:
-        stats.overallReportPercentage === null
-          ? 'Nothing marked yet'
-          : `Averaging ${formatPercent(stats.overallReportPercentage)}`,
+      href: `/learn/${primary.id}/sessions`,
+      icon: CalendarBlankIcon,
+      tone: 'teal' as ChipTone,
+      label: 'Timetable',
+      sub: scope ?? 'Live sessions and attendance',
+      count: null,
     },
     {
-      href: `/learn/${course.id}/sessions`,
-      tone: 'text-chip-teal-fg',
-      icon: <CalendarBlankIcon size={16} weight="fill" aria-hidden />,
-      title: 'Timetable',
-      body: 'Live sessions and attendance',
-    },
-    {
-      href: `/learn/${course.id}/materials`,
-      tone: 'text-chip-green-fg',
-      icon: <FileTextIcon size={16} weight="fill" aria-hidden />,
-      title: 'Materials',
-      body:
-        materialCount > 0
-          ? `${materialCount} file${materialCount === 1 ? '' : 's'}`
-          : 'Nothing uploaded yet',
+      href: `/learn/${primary.id}/report`,
+      icon: ChartLineIcon,
+      tone: 'green' as ChipTone,
+      label: 'Report',
+      sub: scope ?? 'Progress and performance',
+      count:
+        stats?.overallReportPercentage != null
+          ? formatPercent(stats.overallReportPercentage)
+          : null,
     },
   ];
 
   return (
-    <section className="flex flex-1 flex-col overflow-hidden rounded-[var(--r-md)] border border-[var(--border-medium)] bg-[var(--bg-secondary)]">
-      <p className="px-[var(--sp-3)] pt-[var(--sp-3)] text-[var(--fs-xxs)] font-semibold uppercase tracking-wide text-fg-4">
-        {course.title}
-      </p>
-      <ul className="rows mt-[var(--sp-2)] flex-1">
+    <Panel title="Quick access" bodyClassName="" className="h-full">
+      <ul className="rows">
         {rows.map((row) => (
-          <li key={row.href}>
-            <Link
-              href={row.href}
-              className="flex items-center gap-[var(--sp-3)] px-[var(--sp-3)] py-[var(--sp-2)] transition-colors duration-[var(--dur-fast)] hover:bg-[var(--bg-wash-nav)]"
-            >
-              <span
-                className={cx(
-                  'flex h-[var(--h-md)] w-[var(--h-md)] shrink-0 items-center justify-center',
-                  'rounded-[var(--r-sm)] bg-[var(--bg-wash-nav)]',
-                  row.tone,
-                )}
-              >
-                {row.icon}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[var(--fs-base)] font-medium text-fg">
-                  {row.title}
-                </span>
-                <span className="block truncate text-[var(--fs-xs)] text-fg-3">
-                  {row.body}
-                </span>
-              </span>
-            </Link>
-          </li>
+          <AccessRow key={row.href} {...row} />
         ))}
       </ul>
-    </section>
+    </Panel>
   );
 }
 
-/* --- the work that needs doing ------------------------------------------ */
-
-function TaskList({
-  tasks,
-  courseCount,
+function AccessRow({
+  href,
+  icon: Icon,
+  tone,
+  label,
+  sub,
+  count,
 }: {
-  tasks: TaskItem[];
-  courseCount: number;
+  href: string;
+  icon: typeof VideoCameraIcon;
+  tone: ChipTone;
+  label: string;
+  sub: string;
+  count: string | null;
 }) {
   return (
-    <section>
-      <h2 className="text-[var(--fs-base)] font-semibold text-fg">
-        {tasks.length} required {tasks.length === 1 ? 'task' : 'tasks'}
-        <span className="text-fg-3">
-          {' · '}
-          {courseCount} {courseCount === 1 ? 'course' : 'courses'}
+    <li>
+      <Link
+        href={href}
+        className="row flex items-center gap-[var(--sp-3)] px-[var(--sp-4)] py-[var(--sp-3)] transition-colors duration-[var(--dur-fast)]"
+      >
+        <span
+          aria-hidden
+          className="flex h-[20px] w-[20px] shrink-0 items-center justify-center rounded-[var(--r-sm)]"
+          style={{
+            background: `var(--chip-${tone}-bg)`,
+            color: `var(--chip-${tone}-fg)`,
+          }}
+        >
+          <Icon size={12} weight="fill" />
         </span>
-      </h2>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[var(--fs-base)] font-medium text-fg">
+            {label}
+          </span>
+          <span className="block truncate text-[var(--fs-xs)] text-fg-3">
+            {sub}
+          </span>
+        </span>
+        {count && (
+          <span className="num shrink-0 text-[var(--fs-xs)] text-fg-2">
+            {count}
+          </span>
+        )}
+        <CaretRightIcon
+          size={12}
+          aria-hidden
+          className="reveal shrink-0 text-fg-4"
+        />
+      </Link>
+    </li>
+  );
+}
 
-      {tasks.length === 0 ? (
-        <p className="mt-[var(--sp-3)] rounded-[var(--r-md)] border border-[var(--border-medium)] px-[var(--sp-4)] py-[var(--sp-4)] text-[var(--fs-base)] text-fg-3">
-          Nothing is due. New work and announcements land here.
+/* --- inbox --------------------------------------------------------------
+   The reference's stacked task cards, carrying what a student is actually
+   handed: work that is open or newly marked, and announcements they have
+   not read. Separate cards rather than table rows, because each one is a
+   different errand rather than a row in a set. */
+
+function InboxPanel({
+  items,
+  courseCount,
+  unread,
+}: {
+  items: InboxItem[];
+  courseCount: number;
+  unread: number;
+}) {
+  const shown = items.slice(0, MAX_INBOX);
+  const more = items.length - shown.length;
+
+  return (
+    <section className="rounded-[var(--r-md)] border border-[var(--border-medium)] bg-[var(--bg-secondary)] p-[var(--sp-4)]">
+      <header className="flex items-baseline justify-between gap-[var(--sp-3)]">
+        <h2 className="text-[var(--fs-base)] font-semibold text-fg">
+          {items.length === 0
+            ? 'Nothing waiting'
+            : `${items.length} ${items.length === 1 ? 'item' : 'items'} for you`}
+        </h2>
+        <span className="text-[var(--fs-xs)] text-fg-3">
+          across {courseCount} {courseCount === 1 ? 'course' : 'courses'}
+        </span>
+      </header>
+
+      {items.length === 0 ? (
+        <p className="mt-[var(--sp-4)] text-[var(--fs-base)] text-fg-3">
+          No open work and no unread announcements. Anything new lands here.
         </p>
       ) : (
         <ul className="mt-[var(--sp-3)] flex flex-col gap-[var(--sp-2)]">
-          {tasks.map((task) => (
-            <li key={task.key}>
+          {shown.map((item) => (
+            <li key={item.key}>
               <Link
-                href={task.href}
+                href={item.href}
                 className={cx(
-                  'block rounded-[var(--r-md)] border border-[var(--border-medium)]',
-                  'px-[var(--sp-4)] py-[var(--sp-3)]',
-                  'transition-colors duration-[var(--dur-fast)] ease-[var(--ease)]',
-                  'hover:bg-[var(--bg-wash-nav)]',
+                  'block rounded-[var(--r-sm)] border border-[var(--border-medium)]',
+                  'bg-[var(--bg-primary)] px-[var(--sp-4)] py-[var(--sp-3)]',
+                  'transition-[border-color,background-color] duration-[var(--dur-fast)]',
+                  'hover:border-[var(--border-strong)] hover:bg-[var(--bg-tertiary)]',
                 )}
               >
-                <span className="block text-[var(--fs-base)] font-semibold text-fg">
-                  {task.title}
-                </span>
-                <span className="mt-[var(--sp-1)] block text-[var(--fs-base)] text-fg-3">
-                  {task.meta}
-                </span>
-                <span className="mt-[var(--sp-2)] block">
-                  <Chip tone={task.chipTone}>{task.chipLabel}</Chip>
-                </span>
+                <p className="truncate text-[var(--fs-base)] font-medium text-fg">
+                  {item.title}
+                </p>
+                <p className="mt-[var(--sp-1)] truncate text-[var(--fs-xs)] text-fg-3">
+                  {item.meta}
+                </p>
+                <Chip tone={item.chipTone} className="mt-[var(--sp-2)]">
+                  {item.chipLabel}
+                </Chip>
               </Link>
             </li>
           ))}
         </ul>
+      )}
+
+      {(more > 0 || unread > 0) && (
+        <div className="mt-[var(--sp-3)] flex items-center justify-between">
+          <span className="text-[var(--fs-xs)] text-fg-4">
+            {more > 0 ? `${more} more` : ''}
+          </span>
+          <Link
+            href="/notifications"
+            className="inline-flex items-center gap-[var(--sp-1)] text-[var(--fs-xs)] text-fg-3 transition-colors duration-[var(--dur-fast)] hover:text-fg"
+          >
+            Open inbox
+            {unread > 0 && <span className="num">({unread})</span>}
+            <ArrowRightIcon size={11} />
+          </Link>
+        </div>
       )}
     </section>
   );
 }
 
-/* --- the courses themselves --------------------------------------------- */
+/* --- materials ----------------------------------------------------------
+   The reference's "Tools & Skills" list, in the same row grammar. With one
+   course the rows are its three material categories; with several they are
+   the courses themselves, because a combined count that links to only one
+   of them would be a number the destination cannot account for. */
 
-function CourseList({ entries }: { entries: StudentHomeEntry[] }) {
+function MaterialsPanel({ entries }: { entries: StudentHomeEntry[] }) {
+  const single = entries.length === 1;
+
+  const rows = single
+    ? (
+        Object.keys(MATERIAL_CATEGORY_LABEL) as MaterialCategory[]
+      ).map((category) => ({
+        href: `/learn/${entries[0].course.id}/materials`,
+        icon: MATERIAL_ICON[category],
+        tone: MATERIAL_TONE[category],
+        label: MATERIAL_CATEGORY_LABEL[category],
+        sub: entries[0].course.title,
+        count: String(entries[0].quickAccess[category] ?? 0),
+      }))
+    : entries.map((entry) => {
+        const total = Object.values(entry.quickAccess).reduce(
+          (sum, n) => sum + n,
+          0,
+        );
+        return {
+          href: `/learn/${entry.course.id}/materials`,
+          icon: FolderSimpleIcon,
+          tone: 'blue' as ChipTone,
+          label: entry.course.title,
+          sub: entry.course.teacherName,
+          count: String(total),
+        };
+      });
+
   return (
-    <section className="flex flex-1 flex-col">
-      <h2 className="text-[var(--fs-base)] font-semibold text-fg">
-        Your courses
-      </h2>
-      <p className="mt-[var(--sp-1)] text-[var(--fs-base)] text-fg-3">
-        Everything you are enrolled on
-      </p>
-
-      {entries.length === 0 ? (
-        <p className="mt-[var(--sp-3)] flex-1 rounded-[var(--r-md)] border border-[var(--border-medium)] px-[var(--sp-4)] py-[var(--sp-4)] text-[var(--fs-base)] text-fg-3">
-          You are not enrolled on anything yet.{' '}
-          <Link href="/catalog" className="text-accent underline-offset-2 hover:underline">
-            Browse the catalog
-          </Link>
-          .
+    <Panel
+      className="h-full"
+      title="Materials"
+      action={
+        <span className="text-[var(--fs-xs)] text-fg-3">
+          Notes and files
+        </span>
+      }
+      bodyClassName=""
+    >
+      {rows.length === 0 ? (
+        // No "still loading" branch any more: the counts arrive with the
+        // courses in one response, so by the time this panel renders the
+        // answer is known and an empty list really does mean empty.
+        <p className="p-[var(--sp-4)] text-[var(--fs-base)] text-fg-3">
+          Nothing uploaded yet.
         </p>
       ) : (
-        <ul className="mt-[var(--sp-3)] flex-1 overflow-hidden rounded-[var(--r-md)] border border-[var(--border-medium)]">
-          {entries.map((entry, i) => (
-            <li
-              key={entry.course.id}
-              className={cx(i > 0 && 'border-t border-[var(--border-medium)]')}
-            >
-              <Link
-                href={`/learn/${entry.course.id}`}
-                className="flex items-center gap-[var(--sp-3)] px-[var(--sp-3)] py-[var(--sp-2)] transition-colors duration-[var(--dur-fast)] hover:bg-[var(--bg-wash-nav)]"
-              >
-                <span className="flex h-[var(--h-md)] w-[var(--h-md)] shrink-0 items-center justify-center rounded-[var(--r-sm)] bg-[var(--bg-wash-nav)] text-chip-blue-fg">
-                  {entry.nextLiveSession ? (
-                    <CalendarBlankIcon size={16} weight="fill" aria-hidden />
-                  ) : (
-                    <FolderSimpleIcon size={16} weight="fill" aria-hidden />
-                  )}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[var(--fs-base)] font-medium text-fg">
-                    {entry.course.title}
-                  </span>
-                  <span className="block truncate text-[var(--fs-xs)] text-fg-3">
-                    {entry.course.teacherName}
-                  </span>
-                </span>
-                {/* Progress, never merged with performance (CLAUDE.md §5.1) -
-                    and the two learning modes keep their own words, because
-                    "80% watched" and "80% attended" are different facts
-                    (§5.2), which is why `CourseProgress` is a union and not a
-                    number. */}
-                <span className="shrink-0 whitespace-nowrap text-[var(--fs-xs)] text-fg-3">
-                  <span className="num">
-                    {formatPercent(
-                      entry.course.progress.type === 'recorded'
-                        ? entry.course.progress.completionPercentage
-                        : entry.course.progress.attendancePercentage,
-                    )}
-                  </span>{' '}
-                  {entry.course.progress.type === 'recorded'
-                    ? 'complete'
-                    : 'attended'}
-                </span>
-              </Link>
-            </li>
+        <ul className="rows">
+          {rows.map((row) => (
+            <AccessRow key={`${row.href}-${row.label}`} {...row} />
           ))}
         </ul>
       )}
-    </section>
+    </Panel>
+  );
+}
+
+/* --- course card --------------------------------------------------------
+   Kept from the previous dashboard. The reference has no equivalent block,
+   but a student's landing screen without their courses on it would be
+   cloning the reference's form and losing its function. */
+
+function CourseCard({ course }: { course: CourseListItem }) {
+  const { progress } = course;
+
+  // CLAUDE.md §5.2 - the enrollment's mode decides what "progress" means.
+  const isRecorded = progress.type === 'recorded';
+  const percentage = isRecorded
+    ? progress.completionPercentage
+    : progress.attendancePercentage;
+  const detail = isRecorded
+    ? `${progress.completedLessons} of ${progress.totalLessons} lessons done`
+    : `${progress.attendedSessions} of ${progress.totalSessions} sessions attended`;
+
+  return (
+    <motion.div
+      whileHover={{ scale: 1.01 }}
+      transition={{ duration: 0.2, ease: [0.2, 0, 0.2, 1] }}
+    >
+      <Link
+        href={`/learn/${course.id}`}
+        className="group flex h-full flex-col rounded-[var(--r-md)] border border-[var(--border-medium)] bg-[var(--bg-secondary)] p-[var(--sp-4)] transition-[border-color,box-shadow] duration-[var(--dur-fast)] hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-sm)]"
+      >
+        <div className="flex items-start justify-between gap-[var(--sp-3)]">
+          <div className="min-w-0">
+            <h3 className="truncate text-[var(--fs-md)] font-semibold text-fg">
+              {course.title}
+            </h3>
+            <p className="mt-[var(--sp-1)] text-[var(--fs-xs)] text-fg-3">
+              {course.teacherName}
+            </p>
+          </div>
+          <Chip tone={isRecorded ? 'violet' : 'teal'}>
+            {isRecorded ? 'Recorded' : 'Live'}
+          </Chip>
+        </div>
+
+        <p className="mt-[var(--sp-3)] line-clamp-2 text-[var(--fs-base)] text-fg-2">
+          {course.description}
+        </p>
+
+        <div className="mt-[var(--sp-4)] flex items-baseline justify-between">
+          <span className="text-[var(--fs-xs)] text-fg-3">
+            {isRecorded ? 'Course completion' : 'Attendance'}
+          </span>
+          <span className="num text-[var(--fs-md)] text-fg">
+            {formatPercent(percentage)}
+          </span>
+        </div>
+        <div className="mt-[var(--sp-2)]">
+          <Meter
+            value={percentage}
+            label={isRecorded ? 'Course completion' : 'Attendance'}
+          />
+        </div>
+        <p className="num mt-[var(--sp-2)] text-[var(--fs-xxs)] text-fg-4">
+          {detail}
+        </p>
+
+        <span className="mt-[var(--sp-4)] inline-flex items-center gap-[var(--sp-2)] text-[var(--fs-base)] text-fg-2 transition-colors duration-[var(--dur-fast)] group-hover:text-fg">
+          Open course
+          <ArrowRightIcon size={14} />
+        </span>
+      </Link>
+    </motion.div>
   );
 }

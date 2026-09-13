@@ -3122,3 +3122,55 @@ colours.
   40px header, every other student page still draws its own `PageHeader` below
   an otherwise empty bar. That inconsistency is now visible rather than
   theoretical.
+
+---
+
+## 2026-09-13 - The dashboard rebuild is reverted; the previous board keeps the new header
+
+The rebuild of the day before replaced the student board wholesale with the
+reference's own shape. The client's reaction was that it *"made it narrow"* and
+asked for the previous design back - with the boxes aligned and the portrait in
+it. Both halves of that are fair, and the second one explains the first.
+
+**What "the four boxes" meant.** The client had named *"the box of the
+notification, the box of the materials, the box of the quick access, and the
+box of the welcoming"* - which are the panels of the **previous** board, not of
+the rebuild. That was a description of the screen they already had, read as a
+description of the one being built. The rebuild's fixed `420px` left column was
+also genuinely narrower than the old fluid `5fr / 6fr`, so "narrow" was
+literal.
+
+So `app/(app)/dashboard/page.tsx` is restored to its pre-rebuild state and
+three things are carried across rather than the whole thing being kept:
+
+- **The header.** `PageTitle` + `PageActions` with `JoinSessionAction`, so the
+  board keeps the reference's 40px bar and its one primary action, including
+  the non-focusable "No session right now" span. The page's old `PageHeader`
+  and its local `JoinSessionButton`/`LivePip` are deleted - the pulsing dot
+  now lives in `components/app/join-session.tsx`.
+- **The alignment.** `items-start` becomes `items-stretch`, each column's
+  `StaggerList` gets `h-full`, the trailing `StaggerItem` in each gets
+  `flex-1`, and the two trailing `Panel`s get `h-full`. All four are needed:
+  stretching the grid item alone leaves the panel inside it at its content
+  height, which is exactly how the first attempt looked aligned by measurement
+  (columns 48-589, delta 0) while still reading as ragged on screen. Measured
+  after: the **boxes** themselves both end at 757, delta 0.
+- **The portrait**, replacing the student's own initials disc in the greeting.
+  The greeting is from the teacher, and a student does not need their own
+  monogram shown back to them.
+
+**`components/app/teacher-portrait.tsx` and `join-session.tsx` survive the
+revert** and are the reason it was cheap: the two pieces worth keeping were
+already components rather than lines inside the page.
+
+### Follow-ups / debt
+
+- **The portrait asset is still not in the repo.** `public/teacher-portrait.png`
+  does not exist, so the initials fallback is what renders. Attaching the image
+  to a chat message does not put it on disk.
+- The portrait only appears in the hero's **greeting** state. With a live or
+  imminent session the hero shows the session instead, which is the priority the
+  original annotation set. Worth confirming the client wants it that way rather
+  than in all three states.
+- `/dashboard` is now the only student page on the shell's 40px header; the
+  rest still draw their own. Unchanged from yesterday and still open.
