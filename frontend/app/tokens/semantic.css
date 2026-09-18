@@ -86,11 +86,24 @@
   --status-blue: var(--colors-blue-9);
   --status-blue-wash: var(--colors-blue-3);
 
-  /* OURS (naming only, not a new value): the amber 9-step is a bright lemon and
-     fails contrast as text, so the handoff mandates `--bright-yellow-11` wherever
-     amber is ink rather than ground. Aliased here so a screen never has to reach
-     past this file into the generated one to get amber text right. */
-  --status-amber-text: var(--bright-yellow-11);
+  /* OURS (naming only — every value below is the exact step the handoff's own
+     components already use). A status has a GROUND and an INK, and they are
+     different steps: the ground is the `-wash` above, the ink is the 11-step.
+     The handoff states this for amber only, because amber is the one where
+     getting it wrong is a contrast failure rather than a shade difference — the
+     9-step is a bright lemon and is unreadable as text. But `Tag`, `Score`,
+     `SyncStatus` and `InlineBanner` all reach for an 11-step for their
+     foreground, so naming the whole set is what stops a screen reaching past
+     this file into the generated one for `--colors-green-11`.
+
+     Blue is the exception and takes the 12-step, which is what `Tag` uses:
+     blue-11 sits too close to the accent, and a status that reads as the accent
+     is the exact confusion non-negotiable 3 exists to prevent. */
+  --status-green-text:  var(--colors-green-11);
+  --status-amber-text:  var(--bright-yellow-11);
+  --status-red-text:    var(--colors-red-11);
+  --status-violet-text: var(--colors-purple-11);
+  --status-blue-text:   var(--colors-blue-12);
 
   /* ── Washes (hover/press over any surface) ───────────────── */
   --wash-hover: rgba(0,0,0,0.04);

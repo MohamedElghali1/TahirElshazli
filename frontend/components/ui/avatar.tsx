@@ -1,46 +1,132 @@
+import * as React from 'react';
 import { cx } from './cx';
-import { initials } from '@/lib/format';
 
 /**
- * Initials in a circle. No photography exists for any account yet, so this is
- * the avatar rather than a placeholder for one - when `avatarUrl` lands on the
- * user shape it becomes an `<img>` with this as the fallback.
+ * A person, as initials on a tinted ground or as their photo.
  *
- * Sizes follow the control scale so an avatar lines up with the button beside
- * it: 24 in a table row, 32 in the shell.
+ * The tint is derived from the name, so one person is the same colour on every
+ * screen without anything being stored. That stability is the feature: a roster,
+ * a grading queue and a classmate grid all agree, and nobody has to pick a
+ * colour when a student is created.
  *
- * `xs` is the exception and is deliberately a rounded *square*, not a circle:
- * it is the workspace mark in the rail's top chip, which the reference system
- * draws as a 16px squircle at the tag radius. A circle there reads as a
- * person, and the thing it stands for is an organisation.
+ * Sizes in use: **16** in a menu row, **20** in a table cell and the sidebar
+ * identity row, **24** in a classmate grid, **28** in the student header, **32**
+ * beside a teacher's note, **72** in the profile-photo panel.
+ *
+ * The colours are the raw 4/11 steps rather than semantic tokens on purpose —
+ * they carry no meaning at all here, which is exactly why they must not come
+ * from the status scale. A green avatar does not mean the student is passing.
  */
-const AVATAR_SIZE = {
-  xs: 'h-[var(--icon-md)] w-[var(--icon-md)] rounded-[var(--r-sm)] text-[var(--fs-xxs)]',
-  sm: 'h-[var(--h-sm)] w-[var(--h-sm)] rounded-[var(--r-full)] text-[var(--fs-xxs)]',
-  md: 'h-[var(--h-md)] w-[var(--h-md)] rounded-[var(--r-full)] text-[var(--fs-xs)]',
-} as const;
+
+const PALETTE: ReadonlyArray<readonly [string, string]> = [
+  ['var(--colors-indigo-4)', 'var(--colors-indigo-11)'],
+  ['var(--colors-green-4)', 'var(--colors-green-11)'],
+  ['var(--bright-yellow-4)', 'var(--bright-yellow-11)'],
+  ['var(--colors-red-4)', 'var(--colors-red-11)'],
+  ['var(--colors-purple-4)', 'var(--colors-purple-11)'],
+  ['var(--colors-pink-4)', 'var(--colors-pink-11)'],
+  ['var(--colors-orange-4)', 'var(--colors-orange-11)'],
+  ['var(--colors-teal-4)', 'var(--colors-teal-11)'],
+];
+
+/**
+ * First letters of the first two words.
+ *
+ * `Array.from` rather than `[0]`, because a JavaScript string index returns a
+ * UTF-16 code unit and would split an astral character in half. Arabic names
+ * are in the roster on purpose (CLAUDE.md §4) and nothing here may assume Latin
+ * metrics — `ليلى فهمي` has to come out as "لف", not as a replacement glyph.
+ */
+function initials(name: string): string {
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((word) => Array.from(word)[0] ?? '')
+    .join('')
+    .toUpperCase();
+}
+
+function tintFor(name: string): readonly [string, string] {
+  let index = 0;
+  for (const char of name) index = (index + char.codePointAt(0)!) % PALETTE.length;
+  return PALETTE[index];
+}
 
 export function Avatar({
-  name,
-  size = 'md',
+  name = '',
+  src,
+  size = 16,
+  shape = 'rounded',
   className,
+  ...rest
 }: {
-  name: string;
-  size?: keyof typeof AVATAR_SIZE;
+  name?: string;
+  /** A photo. When set, initials are not rendered. */
+  src?: string | null;
+  size?: number;
+  shape?: 'rounded' | 'circle';
   className?: string;
-}) {
+} & React.HTMLAttributes<HTMLSpanElement>) {
+  const [bg, fg] = tintFor(name);
   return (
     <span
-      aria-hidden
-      data-size={size}
+      {...rest}
+      // The name is already beside this everywhere the system uses it, so
+      // repeating it here would make a screen reader say it twice.
+      aria-hidden="true"
       className={cx(
-        'num inline-flex shrink-0 items-center justify-center',
-        'bg-[var(--bg-quaternary)] font-semibold text-fg-2',
-        AVATAR_SIZE[size],
+        'inline-flex shrink-0 items-center justify-center overflow-hidden font-sans font-semibold leading-none',
         className,
       )}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: shape === 'circle' ? 'var(--radius-pill)' : Math.max(2, Math.round(size * 0.22)),
+        background: src ? `center/cover no-repeat url(${src})` : bg,
+        color: fg,
+        fontSize: Math.max(7, Math.round(size * 0.45)),
+      }}
     >
-      {initials(name)}
+      {src ? '' : initials(name)}
+    </span>
+  );
+}
+
+/**
+ * Overlapping avatars with a count. For "who is in this group" at a glance —
+ * never as the only way to reach the people it shows.
+ */
+export function AvatarGroup({
+  people,
+  size = 20,
+  max = 4,
+  className,
+  ...rest
+}: {
+  people: ReadonlyArray<{ name: string; src?: string | null }>;
+  size?: number;
+  max?: number;
+  className?: string;
+} & React.HTMLAttributes<HTMLSpanElement>) {
+  const shown = people.slice(0, max);
+  const rest_ = people.length - shown.length;
+  return (
+    <span {...rest} className={cx('inline-flex items-center', className)}>
+      {shown.map((person, i) => (
+        <Avatar
+          key={`${person.name}-${i}`}
+          name={person.name}
+          src={person.src}
+          size={size}
+          shape="circle"
+          className="ring-2 ring-surface"
+          style={{ marginInlineStart: i === 0 ? 0 : -Math.round(size * 0.3) }}
+        />
+      ))}
+      {rest_ > 0 && (
+        <span className="num ms-1 text-xs text-fg-4">+{rest_}</span>
+      )}
     </span>
   );
 }

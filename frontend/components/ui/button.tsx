@@ -1,134 +1,160 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { cx } from './cx';
-
-/* --- Button --------------------------------------------------------------
-   Geometry is the reference system's, token for token: height 24 (small) or
-   32 (medium), radius md, 1px border on every variant so the filled and
-   outlined sizes agree to the pixel, font-size base at weight 500, and 8px
-   of inline padding. The one exception is `primary` at `sm` - the reference
-   system's own filled buttons live at that size and use a larger radius
-   (16, not 8) plus a faint edge on the fill instead of a transparent border;
-   see `buttonGeometry` below.
-
-   That padding looks tight written down and is correct in place - these are
-   toolbar controls sitting next to each other, not isolated web buttons. The
-   two larger sizes below are ours, for the marketing site, which has the
-   opposite problem.
-
-   `data-variant` and `data-size` are emitted alongside the classes. They
-   style nothing; they make the rendered DOM say what it is, which is how the
-   reference implementation is inspected and tested. */
-
-type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
-type ButtonSize = 'sm' | 'md' | 'lg' | 'xl';
-
-const BUTTON_BASE =
-  'inline-flex items-center justify-center gap-[var(--sp-1)] whitespace-nowrap ' +
-  'border font-medium select-none ' +
-  'transition-[background-color,border-color,color] duration-[var(--dur-fast)] ' +
-  'ease-[var(--ease)] disabled:pointer-events-none disabled:opacity-45';
-
-const BUTTON_SIZE: Record<ButtonSize, string> = {
-  sm: 'h-[var(--h-sm)] px-[var(--sp-2)] text-[var(--fs-base)]',
-  md: 'h-[var(--h-md)] px-[var(--sp-2)] text-[var(--fs-base)]',
-  // Ours, not the reference's: the marketing site and the auth forms.
-  lg: 'h-[var(--h-lg)] px-[var(--sp-4)] text-[var(--fs-base)]',
-  xl: 'h-[var(--h-xl)] px-[var(--sp-6)] text-[var(--fs-md)]',
-};
-
-const BUTTON_VARIANT: Record<ButtonVariant, string> = {
-  // primary/blue: the one filled action on a screen. Border colour is added
-  // per-size below - a small primary button (the reference system's own
-  // filled buttons are all this size) carries a 1px light edge on the fill;
-  // the larger marketing sizes keep the plain transparent border they always
-  // had, so this map cannot say "border-transparent" for every size.
-  primary:
-    'bg-[var(--accent)] text-accent-fg ' +
-    'hover:bg-[var(--accent-hover)] active:bg-[var(--accent-press)]',
-  // secondary/default: transparent body, visible edge.
-  secondary:
-    'border-[var(--border-medium)] bg-transparent text-fg-2 ' +
-    'hover:bg-[var(--bg-wash-subtle)] hover:text-fg ' +
-    'active:bg-[var(--bg-wash)]',
-  // tertiary: no edge at all, for dense rows of controls.
-  ghost:
-    'border-transparent bg-transparent text-fg-2 ' +
-    'hover:bg-[var(--bg-wash-subtle)] hover:text-fg ' +
-    'active:bg-[var(--bg-wash)]',
-  danger:
-    'border-transparent bg-[var(--danger)] text-fg-inverted ' +
-    'hover:opacity-90 active:opacity-80',
-};
+import { Icon, type IconName } from './icon';
 
 /**
- * Radius and border-colour are the two properties that would collide if two
- * conflicting Tailwind utilities landed in the same class string - so unlike
- * every other variant/size combination, which is just a lookup, `primary` at
- * `sm` gets its own single source of truth for both rather than a second
- * class appended after `BUTTON_VARIANT.primary` to "override" it.
+ * Buttons.
  *
- * Measured off Twenty's own small filled button (the reference's dense
- * toolbar action, e.g. "+ New Company"): radius 16 instead of the app's
- * default control radius of 8, and a 1px `--accent-edge` border instead of
- * a transparent one. Every other primary size (md/lg/xl - the marketing
- * site and the auth forms) is unchanged.
+ * Geometry is the design system's, exactly: 32px medium and 24px small, 8px
+ * radius, 13/500 label, 14px icons, and 8/12 padding (6/4 for tertiary, which
+ * carries no ground and so needs no optical inset).
+ *
+ * **One primary per screen.** Indigo means "the one action here" — that is the
+ * third non-negotiable, and a screen with three filled buttons has said nothing
+ * about which one matters.
+ *
+ * Two places this departs from the reference `.jsx`, both because the reference
+ * is a prototype and the written system is the spec:
+ *
+ *  1. **Hover is CSS, not JS.** The reference attaches `onMouseEnter` handlers
+ *     that mutate `style.background`. Tailwind variants do the same job without
+ *     a render, work before hydration, and cannot leave a button stuck in its
+ *     hover colour when the pointer leaves during a re-render.
+ *  2. **Secondary and primary get a hover state.** The reference's handlers fire
+ *     only for `tertiary`, so the other two are inert under the pointer — but
+ *     the system's own text says "hover is a wash, not a colour swap" without
+ *     qualification, and `--accent-hover` exists for no other purpose. Primary
+ *     moves to `--accent-hover`; secondary takes the wash over its own ground.
  */
-function buttonGeometry(variant: ButtonVariant, size: ButtonSize): string {
-  if (variant === 'primary' && size === 'sm') {
-    return 'rounded-[var(--r-lg)] border-[var(--accent-edge)]';
-  }
-  return cx('rounded-[var(--r-md)]', variant === 'primary' && 'border-transparent');
+
+type Variant = 'primary' | 'secondary' | 'tertiary';
+type Accent = 'default' | 'danger' | 'blue';
+type Size = 'small' | 'medium';
+/** Position within a ButtonGroup — squares off the shared edges. */
+type Position = 'left' | 'middle' | 'right';
+
+const BASE =
+  'inline-flex items-center justify-center gap-1 whitespace-nowrap border-0 ' +
+  'font-sans text-base font-medium leading-body select-none ' +
+  'transition-[background-color,color,box-shadow] duration-[var(--dur-fast)] ease-[var(--ease)] ' +
+  // 40% opacity with no colour change, per the system's disabled state.
+  'disabled:pointer-events-none disabled:opacity-40';
+
+const SIZE: Record<Size, string> = {
+  small: 'h-6 px-2 py-1',
+  medium: 'h-8 px-3 py-2',
+};
+
+/** Tertiary has no ground, so it needs less inset to look optically aligned. */
+const SIZE_TERTIARY: Record<Size, string> = {
+  small: 'h-6 px-1.5 py-1',
+  medium: 'h-8 px-2 py-2',
+};
+
+const POSITION: Record<Position, string> = {
+  left: 'rounded-s-md rounded-e-sm',
+  middle: 'rounded-sm',
+  right: 'rounded-s-sm rounded-e-md',
+};
+
+/** The ink a non-filled button takes when it carries an accent. */
+function accentInk(accent: Accent): string {
+  if (accent === 'danger') return 'text-status-red';
+  if (accent === 'blue') return 'text-accent';
+  return 'text-fg-2';
 }
 
-/**
- * The same for an icon-only button, whose radius is the tag/chip step rather
- * than the control step - 4px, measured off the reference's own 24x24 ghost
- * icon buttons.
- *
- * It is a separate function rather than a `rounded-[var(--r-sm)]` appended by
- * each caller, because appending would put two `rounded-*` utilities of equal
- * specificity in one class string and let *stylesheet source order* pick the
- * winner - the exact collision the comment above exists to avoid. Emitting
- * one radius is the only way to be sure which one lands.
- */
-function iconButtonGeometry(variant: ButtonVariant): string {
-  return cx('rounded-[var(--r-sm)]', variant === 'primary' && 'border-transparent');
+function skin(variant: Variant, accent: Accent, active: boolean): string {
+  if (variant === 'primary') {
+    return cx(
+      'text-fg-invert shadow-[inset_0_0_0_1px_rgba(0,0,0,0.08)]',
+      accent === 'danger'
+        ? 'bg-status-red hover:bg-status-red-text'
+        : 'bg-accent hover:bg-accent-hover active:bg-accent-active',
+    );
+  }
+  if (variant === 'secondary') {
+    // `--background-primary-2` in the reference; it resolves to the same value
+    // as `--surface` in both themes, so this is that token, named the way the
+    // rest of the app names it.
+    return cx(
+      'bg-surface shadow-[inset_0_0_0_1px_var(--border-light)]',
+      'hover:bg-wash-hover active:bg-wash-press',
+      accentInk(accent),
+    );
+  }
+  return cx(
+    active ? 'bg-wash-hover' : 'bg-transparent',
+    'hover:bg-wash-hover active:bg-wash-press',
+    accentInk(accent),
+  );
 }
 
 interface ButtonOwnProps {
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  loading?: boolean;
+  variant?: Variant;
+  accent?: Accent;
+  size?: Size;
+  icon?: IconName;
+  iconRight?: IconName;
+  /** A tertiary button that is currently "on" — a view toggle, a filter. */
+  active?: boolean;
+  position?: Position;
+}
+
+function classesFor({
+  variant = 'secondary',
+  accent = 'default',
+  size = 'medium',
+  active = false,
+  position,
+  className,
+}: ButtonOwnProps & { className?: string }) {
+  return cx(
+    BASE,
+    variant === 'tertiary' ? SIZE_TERTIARY[size] : SIZE[size],
+    position ? POSITION[position] : 'rounded-md',
+    skin(variant, accent, active),
+    className,
+  );
 }
 
 export function Button({
   variant = 'secondary',
-  size = 'md',
-  loading = false,
+  accent = 'default',
+  size = 'medium',
+  icon,
+  iconRight,
+  active = false,
+  position,
   className,
   children,
-  disabled,
+  type = 'button',
   ...rest
-}: ButtonOwnProps & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+}: ButtonOwnProps &
+  React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
       {...rest}
-      data-variant={variant}
-      data-size={size}
-      disabled={disabled || loading}
-      aria-busy={loading || undefined}
-      className={cx(BUTTON_BASE, BUTTON_SIZE[size], buttonGeometry(variant, size), BUTTON_VARIANT[variant], className)}
+      type={type}
+      aria-pressed={active || undefined}
+      className={classesFor({ variant, accent, size, active, position, className })}
     >
-      {loading && <Spinner />}
+      {icon && <Icon name={icon} size={14} />}
       {children}
+      {iconRight && <Icon name={iconRight} size={14} />}
     </button>
   );
 }
 
+/** The same button as an `<a>`. Navigation is a link, never a button with a handler. */
 export function ButtonLink({
   variant = 'secondary',
-  size = 'md',
+  accent = 'default',
+  size = 'medium',
+  icon,
+  iconRight,
+  position,
   className,
   children,
   href,
@@ -137,64 +163,133 @@ export function ButtonLink({
   Omit<React.ComponentProps<typeof Link>, 'href'> & { href: string }) {
   return (
     <Link
-      href={href}
       {...rest}
-      data-variant={variant}
-      data-size={size}
-      className={cx(BUTTON_BASE, BUTTON_SIZE[size], buttonGeometry(variant, size), BUTTON_VARIANT[variant], className)}
+      href={href}
+      className={classesFor({ variant, accent, size, position, className })}
     >
+      {icon && <Icon name={icon} size={14} />}
       {children}
+      {iconRight && <Icon name={iconRight} size={14} />}
     </Link>
   );
 }
 
 /**
- * A square button carrying only an icon.
- *
- * It exists because twelve raw `<button>` elements had grown their own
- * approximations of it. `label` is required and becomes the accessible name -
- * an icon-only control with no name is invisible to a screen reader, and
- * making it a required prop is cheaper than remembering.
+ * A run of buttons sharing edges. Pass `position` on each child; the group only
+ * supplies the flex row and the 2px gap the system draws between them.
  */
-export function IconButton({
-  label,
-  variant = 'ghost',
-  size = 'md',
+export function ButtonGroup({
   className,
   children,
   ...rest
+}: { className?: string; children: React.ReactNode } & React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div {...rest} role="group" className={cx('inline-flex items-center gap-0.5', className)}>
+      {children}
+    </div>
+  );
+}
+
+/* --- Icon-only buttons ---------------------------------------------------- */
+
+/**
+ * A square icon action. 24px box takes the 4px radius, 32px takes 8px — the
+ * system's rule that the small icon button sits on the tag/chip radius step.
+ *
+ * `label` is required and becomes the accessible name. An icon-only control
+ * with no name is invisible to a screen reader, and making it a required prop
+ * is cheaper than remembering.
+ */
+export function IconButton({
+  icon,
+  label,
+  size = 24,
+  variant = 'secondary',
+  accent = 'default',
+  active = false,
+  className,
+  type = 'button',
+  ...rest
 }: {
+  icon: IconName;
   label: string;
-  variant?: ButtonVariant;
-  size?: Extract<ButtonSize, 'sm' | 'md'>;
+  size?: 24 | 32;
+  variant?: Variant;
+  accent?: Accent;
+  active?: boolean;
 } & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label'>) {
   return (
     <button
       {...rest}
+      type={type}
       aria-label={label}
-      data-variant={variant}
-      data-size={size}
+      aria-pressed={active || undefined}
       className={cx(
-        BUTTON_BASE,
-        size === 'sm'
-          ? 'h-[var(--h-sm)] w-[var(--h-sm)]'
-          : 'h-[var(--h-md)] w-[var(--h-md)]',
-        iconButtonGeometry(variant),
-        BUTTON_VARIANT[variant],
-        'shrink-0 p-0',
+        'inline-flex shrink-0 items-center justify-center border-0 px-1',
+        'transition-[background-color,color] duration-[var(--dur-fast)] ease-[var(--ease)]',
+        'disabled:pointer-events-none disabled:opacity-40',
+        size === 32 ? 'h-8 w-8 rounded-md' : 'h-6 w-6 rounded-sm',
+        variant === 'primary'
+          ? 'bg-accent text-fg-invert hover:bg-accent-hover'
+          : cx(
+              active ? 'bg-wash-hover' : 'bg-transparent',
+              'hover:bg-wash-hover active:bg-wash-press',
+              accent === 'danger' ? 'text-status-red' : accent === 'blue' ? 'text-accent' : 'text-fg-3',
+              variant === 'tertiary' ? '' : 'shadow-[inset_0_0_0_1px_var(--border-light)]',
+            ),
         className,
       )}
     >
-      {children}
+      <Icon name={icon} size={16} />
     </button>
   );
 }
 
-function Spinner() {
+/**
+ * The borderless icon action — the close button on banners and callouts, the
+ * chevron at the end of a row, the overflow control in a table.
+ *
+ * `accent="inverted"` is for placing one on the accent ground of a `Banner`,
+ * where the usual wash would be invisible.
+ */
+export function LightIconButton({
+  icon,
+  label,
+  size = 24,
+  accent = 'default',
+  active = false,
+  className,
+  type = 'button',
+  ...rest
+}: {
+  icon: IconName;
+  label: string;
+  size?: 24 | 32;
+  accent?: 'default' | 'danger' | 'inverted';
+  active?: boolean;
+} & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label'>) {
   return (
-    <span
-      aria-hidden
-      className="h-[10px] w-[10px] shrink-0 animate-spin rounded-[var(--r-full)] border-[1.5px] border-current border-r-transparent"
-    />
+    <button
+      {...rest}
+      type={type}
+      aria-label={label}
+      aria-pressed={active || undefined}
+      className={cx(
+        'inline-flex shrink-0 items-center justify-center border-0',
+        'transition-[background-color,color] duration-[var(--dur-fast)] ease-[var(--ease)]',
+        'disabled:pointer-events-none disabled:opacity-40',
+        size === 32 ? 'h-8 w-8 rounded-md' : 'h-6 w-6 rounded-sm',
+        active ? 'bg-wash-hover' : 'bg-transparent',
+        accent === 'inverted'
+          ? 'text-fg-invert hover:bg-[rgba(255,255,255,0.12)]'
+          : cx(
+              'hover:bg-wash-hover active:bg-wash-press',
+              accent === 'danger' ? 'text-status-red' : 'text-fg-3',
+            ),
+        className,
+      )}
+    >
+      <Icon name={icon} size={16} />
+    </button>
   );
 }
