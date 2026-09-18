@@ -181,6 +181,9 @@ export class StaffManageController {
       maxScore: body.maxScore,
       allowedFileTypes: body.allowedFileTypes,
       maxFileSizeBytes: body.maxFileSizeBytes,
+      workType: body.workType,
+      externalUrl: body.externalUrl,
+      googleForm: body.googleForm,
       targets: body.targets,
     });
   }

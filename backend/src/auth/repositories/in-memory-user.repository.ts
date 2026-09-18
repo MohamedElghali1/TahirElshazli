@@ -4,6 +4,7 @@ import { Role } from '../roles.enum.js';
 import type {
   PasswordResetToken,
   StoredUser,
+  StudentEmailIdentity,
   UserRepository,
 } from '../interfaces/user-repository.interface.js';
 
@@ -24,6 +25,7 @@ export class InMemoryUserRepository implements UserRepository {
       role: Role.Student,
       name: 'Ali Esam',
       createdAt: '2026-01-15T10:00:00Z',
+      googleEmail: null,
     },
     {
       id: 'student-2',
@@ -32,6 +34,7 @@ export class InMemoryUserRepository implements UserRepository {
       role: Role.Student,
       name: 'Sara Ahmed',
       createdAt: '2026-03-10T08:00:00Z',
+      googleEmail: null,
     },
     {
       id: 'teacher-1',
@@ -40,6 +43,7 @@ export class InMemoryUserRepository implements UserRepository {
       role: Role.Teacher,
       name: 'Dr. Tahir Elshazli',
       createdAt: '2025-11-01T09:00:00Z',
+      googleEmail: null,
     },
     // Two assistants, because one cannot demonstrate scoping: assistant-1 is
     // assigned to course-1, assistant-2 to nothing. Mirrors
@@ -51,6 +55,7 @@ export class InMemoryUserRepository implements UserRepository {
       role: Role.Assistant,
       name: 'Nour Hassan',
       createdAt: '2026-01-25T09:00:00Z',
+      googleEmail: null,
     },
     {
       id: 'assistant-2',
@@ -59,6 +64,7 @@ export class InMemoryUserRepository implements UserRepository {
       role: Role.Assistant,
       name: 'Omar Fathy',
       createdAt: '2026-02-10T09:00:00Z',
+      googleEmail: null,
     },
   ];
 
@@ -99,6 +105,40 @@ export class InMemoryUserRepository implements UserRepository {
     return this.users.filter((u) => u.role === role).map((u) => u.id);
   }
 
+  async findStudentsByEmails(
+    emails: readonly string[],
+  ): Promise<StudentEmailIdentity[]> {
+    // Lowercased on both sides: email addresses are case-insensitive, and an
+    // unmatched response caused by capitalisation would be indistinguishable
+    // from a student who simply never answered.
+    const wanted = new Set(emails.map((e) => e.trim().toLowerCase()));
+    return this.users
+      .filter(
+        (u) =>
+          // Role-scoped here rather than at the call site: a form response
+          // matching a staff address is not a submission.
+          u.role === Role.Student &&
+          (wanted.has(u.email.toLowerCase()) ||
+            (u.googleEmail !== null &&
+              wanted.has(u.googleEmail.toLowerCase()))),
+      )
+      .map((u) => ({
+        id: u.id,
+        email: u.email,
+        googleEmail: u.googleEmail,
+      }));
+  }
+
+  async setGoogleEmail(
+    userId: string,
+    googleEmail: string | null,
+  ): Promise<void> {
+    const user = this.users.find((u) => u.id === userId);
+    if (user) {
+      user.googleEmail = googleEmail?.trim().toLowerCase() ?? null;
+    }
+  }
+
   async create(user: {
     email: string;
     passwordHash: string;
@@ -112,6 +152,9 @@ export class InMemoryUserRepository implements UserRepository {
       role: user.role,
       name: user.name,
       createdAt: new Date().toISOString(),
+      // Nobody registers with one; it is recorded later, by the student or by
+      // staff resolving an unmatched response.
+      googleEmail: null,
     };
     this.users.push(created);
     return created;

@@ -48,6 +48,7 @@ const AUDIT_ACTION_VALUES: Record<AuditAction, true> = {
   'blog_post.updated': true,
   'blog_post.media_set': true,
   'blog_post.deleted': true,
+  'external_result.attached': true,
   'google.connected': true,
   'google.disconnected': true,
 };
@@ -64,6 +65,7 @@ const AUDIT_TARGET_TYPE_VALUES: Record<AuditTargetType, true> = {
   assessment: true,
   blog_post: true,
   google_credential: true,
+  external_result: true,
 };
 
 export const AUDIT_ACTIONS = Object.keys(

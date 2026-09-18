@@ -6,6 +6,7 @@ import { Role } from '../roles.enum.js';
 import type {
   PasswordResetToken,
   StoredUser,
+  StudentEmailIdentity,
   UserRepository,
 } from '../interfaces/user-repository.interface.js';
 
@@ -16,6 +17,7 @@ interface UserRow {
   role: Role;
   name: string;
   created_at: Date;
+  google_email: string | null;
 }
 
 interface ResetTokenRow {
@@ -25,7 +27,8 @@ interface ResetTokenRow {
   used_at: Date | null;
 }
 
-const USER_COLUMNS = 'id, email, password_hash, role, name, created_at';
+const USER_COLUMNS =
+  'id, email, password_hash, role, name, created_at, google_email';
 
 function toUser(row: UserRow): StoredUser {
   return {
@@ -35,6 +38,7 @@ function toUser(row: UserRow): StoredUser {
     role: row.role,
     name: row.name,
     createdAt: iso(row.created_at),
+    googleEmail: row.google_email,
   };
 }
 
@@ -108,6 +112,48 @@ export class PostgresUserRepository implements UserRepository {
       [role],
     );
     return rows.map((row) => row.id);
+  }
+
+  async findStudentsByEmails(
+    emails: readonly string[],
+  ): Promise<StudentEmailIdentity[]> {
+    if (emails.length === 0) {
+      return [];
+    }
+    // Lowercased on both sides of both comparisons, matching
+    // `users_google_email_idx` (which is on `lower(google_email)`) so the index
+    // is actually used rather than bypassed by the function call.
+    //
+    // Only the three columns the caller needs: this runs over a whole cohort,
+    // and `USER_COLUMNS` would drag a bcrypt hash per student into a sync loop.
+    const normalized = emails.map((e) => e.trim().toLowerCase());
+    const rows = await this.db.query<{
+      id: string;
+      email: string;
+      google_email: string | null;
+    }>(
+      `SELECT id, email, google_email
+         FROM users
+        WHERE role = $2
+          AND (lower(email) = ANY($1)
+               OR (google_email IS NOT NULL AND lower(google_email) = ANY($1)))`,
+      [normalized, Role.Student],
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      email: row.email,
+      googleEmail: row.google_email,
+    }));
+  }
+
+  async setGoogleEmail(
+    userId: string,
+    googleEmail: string | null,
+  ): Promise<void> {
+    await this.db.query(
+      'UPDATE users SET google_email = $2 WHERE id = $1',
+      [userId, googleEmail?.trim().toLowerCase() ?? null],
+    );
   }
 
   async create(user: {

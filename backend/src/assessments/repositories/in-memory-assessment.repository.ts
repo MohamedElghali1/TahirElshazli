@@ -33,6 +33,8 @@ const STUB_ASSESSMENTS: StoredAssessment[] = [
     maxScore: 20,
     allowedFileTypes: PDF_ONLY,
     maxFileSizeBytes: TEN_MB,
+    workType: 'file_upload',
+    externalUrl: null,
     createdAt: '2026-08-05T10:00:00Z',
   },
   {
@@ -50,6 +52,8 @@ const STUB_ASSESSMENTS: StoredAssessment[] = [
     maxScore: 20,
     allowedFileTypes: PDF_ONLY,
     maxFileSizeBytes: TEN_MB,
+    workType: 'file_upload',
+    externalUrl: null,
     createdAt: '2026-08-20T10:00:00Z',
   },
   {
@@ -68,6 +72,8 @@ const STUB_ASSESSMENTS: StoredAssessment[] = [
     maxScore: 40,
     allowedFileTypes: PDF_ONLY,
     maxFileSizeBytes: TEN_MB,
+    workType: 'file_upload',
+    externalUrl: null,
     createdAt: '2026-05-15T10:00:00Z',
   },
   {
@@ -85,6 +91,8 @@ const STUB_ASSESSMENTS: StoredAssessment[] = [
     maxScore: 20,
     allowedFileTypes: PDF_ONLY,
     maxFileSizeBytes: TEN_MB,
+    workType: 'file_upload',
+    externalUrl: null,
     createdAt: '2026-07-10T10:00:00Z',
   },
   {
@@ -102,6 +110,8 @@ const STUB_ASSESSMENTS: StoredAssessment[] = [
     maxScore: 20,
     allowedFileTypes: PDF_ONLY,
     maxFileSizeBytes: TEN_MB,
+    workType: 'file_upload',
+    externalUrl: null,
     createdAt: '2026-06-25T10:00:00Z',
   },
   {
@@ -119,6 +129,8 @@ const STUB_ASSESSMENTS: StoredAssessment[] = [
     maxScore: 20,
     allowedFileTypes: PDF_ONLY,
     maxFileSizeBytes: TEN_MB,
+    workType: 'file_upload',
+    externalUrl: null,
     createdAt: '2026-06-01T10:00:00Z',
   },
   {
@@ -136,6 +148,8 @@ const STUB_ASSESSMENTS: StoredAssessment[] = [
     maxScore: 40,
     allowedFileTypes: PDF_ONLY,
     maxFileSizeBytes: TEN_MB,
+    workType: 'file_upload',
+    externalUrl: null,
     createdAt: '2026-07-15T10:00:00Z',
   },
   {
@@ -153,6 +167,8 @@ const STUB_ASSESSMENTS: StoredAssessment[] = [
     maxScore: 20,
     allowedFileTypes: PDF_ONLY,
     maxFileSizeBytes: TEN_MB,
+    workType: 'file_upload',
+    externalUrl: null,
     createdAt: '2026-04-25T10:00:00Z',
   },
 ];

@@ -7,6 +7,8 @@ import { ManageRecordingsService } from './manage-recordings.service.js';
 import { ManageLiveSessionsService } from './manage-live-sessions.service.js';
 import { DirectoryService } from './directory.service.js';
 import { AssessmentAuthoringService } from './assessment-authoring.service.js';
+import { WorkAnalyticsController } from './work-analytics.controller.js';
+import { WorkAnalyticsGateService } from './work-analytics-gate.service.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { StaffModule } from '../staff/staff.module.js';
 import { CoursesModule } from '../courses/courses.module.js';
@@ -39,7 +41,11 @@ import { LiveSessionsModule } from '../live-sessions/live-sessions.module.js';
     RecordingsModule,
     LiveSessionsModule,
   ],
-  controllers: [StaffManageController, AdminManageController],
+  controllers: [
+    StaffManageController,
+    AdminManageController,
+    WorkAnalyticsController,
+  ],
   providers: [
     ManageService,
     GradingService,
@@ -49,6 +55,11 @@ import { LiveSessionsModule } from '../live-sessions/live-sessions.module.js';
     // Authoring (§5.18). Needs no new import: ASSESSMENT_REPOSITORY comes from
     // AssessmentsModule above, and GROUP_REPOSITORY is global.
     AssessmentAuthoringService,
+    // The access decision for every analytics route. These endpoints are keyed
+    // by *assessment* id, so the course has to be resolved from the assessment
+    // before it can be scoped on - one service rather than four lines repeated
+    // per handler (CLAUDE.md §5.11).
+    WorkAnalyticsGateService,
   ],
 })
 export class ManageModule {}

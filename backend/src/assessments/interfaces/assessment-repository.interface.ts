@@ -1,3 +1,5 @@
+import type { WorkType } from './work-repository.interface.js';
+
 export type AssessmentType = 'homework' | 'assignment' | 'quiz';
 
 export type AssessmentStatus = 'locked' | 'available' | 'submitted' | 'corrected';
@@ -10,6 +12,22 @@ export interface StoredAssessment {
   description: string;
   instructions: string;
   type: AssessmentType;
+  /**
+   * How the work is delivered and how it comes back - a **different axis** from
+   * `type`, which says what the work is *for*. A Google Form quiz and a PDF
+   * assignment differ here and agree there.
+   *
+   * Defaults to `file_upload` in both drivers and in the migration, so every
+   * row that predates work types is correct without a backfill.
+   */
+  workType: WorkType;
+  /**
+   * Where a `link` task points; null for every other work type.
+   *
+   * A Google Form's URL deliberately does **not** live here - it needs an id, a
+   * responder URI, a quiz flag and sync state, which is `GoogleFormBinding`.
+   */
+  externalUrl: string | null;
   topics: string[];
   availableFrom: string;
   availableTo: string;
@@ -82,6 +100,19 @@ export interface AssessmentUpdate {
   allowedFileTypes?: string[];
   maxFileSizeBytes?: number;
   lessonId?: string | null;
+  /**
+   * Switching a task's delivery. Allowed rather than forbidden because the
+   * realistic case is a teacher who picked the wrong kind on the form and
+   * noticed immediately - the alternative is delete-and-recreate, which §5.18
+   * already refuses once anything has been submitted.
+   *
+   * The service is what keeps the pair coherent (a `link` needs a URL, a
+   * `google_form` needs a binding); the database enforces the first of those
+   * as a CHECK so the invariant does not depend on the service being the only
+   * writer.
+   */
+  workType?: WorkType;
+  externalUrl?: string | null;
 }
 
 /**

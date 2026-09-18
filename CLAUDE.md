@@ -259,7 +259,7 @@ unenrollment, account changes, course deletion — is logged without exception.
 interface has no update and no delete, which is where that is enforced. `AuditAction` and
 `AuditTargetType` are string *unions*, so adding a mutating endpoint cannot log until someone adds
 its action to the list; that compile error is the mechanism keeping "every TA mutation is logged"
-true as surfaces land. **Twenty-four actions exist so far**, across staff assignment, grading, the
+true as surfaces land. **Twenty-seven actions exist so far**, across staff assignment, grading, the
 recording library, live-session scheduling, announcements, groups, authoring and the blog:
 
 `course_staff.assigned` · `course_staff.unassigned` · `submission.graded` · `recording.created` ·
@@ -267,7 +267,8 @@ recording library, live-session scheduling, announcements, groups, authoring and
 `live_session.cancelled` · `announcement.posted` · `group.created` · `group.renamed` ·
 `group.course_added` · `group.course_removed` · `group.student_assigned` · `group.student_removed` ·
 `assessment.created` · `assessment.updated` · `assessment.targeted` · `assessment.deleted` ·
-`blog_post.created` · `blog_post.updated` · `blog_post.media_set` · `blog_post.deleted`
+`blog_post.created` · `blog_post.updated` · `blog_post.media_set` · `blog_post.deleted` ·
+`external_result.attached` · `google.connected` · `google.disconnected`
 
 Of those, `submission.graded`, `announcement.posted`, the two `group.student_*` and all four of
 both `assessment.*` and `blog_post.*` are reachable by an assistant; the rest are teacher-only today.
@@ -334,11 +335,41 @@ task hard?*) is the default rather than something to reconstruct.
 Issued at course end. The **teacher controls when a certificate becomes available** to a student —
 a release action, not automatic on completion.
 
-### 5.8 Flexible file uploads
+### 5.8 Flexible file uploads — and work that is not a file at all
 
 Students submit whatever file type the task needs. Teachers upload PDFs, text files, links, images,
 and other formats for lessons, quizzes, and assignments. Allowed types are **configurable per
 assignment**, not a global hardcoded whitelist — but always validated server-side (§8).
+
+**Built 2026-09-12, and it is a second axis rather than a longer list.**
+`assessments.work_type` is `file_upload | link | google_form`, separate from `type`
+(homework/assignment/quiz) — the first says *how work is delivered*, the second *what it is for*,
+and a Google Form quiz differs on one while agreeing on the other. One column with nine members
+would have destroyed the ability to ask "all quizzes" again.
+
+A `link` task stores a URL. A `google_form` task gets a row in `assessment_google_forms` (form id,
+responder URI, sync state) and its responses are mirrored into **`external_results`**, which
+deliberately **names no vendor**: a `provider` column, an opaque external id, a score, and the raw
+payload. A second provider is a new `provider` value plus a client class — no migration, and no
+second analytics path. `ExternalWorkBinder` is the port authoring calls, so the authoring service
+never learns which providers exist.
+
+Two rules that are not negotiable, because both failures are silent:
+
+- **A student never submits form or link work through this platform.** `submitAssessment` refuses
+  anything that is not `file_upload`. Accepting a file against a form task would create a submission
+  no staff screen shows and no analytics count — work the student believes is handed in and which
+  is, to everyone else, invisible.
+- **Identity is never guessed.** Google identifies a respondent by email, and only when the form
+  collects one. Matching uses the student's LMS address or a recorded `google_email`; anything else
+  is **kept, counted and queued** for a human — never dropped, never name-matched. An unmatched
+  response means the completion figures are *understated*, which is why `unmatched` is surfaced at
+  the top level of the analytics payload rather than buried.
+
+The setup this depends on — a Google Cloud project, one teacher consent, and the per-form "collect
+email addresses" setting — is `docs/google-forms-setup.md`. **The client's credentials are not yet
+provisioned**, so `GOOGLE_DRIVER=none` is the shipped default and form work degrades to a plain
+link with completion tracking rather than scores.
 
 ### 5.9 Report generation
 
@@ -973,8 +1004,13 @@ student surface), `002_staff_and_audit.sql` (`course_staff_assignments`,
 `006_groups.sql` (`groups`, `group_courses`, `group_memberships`,
 `assessment_targets`), `007_learning_mode_moves_to_the_group.sql` (drops
 `enrollments.learning_mode` — the only destructive migration so far, and the
-file says why the dropped value is derivable) and `008_blog.sql` (`blog_posts`,
-`blog_post_media` — §5.19), applied by `MigrationRunner` via
+file says why the dropped value is derivable) `008_blog.sql` (`blog_posts`,
+`blog_post_media` — §5.19), `009_google_integration.sql`
+(`google_oauth_credentials` — the connected Google account) and
+`010_work_types.sql` (`assessments.work_type`/`external_url`,
+`assessment_google_forms`, `external_results`, `users.google_email` — §5.8).
+**009 and 010 have not yet run against a real database**, unlike 001-008.
+Applied by `MigrationRunner` via
 `npm run db:migrate` or `DB_AUTO_MIGRATE=1` on a single-container deploy.
 `test/postgres-repositories.integration-spec.ts` covers all fifteen and skips
 itself when no `TEST_DATABASE_URL` is set. As of **2026-09-11 all eight
@@ -1048,7 +1084,7 @@ before a second implementation existed. That window closed some time ago:
 `findAll` and `findByIds` above each cost two implementors and an integration
 suite to add, which is the going rate now. Still worth doing, still not free.
 
-**Audit coverage is twenty-four actions, and every mutating staff route is covered
+**Audit coverage is twenty-seven actions, and every mutating staff route is covered
 today.** The `@Global()` `AuditModule` is now injected in eight services —
 `StaffService`, `GradingService`, `ManageRecordingsService`,
 `ManageLiveSessionsService`, `AnnouncementsService`, `GroupsService`,

@@ -14,6 +14,8 @@ import { REPORT_REPOSITORY } from '../reports/interfaces/report-repository.inter
 import { InMemoryReportRepository } from '../reports/repositories/in-memory-report.repository.js';
 import { AssessmentsService } from '../assessments/assessments.service.js';
 import { ASSESSMENT_REPOSITORY } from '../assessments/interfaces/assessment-repository.interface.js';
+import { WORK_REPOSITORY, EXTERNAL_WORK_BINDER } from '../assessments/interfaces/work-repository.interface.js';
+import { InMemoryWorkRepository } from '../assessments/repositories/in-memory-work.repository.js';
 import { InMemoryAssessmentRepository } from '../assessments/repositories/in-memory-assessment.repository.js';
 import { CoursesService } from '../courses/courses.service.js';
 import { COURSE_REPOSITORY } from '../courses/interfaces/course-repository.interface.js';
@@ -81,6 +83,7 @@ describe('DashboardController', () => {
         { provide: PASSWORD_HASHER, useClass: BcryptPasswordHasher },
         { provide: REPORT_REPOSITORY, useClass: InMemoryReportRepository },
         { provide: ASSESSMENT_REPOSITORY, useClass: InMemoryAssessmentRepository },
+        { provide: WORK_REPOSITORY, useClass: InMemoryWorkRepository },
         { provide: COURSE_REPOSITORY, useClass: InMemoryCourseRepository },
         { provide: RECORDING_REPOSITORY, useClass: InMemoryRecordingRepository },
         { provide: MATERIAL_REPOSITORY, useClass: InMemoryMaterialRepository },

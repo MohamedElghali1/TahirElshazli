@@ -4,6 +4,8 @@ import { AssessmentAuthoringService } from './assessment-authoring.service.js';
 import { AssessmentsController } from '../assessments/assessments.controller.js';
 import { AssessmentsService } from '../assessments/assessments.service.js';
 import { ASSESSMENT_REPOSITORY } from '../assessments/interfaces/assessment-repository.interface.js';
+import { WORK_REPOSITORY, EXTERNAL_WORK_BINDER } from '../assessments/interfaces/work-repository.interface.js';
+import { InMemoryWorkRepository } from '../assessments/repositories/in-memory-work.repository.js';
 import { InMemoryAssessmentRepository } from '../assessments/repositories/in-memory-assessment.repository.js';
 import { EnrollmentsService } from '../enrollments/enrollments.service.js';
 import { ENROLLMENT_REPOSITORY } from '../enrollments/interfaces/enrollment-repository.interface.js';
@@ -72,6 +74,13 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
         DatabaseService,
         { provide: DATABASE_POOL, useValue: null },
         { provide: ASSESSMENT_REPOSITORY, useClass: InMemoryAssessmentRepository },
+        { provide: WORK_REPOSITORY, useClass: InMemoryWorkRepository },
+        // The authoring service binds external work through this port. A trivial
+        // fake is enough precisely because it IS a port - the fixtures here are all
+        // file_upload, so nothing external is ever bound, and pulling the real
+        // Google stack in would make these tests depend on an OAuth client they
+        // have no business knowing about.
+        { provide: EXTERNAL_WORK_BINDER, useValue: { bindExternal: async () => {} } },
         { provide: ENROLLMENT_REPOSITORY, useClass: InMemoryEnrollmentRepository },
         { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },
         { provide: COURSE_STAFF_REPOSITORY, useClass: InMemoryCourseStaffRepository },

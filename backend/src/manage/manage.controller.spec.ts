@@ -20,6 +20,8 @@ import { InMemoryGroupRepository } from '../groups/repositories/in-memory-group.
 import { LearningModeService } from '../groups/learning-mode.service.js';
 import { StudentGroupsService } from '../groups/student-groups.service.js';
 import { ASSESSMENT_REPOSITORY } from '../assessments/interfaces/assessment-repository.interface.js';
+import { WORK_REPOSITORY, EXTERNAL_WORK_BINDER } from '../assessments/interfaces/work-repository.interface.js';
+import { InMemoryWorkRepository } from '../assessments/repositories/in-memory-work.repository.js';
 import { InMemoryAssessmentRepository } from '../assessments/repositories/in-memory-assessment.repository.js';
 import { RECORDING_REPOSITORY } from '../recordings/interfaces/recording-repository.interface.js';
 import { InMemoryRecordingRepository } from '../recordings/repositories/in-memory-recording.repository.js';
@@ -81,6 +83,13 @@ describe('Manage surface', () => {
         LearningModeService,
         StudentGroupsService,
         { provide: ASSESSMENT_REPOSITORY, useClass: InMemoryAssessmentRepository },
+        { provide: WORK_REPOSITORY, useClass: InMemoryWorkRepository },
+        // The authoring service binds external work through this port. A trivial
+        // fake is enough precisely because it IS a port - the fixtures here are all
+        // file_upload, so nothing external is ever bound, and pulling the real
+        // Google stack in would make these tests depend on an OAuth client they
+        // have no business knowing about.
+        { provide: EXTERNAL_WORK_BINDER, useValue: { bindExternal: async () => {} } },
         { provide: RECORDING_REPOSITORY, useClass: InMemoryRecordingRepository },
         { provide: LIVE_SESSION_REPOSITORY, useClass: InMemoryLiveSessionRepository },
         { provide: USER_REPOSITORY, useClass: InMemoryUserRepository },

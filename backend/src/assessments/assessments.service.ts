@@ -16,6 +16,11 @@ import type {
 import { ASSESSMENT_REPOSITORY } from './interfaces/assessment-repository.interface.js';
 import { EnrollmentsService } from '../enrollments/enrollments.service.js';
 import { StudentGroupsService } from '../groups/student-groups.service.js';
+import type {
+  WorkRepository,
+  WorkType,
+} from './interfaces/work-repository.interface.js';
+import { WORK_REPOSITORY } from './interfaces/work-repository.interface.js';
 
 export interface AssessmentListItem {
   id: string;
@@ -24,6 +29,8 @@ export interface AssessmentListItem {
   title: string;
   description: string;
   type: AssessmentType;
+  /** How it is delivered, so the list can show the right badge and verb. */
+  workType: WorkType;
   topics: string[];
   status: AssessmentStatus;
   availableFrom: string;
@@ -56,7 +63,52 @@ export interface AssessmentDetail extends AssessmentListItem {
   maxFileSizeBytes: number;
   canSubmit: boolean;
   submission: SubmissionView | null;
+  /**
+   * What the student is actually expected to do.
+   *
+   * The client's requirement was explicit that "the student should not be
+   * forced to upload a file when the assignment is actually a Google Form", and
+   * this is the field the UI branches on. `canSubmit` above still governs
+   * *whether* the window is open; this governs *what the control is*.
+   */
+  work: WorkExpectation;
 }
+
+/**
+ * How this task is delivered, and where the student stands on it.
+ *
+ * A discriminated union rather than a bag of nullable fields, so a client
+ * cannot render an upload box for a form task by forgetting a check - the
+ * fields simply are not there on the other members.
+ */
+export type WorkExpectation =
+  | {
+      kind: 'file_upload';
+      allowedFileTypes: string[];
+      maxFileSizeBytes: number;
+    }
+  | { kind: 'link'; url: string }
+  | {
+      kind: 'google_form';
+      /**
+       * Google's own published link - the one students fill in. Read from the
+       * binding, never constructed: it uses a different identifier from the
+       * editing URL, so a constructed one 404s for every student.
+       */
+      formUrl: string;
+      /**
+       * Whether this platform has seen a response from this student.
+       *
+       * Mirrored from Google on the last sync, so it can legitimately lag a
+       * submission by minutes. The UI should say when it was last checked
+       * rather than presenting it as live - a student who has just submitted
+       * and sees "not completed" will otherwise submit again.
+       */
+      completed: boolean;
+      score: number | null;
+      maxScore: number | null;
+      lastSyncedAt: string | null;
+    };
 
 /** Raw grade rows the reports module aggregates - not a client-facing shape. */
 export interface AssessmentPerformanceEntry {
@@ -82,6 +134,12 @@ export class AssessmentsService {
      * them.
      */
     private readonly studentGroups: StudentGroupsService,
+    /**
+     * Work types and the mirrored external results. Read-only from here - the
+     * student surface never syncs (that would put a third-party call on a page
+     * load) and never writes a result.
+     */
+    @Inject(WORK_REPOSITORY) private readonly work: WorkRepository,
   ) {}
 
   /**
@@ -139,11 +197,24 @@ export class AssessmentsService {
     assessment: StoredAssessment,
     submission: StoredSubmission | null,
     now: Date,
+    hasExternalResult = false,
   ): AssessmentStatus {
     if (submission?.correctedAt) {
       return 'corrected';
     }
     if (submission) {
+      return 'submitted';
+    }
+    // External work has no submission row of ours - the evidence is a mirrored
+    // result. Without this a student who completed a Google Form would see the
+    // task sitting at `available` indefinitely and would quite reasonably fill
+    // it in again.
+    //
+    // It reports `submitted` rather than `corrected` even when Google returned
+    // a score, because `corrected` means a human marked it here, and
+    // `SubmissionView.feedback` would be empty next to a word promising
+    // otherwise. The score still travels, on `WorkExpectation`.
+    if (hasExternalResult) {
       return 'submitted';
     }
     const availableFrom = new Date(assessment.availableFrom);
@@ -165,8 +236,14 @@ export class AssessmentsService {
     assessment: StoredAssessment,
     submission: StoredSubmission | null,
     now: Date,
+    hasExternalResult = false,
   ): AssessmentListItem {
-    const status = this.computeStatus(assessment, submission, now);
+    const status = this.computeStatus(
+      assessment,
+      submission,
+      now,
+      hasExternalResult,
+    );
     const score = submission?.correctedAt ? submission.score : null;
     return {
       id: assessment.id,
@@ -175,6 +252,7 @@ export class AssessmentsService {
       title: assessment.title,
       description: assessment.description,
       type: assessment.type,
+      workType: assessment.workType,
       topics: assessment.topics,
       status,
       availableFrom: assessment.availableFrom,
@@ -190,6 +268,49 @@ export class AssessmentsService {
         score === null || assessment.maxScore === 0
           ? null
           : Math.round((score / assessment.maxScore) * 100),
+    };
+  }
+
+  /**
+   * Builds the student-facing description of how this task is delivered.
+   *
+   * The `google_form` branch reads the *mirror*, never Google - a student
+   * opening a task must not trigger an outbound API call, both because it would
+   * put third-party latency and quota on the critical path of a page load, and
+   * because thirty students opening the same task would sync it thirty times.
+   * Freshness is the sync's job; `lastSyncedAt` is how this admits to it.
+   */
+  private async describeWork(
+    assessment: StoredAssessment,
+    studentId: string,
+  ): Promise<WorkExpectation> {
+    if (assessment.workType === 'link') {
+      return {
+        kind: 'link',
+        // The CHECK constraint guarantees a link task has one; the fallback is
+        // for rows written before it existed rather than a real state.
+        url: assessment.externalUrl ?? '',
+      };
+    }
+    if (assessment.workType === 'google_form') {
+      const [binding, results] = await Promise.all([
+        this.work.findBinding(assessment.id),
+        this.work.findResultsForStudent([assessment.id], studentId),
+      ]);
+      const mine = results[0] ?? null;
+      return {
+        kind: 'google_form',
+        formUrl: binding?.responderUri ?? '',
+        completed: mine !== null,
+        score: mine?.score ?? null,
+        maxScore: mine?.maxScore ?? null,
+        lastSyncedAt: binding?.lastSyncedAt ?? null,
+      };
+    }
+    return {
+      kind: 'file_upload',
+      allowedFileTypes: assessment.allowedFileTypes,
+      maxFileSizeBytes: assessment.maxFileSizeBytes,
     };
   }
 
@@ -210,8 +331,20 @@ export class AssessmentsService {
       filter,
     );
     const submissions = await this.submissionsByAssessment(assessments, studentId);
+    // One batched count for the whole list rather than a lookup per row -
+    // external work has no submission of ours, so without this every completed
+    // form in the list would read as still outstanding.
+    const externals = await this.work.countResultsByAssessments(
+      assessments.map((a) => a.id),
+      studentId,
+    );
     return assessments.map((assessment) =>
-      this.toListItem(assessment, submissions.get(assessment.id) ?? null, now),
+      this.toListItem(
+        assessment,
+        submissions.get(assessment.id) ?? null,
+        now,
+        (externals[assessment.id] ?? 0) > 0,
+      ),
     );
   }
 
@@ -241,12 +374,19 @@ export class AssessmentsService {
       assessmentId,
       studentId,
     );
+    // `describeWork` already reads this student's results for form work, so
+    // the completion flag is taken from it rather than counted a second time -
+    // two reads of the same fact are two chances for them to disagree.
+    const work = await this.describeWork(assessment, studentId);
+    const hasExternalResult =
+      work.kind === 'google_form' ? work.completed : false;
     return {
-      ...this.toListItem(assessment, submission, now),
+      ...this.toListItem(assessment, submission, now, hasExternalResult),
       instructions: assessment.instructions,
       availableTo: assessment.availableTo,
       allowedFileTypes: assessment.allowedFileTypes,
       maxFileSizeBytes: assessment.maxFileSizeBytes,
+      work,
       canSubmit:
         this.isWithinWindow(assessment, now) && submission?.correctedAt == null,
       submission: submission
@@ -282,6 +422,20 @@ export class AssessmentsService {
     answerText: string | undefined,
   ): Promise<StoredSubmission> {
     const assessment = await this.loadForStudent(assessmentId, studentId);
+    // Only file-upload work is submitted through this platform. A form is
+    // submitted to Google and arrives by sync; a link task is done elsewhere.
+    // Accepting a file against either would create a submission that no staff
+    // screen shows and no analytics count - work a student believes they have
+    // handed in and which is, to everyone else, invisible.
+    if (assessment.workType !== 'file_upload') {
+      throw new BadRequestException(
+        assessment.workType === 'google_form'
+          ? 'This task is completed on its Google Form, not by uploading here. ' +
+            'Open the form from the task page.'
+          : 'This task is completed at the link on the task page, not by ' +
+            'uploading here.',
+      );
+    }
     if (!this.isWithinWindow(assessment, new Date())) {
       throw new BadRequestException(
         'Assessment is not currently available for submission',
@@ -339,6 +493,10 @@ export class AssessmentsService {
       groupIds,
     );
     const submissions = await this.submissionsByAssessment(assessments, studentId);
+    const externals = await this.work.countResultsByAssessments(
+      assessments.map((a) => a.id),
+      studentId,
+    );
     return assessments.map((assessment) => {
       const submission = submissions.get(assessment.id) ?? null;
       return {
@@ -348,7 +506,12 @@ export class AssessmentsService {
         topics: assessment.topics,
         maxScore: assessment.maxScore,
         score: submission?.correctedAt ? submission.score : null,
-        status: this.computeStatus(assessment, submission, now),
+        status: this.computeStatus(
+          assessment,
+          submission,
+          now,
+          (externals[assessment.id] ?? 0) > 0,
+        ),
       };
     });
   }

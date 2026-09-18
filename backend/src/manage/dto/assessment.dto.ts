@@ -123,6 +123,44 @@ export class CreateAssessmentDto {
   maxFileSizeBytes!: number;
 
   /**
+   * How the work is delivered - a different axis from `type` above, which says
+   * what it is *for*. Optional, defaulting to `file_upload`, so a client that
+   * predates work types keeps working unchanged.
+   *
+   * The conditional requirements (`link` needs a URL, `google_form` needs a
+   * form) are enforced in the service, not here: class-validator expresses
+   * "required only when another field has this value" badly, and the rule needs
+   * to hold for any writer rather than only for this DTO.
+   */
+  @IsOptional()
+  @IsIn(['file_upload', 'link', 'google_form'], {
+    message: 'workType must be file_upload, link or google_form',
+  })
+  workType?: 'file_upload' | 'link' | 'google_form';
+
+  /** Where a `link` task points. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  externalUrl?: string;
+
+  /**
+   * A Google Form **editing** link, or a bare form id.
+   *
+   * Not `@IsUrl()` on purpose. `GoogleFormsClient.parseFormId` accepts both
+   * shapes and returns a specific message for each of the three wrong-but-
+   * plausible things a teacher pastes - the responder link, a forms.gle short
+   * link, and something that is not a form. An `@IsUrl()` here would replace all
+   * of that with "externalUrl must be a URL", which is exactly the unhelpful
+   * failure this feature goes out of its way to avoid.
+   */
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  @MaxLength(512)
+  googleForm?: string;
+
+  /**
    * Who the task is for (§5.16). Required and non-empty: an assessment set for
    * nobody is invisible to every student, and a teacher should find that out
    * when they submit the form rather than on the due date.
@@ -193,6 +231,37 @@ export class UpdateAssessmentDto {
   maxFileSizeBytes?: number;
 
   /**
+   * Switching how the work is delivered.
+   *
+   * Allowed - unlike `type` below - because the realistic case is a teacher who
+   * picked the wrong kind on the form and noticed immediately, and because
+   * §5.18 already refuses to *delete* a task once anything has been submitted,
+   * so "delete and re-create" is not always available as the alternative.
+   *
+   * The service re-checks the payload rule (a link needs a URL, a form needs a
+   * form) on the merged result rather than on the patch alone, so switching to
+   * `link` without supplying `externalUrl` is refused instead of producing a
+   * task with a button that goes nowhere.
+   */
+  @IsOptional()
+  @IsIn(['file_upload', 'link', 'google_form'], {
+    message: 'workType must be file_upload, link or google_form',
+  })
+  workType?: 'file_upload' | 'link' | 'google_form';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  externalUrl?: string;
+
+  /** A Google Form editing link - see `CreateAssessmentDto.googleForm`. */
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  @MaxLength(512)
+  googleForm?: string;
+
+  /**
    * `type` and `courseId` are deliberately absent.
    *
    * Changing the course would move the task out from under the scoping check
@@ -200,6 +269,10 @@ export class UpdateAssessmentDto {
    * same reasoning `LiveSessionUpdate` gives for omitting `courseId`. Changing
    * the type would silently reclassify marks that §5.6 averages separately by
    * type. Both are a delete and a re-create, not a PATCH.
+   *
+   * `workType` above is the deliberate exception: it changes how a task is
+   * *handed in*, not what kind of work it is, so no average is reclassified by
+   * it.
    */
 }
 

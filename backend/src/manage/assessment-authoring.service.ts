@@ -20,6 +20,11 @@ import type { GroupRepository } from '../groups/interfaces/group-repository.inte
 import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interface.js';
 import type { StaffActor } from '../staff/staff-scope.service.js';
 import { StaffScopeService } from '../staff/staff-scope.service.js';
+import type {
+  ExternalWorkBinder,
+  WorkType,
+} from '../assessments/interfaces/work-repository.interface.js';
+import { EXTERNAL_WORK_BINDER } from '../assessments/interfaces/work-repository.interface.js';
 
 /** An assessment as the authoring screen sees it: the task and its audience. */
 export interface AuthoredAssessment extends StoredAssessment {
@@ -39,8 +44,35 @@ export interface CreateAssessmentInput {
   maxScore: number;
   allowedFileTypes: string[];
   maxFileSizeBytes: number;
+  /**
+   * How the work is delivered. Defaults to `file_upload` when the client omits
+   * it, so every caller that predates work types keeps working unchanged.
+   */
+  workType?: WorkType;
+  /** Required when `workType` is `link`; ignored otherwise. */
+  externalUrl?: string | null;
+  /**
+   * A Google Form editing URL (or bare form id), required when `workType` is
+   * `google_form`.
+   *
+   * Not stored on the assessment: it is resolved against Google and written as
+   * a `GoogleFormBinding`, which is why this is an *input* field with no
+   * counterpart on `StoredAssessment`.
+   */
+  googleForm?: string;
   targets: NewAssessmentTarget[];
 }
+
+/**
+ * A partial edit, plus the one input that is not a column.
+ *
+ * `googleForm` is resolved against Google and written as a binding rather than
+ * stored on the assessment, so it cannot ride along in `AssessmentUpdate` -
+ * that type is the repository's contract and every field on it is a column.
+ */
+export type UpdateAssessmentInput = AssessmentUpdate & {
+  googleForm?: string;
+};
 
 /**
  * Writing the work (CLAUDE.md §5.18, §5.16).
@@ -73,6 +105,13 @@ export class AssessmentAuthoringService {
     private readonly audit: AuditService,
     /** `DatabaseModule` is `@Global()`; this needs no import edge. */
     private readonly db: DatabaseService,
+    /**
+     * Attaching whatever an external work type needs. A port, not the Google
+     * sync service: this service decides *that* something must be bound and
+     * never which providers exist, so a second provider changes nothing here.
+     */
+    @Inject(EXTERNAL_WORK_BINDER)
+    private readonly binder: ExternalWorkBinder,
   ) {}
 
   private actorRole(actor: StaffActor): Role {
@@ -80,6 +119,36 @@ export class AssessmentAuthoringService {
     // roles, so a hardcoded role here would misattribute every TA's work to Dr.
     // Tahir (§5.4).
     return actor.role === Role.Teacher ? Role.Teacher : Role.Assistant;
+  }
+
+  /**
+   * Each work type needs its own payload, and a task missing it is a task
+   * students open onto nothing.
+   *
+   * Checked here rather than only in the DTO because the rule is *conditional*
+   * - `externalUrl` is required for one work type and meaningless for the
+   * others - and class-validator expresses that badly. The database backs up
+   * the link half with a CHECK constraint, so the invariant does not rest on
+   * this service being the only writer.
+   *
+   * The failure it prevents is silent: §5.10 derives everything a student sees
+   * from server state, so a `link` task with no URL renders a perfectly normal
+   * card with a button that goes nowhere.
+   */
+  private assertWorkTypePayload(
+    workType: WorkType,
+    input: { externalUrl?: string | null; googleForm?: string },
+  ): void {
+    if (workType === 'link' && !input.externalUrl?.trim()) {
+      throw new BadRequestException(
+        'A link task needs externalUrl - the address students should open.',
+      );
+    }
+    if (workType === 'google_form' && !input.googleForm?.trim()) {
+      throw new BadRequestException(
+        'A Google Form task needs googleForm - the form\'s editing link.',
+      );
+    }
   }
 
   /**
@@ -193,6 +262,8 @@ export class AssessmentAuthoringService {
       await this.scope.assertAssigned(courseId, actor);
       this.assertWindow(input.availableFrom, input.availableTo, input.dueAt);
       await this.assertTargets(courseId, input.targets);
+      const workType = input.workType ?? 'file_upload';
+      this.assertWorkTypePayload(workType, input);
 
       const assessment = await this.assessmentRepo.create({
         courseId,
@@ -208,7 +279,28 @@ export class AssessmentAuthoringService {
         maxScore: input.maxScore,
         allowedFileTypes: input.allowedFileTypes,
         maxFileSizeBytes: input.maxFileSizeBytes,
+        workType,
+        // Only a `link` task stores a URL here. A Google Form's address is
+        // resolved against Google and written as a binding instead - see below.
+        externalUrl: workType === 'link' ? (input.externalUrl ?? null) : null,
       });
+
+      // Binding talks to Google, so it happens *inside* the transaction on
+      // purpose: a form that cannot be read must not leave a `google_form` task
+      // behind with nothing attached to it - that task would render a button
+      // going nowhere, and §5.18's rule is that authoring mistakes surface on
+      // the form rather than on the due date.
+      //
+      // The cost is a network call holding a transaction open. Acceptable here
+      // because it happens once per task at authoring time, by a human who is
+      // waiting for the result anyway - and the alternative (bind afterwards,
+      // outside) is exactly the crash-in-the-gap shape §5.4 spent a migration
+      // closing for audit entries.
+      await this.binder.bindExternal(
+        assessment.id,
+        workType,
+        input.googleForm ?? input.externalUrl ?? '',
+      );
       const targets = await this.assessmentRepo.setTargets(
         assessment.id,
         input.targets,
@@ -240,7 +332,7 @@ export class AssessmentAuthoringService {
   async update(
     assessmentId: string,
     actor: StaffActor,
-    update: AssessmentUpdate,
+    update: UpdateAssessmentInput,
   ): Promise<AuthoredAssessment> {
     return this.db.runInTransaction(async () => {
       const before = await this.loadInScope(assessmentId, actor);
@@ -250,9 +342,46 @@ export class AssessmentAuthoringService {
         update.dueAt ?? before.dueAt,
       );
 
-      const after = await this.assessmentRepo.update(assessmentId, update);
+      // Validated against the **merged** result, not the patch. Switching to
+      // `link` without sending a URL, or to `google_form` without a form, would
+      // otherwise pass - the patch alone looks fine, and it is only the
+      // combination with what is already stored that is incoherent. Same merge
+      // shape as the window check above.
+      const workType = update.workType ?? before.workType;
+      this.assertWorkTypePayload(workType, {
+        externalUrl: update.externalUrl ?? before.externalUrl,
+        // Deliberately *not* falling back to a stored value: there is no
+        // `googleForm` on the assessment, and a form that is already bound
+        // satisfies the requirement without one being resent.
+        googleForm:
+          update.googleForm ??
+          (workType === 'google_form' && before.workType === 'google_form'
+            ? 'already-bound'
+            : undefined),
+      });
+
+      const { googleForm, ...columns } = update;
+      const after = await this.assessmentRepo.update(assessmentId, {
+        ...columns,
+        // Clearing the URL when a task stops being a link: leaving it behind is
+        // harmless to the read path (which selects on `work_type`) but it makes
+        // the row say something untrue about itself.
+        externalUrl:
+          update.workType !== undefined && update.workType !== 'link'
+            ? null
+            : columns.externalUrl,
+      });
       if (!after) {
         throw new NotFoundException('Assessment not found');
+      }
+
+      // Re-bind when a form was supplied, or when the task has just become a
+      // form task. Binding talks to Google and can throw, which aborts the
+      // whole edit - the same deliberate choice `create` makes, and for the
+      // same reason: a `google_form` task with nothing attached renders a
+      // button going nowhere.
+      if (googleForm) {
+        await this.binder.bindExternal(assessmentId, workType, googleForm);
       }
       await this.audit.record({
         actorId: actor.id,

@@ -54,6 +54,11 @@ export type AuditAction =
   | 'assessment.updated'
   | 'assessment.targeted'
   | 'assessment.deleted'
+  // Attributing an external response to a student. A staff decision that
+  // changes whose record carries a mark, which is squarely what §5.4 exists
+  // for - and unlike grading, the *evidence* lives in someone else's system,
+  // so this entry is the only durable record of who decided it was Ahmed's.
+  | 'external_result.attached'
   // The Google integration. Teacher-only, and the only actions in this list
   // that change what a *third party* may be asked for on Dr. Tahir's behalf:
   // connecting stores a long-lived credential that can read every form his
@@ -104,7 +109,11 @@ export type AuditTargetType =
   // under the user who connected it: the thing acted on is the *grant*, and it
   // outlives any particular connect/disconnect cycle in a way that makes
   // "everything that happened to this integration" the useful question.
-  | 'google_credential';
+  | 'google_credential'
+  // A mirrored external response. Its own target type rather than the
+  // assessment's, because "what happened to this response" and "what happened
+  // to this task" are different questions.
+  | 'external_result';
 
 /**
  * One side of a before/after pair.

@@ -15,6 +15,7 @@ import type {
   SubmissionRevision,
   TargetedAssessment,
 } from '../interfaces/assessment-repository.interface.js';
+import type { WorkType } from '../interfaces/work-repository.interface.js';
 
 interface AssessmentRow {
   id: string;
@@ -31,6 +32,8 @@ interface AssessmentRow {
   max_score: number;
   allowed_file_types: string[];
   max_file_size_bytes: string;
+  work_type: WorkType;
+  external_url: string | null;
   created_at: Date;
 }
 
@@ -80,7 +83,7 @@ interface RevisionRow {
 const ASSESSMENT_COLUMNS = `
   id, course_id, lesson_id, title, description, instructions, type, topics,
   available_from, available_to, due_at, max_score, allowed_file_types,
-  max_file_size_bytes, created_at
+  max_file_size_bytes, work_type, external_url, created_at
 `;
 
 const SUBMISSION_COLUMNS = `
@@ -104,6 +107,8 @@ function toAssessment(row: AssessmentRow): StoredAssessment {
     maxScore: row.max_score,
     allowedFileTypes: row.allowed_file_types,
     maxFileSizeBytes: num(row.max_file_size_bytes),
+    workType: row.work_type,
+    externalUrl: row.external_url,
     createdAt: iso(row.created_at),
   };
 }
@@ -212,6 +217,8 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
                 COALESCE(t.available_to,   a.available_to)   AS available_to,
                 COALESCE(t.due_at,         a.due_at)         AS due_at,
                 a.max_score, a.allowed_file_types, a.max_file_size_bytes,
+              a.work_type, a.external_url,
+                a.work_type, a.external_url,
                 a.created_at,
                 t.group_id AS target_group_id,
                 (t.available_from IS NOT NULL
@@ -244,6 +251,7 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
               COALESCE(t.available_to,   a.available_to)   AS available_to,
               COALESCE(t.due_at,         a.due_at)         AS due_at,
               a.max_score, a.allowed_file_types, a.max_file_size_bytes,
+              a.work_type, a.external_url,
               a.created_at,
               t.group_id AS target_group_id,
               (t.available_from IS NOT NULL
@@ -272,8 +280,9 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
       `INSERT INTO assessments
          (id, course_id, lesson_id, title, description, instructions, type,
           topics, available_from, available_to, due_at, max_score,
-          allowed_file_types, max_file_size_bytes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          allowed_file_types, max_file_size_bytes, work_type, external_url)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+               $15, $16)
        RETURNING ${ASSESSMENT_COLUMNS}`,
       [
         randomUUID(),
@@ -290,6 +299,8 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
         input.maxScore,
         input.allowedFileTypes,
         input.maxFileSizeBytes,
+        input.workType,
+        input.externalUrl,
       ],
     );
     return toAssessment(row as AssessmentRow);
@@ -322,7 +333,14 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
          -- and an explicit null arrives as the string 'null' below.
          lesson_id           = CASE WHEN $12::text IS NULL THEN lesson_id
                                     WHEN $12 = 'null' THEN NULL
-                                    ELSE $12 END
+                                    ELSE $12 END,
+         work_type           = COALESCE($13, work_type),
+         -- external_url is nullable and clearing it is meaningful - switching a
+         -- task away from the link type leaves a stale URL otherwise - so it
+         -- takes the same sentinel treatment as lesson_id rather than COALESCE.
+         external_url        = CASE WHEN $14::text IS NULL THEN external_url
+                                    WHEN $14 = 'null' THEN NULL
+                                    ELSE $14 END
        WHERE id = $1
        RETURNING ${ASSESSMENT_COLUMNS}`,
       [
@@ -340,6 +358,10 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
         update.lessonId === undefined
           ? null
           : (update.lessonId ?? 'null'),
+        update.workType ?? null,
+        update.externalUrl === undefined
+          ? null
+          : (update.externalUrl ?? 'null'),
       ],
     );
     return row ? toAssessment(row) : null;

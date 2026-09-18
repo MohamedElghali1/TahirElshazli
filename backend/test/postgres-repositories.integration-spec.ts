@@ -1139,6 +1139,8 @@ describeIfDb('Postgres repositories', () => {
         maxScore: 30,
         allowedFileTypes: ['application/pdf'],
         maxFileSizeBytes: 10485760,
+        workType: 'file_upload',
+        externalUrl: null,
       });
       await repo().setTargets(created.id, [{ groupId: 'group-1' }]);
 

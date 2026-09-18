@@ -11,6 +11,8 @@ import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interfac
 import { InMemoryGroupRepository } from '../groups/repositories/in-memory-group.repository.js';
 import { StudentGroupsService } from '../groups/student-groups.service.js';
 import { InMemoryEnrollmentRepository } from '../enrollments/repositories/in-memory-enrollment.repository.js';
+import { WORK_REPOSITORY } from './interfaces/work-repository.interface.js';
+import { InMemoryWorkRepository } from './repositories/in-memory-work.repository.js';
 
 const STUDENT = {
   user: { sub: 'student-1', email: 'student@example.com', role: 'student', jti: 'j1' },
@@ -39,6 +41,12 @@ describe('AssessmentsController', () => {
         StudentGroupsService,
         AssessmentsService,
         { provide: ASSESSMENT_REPOSITORY, useClass: InMemoryAssessmentRepository },
+        // Work types and mirrored external results. The real implementation
+        // rather than a stub, for the same reason as the group repository
+        // above: the fixtures are all `file_upload`, so this returning nothing
+        // is exactly the behaviour every existing assertion depends on, and a
+        // stub would let a regression in that path pass unnoticed.
+        { provide: WORK_REPOSITORY, useClass: InMemoryWorkRepository },
       ],
     })
       .overrideGuard(JwtAuthGuard)

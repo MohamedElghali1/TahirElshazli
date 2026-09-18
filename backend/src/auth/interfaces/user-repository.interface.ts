@@ -7,6 +7,31 @@ export interface StoredUser {
   role: Role;
   name: string;
   createdAt: string;
+  /**
+   * The Google address this person fills forms in with, when it differs from
+   * the address they registered under.
+   *
+   * Nullable and usually null. It exists because a Google Form response
+   * identifies its respondent by Google account email and nothing else, and
+   * students routinely fill school forms in with a personal address - without
+   * this there is no way to attribute those responses to anybody.
+   */
+  googleEmail: string | null;
+}
+
+/**
+ * A student, reduced to the fields needed to attribute an external response.
+ *
+ * Deliberately **not** `StoredUser`. Matching runs over a whole cohort at once,
+ * and `StoredUser` carries a password hash - dragging one per student through a
+ * sync loop is exactly the kind of casual over-fetch that puts a credential
+ * somewhere it has no business being (CLAUDE.md §8). The same reasoning
+ * `findIdsByRole` gives for returning ids only.
+ */
+export interface StudentEmailIdentity {
+  id: string;
+  email: string;
+  googleEmail: string | null;
 }
 
 export interface PasswordResetToken {
@@ -60,6 +85,34 @@ export interface UserRepository {
    * job once the roll is in the thousands (§1) rather than in a request.
    */
   findIdsByRole(role: Role): Promise<string[]>;
+  /**
+   * Students whose LMS address *or* recorded Google address is in this list.
+   *
+   * The batch read behind attributing a form's responses. One query for a whole
+   * cohort rather than one per response - the N+1 CLAUDE.md §7.1 asks new code
+   * not to add, and here N is every student who answered.
+   *
+   * **Scoped to students by role**, not merely filtered by the caller. A form
+   * response matching a teacher's or an assistant's address is not a
+   * submission, and attributing one would put a staff member in a completion
+   * count; making that impossible here is cheaper than remembering it at each
+   * call site.
+   *
+   * Matching is case-insensitive on both columns, because an email address is,
+   * and because the one thing worse than an unmatched response is one that
+   * failed to match over capitalisation.
+   */
+  findStudentsByEmails(
+    emails: readonly string[],
+  ): Promise<StudentEmailIdentity[]>;
+  /**
+   * Records (or clears, with null) the Google address for one account.
+   *
+   * Written from two places: the student's own profile, and staff resolving an
+   * unmatched response - which is the flow that matters, since the student who
+   * used an unrecognised address is the least likely person to notice.
+   */
+  setGoogleEmail(userId: string, googleEmail: string | null): Promise<void>;
   create(user: {
     email: string;
     passwordHash: string;
