@@ -1,114 +1,170 @@
 @import "tailwindcss";
-@import "./tokens.css";
+@import "./tokens/fig-tokens.css";
+@import "./tokens/semantic.css";
 
-/* Bridge the token layer into Tailwind's theme so utilities and raw CSS
-   read from the same source. Every color a component uses resolves here. */
+/* ============================================================================
+   Tailwind bridge.
+
+   Every semantic token in tokens/semantic.css is given a NAMED utility here.
+   That is not convenience — it is the fix for the single worst failure mode the
+   design handoff documents:
+
+     "Never write `text-[var(--fg-secondary)]`. Tailwind cannot tell whether a
+      bare var() is a size or a colour, and where the element also carries a size
+      utility, the size wins and the colour is silently dropped. It typechecks,
+      lints and builds; only the rendered stylesheet is wrong. 478 of these
+      shipped unnoticed before a computed-style pass found them."
+
+   So: `text-fg`, `text-fg-2`, `text-accent`, `text-status-amber-text` — never
+   `text-[var(...)]`. Unambiguous properties (`bg-[var(--x)]`, `h-[var(--x)]`)
+   are safe because nothing else claims them, but a named utility is still better.
+
+   Second rule from the same list: ONE UTILITY PER PROPERTY. Two `rounded-*` or
+   two `text-*` in one class string are resolved by stylesheet source order, not
+   by the order you wrote them.
+   ============================================================================ */
 @theme inline {
-  --color-bg:          var(--bg-primary);
-  --color-surface:     var(--bg-secondary);
-  --color-raised:      var(--bg-tertiary);
-  --color-pressed:     var(--bg-quaternary);
-  --color-wash:        var(--bg-wash);
-  --color-line:        var(--border-light);
-  --color-line-medium: var(--border-medium);
-  --color-line-strong: var(--border-strong);
-  --color-fg:          var(--fg-primary);
-  --color-fg-2:        var(--fg-secondary);
-  --color-fg-3:        var(--fg-tertiary);
-  --color-fg-4:        var(--fg-muted);
-  --color-fg-5:        var(--fg-faint);
-  --color-accent:      var(--accent);
-  --color-accent-fg:   var(--accent-fg);
-  --color-danger:      var(--danger);
-  --color-fg-inverted: var(--fg-inverted);
-  /* The tag palette, also used to tint the sidebar's nav icons. Every tone is
-     mapped, not just the two the tags happened to need - a half-mapped scale
-     is how `text-[var(--chip-teal-fg)]` gets written and silently renders
-     nothing (see §12 of docs/frontend-design-system.md). */
-  --color-chip-neutral-fg: var(--chip-neutral-fg);
-  --color-chip-blue-fg:    var(--chip-blue-fg);
-  --color-chip-green-fg:   var(--chip-green-fg);
-  --color-chip-red-fg:     var(--chip-red-fg);
-  --color-chip-amber-fg:   var(--chip-amber-fg);
-  --color-chip-violet-fg:  var(--chip-violet-fg);
-  --color-chip-teal-fg:    var(--chip-teal-fg);
+  /* --- Ink: five tints. The most load-bearing idea in the system ------------
+     Almost everything in the console is 13px; a heading differs from a caption
+     by TINT, not size. Reach for the next tint before the next size. */
+  --color-fg:        var(--fg);
+  --color-fg-2:      var(--fg-2);
+  --color-fg-3:      var(--fg-3);
+  --color-fg-4:      var(--fg-4);
+  --color-fg-5:      var(--fg-5);
+  --color-fg-invert: var(--fg-invert);
+  --color-fg-accent: var(--fg-accent);
+  --color-fg-danger: var(--fg-danger);
+
+  /* --- Surfaces --- */
+  --color-surface:        var(--surface);
+  --color-surface-2:      var(--surface-2);
+  --color-surface-3:      var(--surface-3);
+  --color-surface-4:      var(--surface-4);
+  --color-surface-accent: var(--surface-accent);
+  --color-surface-danger: var(--surface-danger);
+  --color-surface-invert: var(--surface-invert);
+  --color-surface-overlay: var(--surface-overlay);
+
+  /* --- Borders. Borders separate surfaces; shadows are for things that float. */
+  --color-border-light:  var(--border-light);
+  --color-border-medium: var(--border-medium);
+  --color-border-strong: var(--border-strong);
+  --color-border-danger: var(--border-danger);
+  --color-border-accent: var(--border-accent);
+
+  /* --- Accent: means "the one action on this screen". Never a status. ------- */
+  --color-accent:        var(--accent);
+  --color-accent-hover:  var(--accent-hover);
+  --color-accent-active: var(--accent-active);
+  --color-accent-wash:   var(--accent-wash);
+  --color-accent-wash-2: var(--accent-wash-2);
+  --color-accent-border: var(--accent-border);
+
+  /* --- Status: means "this is the state of that thing". Never the accent. ---
+     Blue appears in both palettes, so a blue tag is accent-COLOURED but never
+     accent-MEANING. `status-amber-text` is the contrast-safe 11-step: the amber
+     9-step is a bright lemon and fails as ink. */
+  --color-status-green:       var(--status-green);
+  --color-status-green-wash:  var(--status-green-wash);
+  --color-status-amber:       var(--status-amber);
+  --color-status-amber-wash:  var(--status-amber-wash);
+  --color-status-amber-text:  var(--status-amber-text);
+  --color-status-red:         var(--status-red);
+  --color-status-red-wash:    var(--status-red-wash);
+  --color-status-violet:      var(--status-violet);
+  --color-status-violet-wash: var(--status-violet-wash);
+  --color-status-blue:        var(--status-blue);
+  --color-status-blue-wash:   var(--status-blue-wash);
+
+  /* --- Washes: hover/press paint OVER whatever is beneath, never swap it. --- */
+  --color-wash-hover: var(--wash-hover);
+  --color-wash-press: var(--wash-press);
+  --color-wash-field: var(--wash-field);
+  --color-wash-track: var(--wash-track);
+
+  /* --- Type ----------------------------------------------------------------
+     Six sizes, and that is the whole console scale. `text-base` IS 13px here,
+     deliberately: it is the workhorse, not a shrunken body size. Tailwind's
+     other steps (text-sm, text-2xl…) still exist but are not part of this
+     system — reach for a tint instead.
+
+     The `m-` prefixed sizes are the marketing scale. The LMS never touches
+     them; the marketing site never touches --text-base. */
+  --text-xxs:  var(--fs-xxs);   /* 11 / 600 — the only upper-case tier */
+  --text-xs:   var(--fs-xs);    /* 12 */
+  --text-base: var(--fs-base);  /* 13 — the workhorse */
+  --text-md:   var(--fs-md);    /* 16 / 600 — section heading, panel header */
+  --text-lg:   var(--fs-lg);    /* 20 / 600 */
+  --text-xl:   var(--fs-xl);    /* 24 / 600 — the console's ceiling */
+
+  --text-m-body:    var(--fs-marketing-body);    /* 17 */
+  --text-m-lead:    var(--fs-marketing-lead);    /* 20 */
+  --text-m-h2:      var(--fs-marketing-h2);      /* 32 */
+  --text-m-h1:      var(--fs-marketing-h1);      /* 44 */
+  --text-m-display: var(--fs-marketing-display); /* 68 */
 
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
 
-  /* Twenty ships exactly one breakpoint: MOBILE_VIEWPORT = 768.
-     Tailwind's defaults stay available, but the design decisions in
-     this app are made at this one line. */
-  --breakpoint-mobile: 768px;
+  /* --- Geometry ------------------------------------------------------------
+     Radius: 8 for buttons/inputs/cards/nav/panels, 4 for tags/chips/menu items
+     and 24px icon buttons, 3 for the checkbox box. NO PILLS except a Toggle
+     track and a progress-bar cap — that is what `rounded-full` is reserved for.
+
+     Spacing is deliberately NOT redefined. Tailwind's default numeric scale is
+     already this system's 4px grid: p-0.5=2 p-1=4 p-2=8 p-3=12 p-4=16 p-6=24
+     p-8=32 p-12=48 — the same eight values the handoff calls --space-1..8, just
+     indexed by pixels/4 instead of by position. Page gutter 24 (p-6), panel
+     padding 16 (p-4), table cell 8 (p-2). */
+  --radius-xs:   3px;   /* checkbox box */
+  --radius-sm:   4px;   /* tags, chips, menu items, 24px icon buttons */
+  --radius-md:   var(--radius);       /* 8 — the default */
+  --radius-full: var(--radius-pill);
+
+  /* --- One breakpoint, at 768px. Tailwind's `md:` already lands there, so the
+     system's single decision point is `md:` and nothing else should be used. */
+  --breakpoint-md: 768px;
 }
 
+/* ============================================================================
+   Base. semantic.css already sets html/body/a/:focus-visible/.num — those are
+   the handoff's own and are not repeated. What follows is ours: the things a
+   real application needs that a specimen bundle has no reason to carry.
+   ============================================================================ */
+
 html {
-  color-scheme: dark light;
+  color-scheme: light dark;
   -webkit-text-size-adjust: 100%;
 }
 
 body {
-  margin: 0;
-  background: var(--bg-primary);
-  color: var(--fg-primary);
-  font-family: var(--font-sans);
-  font-size: var(--fs-base);
-  line-height: var(--lh-base);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  /* Twenty sets this on body: it kills the 300ms tap delay without
-     disabling pinch-zoom, which a viewport meta would. */
+  -moz-osx-font-smoothing: grayscale;
+  /* Kills the 300ms tap delay without disabling pinch-zoom, which a viewport
+     meta would. Students are phone-first. */
   touch-action: manipulation;
 }
 
-/* The public site opts out of the 13px product default. Marketing copy at
-   product density is unreadable at arm's length, which is how a parent
-   reads a course page. */
+/* The public site opts out of the 13px console default. Marketing copy at
+   product density is unreadable at arm's length, which is how a parent reads a
+   course page. The two scales never mix — this attribute is the boundary. */
 [data-surface="site"] {
-  font-size: var(--fs-body);
-  line-height: var(--lh-loose);
+  font-size: var(--fs-marketing-body);
+  line-height: 1.6;
 }
 
 ::selection {
-  background: var(--accent-line);
-  color: var(--fg-primary);
+  background: var(--accent-wash-2);
+  color: var(--fg);
 }
 
-/* One focus treatment for the whole product, and it is Twenty's:
-   a 2px outline at 1px offset rather than a box-shadow ring. An
-   outline follows the element's own border-radius and never gets
-   clipped by an ancestor's overflow:hidden, which the old ring did
-   on every row inside a Card. Never `outline: none`. */
-:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-/* Numerals in the app are tabular or columns of scores stop lining up. */
-.num {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
-}
-
-/* Hairline row separators do the work cards would otherwise do. */
-.rows > * + * {
-  border-top: 1px solid var(--border-light);
-}
-
-/* A tap leaves :hover applied until the next tap lands elsewhere, so
-   anything that paints on hover is limited to pointers that can
-   actually hover. This mirrors Twenty's `hover-capable` mixin, and it
-   is why a tapped row on a phone does not stay highlighted. */
+/* A tap leaves :hover applied until the next tap lands elsewhere, so anything
+   that paints on hover is limited to pointers that can actually hover. This is
+   why a tapped row on a phone does not stay highlighted. */
 @media (hover: hover) {
-  .row:hover { background: var(--bg-wash); }
-  .row:hover .reveal { opacity: 1; }
-}
-
-.reveal {
-  opacity: 0;
-  transition: opacity var(--dur-fast) var(--ease);
+  .row-hover:hover { background: var(--wash-hover); }
+  .row-hover:active { background: var(--wash-press); }
 }
 
 /* Scrollbars: visible enough to grab, quiet enough to ignore. */
@@ -119,12 +175,15 @@ body {
 *::-webkit-scrollbar { width: 10px; height: 10px; }
 *::-webkit-scrollbar-thumb {
   background: var(--border-medium);
-  border-radius: var(--r-full);
+  border-radius: var(--radius-pill);
   border: 3px solid transparent;
   background-clip: content-box;
 }
 *::-webkit-scrollbar-thumb:hover { background-color: var(--border-strong); }
 
+/* Motion in this system is colour and opacity only — no transforms, no springs,
+   no bounce — so there is little to suppress. The one looping animation is the
+   three-dot Loader, and it is the main thing this rule exists for. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

@@ -1,0 +1,171 @@
+/* Semantic aliases layered on tokens/fig-tokens.css (generated from Figma Variables).
+   Every value here resolves to a Figma variable — nothing new is invented.
+   Raw literals appear only where the Figma source itself used a literal
+   (button hover washes, the 0.72 tooltip ink, shadow recipes).
+
+   PORTED VERBATIM from the Claude Design handoff (project 59f824fd), tokens/semantic.css.
+   This file is THE CONTRACT — read from it, never from fig-tokens.css directly.
+
+   Three additions are ours and are marked `OURS` where they appear. Nothing else
+   was renamed, re-scaled or re-derived. */
+
+:root {
+  /* ── Type ───────────────────────────────────────────────── */
+  /* OURS: the two families are loaded by `next/font/google` in app/layout.tsx rather
+     than by tokens/fonts.css's CDN @import — self-hosted, no layout shift, no request
+     to Google from the visitor's browser. The families themselves are unchanged, and
+     the literal names stay as the fallback so this file still works standalone. */
+  --font-sans: var(--font-inter), "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans Arabic", sans-serif;
+  --font-mono: var(--font-geist-mono), "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --fs-xl: 24px;   /* page title            — 600 */
+  --fs-lg: 20px;   /* console section lead  — 600 */
+  --fs-md: 16px;   /* section heading       — 600 */
+  --fs-base: 13px; /* the workhorse         — 400/500 */
+  --fs-xs: 12px;   /* hints, descriptions   — 400/500 */
+  --fs-xxs: 11px;  /* field labels, nav     — 600 */
+
+  --lh-tight: 100%;
+  --lh-body: 1.4; /* @kind other */
+
+  --fw-regular: 400; /* @kind font */
+  --fw-medium: 500; /* @kind font */
+  --fw-semibold: 600; /* @kind font */
+
+  /* Marketing scale — used ONLY on the public site, never in the console */
+  --fs-marketing-body: 17px;
+  --fs-marketing-display: 68px;
+  --fs-marketing-h1: 44px;
+  --fs-marketing-h2: 32px;
+  --fs-marketing-lead: 20px;
+
+  /* ── Ink (the four-tint ramp that carries hierarchy) ─────── */
+  --fg: var(--text-primary);
+  --fg-2: var(--text-secondary);
+  --fg-3: var(--text-tertiary);
+  --fg-4: var(--text-light);
+  --fg-5: var(--text-extra-light);
+  --fg-invert: var(--text-inverted);
+  --fg-accent: var(--text-brand);
+  --fg-danger: var(--text-danger);
+
+  /* ── Surfaces ───────────────────────────────────────────── */
+  --surface: var(--background-primary);
+  --surface-2: var(--background-secondary);
+  --surface-3: var(--background-tertiary);
+  --surface-4: var(--background-quarternary);
+  --surface-accent: var(--background-brand);
+  --surface-danger: var(--background-danger);
+  --surface-invert: var(--background-inverted-primary);
+  --surface-overlay: rgba(0,0,0,0.72);
+
+  /* ── Borders ────────────────────────────────────────────── */
+  --border-light: var(--borders-light);
+  --border-medium: var(--borders-medium);
+  --border-strong: var(--borders-stronger);
+  --border-danger: var(--borders-danger);
+  --border-accent: var(--colors-indigo-5);
+
+  /* ── Accent (one action per screen) ──────────────────────── */
+  --accent: var(--accent-accent-9);
+  --accent-hover: var(--accent-accent-10);
+  --accent-active: var(--accent-accent-11);
+  --accent-wash: var(--accent-accent-3);
+  --accent-wash-2: var(--accent-accent-4);
+  --accent-border: var(--accent-accent-5);
+
+  /* ── Semantic status (a tag colour, never the accent) ────── */
+  --status-green: var(--colors-green-9);
+  --status-green-wash: var(--colors-green-4);
+  --status-amber: var(--bright-yellow-9);
+  --status-amber-wash: var(--bright-yellow-4);
+  --status-red: var(--colors-red-9);
+  --status-red-wash: var(--colors-red-4);
+  --status-violet: var(--colors-purple-9);
+  --status-violet-wash: var(--colors-purple-4);
+  --status-blue: var(--colors-blue-9);
+  --status-blue-wash: var(--colors-blue-3);
+
+  /* OURS (naming only, not a new value): the amber 9-step is a bright lemon and
+     fails contrast as text, so the handoff mandates `--bright-yellow-11` wherever
+     amber is ink rather than ground. Aliased here so a screen never has to reach
+     past this file into the generated one to get amber text right. */
+  --status-amber-text: var(--bright-yellow-11);
+
+  /* ── Washes (hover/press over any surface) ───────────────── */
+  --wash-hover: rgba(0,0,0,0.04);
+  --wash-press: rgba(0,0,0,0.08);
+  --wash-field: rgba(0,0,0,0.02);
+  --wash-track: rgba(0,0,0,0.16);
+
+  /* ── Geometry ───────────────────────────────────────────── */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 8px;
+  --space-4: 12px;
+  --space-5: 16px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 48px;
+
+  --gutter-page: 24px;
+  --pad-panel: 16px;
+  --pad-cell: 8px;
+
+  --radius-sm: 4px;   /* tags, chips, menu items, 24px icon buttons */
+  --radius: 8px;      /* buttons, inputs, cards, nav, panels */
+  --radius-pill: 999px;
+
+  --h-control: 32px;  /* console default */
+  --h-control-sm: 24px;
+  --h-control-lg: 40px; /* tabs + marketing controls */
+  --h-tag: 20px;
+
+  --icon-sm: 14px;
+  --icon: 16px;
+  --icon-lg: 20px;
+
+  --breakpoint: 768px;
+
+  /* ── Elevation — borders separate surfaces; shadows are rare ── */
+  --shadow-light: 0px 2px 4px 0px rgba(0,0,0,0.04), 2px 4px 16px 0px rgba(0,0,0,0.12);
+  --shadow-strong: 0px 2px 4px 0px rgba(0,0,0,0.04), 2px 4px 16px 0px rgba(0,0,0,0.12), 0px 0px 0px 1px rgba(0,0,0,0.06);
+  --ring-inset-light: inset 0 0 0 1px var(--borders-light);
+  --ring-inset-medium: inset 0 0 0 1px var(--borders-medium);
+
+  /* ── Motion ─────────────────────────────────────────────── */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1); /* @kind other */
+  --dur-fast: 80ms; /* @kind other */
+  --dur: 150ms; /* @kind other */
+
+  /* ── Focus — never removed ──────────────────────────────── */
+  --focus-ring: 2px solid var(--accent);
+  --focus-offset: 1px;
+}
+
+/* OURS. The four washes above are literal black, which is correct on the light
+   surfaces every screen in the handoff is drawn against and invisible on a dark
+   one — a hover that paints nothing reads as a dead control, not as a style
+   difference. `fig-tokens.css` already ships a full dark scope, so these four are
+   the only values that do not follow it; they mirror the alpha ramp the generated
+   file uses for `--grays-gray-alpha-*` in dark.
+
+   This is the one place the port departs from the handoff, and it is additive:
+   delete this block and the light theme is untouched. */
+:root[data-theme="dark"], .dark {
+  --wash-hover: rgba(255,255,255,0.06);
+  --wash-press: rgba(255,255,255,0.10);
+  --wash-field: rgba(255,255,255,0.03);
+  --wash-track: rgba(255,255,255,0.14);
+}
+
+html { font-family: var(--font-sans); color: var(--fg); background: var(--surface); }
+body { margin: 0; font-size: var(--fs-base); line-height: var(--lh-body); -webkit-font-smoothing: antialiased; }
+*, *::before, *::after { box-sizing: border-box; }
+
+a { color: var(--fg-accent); text-decoration: none; }
+a:hover { color: var(--accent-hover); text-decoration: underline; }
+
+:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
+.num, .tabular { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
