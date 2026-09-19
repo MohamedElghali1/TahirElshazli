@@ -14,8 +14,25 @@ When a new instruction from the user conflicts with this file, **the user wins**
 file so it stops being wrong. Do not argue from "the spec says". Do not build speculative features
 because they appear in a wish list.
 
+**As of 2026-09-19 a redesign is in progress on the `redesign` branch, and it changes the
+product, not only the paint.** Read these first; several of them supersede sections below, and each
+supersession is annotated in place:
+
+- `docs/PRODUCT_SPEC.md` — what the product should now do, feature by feature
+- `docs/IMPLEMENTATION_PLAN.md` — **the living backlog; the source of truth for what is done**
+- `docs/CHANGELOG.md` — every decision that reversed something in this file, and why
+- `docs/AUTHORIZATION_MODEL.md` · `docs/API_SPEC.yaml` · `docs/DOMAIN_MODEL.md` ·
+  `docs/DATABASE_PLAN.md` · `docs/SECURITY.md` · `docs/ARCHITECTURE.md`
+- `docs/redesign-mapping.md` — the design handoff ⇄ codebase mapping.
+  **`docs/frontend-design-system.md` is superseded by it** and describes the retired Twenty-derived
+  system; keep it only until the last screen lands.
+
 **Source-of-truth order** (highest first):
 
+0. The Claude Design handoff, for the product experience and the design system — added
+   2026-09-19. It ranks above the older client meetings below wherever they describe the *frontend
+   or the product*, because it is the later artifact and the client commissioned it as the final
+   design. It says nothing about the stack, which item 5 still governs.
 1. What the user says in the current conversation.
 2. `context/Report 2 - Mr Tahir Elshazli LMS.pdf` — latest client meeting (6 Aug 2026).
 3. `context/report 1.pdf` — earlier client meeting (30 Jul 2026).
@@ -78,8 +95,16 @@ two roles.** The enum is the implementation's spelling and is what you write in 
 | Teaching Assistant | `ta` | `Role.Assistant` = `'assistant'` |
 | Teacher (Dr. Tahir) | `admin` | `Role.Teacher` = `'teacher'` |
 
-Don't add a third role for "admin" — Dr. Tahir's main account *is* the admin. The prototype doc's
-"three roles" framing simply omits Visitor and Parent, which it does not cover.
+> **Superseded 2026-09-19.** There is now a third staff role. The Claude Design console shows
+> Dr. Tahir, a **Full admin** with identical access, and an Assistant — and says why: *"Two people
+> share this console… If you need to know who did what, the assistant activity log records every
+> action by name."* Identical permission, **distinct identity**; sharing one role destroys
+> attribution, which is the whole point of the audit log. `Role` gains `admin`, and the pair
+> `[Role.Teacher, Role.Admin]` is defined once as `STAFF_ADMIN` rather than written out at ~30
+> call sites. See `docs/CHANGELOG.md`.
+
+The paragraph this replaced said: don't add a third role for "admin" — Dr. Tahir's main account
+*is* the admin. That reading was right until the client asked for a second full-access person.
 
 ### 2.2 The TA permission preset
 
@@ -437,6 +462,23 @@ by evicting on the write itself — so the TTL only ever covers a *missed* evict
 
 ### 5.11.1 The current posture: TAs see everything — and why this section stays
 
+> **Superseded 2026-09-19 — and this section's own argument is why it was cheap to change.**
+> Scoping moves from **course** to **group**: an assistant carries an explicit
+> `scope = all_groups | assigned_groups`, and `CourseStaffAssignment` becomes
+> `AssistantGroupAssignment`. The client described two kinds — one who reaches every group, one
+> who reaches a named group — which is exactly the posture-as-configuration this section asked for,
+> now stored as a column instead of a switch.
+>
+> Three things below still hold and must survive the rewrite: `StaffScopeService` stays the
+> **single** place that decides; every `/staff/*` route keeps routing through it; and the
+> **404-not-403 rule with a byte-identical error message** is preserved, because it is the
+> anti-enumeration property and a spec asserts it. Scope is a column rather than an inference from
+> row count for the reason this section warns about generally: *"no assignment rows"* must never be
+> ambiguous between "everything" and "not set up yet".
+>
+> What does **not** widen is unchanged: `/admin/*` stays teacher/admin. See
+> `docs/AUTHORIZATION_MODEL.md`.
+
 **Answered by the client on 2026-09-10.** Asked whether TAs should be scoped per group once
 groups exist (§5.16), the answer was *"TAs are allowed to access all groups"*; asked whether that
 also drops the per-course scoping, *"for now keep it as TAs see everything, but it might be
@@ -518,6 +560,18 @@ that reading is now wrong (§7.3 has the numbers this changes).
   enrolled in two courses, so the group↔course link is **its own row** (§6.1), never a `course_id`
   column on the group. Getting this backwards is the expensive mistake here: a `course_id` column
   is a one-way door that a join table is not.
+
+  > **Half-superseded 2026-09-19.** The first sentence still stands — a group is a class of
+  > students, and more than one group still studies the same course. What changed is the other
+  > direction: the client chose **one course per group** ("A group is one timetable, one assistant
+  > and one set of tasks"), so `GroupCourse` collapses into `groups.course_id` and `learning_mode`
+  > moves onto the group.
+  >
+  > **The warning above was made, read, and overruled knowingly** — it is the least reversible
+  > decision in the redesign, which is why it is recorded rather than quietly edited out. The
+  > migration *raises* rather than guessing if any group currently holds two courses; silently
+  > picking one would corrupt every session, task and report hanging off it. See
+  > `docs/DATABASE_PLAN.md` §4.1.
 - **Enrollment first, placement second.** Answered 2026-09-10: *"yes, enrolled then grouped by
   TA."* `Enrollment` stays the single source of truth for *does this student have this course*;
   group membership is a second, later fact about *which cohort they sit in*. That ordering is
@@ -720,7 +774,11 @@ These **extend** the entities above rather than duplicating them — same `User`
   thing a live schedule and a classmate list actually belong to. **No `course_id`** — that was
   the shape assumed before the client answered on 2026-09-10, and it is wrong: a group exists
   before a course is attached and may be enrolled in more than one.
-- **`GroupCourse`** — `id, group_id, course_id, learning_mode, enrolled_at, enrolled_by`. The
+- **`GroupCourse`** — **collapsed into `Group` on 2026-09-19** (§5.16's note). `course_id` and
+  `learning_mode` are now columns on `groups`; this table is dropped by migration 013. The
+  description below is kept because the *reasoning* still explains where `learning_mode` lives and
+  why: it describes how a course is delivered to a cohort, which is now simply a property of the
+  cohort. Original entry: `id, group_id, course_id, learning_mode, enrolled_at, enrolled_by`. The
   client's verb: a group is *enrolled* in a course. Many groups per course, and in principle many
   courses per group. The **live sessions** and the **learning mode** (§5.2) hang off it, because
   both are properties of *this group studying this course* rather than of either alone, and it is
@@ -1151,6 +1209,16 @@ prerequisite is met.
 ---
 
 ## 7.2 Open enrollment — a deliberate, temporary posture
+
+> **Retired 2026-09-19, exactly as this section predicted.** It called itself *"a testing posture,
+> not the business model"*, and the replacement is a **registration approval queue**: a new account
+> lands as `waiting`, staff accept or reject it, and acceptance places the student in a group —
+> which is what actually grants the course.
+>
+> The instruction below that survives is the one that matters: **`CoursesService.enroll` is kept,
+> not deleted.** This section said "do not delete the method to add payment"; the same applies to
+> adding approval. Only the route moves — it becomes staff-only, invoked by the acceptance flow.
+> `GET /courses/catalog` retires with it. See `docs/PRODUCT_SPEC.md` §1.1.
 
 Added 2026-09-07 at the client's direct instruction, after they signed in and
 found an empty dashboard with no way to fill it: *"for now, let me access every
