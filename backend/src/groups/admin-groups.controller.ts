@@ -99,12 +99,7 @@ export class AdminGroupsController {
     @Body() body: AddGroupCourseDto,
     @Request() req: { user: JwtPayload },
   ): Promise<GroupCourse> {
-    return this.groups.addCourse(
-      groupId,
-      body.courseId,
-      this.actor(req),
-      body.learningMode,
-    );
+    return this.groups.addCourse(groupId, body.courseId, this.actor(req));
   }
 
   @Delete('groups/:groupId/courses/:courseId')

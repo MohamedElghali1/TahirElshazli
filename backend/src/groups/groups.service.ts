@@ -13,7 +13,6 @@ import type { UserRepository } from '../auth/interfaces/user-repository.interfac
 import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js';
 import type { CourseRepository } from '../courses/interfaces/course-repository.interface.js';
 import { COURSE_REPOSITORY } from '../courses/interfaces/course-repository.interface.js';
-import type { LearningMode } from '../enrollments/interfaces/enrollment-repository.interface.js';
 import type { StaffActor } from '../staff/staff-scope.service.js';
 import { StaffScopeService } from '../staff/staff-scope.service.js';
 import type {
@@ -195,14 +194,12 @@ export class GroupsService {
    * `StaffScopeService`'s single decision, and under the current posture
    * (§5.11.1) it is the one place that would change if TAs stop being scoped.
    *
-   * Enrolls **no students** (§5.16). The learning mode is set here because it
-   * describes this group studying this course (§5.2).
+   * Enrolls **no students** (§5.16).
    */
   async addCourse(
     groupId: string,
     courseId: string,
     actor: StaffActor,
-    learningMode: LearningMode,
   ): Promise<GroupCourse> {
     return this.db.runInTransaction(async () => {
       await this.requireGroup(groupId);
@@ -214,7 +211,6 @@ export class GroupsService {
       const pairing = await this.groupRepo.addCourse({
         groupId,
         courseId,
-        learningMode,
         enrolledBy: actor.id,
       });
       await this.audit.record({
@@ -225,7 +221,7 @@ export class GroupsService {
         targetId: pairing.id,
         courseId,
         before: null,
-        after: { groupId, courseId, learningMode: pairing.learningMode },
+        after: { groupId, courseId },
       });
       return pairing;
     });
@@ -255,7 +251,7 @@ export class GroupsService {
         targetType: 'group_course',
         targetId: existing.id,
         courseId,
-        before: { groupId, courseId, learningMode: existing.learningMode },
+        before: { groupId, courseId },
         after: null,
       });
     });

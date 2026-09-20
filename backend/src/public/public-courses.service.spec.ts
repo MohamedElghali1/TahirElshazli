@@ -16,7 +16,6 @@ const published: StoredCourse = {
   thumbnailUrl: null,
   teacherName: 'Dr. Tahir Elshazli',
   sequentialLockEnabled: true,
-  defaultLearningMode: 'recorded',
   modules: [
     {
       id: 'mod-1',
@@ -91,7 +90,6 @@ describe('PublicCoursesService', () => {
       description: 'Complete AS-level Chemistry',
       thumbnailUrl: null,
       teacherName: 'Dr. Tahir Elshazli',
-      learningMode: 'recorded',
       moduleCount: 2,
       lessonCount: 2,
       totalDurationSeconds: 300,

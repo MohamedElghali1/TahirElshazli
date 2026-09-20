@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { DatabaseService } from '../../database/database.service.js';
 import { iso, num } from '../../database/database.types.js';
-import type { LearningMode } from '../../enrollments/interfaces/enrollment-repository.interface.js';
 import type {
   Group,
   GroupCourse,
@@ -24,7 +23,6 @@ interface GroupCourseRow {
   id: string;
   group_id: string;
   course_id: string;
-  learning_mode: LearningMode;
   enrolled_at: Date;
   enrolled_by: string;
 }
@@ -40,7 +38,7 @@ interface GroupMembershipRow {
 const SELECT_GROUP = 'SELECT id, name, teacher_id, created_at FROM groups';
 
 const SELECT_GROUP_COURSE =
-  'SELECT id, group_id, course_id, learning_mode, enrolled_at, enrolled_by FROM group_courses';
+  'SELECT id, group_id, course_id, enrolled_at, enrolled_by FROM group_courses';
 
 const SELECT_MEMBERSHIP =
   'SELECT id, group_id, student_id, assigned_by, assigned_at FROM group_memberships';
@@ -59,7 +57,6 @@ function toGroupCourse(row: GroupCourseRow): GroupCourse {
     id: row.id,
     groupId: row.group_id,
     courseId: row.course_id,
-    learningMode: row.learning_mode,
     enrolledAt: iso(row.enrolled_at),
     enrolledBy: row.enrolled_by,
   };
@@ -133,22 +130,15 @@ export class PostgresGroupRepository implements GroupRepository {
     // Idempotent through the UNIQUE (group_id, course_id) constraint. The
     // DO UPDATE is what makes RETURNING fire on the conflicting path too - a
     // plain DO NOTHING returns no row, and the caller would have to issue a
-    // second query to learn what already existed. Setting the column to itself
-    // keeps the existing learning mode rather than silently re-modeing a group
-    // somebody deliberately moved.
+    // second query to learn what already existed. Setting a column to itself is
+    // the no-op update that buys the RETURNING.
     const row = await this.db.queryOne<GroupCourseRow>(
-      `INSERT INTO group_courses (id, group_id, course_id, learning_mode, enrolled_by)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO group_courses (id, group_id, course_id, enrolled_by)
+       VALUES ($1, $2, $3, $4)
        ON CONFLICT (group_id, course_id) DO UPDATE
-         SET learning_mode = group_courses.learning_mode
-       RETURNING id, group_id, course_id, learning_mode, enrolled_at, enrolled_by`,
-      [
-        randomUUID(),
-        input.groupId,
-        input.courseId,
-        input.learningMode,
-        input.enrolledBy,
-      ],
+         SET enrolled_by = group_courses.enrolled_by
+       RETURNING id, group_id, course_id, enrolled_at, enrolled_by`,
+      [randomUUID(), input.groupId, input.courseId, input.enrolledBy],
     );
     return toGroupCourse(row as GroupCourseRow);
   }
@@ -232,7 +222,7 @@ export class PostgresGroupRepository implements GroupRepository {
     // question that gates what a student may read (§5.2's mode, §5.17's
     // classmates), and a filter applied after the read is the shape §5.11 bans.
     const rows = await this.db.query<GroupCourseRow>(
-      `SELECT gc.id, gc.group_id, gc.course_id, gc.learning_mode,
+      `SELECT gc.id, gc.group_id, gc.course_id,
               gc.enrolled_at, gc.enrolled_by
          FROM group_courses gc
          JOIN group_memberships gm ON gm.group_id = gc.group_id

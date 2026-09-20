@@ -16,7 +16,6 @@ import { ENROLLMENT_REPOSITORY } from '../enrollments/interfaces/enrollment-repo
 import { InMemoryEnrollmentRepository } from '../enrollments/repositories/in-memory-enrollment.repository.js';
 import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interface.js';
 import { InMemoryGroupRepository } from '../groups/repositories/in-memory-group.repository.js';
-import { LearningModeService } from '../groups/learning-mode.service.js';
 import { StudentGroupsService } from '../groups/student-groups.service.js';
 
 const STUDENT = {
@@ -37,12 +36,9 @@ describe('CoursesController', () => {
       providers: [
         EnrollmentsService,
         { provide: ENROLLMENT_REPOSITORY, useClass: InMemoryEnrollmentRepository },
-        // The learning mode lives on the group now (CLAUDE.md §5.2), so every
-        // module that renders a student's course needs these two. Real
-        // implementations rather than stubs: the resolution order (group,
-        // then course default) is the part worth exercising.
+        // Group data is still wired in: the assessment window resolves through
+        // it. Real implementations rather than stubs.
         { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },
-        LearningModeService,
         StudentGroupsService,
         CoursesService,
         RecordingsService,
@@ -75,30 +71,58 @@ describe('CoursesController', () => {
     expect(courses.map((c) => c.id)).toEqual(['course-1', 'course-2']);
   });
 
-  it('should derive recorded progress from actual watch progress', async () => {
+  // `D-9` collapsed the `{type:'recorded'} | {type:'live'}` union into one
+  // shape. The two tests below are the replacements for the two that asserted
+  // each branch, and between them they prove the shape is whole in both
+  // directions: a course with recordings and no sessions, and a course with
+  // sessions and no recordings, each carry BOTH halves.
+  it('should carry completion and attendance together for a course that has both', async () => {
     const courses = await controller.listCourses(STUDENT);
-    const recorded = courses.find((c) => c.id === 'course-1');
-    expect(recorded?.learningMode).toBe('recorded');
-    expect(recorded?.progress).toMatchObject({
-      type: 'recorded',
+    const progress = courses.find((c) => c.id === 'course-1')?.progress;
+    expect(progress).toMatchObject({
       completedLessons: 5,
       totalLessons: 12,
       completionPercentage: 42,
+      attendedSessions: 1,
+      totalSessions: 1,
+      attendancePercentage: 100,
     });
+    expect(progress).toHaveProperty('checkpoints');
+    expect(progress).toHaveProperty('timeline');
+    // Nothing discriminates the shape any more.
+    expect(progress).not.toHaveProperty('type');
   });
 
-  it('should expose an attendance timeline for a live course, not completion', async () => {
+  // The half-empty direction: course-2 has sessions but no recordings, so the
+  // completion half must still be PRESENT and zeroed rather than absent. An
+  // absent half would force every caller to branch again, which is the thing
+  // `D-9` removed.
+  it('should carry a present, zeroed completion half for a course with no recordings', async () => {
     const courses = await controller.listCourses(STUDENT);
-    const live = courses.find((c) => c.id === 'course-2');
-    expect(live?.learningMode).toBe('live');
-    expect(live?.progress).toMatchObject({
-      type: 'live',
+    const progress = courses.find((c) => c.id === 'course-2')?.progress;
+    expect(progress).toMatchObject({
       attendedSessions: 1,
       totalSessions: 2,
       attendancePercentage: 50,
+      completedLessons: 0,
+      totalLessons: 0,
+      completionPercentage: 0,
     });
-    // A live course must not carry recorded-mode completion fields.
-    expect(live?.progress).not.toHaveProperty('completedLessons');
+    expect(progress).toHaveProperty('checkpoints');
+    expect(progress).toHaveProperty('timeline');
+    expect(progress).not.toHaveProperty('type');
+  });
+
+  it('should never average completion and attendance into one number', async () => {
+    // CLAUDE.md §11.1 non-negotiable 2. course-2 is 0% complete and 50%
+    // attended; a blended figure would be 25 and would say neither.
+    const courses = await controller.listCourses(STUDENT);
+    const progress = courses.find((c) => c.id === 'course-2')!.progress;
+    expect(Object.keys(progress)).not.toContain('overallPercentage');
+    expect(Object.keys(progress).filter((k) => k.endsWith('Percentage'))).toEqual([
+      'completionPercentage',
+      'attendancePercentage',
+    ]);
   });
 
   it('should never blend grades into the progress block', async () => {
@@ -166,20 +190,21 @@ describe('CoursesController', () => {
       expect(mine.map((c) => c.id).sort()).toEqual(['course-1', 'course-2']);
     });
 
-    it('should take the learning mode from the course, not the request', async () => {
-      // course-2 is taught live, so the enrollment must land in live mode and
-      // render an attendance timeline rather than a completion bar
-      // (CLAUDE.md §5.2). Nothing in the request could have said so.
+    it('should report zeroed progress on a course just enrolled on', async () => {
+      // A fresh enrollment has watched nothing and attended nothing, and both
+      // halves say so rather than one of them being absent.
       const enrolled = await controller.enroll('course-2', STUDENT_2);
-      expect(enrolled.learningMode).toBe('live');
-      expect(enrolled.progress.type).toBe('live');
+      expect(enrolled.progress).toMatchObject({
+        completedLessons: 0,
+        attendedSessions: 0,
+      });
     });
 
     it('should treat a repeated enrollment as success without resetting it', async () => {
       const first = await controller.enroll('course-1', STUDENT_2);
       // student-2 was already enrolled on course-1 in March; a second click
-      // must not restamp that date or change the mode.
-      expect(first.learningMode).toBe('recorded');
+      // must not restamp that date.
+      expect(first.id).toBe('course-1');
 
       const second = await controller.enroll('course-1', STUDENT_2);
       expect(second.id).toBe('course-1');

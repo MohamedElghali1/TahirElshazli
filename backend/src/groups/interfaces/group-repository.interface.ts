@@ -1,4 +1,3 @@
-import type { LearningMode } from '../../enrollments/interfaces/enrollment-repository.interface.js';
 
 /**
  * A class of students, standing on its own.
@@ -21,11 +20,6 @@ export type NewGroup = Omit<Group, 'id' | 'createdAt'>;
 /**
  * "This group is enrolled in this course" - the client's own verb.
  *
- * It carries the **learning mode** (§5.2), which moved here from `Enrollment`
- * on 2026-09-10: a group is taught one way, and two students in the same room
- * cannot be in different modes. It sits on the pairing rather than on `Group`
- * because a group taking two courses could take one live and one recorded.
- *
  * It does **not** imply enrollment. Adding a group to a course enrolls nobody
  * (§5.16); `Enrollment` remains the access gate, which is what keeps the
  * payment question (§5.12) out of the group surface entirely.
@@ -34,7 +28,6 @@ export interface GroupCourse {
   id: string;
   groupId: string;
   courseId: string;
-  learningMode: LearningMode;
   enrolledAt: string;
   enrolledBy: string;
 }

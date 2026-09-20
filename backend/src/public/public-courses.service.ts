@@ -4,7 +4,6 @@ import type {
   StoredCourse,
 } from '../courses/interfaces/course-repository.interface.js';
 import { COURSE_REPOSITORY } from '../courses/interfaces/course-repository.interface.js';
-import type { LearningMode } from '../enrollments/interfaces/enrollment-repository.interface.js';
 
 /**
  * One lesson as a *visitor* sees it: a title, a position and a running time.
@@ -37,8 +36,6 @@ export interface PublicCourseSummary {
   description: string;
   thumbnailUrl: string | null;
   teacherName: string;
-  /** How the course is taught, which is what the Live / Recorded badge reads. */
-  learningMode: LearningMode;
   moduleCount: number;
   lessonCount: number;
   totalDurationSeconds: number;
@@ -117,7 +114,6 @@ export class PublicCoursesService {
       description: course.description,
       thumbnailUrl: course.thumbnailUrl,
       teacherName: course.teacherName,
-      learningMode: course.defaultLearningMode,
       moduleCount: course.modules.length,
       lessonCount: lessons.length,
       totalDurationSeconds: lessons.reduce(

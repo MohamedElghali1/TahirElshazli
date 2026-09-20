@@ -24,7 +24,6 @@ import { ENROLLMENT_REPOSITORY } from '../enrollments/interfaces/enrollment-repo
 import { InMemoryEnrollmentRepository } from '../enrollments/repositories/in-memory-enrollment.repository.js';
 import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interface.js';
 import { InMemoryGroupRepository } from '../groups/repositories/in-memory-group.repository.js';
-import { LearningModeService } from '../groups/learning-mode.service.js';
 import { StudentGroupsService } from '../groups/student-groups.service.js';
 
 const STUDENT = {
@@ -51,7 +50,6 @@ describe('ReportsController', () => {
         // implementations rather than stubs: the resolution order (group,
         // then course default) is the part worth exercising.
         { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },
-        LearningModeService,
         StudentGroupsService,
         ReportsService,
         AssessmentsService,
@@ -97,18 +95,14 @@ describe('ReportsController', () => {
   it('should keep progress and performance as separate, unblended blocks', async () => {
     const summary = await controller.getSummary('course-1', STUDENT);
     expect(summary.progress).toMatchObject({
-      type: 'recorded',
       completedLessons: 5,
       totalLessons: 12,
       completionPercentage: 42,
     });
     // Completion (42%) and grade average (80.5%) must not be conflated.
-    expect(summary.progress.type).toBe('recorded');
-    if (summary.progress.type === 'recorded') {
-      expect(summary.performance.overallPercentage).not.toBe(
-        summary.progress.completionPercentage,
-      );
-    }
+    expect(summary.performance.overallPercentage).not.toBe(
+      summary.progress.completionPercentage,
+    );
     expect(summary.progress).not.toHaveProperty('overallPercentage');
   });
 

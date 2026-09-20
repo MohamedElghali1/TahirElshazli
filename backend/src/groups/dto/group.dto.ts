@@ -1,6 +1,5 @@
 import { Transform } from 'class-transformer';
 import {
-  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -45,20 +44,6 @@ export class AddGroupCourseDto {
     message: 'courseId must contain only letters, digits, hyphens and underscores',
   })
   courseId!: string;
-
-  /**
-   * How this group is taught this course (CLAUDE.md §5.2, moved off the
-   * enrollment on 2026-09-10).
-   *
-   * Required rather than defaulted. The mode decides which dashboard a student
-   * sees - completion checkpoints or an attendance timeline - and a default
-   * here would silently pick one for a live cohort whose staff simply did not
-   * think about the field.
-   */
-  @IsIn(['recorded', 'live'], {
-    message: 'learningMode must be "recorded" or "live"',
-  })
-  learningMode!: 'recorded' | 'live';
 }
 
 export class AddGroupMemberDto {

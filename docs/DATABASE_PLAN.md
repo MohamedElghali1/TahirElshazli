@@ -214,12 +214,20 @@ this scale round trips and row volume matter and query counts mostly do not.
 
 ## 7. Migration order
 
-`011` **the two role CHECK widenings, and nothing else** · `012` `users.status` (registration
-approval, `DOM-4`) **+** student profile fields · `013` **group collapse** (destructive) ·
-`014` assistant scope tables + data move · `015` task drafts + assessment columns ·
-`016` annotations + submission columns · `017` sessions rework · `018` attendance enum ·
-`019` weekly reports · `020` announcements (group audience, media, draft) ·
-`021` notification preferences + mail deliveries
+`011` **the two role CHECK widenings, and nothing else** · `012` **retire `learning_mode`**
+(destructive, `DOM-0`) · `013` **group collapse + group columns** (destructive, one-way,
+`DOM-1`/`DOM-2`) · `014` `users.status` (registration approval, `DOM-4`) **+** student profile fields
+(`DOM-3`) · `015` assistant scope tables + data move (`AUTH-2`, destructive) ·
+`016` task drafts + assessment columns · `017` annotations + submission columns ·
+`018` sessions rework · `019` attendance enum · `020` weekly reports ·
+`021` announcements (group audience, media, draft) · `022` notification preferences + mail deliveries
+
+**Renumbered 2026-09-20, unit 2 slice 2a.** The list above previously started `012` `users.status`.
+It was written before `D-9` created `DOM-0`, which must be **first** so the destructive collapse
+lands on a simplified model rather than beside a half-removed mode axis. `011` is immutable, so
+`DOM-0` takes `012` and every entry below shifts one. The renumber was done **before any migration
+file was written**: a `014` authored with no `013` present applies straight after `012` and aborts
+every boot, because `MigrationRunner.sqlFilesIn` sorts lexicographically.
 
 **Corrected 2026-09-19.** This list previously read "`011` roles + user status", which attributed two
 different units' work to one file: `AUTH-1` (unit 1) and `DOM-4` (unit 2). **A migration file is
@@ -232,10 +240,10 @@ CONSTRAINT` statements widening `users_role_check` and `audit_log_actor_role_che
 been applied anywhere real. 011 is in the same position *today* — it has never run — but that is an
 argument for running it, not for treating it as editable.)
 
-013 and 014 are the pair to be careful with: **013 must land and be verified before 014**, because
-014's backfill joins through `groups.course_id`. That is also why `AUTH-2` moved out of unit 1 and
-into unit 2 on 2026-09-19 (`CHANGELOG.md`): a `014` authored with no `013` present applies straight
-after `012` and aborts every boot, because `MigrationRunner.sqlFilesIn` sorts lexicographically.
+013 and 015 are the pair to be careful with: **013 must land and be verified before 015**, because
+015's backfill joins through `groups.course_id`. That is also why `AUTH-2` moved out of unit 1 and
+into unit 2 on 2026-09-19 (`CHANGELOG.md`), and why unit 2 was split into 2a (`012`/`013`) and 2b
+(`014`/`015`) on 2026-09-20: a unit boundary is the strongest available form of "verified first".
 
 ---
 

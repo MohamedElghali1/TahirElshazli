@@ -938,7 +938,6 @@ describeIfDb('Postgres repositories', () => {
 
       const courses = await repo().findCourses('group-1');
       expect(courses.map((c) => c.courseId)).toEqual(['course-1']);
-      expect(courses[0]!.learningMode).toBe('recorded');
 
       const members = await repo().findMembers('group-1');
       expect(members.map((m) => m.studentId).sort()).toEqual([
@@ -952,11 +951,9 @@ describeIfDb('Postgres repositories', () => {
       // studies course-2, so each query must return exactly its own pairing.
       const one = await repo().findStudentGroupCourses('student-1', 'course-1');
       expect(one.map((gc) => gc.groupId)).toEqual(['group-1']);
-      expect(one[0]!.learningMode).toBe('recorded');
 
       const two = await repo().findStudentGroupCourses('student-1', 'course-2');
       expect(two.map((gc) => gc.groupId)).toEqual(['group-2']);
-      expect(two[0]!.learningMode).toBe('live');
 
       // student-2 is only in group-1, so course-2 is empty for them - the
       // "two groups on one course must not see each other" property, at the
@@ -995,7 +992,6 @@ describeIfDb('Postgres repositories', () => {
       const first = await repo().addCourse({
         groupId: 'group-1',
         courseId: 'course-2',
-        learningMode: 'live',
         enrolledBy: 'teacher-1',
       });
       const second = await repo().addCourse({
@@ -1003,11 +999,9 @@ describeIfDb('Postgres repositories', () => {
         courseId: 'course-2',
         // A re-add must not silently re-mode a group somebody deliberately
         // moved to live.
-        learningMode: 'recorded',
         enrolledBy: 'teacher-1',
       });
       expect(second.id).toBe(first.id);
-      expect(second.learningMode).toBe('live');
 
       expect(await repo().removeCourse('group-1', 'course-2')).toBe(true);
       expect(await repo().removeCourse('group-1', 'course-2')).toBe(false);
@@ -1038,7 +1032,6 @@ describeIfDb('Postgres repositories', () => {
       await repo().addCourse({
         groupId: doomed.id,
         courseId: 'course-1',
-        learningMode: 'live',
         enrolledBy: 'teacher-1',
       });
       await repo().addMember({
@@ -1078,7 +1071,6 @@ describeIfDb('Postgres repositories', () => {
       await groups().addCourse({
         groupId: empty.id,
         courseId: 'course-1',
-        learningMode: 'live',
         enrolledBy: 'teacher-1',
       });
       expect(await repo().findByCourseForGroups('course-1', [empty.id])).toEqual([]);
@@ -1094,7 +1086,6 @@ describeIfDb('Postgres repositories', () => {
       await groups().addCourse({
         groupId: other.id,
         courseId: 'course-1',
-        learningMode: 'recorded',
         enrolledBy: 'teacher-1',
       });
       await repo().setTargets('assess-1', [
@@ -1121,7 +1112,6 @@ describeIfDb('Postgres repositories', () => {
       await groups().addCourse({
         groupId: second.id,
         courseId: 'course-1',
-        learningMode: 'live',
         enrolledBy: 'teacher-1',
       });
       await repo().setTargets('assess-1', [
@@ -1151,7 +1141,6 @@ describeIfDb('Postgres repositories', () => {
       await groups().addCourse({
         groupId: second.id,
         courseId: 'course-1',
-        learningMode: 'live',
         enrolledBy: 'teacher-1',
       });
       await repo().setTargets('assess-2', [{ groupId: 'group-1' }, { groupId: second.id }]);

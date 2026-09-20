@@ -26,12 +26,16 @@ INSERT INTO groups (id, name, teacher_id, created_at) VALUES
   ('group-2', 'IGCSE Chemistry — Tuesday 20:00',  'teacher-1', '2026-05-20T09:00:00Z')
 ON CONFLICT (id) DO NOTHING;
 
--- group-1 studies course-1 from recordings; group-2 studies course-2 live.
--- Between them they cover both branches of §5.2's dashboard, which is the point
--- of having two.
-INSERT INTO group_courses (id, group_id, course_id, learning_mode, enrolled_at, enrolled_by) VALUES
-  ('group-course-1', 'group-1', 'course-1', 'recorded', '2026-01-15T09:00:00Z', 'teacher-1'),
-  ('group-course-2', 'group-2', 'course-2', 'live',     '2026-05-20T09:00:00Z', 'teacher-1')
+-- group-1 studies course-1; group-2 studies course-2. Two groups on two
+-- different courses is what makes 002's unassigned third course a meaningful
+-- TA-scoping fixture.
+--
+-- No `learning_mode`: retired by migration 012 (`D-9`). Every course is now
+-- taught one way - recordings *and* live sessions - so the two groups no longer
+-- differ in kind, only in which course they study.
+INSERT INTO group_courses (id, group_id, course_id, enrolled_at, enrolled_by) VALUES
+  ('group-course-1', 'group-1', 'course-1', '2026-01-15T09:00:00Z', 'teacher-1'),
+  ('group-course-2', 'group-2', 'course-2', '2026-05-20T09:00:00Z', 'teacher-1')
 ON CONFLICT (group_id, course_id) DO NOTHING;
 
 -- `assigned_by` differs across these rows on purpose: one placement by the

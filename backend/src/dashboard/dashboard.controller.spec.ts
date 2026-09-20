@@ -39,7 +39,6 @@ import { ENROLLMENT_REPOSITORY } from '../enrollments/interfaces/enrollment-repo
 import { InMemoryEnrollmentRepository } from '../enrollments/repositories/in-memory-enrollment.repository.js';
 import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interface.js';
 import { InMemoryGroupRepository } from '../groups/repositories/in-memory-group.repository.js';
-import { LearningModeService } from '../groups/learning-mode.service.js';
 import { StudentGroupsService } from '../groups/student-groups.service.js';
 
 const STUDENT = {
@@ -66,7 +65,6 @@ describe('DashboardController', () => {
         // implementations rather than stubs: the resolution order (group,
         // then course default) is the part worth exercising.
         { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },
-        LearningModeService,
         StudentGroupsService,
         DashboardService,
         StudentsService,
@@ -115,7 +113,6 @@ describe('DashboardController', () => {
       id: 'course-1',
       title: 'AS Chemistry',
       teacherName: 'Dr. Tahir Elshazli',
-      learningMode: 'recorded',
     });
   });
 

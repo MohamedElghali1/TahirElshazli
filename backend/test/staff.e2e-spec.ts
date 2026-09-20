@@ -817,7 +817,7 @@ describe('Staff and admin API (e2e)', () => {
       await request(app.getHttpServer())
         .post(`/admin/groups/${groupId}/courses`)
         .set(bearer(assignedTaToken))
-        .send({ courseId: 'course-1', learningMode: 'live' })
+        .send({ courseId: 'course-1' })
         .expect(403);
     });
 
@@ -883,10 +883,12 @@ describe('Staff and admin API (e2e)', () => {
         .set(bearer(adminToken))
         .send({ name: '' })
         .expect(400);
+      // `whitelist: true` strips an undeclared field rather than rejecting it,
+      // so the rejected case has to be a DECLARED field with a bad value.
       await request(app.getHttpServer())
         .post(`/admin/groups/${groupId}/courses`)
         .set(bearer(adminToken))
-        .send({ courseId: 'course-1', learningMode: 'hybrid' })
+        .send({ courseId: 'course 1; drop table' })
         .expect(400);
     });
 
@@ -1087,7 +1089,7 @@ describe('Staff and admin API (e2e)', () => {
       {
         method: 'post',
         path: '/admin/groups/group-does-not-exist/courses',
-        body: { courseId: 'course-1', learningMode: 'live' },
+        body: { courseId: 'course-1' },
       },
       {
         method: 'delete',

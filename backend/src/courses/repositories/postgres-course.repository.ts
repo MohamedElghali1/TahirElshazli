@@ -6,7 +6,6 @@ import type {
   Lesson,
   StoredCourse,
 } from '../interfaces/course-repository.interface.js';
-import type { LearningMode } from '../../enrollments/interfaces/enrollment-repository.interface.js';
 
 interface CourseRow {
   id: string;
@@ -17,7 +16,6 @@ interface CourseRow {
   thumbnail_url: string | null;
   teacher_name: string;
   sequential_lock_enabled: boolean;
-  default_learning_mode: LearningMode;
 }
 
 interface ModuleLessonRow {
@@ -34,7 +32,7 @@ interface ModuleLessonRow {
 
 const COURSE_COLUMNS = `
   id, slug, is_published, title, description, thumbnail_url, teacher_name,
-  sequential_lock_enabled, default_learning_mode
+  sequential_lock_enabled
 `;
 
 @Injectable()
@@ -189,7 +187,6 @@ export class PostgresCourseRepository implements CourseRepository {
       thumbnailUrl: course.thumbnail_url,
       teacherName: course.teacher_name,
       sequentialLockEnabled: course.sequential_lock_enabled,
-      defaultLearningMode: course.default_learning_mode,
       // ORDER BY already sorted them; Map preserves insertion order.
       modules: [...(modulesByCourse.get(course.id)?.values() ?? [])],
     }));

@@ -20,7 +20,6 @@ import type {
   GroupCourse,
   GroupMemberView,
   GroupSummary,
-  LearningMode,
   LiveSession,
   LiveSessionListResponse,
   ManageOverview,
@@ -831,7 +830,7 @@ export const api = {
     addGroupCourse: (
       token: string,
       groupId: string,
-      body: { courseId: string; learningMode: LearningMode },
+      body: { courseId: string },
     ) =>
       request<GroupCourse>(`/admin/groups/${groupId}/courses`, {
         method: 'POST',

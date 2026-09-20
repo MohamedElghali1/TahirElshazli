@@ -38,12 +38,10 @@ import { StorageModule } from './common/storage/storage.module.js';
     // of what a mutating TA/admin action *is*, so it has to be available to
     // every feature module that follows.
     AuditModule,
-    // Global as well, and for the same shape of reason: once the learning mode
-    // moved onto `GroupCourse` (§5.2), every service that renders a student's
-    // course needs group data, and `GroupsModule` already depends on
-    // `CoursesModule`. Global exports break that cycle without `forwardRef`.
-    // Only the repository and `LearningModeService` are global; the writes stay
-    // behind `GroupsModule`.
+    // Global as well. The module cycle it was built to break is gone as of
+    // `D-9` - see that file, which says so plainly so this is not cited as
+    // precedent for a fourth global module. Only the repository and
+    // `StudentGroupsService` are global; the writes stay behind `GroupsModule`.
     GroupDataModule,
     RateLimitModule,
     AuthModule,

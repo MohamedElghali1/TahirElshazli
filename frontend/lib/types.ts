@@ -30,8 +30,6 @@ export interface AuthResult {
 
 /* --- courses (courses/courses.service.ts, interfaces/course-repository) --- */
 
-export type LearningMode = 'recorded' | 'live';
-
 export interface Lesson {
   id: string;
   title: string;
@@ -53,15 +51,6 @@ export interface CompletionCheckpoint {
   completedAt: string | null;
 }
 
-/** CLAUDE.md §5.1 - completion. Never merged with the grade averages below. */
-export interface RecordedProgress {
-  type: 'recorded';
-  completedLessons: number;
-  totalLessons: number;
-  completionPercentage: number;
-  checkpoints: CompletionCheckpoint[];
-}
-
 export interface AttendanceEntry {
   sessionId: string;
   title: string;
@@ -69,16 +58,32 @@ export interface AttendanceEntry {
   attended: boolean;
 }
 
-/** CLAUDE.md §5.2 - live-mode courses render this timeline instead. */
-export interface LiveProgress {
-  type: 'live';
+/**
+ * One shape, carrying **both** halves - completion and attendance.
+ *
+ * This mirrors `courses.service.ts`, where it was a discriminated union keyed
+ * on the student's learning mode until `D-9` retired that axis (2026-09-20).
+ * Every course now has recordings to watch *and* sessions to attend, so both
+ * halves are always present; a course with no sessions reports `0 of 0` rather
+ * than serving a different shape.
+ *
+ * **Render them as two `Meter`s and never average them** (CLAUDE.md §11.1
+ * non-negotiable 2). `completionPercentage` and `attendancePercentage` measure
+ * different things - watching the material and turning up - and one blended
+ * figure would say neither. Grades never appear here at all: performance is
+ * `ReportSummary.performance`, and progress and performance never merge.
+ */
+export interface CourseProgress {
+  completedLessons: number;
+  totalLessons: number;
+  completionPercentage: number;
+  checkpoints: CompletionCheckpoint[];
+
   attendedSessions: number;
   totalSessions: number;
   attendancePercentage: number;
   timeline: AttendanceEntry[];
 }
-
-export type CourseProgress = RecordedProgress | LiveProgress;
 
 export interface CourseListItem {
   id: string;
@@ -86,7 +91,6 @@ export interface CourseListItem {
   description: string;
   thumbnailUrl: string | null;
   teacherName: string;
-  learningMode: LearningMode;
   progress: CourseProgress;
 }
 
@@ -108,7 +112,6 @@ export interface CatalogItem {
   description: string;
   thumbnailUrl: string | null;
   teacherName: string;
-  learningMode: LearningMode;
   moduleCount: number;
   lessonCount: number;
   enrolled: boolean;
@@ -270,7 +273,6 @@ export interface DashboardResponse {
     id: string;
     title: string;
     teacherName: string;
-    learningMode: LearningMode;
   };
   progress: CourseProgress;
   stats: DashboardStats;
@@ -437,7 +439,6 @@ export interface RosterEntry {
   studentId: string;
   name: string;
   email: string;
-  learningMode: LearningMode;
   enrolledAt: string;
   submittedCount: number;
   gradedCount: number;
@@ -653,8 +654,6 @@ export interface PublicCourseSummary {
   description: string;
   thumbnailUrl: string | null;
   teacherName: string;
-  /** Drives the Live / Recorded badge (CLAUDE.md §5.2). */
-  learningMode: LearningMode;
   moduleCount: number;
   lessonCount: number;
   totalDurationSeconds: number;
@@ -685,7 +684,6 @@ export interface GroupCourse {
   id: string;
   groupId: string;
   courseId: string;
-  learningMode: LearningMode;
   enrolledAt: string;
   enrolledBy: string;
 }

@@ -564,32 +564,39 @@ describe('Student API (e2e)', () => {
     });
   });
 
-  describe('the learning mode comes from the group (§5.2)', () => {
-    it('renders a recorded course from checkpoints and a live one from attendance', async () => {
-      // student-1 sits in group-1 (course-1, recorded) and group-2 (course-2,
-      // live). Nothing on the enrollment says so any more - migration 007
-      // dropped that column - so this asserts over the wire that the dashboard
-      // is reading the group.
-      const recorded = await request(app.getHttpServer())
-        .get('/courses/course-1/dashboard')
-        .set({ Authorization: `Bearer ${accessToken}` })
-        .expect(200);
-      expect(recorded.body.course.learningMode).toBe('recorded');
-      expect(recorded.body.progress.type).toBe('recorded');
-
-      const live = await request(app.getHttpServer())
-        .get('/courses/course-2/dashboard')
-        .set({ Authorization: `Bearer ${accessToken}` })
-        .expect(200);
-      expect(live.body.course.learningMode).toBe('live');
-      expect(live.body.progress.type).toBe('live');
+  describe('course progress carries both halves, for every course (D-9)', () => {
+    it('returns one shape with completion and attendance, whatever the course', async () => {
+      // This was two branches - a recorded course rendered checkpoints, a live
+      // one rendered an attendance timeline, and which you got depended on the
+      // student's group. `D-9` retired that axis: both halves are present on
+      // every course now, and this asserts it over the wire on two courses
+      // that used to take different branches.
+      for (const courseId of ['course-1', 'course-2']) {
+        const res = await request(app.getHttpServer())
+          .get(`/courses/${courseId}/dashboard`)
+          .set({ Authorization: `Bearer ${accessToken}` })
+          .expect(200);
+        expect(res.body.course).not.toHaveProperty('learningMode');
+        expect(res.body.progress).not.toHaveProperty('type');
+        expect(res.body.progress).toMatchObject({
+          completedLessons: expect.any(Number),
+          totalLessons: expect.any(Number),
+          completionPercentage: expect.any(Number),
+          checkpoints: expect.any(Array),
+          attendedSessions: expect.any(Number),
+          totalSessions: expect.any(Number),
+          attendancePercentage: expect.any(Number),
+          timeline: expect.any(Array),
+        });
+        // CLAUDE.md §11.1 non-negotiable 2: the two are reported separately
+        // and never blended into a single figure.
+        expect(res.body.progress).not.toHaveProperty('overallPercentage');
+      }
     });
 
     it('agrees between the aggregate Home screen and the per-course screen', async () => {
       // The same guarantee GET /dashboard was built for: one implementation,
-      // so the two screens cannot drift. Worth re-asserting here because the
-      // mode is now resolved rather than stored, and a second resolution path
-      // is exactly how it would drift.
+      // so the two screens cannot drift.
       const home = await request(app.getHttpServer())
         .get('/dashboard')
         .set({ Authorization: `Bearer ${accessToken}` })
@@ -600,7 +607,12 @@ describe('Student API (e2e)', () => {
           .get(`/courses/${entry.course.id}/dashboard`)
           .set({ Authorization: `Bearer ${accessToken}` })
           .expect(200);
-        expect(entry.course.learningMode).toBe(single.body.course.learningMode);
+        expect(entry.course.progress.completionPercentage).toBe(
+          single.body.progress.completionPercentage,
+        );
+        expect(entry.course.progress.attendancePercentage).toBe(
+          single.body.progress.attendancePercentage,
+        );
       }
     });
   });

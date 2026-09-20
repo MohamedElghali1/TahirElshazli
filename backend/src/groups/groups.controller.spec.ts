@@ -10,7 +10,6 @@ import { StaffGroupsController } from './staff-groups.controller.js';
 import { ClassmatesController } from './classmates.controller.js';
 import { ClassmatesService } from './classmates.service.js';
 import { GroupsService } from './groups.service.js';
-import { LearningModeService } from './learning-mode.service.js';
 import { StudentGroupsService } from './student-groups.service.js';
 import { GROUP_REPOSITORY } from './interfaces/group-repository.interface.js';
 import { InMemoryGroupRepository } from './repositories/in-memory-group.repository.js';
@@ -60,7 +59,6 @@ describe('Groups', () => {
   let classmates: ClassmatesController;
   let audit: AuditService;
   let enrollments: InMemoryEnrollmentRepository;
-  let learningMode: LearningModeService;
   let groupRepo: InMemoryGroupRepository;
 
   beforeEach(async () => {
@@ -73,7 +71,6 @@ describe('Groups', () => {
       providers: [
         GroupsService,
         ClassmatesService,
-        LearningModeService,
         StudentGroupsService,
         EnrollmentsService,
         StaffScopeService,
@@ -106,7 +103,6 @@ describe('Groups', () => {
     // nested beforeEach would assert against an array nothing under test ever
     // writes to - which is a test that cannot fail.
     enrollments = module.get(ENROLLMENT_REPOSITORY);
-    learningMode = module.get(LearningModeService);
     // The same instance the service holds, so a spy on it observes the real
     // calls rather than a second repository nothing writes to.
     groupRepo = module.get(GROUP_REPOSITORY);
@@ -123,12 +119,12 @@ describe('Groups', () => {
 
       await admin.addCourse(
         group.id,
-        { courseId: 'course-1', learningMode: 'live' },
+        { courseId: 'course-1' },
         ADMIN,
       );
       await admin.addCourse(
         group.id,
-        { courseId: 'course-2', learningMode: 'recorded' },
+        { courseId: 'course-2' },
         ADMIN,
       );
 
@@ -137,21 +133,13 @@ describe('Groups', () => {
         'course-1',
         'course-2',
       ]);
-      // And each pairing carries its own mode - the reason §5.2 put it on
-      // GroupCourse rather than on Group.
-      expect(
-        summary.courses.find((c) => c.courseId === 'course-1')?.learningMode,
-      ).toBe('live');
-      expect(
-        summary.courses.find((c) => c.courseId === 'course-2')?.learningMode,
-      ).toBe('recorded');
     });
 
     it('lets more than one group study the same course', async () => {
       const second = await admin.create({ name: 'Chemistry — Monday' }, ADMIN);
       await admin.addCourse(
         second.id,
-        { courseId: 'course-1', learningMode: 'live' },
+        { courseId: 'course-1' },
         ADMIN,
       );
 
@@ -168,7 +156,7 @@ describe('Groups', () => {
 
       await admin.addCourse(
         'group-1',
-        { courseId: 'course-2', learningMode: 'live' },
+        { courseId: 'course-2' },
         ADMIN,
       );
 
@@ -311,7 +299,7 @@ describe('Groups', () => {
       const other = await admin.create({ name: 'Chemistry — Monday' }, ADMIN);
       await admin.addCourse(
         other.id,
-        { courseId: 'course-1', learningMode: 'live' },
+        { courseId: 'course-1' },
         ADMIN,
       );
       await staff.addMember(other.id, { studentId: 'student-2' }, ADMIN);
@@ -326,7 +314,7 @@ describe('Groups', () => {
       const other = await admin.create({ name: 'Chemistry — Monday' }, ADMIN);
       await admin.addCourse(
         other.id,
-        { courseId: 'course-1', learningMode: 'live' },
+        { courseId: 'course-1' },
         ADMIN,
       );
       await staff.addMember(other.id, { studentId: 'student-1' }, ADMIN);
@@ -349,67 +337,6 @@ describe('Groups', () => {
       await expect(
         classmates.list('course-2', STUDENT_2),
       ).rejects.toBeInstanceOf(NotFoundException);
-    });
-  });
-
-  describe('the learning mode comes from the group (§5.2)', () => {
-    it('reads the mode off the group the student is placed in', async () => {
-      // group-1 studies course-1 recorded; group-2 studies course-2 live.
-      // student-1 is in both, so the same student has two different modes -
-      // which is exactly what a column on the enrollment could express too.
-      // The point is the next test.
-      expect(await learningMode.resolve('course-1', 'student-1')).toBe('recorded');
-      expect(await learningMode.resolve('course-2', 'student-1')).toBe('live');
-    });
-
-    it('follows the student when staff move them to another group', async () => {
-      // The reason the mode is not a column: moving a student between cohorts
-      // has to change how their dashboard renders, with nothing migrated.
-      const evening = await admin.create({ name: 'Chemistry — live evening' }, ADMIN);
-      await admin.addCourse(
-        evening.id,
-        { courseId: 'course-1', learningMode: 'live' },
-        ADMIN,
-      );
-      await staff.removeMember('group-1', 'student-2', ADMIN);
-      await staff.addMember(evening.id, { studentId: 'student-2' }, ADMIN);
-
-      expect(await learningMode.resolve('course-1', 'student-2')).toBe('live');
-    });
-
-    it('falls back to the course default for an enrolled but unplaced student', async () => {
-      // §7.2's state, and §5.2 requires the dashboard to always have a mode.
-      await staff.removeMember('group-1', 'student-2', ADMIN);
-      expect(await learningMode.resolve('course-1', 'student-2')).toBe('recorded');
-    });
-
-    it('resolves a whole roster in one pass, agreeing with the single read', async () => {
-      const { byStudent, courseDefault } =
-        await learningMode.resolveForCourse('course-1');
-      expect(courseDefault).toBe('recorded');
-      for (const studentId of ['student-1', 'student-2']) {
-        expect(byStudent[studentId] ?? courseDefault).toBe(
-          await learningMode.resolve('course-1', studentId),
-        );
-      }
-    });
-
-    it('gives a student in two groups on one course the same answer either way', async () => {
-      // Legal, if unusual. The two methods must not disagree - two reads of one
-      // value that differ is worse than either answer.
-      const other = await admin.create({ name: 'Chemistry — Monday live' }, ADMIN);
-      await admin.addCourse(
-        other.id,
-        { courseId: 'course-1', learningMode: 'live' },
-        ADMIN,
-      );
-      await staff.addMember(other.id, { studentId: 'student-1' }, ADMIN);
-
-      const { byStudent, courseDefault } =
-        await learningMode.resolveForCourse('course-1');
-      expect(byStudent['student-1'] ?? courseDefault).toBe(
-        await learningMode.resolve('course-1', 'student-1'),
-      );
     });
   });
 

@@ -61,7 +61,6 @@ describe('Public catalog (e2e)', () => {
         slug: expect.any(String),
         title: expect.any(String),
         teacherName: expect.any(String),
-        learningMode: expect.stringMatching(/^(recorded|live)$/),
         moduleCount: expect.any(Number),
         lessonCount: expect.any(Number),
         totalDurationSeconds: expect.any(Number),

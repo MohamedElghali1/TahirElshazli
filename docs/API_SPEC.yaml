@@ -153,7 +153,6 @@ components:
       type: string
       enum: [all_groups, assigned_groups]
 
-    LearningMode: { type: string, enum: [recorded, live] }
     StudyMode:    { type: string, enum: [school, online] }
     SessionMode:  { type: string, enum: [on_ground, online] }
     AttendanceStatus: { type: string, enum: [present, absent, late] }
@@ -251,13 +250,12 @@ components:
     # --- Groups ------------------------------------------------------------
     Group:
       type: object
-      required: [id, name, courseId, learningMode, memberCount]
+      required: [id, name, courseId, memberCount]
       properties:
         id:           { $ref: '#/components/schemas/Id' }
         name:         { type: string }
         courseId:     { $ref: '#/components/schemas/Id' }
         courseTitle:  { type: string }
-        learningMode: { $ref: '#/components/schemas/LearningMode' }
         assistantId:  { type: [string, 'null'] }
         assistantName: { type: [string, 'null'] }
         meets:        { type: [string, 'null'], maxLength: 120 }
@@ -266,11 +264,10 @@ components:
 
     GroupWrite:
       type: object
-      required: [name, courseId, learningMode]
+      required: [name, courseId]
       properties:
         name:         { type: string, minLength: 1, maxLength: 120 }
         courseId:     { $ref: '#/components/schemas/Id' }
-        learningMode: { $ref: '#/components/schemas/LearningMode' }
         assistantId:  { type: [string, 'null'] }
         meets:        { type: [string, 'null'], maxLength: 120 }
         room:         { type: [string, 'null'], maxLength: 80 }

@@ -198,7 +198,6 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
       await groups.addCourse({
         groupId: second.id,
         courseId: 'course-1',
-        learningMode: 'live',
         enrolledBy: 'teacher-1',
       });
       const created = await authoring.create('course-1', ADMIN, TASK);
@@ -235,7 +234,6 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
       await groups.addCourse({
         groupId: other.id,
         courseId: 'course-1',
-        learningMode: 'live',
         enrolledBy: 'teacher-1',
       });
       const secret = await authoring.create('course-1', ADMIN, {
