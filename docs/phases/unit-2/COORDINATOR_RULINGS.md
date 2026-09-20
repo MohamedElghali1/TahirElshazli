@@ -81,3 +81,70 @@ route they add or retire. `014` and `015` are **not authored in 2a** — not eve
 in 2a; `StaffScopeService` keeps its current course-scoped internals.
 
 **`staff-scope.service.spec.ts` is not edited in 2a at all.**
+
+---
+
+# Rulings on slice 2b — 2026-09-20
+
+Input: `docs/phases/unit-2/PHASE_PLAN_2B.md`. The plan is **approved unmodified** but for the split.
+
+## R-5 — 2b splits again. **2b-i / 2b-ii, at the planner's boundary (§10).**
+
+| Slice | Tasks | Migration |
+|---|---|---|
+| **2b-i — people and courses** | `DOM-3`, `DOM-4`, `DOM-5`, seeds `001`/`002` | `014`, additive |
+| **2b-ii — scope** | `AUTH-2` + `D-10`, final `DOM-6` | `015`, destructive |
+
+Same reasoning that produced the 2a/2b split, and that split worked: the only irreversible drop gets
+its own review, and `AUTH-2` is the only item carrying an **authorization contract** — seven spec
+cases that must pass unmodified, two byte-identical messages, 21 call sites, and `D-10`'s
+both-directions refusal tests. That deserves a reviewer's whole attention, not attention divided
+with registration plumbing. The two share four files, all additive on one side, and neither needs
+anything from the other's migration.
+
+2b measured the same size as 2a, and 2a was tractable **and still returned nine findings.**
+
+## R-6 — `B-1`: **register returns no token.** Reading A. And the `JwtStrategy` gate is built regardless.
+
+`POST /auth/register` returns `{ status: 'waiting' }` (201), no `accessToken`, no `user`.
+`DOMAIN_MODEL.md:23` says only `active` may authenticate; handing back a credential in the same
+response that records the account as unable to authenticate contradicts the model in the API's own
+body, and it is the kind of thing someone later "fixes" by removing the gate.
+
+**The security fix is not that, and does not depend on it.** `JwtStrategy.validate`
+(`jwt.strategy.ts:34-51`) already re-reads the user from the database on every request — for
+existence and role, on the stated principle that *"a deleted or demoted user keeps their old access
+until the token expires"*. **`status` has exactly that property, so it belongs in that same query**:
+one condition on a read that already happens, at the chokepoint every route passes through, rather
+than a guard at `login` that leaves every already-issued token working. It also covers a token
+minted **before** a rejection, which a login-only gate cannot.
+
+The frontend mirror change is one line; the sign-up screen's "waiting for approval" state is unit
+4's problem and is recorded, not built here.
+
+## R-7 — `B-2`: **`all_groups` reads as `unscoped: true`.** Reading A, ratified.
+
+No authorization difference under either reading — `all_groups` means all groups either way. The
+delta is a label and a nullable timestamp on two staff screens unit 5 rebuilds. Add the comment at
+the union saying `unscoped` means **unrestricted**, not **admin**.
+
+## R-8 — `B-3`: **the four `assign`/`unassign` cases in `staff-scope.service.spec.ts` may be deleted. That deletion and no other.**
+
+The *extend, never edit* rule exists to stop a contract being weakened to fit new internals — a case
+whose assertion is changed to make a rewrite pass is the failure it prevents. It is not a rule that
+tests outlive the methods they test: those four exercise `assign`/`unassign`, which this unit's
+approved plan deletes along with `/admin/courses/:id/staff`. Keeping them would mean keeping two
+methods and three routes the plan retires.
+
+**Binding:** delete exactly those four, name each in `EXECUTION_NOTES.md` with the method it tested,
+and land the §4.4.1 replacements in the same commit. **The seven contract cases pass unmodified or
+the work stops** — that is unchanged, and substituting the repository token in `beforeEach` remains
+a fixture change, the only permitted edit.
+
+## Scope approved for 2b-i
+
+`PHASE_PLAN_2B.md` §6 steps 1 and 2 (`DOM-3`, `DOM-4`, `DOM-5`), plus `014` and its seeds.
+
+**Out of 2b-i:** `AUTH-2`, `D-10`, migration `015`, the final `DOM-6` pass, `backend/src/staff/**`
+(including `staff-scope.service.spec.ts`), and `admin-staff.controller.ts`. **`015` is not authored
+in 2b-i, not even as an empty file.**
