@@ -276,10 +276,10 @@ components:
     Assistant:
       type: object
       # `required` carries what GET /admin/assistants returns TODAY (AUTH-1).
-      # `scope`, `groupIds` and `status` have no data source until AUTH-2 creates
-      # assistant_scopes and AUTH-4 creates assistant_invitations, so they are
-      # declared-but-optional rather than required-and-absent. Move them into
-      # `required` in the same change that populates them - a contract that
+      # `scope` and `groupIds` have a data source as of AUTH-2 but no reader;
+      # `status` waits on AUTH-4's assistant_invitations. All three are
+      # declared-but-optional rather than required-and-absent. Move each into
+      # `required` in the same change that populates it - a contract that
       # requires a field nothing emits is drift, not ambition.
       required: [id, name, email, role, createdAt]
       properties:
@@ -288,7 +288,12 @@ components:
         email:  { type: string, format: email }
         role:   { type: string, enum: [assistant, admin] }
         createdAt: { type: string, format: date-time }
-        # --- Arrive with AUTH-2 (unit 2) ---
+        # --- The STORAGE arrived with AUTH-2 (unit 2 slice 2b-ii):
+        # `assistant_scopes` + `assistant_group_assignments` exist and decide
+        # every assistant's reach. Nothing EMITS these two fields yet -
+        # `GET /admin/assistants` does not read them - so they stay optional
+        # until `PATCH /admin/assistants/{userId}` (PEOPLE-4, unit 5) populates
+        # them. Move them into `required` in that same change.
         scope:  { $ref: '#/components/schemas/AssistantScope' }
         groupIds: { type: array, items: { $ref: '#/components/schemas/Id' } }
         # --- Arrives with AUTH-4 (unit 5) ---
@@ -856,6 +861,98 @@ paths:
           description: >
             No such course, or a course this staff member may not reach — one
             message for both, so an assistant cannot enumerate the catalog.
+
+  # --- The staff group surface, scoped by D-10 ---------------------------
+  # These three exist in the implementation and were absent here. `AUTH-2`
+  # changed their authorization, which is the point at which an undocumented
+  # route stops being a nuisance and starts being a contract nobody can check.
+  #
+  # An assistant whose scope is `assigned_groups` reaches ONLY the groups named
+  # by `assistant_group_assignments`. Out of scope answers **404 with a message
+  # byte-identical to a genuine miss** — reads and the placement write alike, so
+  # an assistant cannot enumerate cohorts one id at a time. `groups.assistantId`
+  # is a DISPLAY field and is never read for this decision.
+  /staff/groups/{groupId}:
+    parameters:
+      - { name: groupId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    get:
+      tags: [groups]
+      summary: One group, with its member count
+      x-roles: [assistant, teacher, admin]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Group' }
+        '404':
+          description: >
+            No such group, or a group this assistant may not reach — one
+            message for both (D-10).
+
+  /staff/groups/{groupId}/members:
+    parameters:
+      - { name: groupId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    get:
+      tags: [groups]
+      summary: The staff roster — name and email per member
+      description: >
+        Narrower than it looks: the student-facing classmate list carries no
+        email, and the two are built by different methods so widening this one
+        cannot widen that one. This read is the leak D-10 closed.
+      x-roles: [assistant, teacher, admin]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [studentId, name, email, assignedBy, assignedAt]
+                  properties:
+                    studentId:  { $ref: '#/components/schemas/Id' }
+                    name:       { type: string }
+                    email:      { type: string, format: email }
+                    assignedBy: { $ref: '#/components/schemas/Id' }
+                    assignedAt: { type: string, format: date-time }
+        '404':
+          description: >
+            No such group, or a group this assistant may not reach — one
+            message for both (D-10).
+    post:
+      tags: [groups]
+      summary: Place a student in this group
+      description: >
+        Idempotent: placing someone already in the group answers 201 rather than
+        409, because two clicks on Add describe one true state. Placement grants
+        no course access — `Enrollment` remains the gate.
+      x-roles: [assistant, teacher, admin]
+      x-audit: group.student_assigned
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [studentId]
+              properties:
+                studentId: { $ref: '#/components/schemas/Id' }
+      responses:
+        '201':
+          description: Placed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404':
+          description: >
+            No such group or student, or a group this assistant may not reach —
+            one message for the group cases (D-10).
 
   /admin/groups/{groupId}:
     parameters:

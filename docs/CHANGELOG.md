@@ -972,3 +972,68 @@ carries all three values so the leak is actually possible on that row.
 **`StudentProfileUpdate` deliberately does not carry them.** Nothing writes them in this slice —
 `PEOPLE-1` owns `PATCH /admin/students/:id` — and a writable member with no writer, on the one
 update path a *student* drives, is an open door waiting for someone to widen the DTO.
+
+---
+
+## Unit 2, slice 2b-ii — scope (2026-09-20)
+
+`AUTH-2` + `D-10` + migration `015` + the final `DOM-6` seed pass. The destructive half of unit 2b,
+reviewed on its own because `DROP TABLE course_staff_assignments` cannot be undone and because
+`StaffScopeService` is the one authorization contract in the unit.
+
+### `D-18` — **`scopeFor`'s return shape did not change, and `CourseStaffAssignment` became a derived value.**
+
+The original plan said `assignments: CourseStaffAssignment[]` was "the one member of the interface
+that does change". It did not. The member stayed and is populated with a **derived per-course
+reach** — one row per course a held group studies, `assignedAt = MIN(assigned_at)` over those groups
+(ruling R-4). The type was renamed `StaffCourseReach` and moved into `staff-scope.service.ts`
+because it is no longer a stored row; **its member names are unchanged**, minus `id`, which no
+caller read.
+
+That single decision is why **all seven contract cases in `staff-scope.service.spec.ts` pass
+unmodified**, and why `StaffService.listCourses` and `ManageService.coursesInScope` — the two
+consumers — came out of the slice with their executable bodies byte-identical.
+
+### `D-19` — **the four `assign`/`unassign` spec cases were deleted, and that deletion alone.**
+
+Coordinator ruling **R-8**. They exercised `StaffScopeService.assign`/`unassign`, deleted with
+`/admin/courses/:courseId/staff` and `course_staff_assignments`. Their two behavioural properties
+are restated rather than lost: *idempotent grant* moved to the `AssistantScopeRepository` contract
+and is asserted in **both** drivers, and *grant-then-reach / revoke-then-refuse* is restated at the
+group grain. The only other edit to that file is the `beforeEach` provider, which is a fixture.
+
+### `D-20` — **an assistant created after `015` gets no scope row from anything, and that is safe but must be closed.**
+
+Found by the integration suite: a `role='assistant'` account created at runtime has no
+`assistant_scopes` row, because `015` backfills the accounts that exist and **nothing in the product
+creates an assistant**. `StaffScopeService` treats a missing row as a refusal — the assistant
+reaches nothing — so this is the safe direction, not a hole. **Unit 5's `PEOPLE-4` must write the
+row when it gains the ability to create an assistant**, and `AUTHORIZATION_MODEL.md` §2 now says so.
+
+### `D-21` — **`WorkAnalyticsService` reads the group repository, not `GroupsService.members`.**
+
+`D-10` made `members` caller-scoped. The completion-rate denominator is the union of the *targeted
+groups'* members — a fact about the task, not about who is looking at it — so a scoped read there
+would have produced a **quietly wrong number** for an assistant rather than a refusal, which is the
+worse of the two failures. It now reads `GROUP_REPOSITORY` from the global `GroupDataModule`, and
+`AssessmentsModule`'s `GroupsModule` import edge went with the change.
+
+**What this deliberately does not decide:** whether an assistant may see analytics for a task
+targeted at a group they do not hold. `AUTHORIZATION_MODEL.md:207` argues yes-it-should-be-scoped;
+the route's gate is the *course*, and a task can target several groups, so "refuse entirely" and
+"count only the held groups" are both defensible and neither is written down. **The gate is
+unchanged pending that decision** — recorded as `B-4` in `docs/phases/unit-2/EXECUTION_NOTES_2B_II.md`.
+
+### `D-22` — **the seed grant lives in `003`, not `002`, and that is FK ordering.**
+
+`assistant_group_assignments` references `groups`, which `003_group_fixtures.sql` seeds.
+`002_staff_fixtures.sql` keeps the two `assistant_scopes` rows (no FK on groups) and `003` carries
+the one group grant. Splitting the staff fixture across two files is the foreign key, not a change
+of intent, and both files say so.
+
+**Consequence for 2a's fixture comment.** `003` said *"`assistant-1` has no group assignment,
+deliberately"*, so that naming an assistant on a group could be proved to grant nothing.
+`assistant-1` now **does** hold group-1 — the contract cases require them to reach course-1, and
+group-1 is the only group on it. The display/authorization disagreement is proved by `assistant-2`
+instead: named on no group, holding no group, and named on one by the specs to show it still grants
+nothing. The proof moved; it was not dropped.

@@ -160,24 +160,43 @@ will run on every assistant request (§4.2).
 `group.dto.ts` DTOs, `seeds/003`, the frontend mirror, and five e2e/integration blocks.
 `LearningModeService` was already deleted by `012`.
 
-### 4.2 `course_staff_assignments` → `assistant_group_assignments`
+### 4.2 `course_staff_assignments` → `assistant_group_assignments` — **DONE, `015`, 2026-09-20**
 
 ```
 INSERT INTO assistant_group_assignments (id, user_id, group_id, assigned_by, assigned_at)
-SELECT gen_id(), csa.user_id, g.id, csa.assigned_by, csa.assigned_at
+SELECT csa.id || ':' || g.id, csa.user_id, g.id, csa.assigned_by, csa.assigned_at
   FROM course_staff_assignments csa
   JOIN groups g ON g.course_id = csa.course_id;
 
 INSERT INTO assistant_scopes (user_id, scope)
-SELECT DISTINCT user_id, 'assigned_groups' FROM course_staff_assignments
-ON CONFLICT DO NOTHING;
+SELECT id, 'assigned_groups' FROM users WHERE role = 'assistant'
+ON CONFLICT (user_id) DO NOTHING;
 
 DROP TABLE course_staff_assignments;
 ```
 
 An assistant assigned to a course inherits every group of that course — the faithful translation.
-Drop the old table **only after** `StaffScopeService` is rewritten and its spec is green; the 404
-behaviour and the identical error message must survive the rewrite untouched.
+
+**Two departures from the sketch above, both deliberate.** The derived id is
+`<assignment>:<group>` rather than `gen_id()`/`gen_random_uuid()`: `pgcrypto`'s availability in the
+target image is assumed and not verified, and a deterministic id makes the file re-runnable in
+review. It cannot collide with `UNIQUE (user_id, group_id)` because a group holds one course
+(`013`). And the scope backfill reads **`users`, not `course_staff_assignments`** — `SELECT DISTINCT
+user_id FROM course_staff_assignments` would leave an assistant who held no course with **no row at
+all**, which is exactly the ambiguity between "everything" and "not set up yet" the explicit column
+exists to prevent.
+
+The old table was dropped **after** `StaffScopeService` was rewritten and its spec green, in the
+same commit as its last caller. The 404 behaviour and the identical error message survived the
+rewrite untouched, and the seven contract cases in `staff-scope.service.spec.ts` pass unmodified.
+
+**Real run, dev database (`tahirelshazli`), after a `pg_dump`:** `course_staff_assignments` 1 row
+before → `assistant_group_assignments` 1 row after (the one course had one group);
+`assistant_scopes` 2 rows against `SELECT count(*) FROM users WHERE role='assistant'` = 2.
+
+**Nothing creates an assistant account in the product**, so nothing writes a scope row after the
+migration. `StaffScopeService` fails closed on a missing row — an assistant without one reaches
+nothing — but **unit 5's `PEOPLE-4` must write the row** when it gains the ability to create one.
 
 ### 4.3 `attendance.attended BOOLEAN` → `status` enum
 
@@ -263,7 +282,7 @@ this scale round trips and row volume matter and query counts mostly do not.
 `011` **the two role CHECK widenings, and nothing else** · `012` **retire `learning_mode`**
 (destructive, `DOM-0`) · `013` **group collapse + group columns** (destructive, one-way,
 `DOM-1`/`DOM-2`) · `014` `users.status` (registration approval, `DOM-4`) **+** student profile fields
-(`DOM-3`) · `015` assistant scope tables + data move (`AUTH-2`, destructive) ·
+(`DOM-3`) · `015` **assistant scope tables + data move** (`AUTH-2`, destructive, **applied and verified**) ·
 `016` task drafts + assessment columns · `017` annotations + submission columns ·
 `018` sessions rework · `019` attendance enum · `020` weekly reports ·
 `021` announcements (group audience, media, draft) · `022` notification preferences + mail deliveries

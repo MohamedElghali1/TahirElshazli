@@ -235,7 +235,7 @@ needs anything from the other's migration.
 | Slice | Tasks | Migration | Status |
 |---|---|---|---|
 | **2b-i — people and courses** | `DOM-3`, `DOM-4`, `DOM-5`, seeds `001`/`002` for `014` | `014`, additive | `[x]` **COMPLETE — `APPROVED` 2026-09-20** |
-| **2b-ii — scope** | `AUTH-2` + `D-10`, final `DOM-6` | `015`, destructive | `[ ]` |
+| **2b-ii — scope** | `AUTH-2` + `D-10`, final `DOM-6` | `015`, destructive | `[~]` **BUILT 2026-09-20 — awaiting review.** 517 unit / 32 files · 228 e2e · 110 integration, **0 skipped**, all 15 migrations from an empty schema. `course_staff_assignments` referenced nowhere; the seven contract cases pass unmodified. `[x]` needs a reviewer verdict of `APPROVED`. |
 
 **Out of 2b-i, explicitly:** `AUTH-2`, `D-10`, migration `015` (not authored, not even as an empty
 file), the final `DOM-6` pass, `backend/src/staff/**` including `staff-scope.service.spec.ts`, and

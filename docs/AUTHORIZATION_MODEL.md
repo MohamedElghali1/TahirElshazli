@@ -68,9 +68,19 @@ Scope is a column, not an inference from row count. *"No assignment rows"* must 
 between "sees everything" and "not set up yet" — that ambiguity is how an unconfigured account
 silently becomes a superuser.
 
-**This replaces course scoping.** `CourseStaffAssignment` is migrated to group assignments and
-dropped. Group is the finer grain and the one the design actually assigns; course reach becomes
-*derived* — the courses of the groups you hold.
+**This replaces course scoping, and it is built** (`AUTH-2`, migration `015`, 2026-09-20).
+`course_staff_assignments` was migrated to group assignments and dropped. Group is the finer grain
+and the one the design actually assigns; course reach is *derived* — the courses of the groups you
+hold, which migration `013` made possible by giving a group exactly one course.
+
+**The third state is a missing row, and it refuses.** `015` backfills an explicit `assigned_groups`
+row for every assistant, so a missing row should be unreachable — `StaffScopeService` refuses on one
+anyway, because "should be" is not a guarantee. **Nothing creates an assistant account in the
+product today**, so unit 5's `PEOPLE-4` must write the scope row when one is created; until then a
+new assistant would reach nothing at all, which is the safe direction.
+
+**A migration never grants `all_groups`.** Seeing every group is an admin's explicit act, so `015`
+backfills everyone to `assigned_groups` including an assistant who held every course.
 
 ### Scope is a query filter, never a UI filter
 `CLAUDE.md` §5.11 is unchanged in spirit and must survive the rewrite:
@@ -204,7 +214,7 @@ Role alone is never sufficient. Every handler must also answer an ownership or m
 | Notification | `userId === jwt.sub`, enforced in the repository predicate, not by role |
 | Classmates | caller's own membership of that group; unplaced students get an **empty list, not a 403**, and never another group's roster |
 | Report document | resolved through `document.courseId` then `assertEnrolled` |
-| Any assistant-facing read/write | group scope → 404 |
+| Any assistant-facing read/write | group scope → 404. **Built** (`AUTH-2` + `D-10`): `StaffScopeService.assertAssigned` for a route naming a *course*, `GroupsService.requireGroup` → `StaffScopeService.mayReachGroup` for one naming a *group*. Both messages are one exported `const` each — `COURSE_NOT_IN_SCOPE`, `GROUP_NOT_FOUND` — asserted `===` against the genuine-miss path in the same test, because the property dies silently if the strings drift by a byte |
 | Blog post (assistant) | authorship — `BlogService.assertMayMutate`. **403 here, not 404**, because the post is listed on the caller's own console and pretending it does not exist would make the UI lie |
 | Weekly report | student sees own; assistant sees in-scope; only teacher/admin may send |
 

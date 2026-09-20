@@ -177,7 +177,7 @@ backend/src/
   courses/ enrollments/ assessments/ materials/ recordings/ live-sessions/
   dashboard/ reports/ notifications/ students/ announcements/ blog/ public/ integrations/
   <module>/interfaces/*-repository.interface.ts     the seam: a Symbol token + methods
-  <module>/repositories/{in-memory,postgres}-*.ts   17 interfaces, 34 implementations
+  <module>/repositories/{in-memory,postgres}-*.ts   16 interfaces, 32 implementations
 backend/test/      app.e2e-spec.ts, public.e2e-spec.ts, staff.e2e-spec.ts,
                    postgres-repositories.integration-spec.ts
 
@@ -326,9 +326,15 @@ withheld verbs. The durable rules:
   (`all_groups | assigned_groups`). Stored as a column, never inferred from a row count — "no
   assignment rows" must never be ambiguous between "everything" and "not set up yet".
 - **`StaffScopeService` is the single place that decides** whether a staff member may reach a
-  resource. **Nine** services call it, across 22 call sites. Its interface and behaviour are a contract
-  (`staff-scope.service.spec.ts`); the redesign rewrites its internals from course-scoped to
-  group-scoped and **must not change either.**
+  resource. **Nine** services call it, across 21 call sites. Its interface and behaviour are a contract
+  (`staff-scope.service.spec.ts`); `AUTH-2` rewrote its internals from course-scoped to group-scoped
+  on 2026-09-20 and **changed neither** — the seven contract cases passed unmodified.
+- **Scope is held at the group grain.** `assistant_scopes` (how wide) + `assistant_group_assignments`
+  (which groups); a *course* is reachable when a held group studies it, which is derivable because a
+  group studies exactly one course (migration `013`). The reverse was never true, which is why the
+  course grain leaked every cohort on a course. **A missing `assistant_scopes` row is "never
+  configured" and refuses** — nothing in the product creates an assistant account yet, so whatever
+  gains that ability must write the row.
 - **Object-level authorization is not optional.** A role check alone — "is this user an assistant?" —
   is the single easiest way to leak the whole platform through the API. Every request that names a
   resource must prove the caller may reach *that* resource. Enrollment alone is not enough where work

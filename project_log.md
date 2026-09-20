@@ -3449,3 +3449,41 @@ database created empty immediately before the run, 0 skipped, all 14 migrations 
 `register` no longer returns a user). Unit 4 deletes those files.
 
 Slice 2b-ii — `AUTH-2`, `D-10`, `015`, the final `DOM-6` pass — is unstarted and untouched.
+
+## Unit 2, slice 2b-ii — scope (2026-09-20)
+
+`AUTH-2`, `D-10`, migration `015`, the final `DOM-6` seed pass. The last slice of phase 2 and the
+one carrying the unit's authorization contract.
+
+An assistant's reach moved from the **course** grain to the **group** grain.
+`course_staff_assignments` is gone; `assistant_scopes` (how wide) and `assistant_group_assignments`
+(which groups) replace it behind one repository interface with two drivers. A course is reachable
+when a held group studies it, which migration `013` made derivable — the reverse was never true,
+and that gap was the leak.
+
+**`D-10` is the point of the slice.** Until today any assistant could fetch any group and its
+roster, every member's name and email included. Every staff group route is now scoped through one
+chokepoint — `GroupsService.requireGroup` — and an out-of-scope group answers **404 with a message
+byte-identical to a genuine miss**, on the reads *and* the placement write. Both messages are one
+exported `const` each and are asserted `===` against the genuine-miss path **in the same test**,
+for the course and for the group, because a spec comparing against its own literal would pass while
+the property was gone.
+
+**The contract held.** The seven cases in `staff-scope.service.spec.ts` pass unmodified against
+completely rewritten internals; the only edit is the `beforeEach` provider. The four
+`assign`/`unassign` cases were deleted with the methods they tested under ruling R-8, and their
+properties restated at the group grain. The two `groups.assistant_id`-grants-nothing tests from 2a
+still pass unmodified: the display field is read by nothing that decides access.
+
+`015` was written **last**, after the rewrite was green, and committed with its final caller. Real
+run on the dev database after a `pg_dump`: 1 course grant became 1 group grant, and both assistants
+came out with an explicit `assigned_groups` row — a migration never grants "sees everything".
+
+**Verified:** 517 unit / 32 files (from 515) · 228 e2e · **110 integration on a database created
+empty immediately before the run, 0 skipped, all 15 migrations from nothing** (from 103).
+`frontend/lib/` still at 0 typecheck errors; the legacy total moved 328 → 340, all twelve in
+`app/(app)/manage/courses/[id]/staff/page.tsx` — a screen for a route that no longer exists, which
+unit 4 deletes.
+
+One open question is recorded rather than answered: whether an assistant may read work analytics
+for a task targeted at a group they do not hold (`B-4`). Nothing was guessed; the gate is unchanged.
