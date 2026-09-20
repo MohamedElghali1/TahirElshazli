@@ -176,7 +176,7 @@ call sites. Roughly units 1, 3 and 5 combined. **The boundary is itself a verifi
 `015`'s backfill joins `groups.course_id`, and `DATABASE_PLAN.md` requires `013` landed and verified
 first — and it puts the two irreversible `DROP TABLE`s in different reviews.
 
-#### Unit 2a — the group becomes the centre `[~]`
+#### Unit 2a — the group becomes the centre `[x]` COMPLETE
 
 **Scope** `DOM-0`, `DOM-1`, `DOM-2`, the migration renumber, and seeds for those.
 **Migrations** `012_retire_learning_mode.sql`, `013_group_holds_one_course.sql`. **Both run against
@@ -188,16 +188,39 @@ in the frontend mirror, and asserted by an e2e test.
 **Exit, met** 471 unit · 217 e2e · 87 integration from an empty schema, 0 skipped; `frontend/lib/`
 at 0 typecheck errors; `group_courses` referenced nowhere outside migrations 006/007/013.
 **Landed** 2026-09-20. See `docs/phases/unit-2/EXECUTION_NOTES.md`.
-**Status `[~]`, not `[x]`** — the executor set `[x]`; the coordinator reset it. §2 condition 3
-requires a `redesign-reviewer` verdict of `APPROVED`. The reviewer returned **`APPROVED WITH
-FOLLOW-UP`** (`docs/phases/unit-2/REVIEW.md`, 2026-09-20), which under §2 leaves the unit `[~]`
+**On the status.** The executor set `[x]` on its own account of its work; the coordinator reset it to
+`[~]`, because §2 condition 3 requires a `redesign-reviewer` verdict of `APPROVED`. The reviewer
+returned **`APPROVED WITH FOLLOW-UP`** (`docs/phases/unit-2/REVIEW.md`, 2026-09-20), which under §2 leaves the unit `[~]`
 until the nine follow-ups in `IMPLEMENTATION_PLAN.md` §"Slice 2a follow-ups" close. **No security or
 authorization finding; no regression.** The reviewer independently re-ran all three suites on a
 dropped-and-recreated database and reproduced every number: 471 unit · 217 e2e · 87 integration,
 0 skipped, all 13 migrations from nothing. **None of the follow-ups blocks slice 2b.**
 **Remediation pass, 2026-09-20:** `F2A-1`…`F2A-7` closed by the executor (`EXECUTION_NOTES.md`
 §"Remediation pass"); `F2A-8` was the coordinator's; **`F2A-9` stays `[!]`** — `012` is applied and
-immutable. Suites after the pass: **473 unit · 217 e2e · 87 integration**, 0 skipped, empty schema.
+immutable, so the correction belongs in a later migration, not an edit. Suites after the pass:
+**473 unit · 217 e2e · 87 integration**, 0 skipped, empty schema.
+
+**`APPROVED` 2026-09-20** on the re-check (`REVIEW.md`, appended). All nine §2 conditions hold:
+
+| # | Condition | Evidence |
+|---|---|---|
+| 1 | Planner completed, plan approved | `PHASE_PLAN.md` + `COORDINATOR_RULINGS.md` (rulings R-1…R-4) |
+| 2 | Executor completed approved scope | `EXECUTION_NOTES.md`; `DOM-0`, `DOM-1`, `DOM-2`; `git diff` confirms `backend/src/staff/**`, `frontend/app/**`, `frontend/components/**` untouched and `014`/`015` not authored |
+| 3 | Reviewer `APPROVED` | `APPROVED WITH FOLLOW-UP` → remediation → **`APPROVED`**. No security or authorization finding at either pass. |
+| 4 | Tests pass, **integration against real PostgreSQL** | **473 unit / 29 files · 217 e2e · 87 integration, 0 skipped**, all 13 migrations from an empty schema. Re-run independently by the reviewer on a database created empty immediately before, every number reproduced. |
+| 5 | Security checks | `013`'s two abort paths proved to fail without their guards; `groups.assistant_id`'s display-only rule proved **behaviourally** (an assistant named on a group but not assigned still gets 404), so a 2b query reading it for access breaks the test; the seven retained audit members verified still accepted by `ListAuditLogQueryDto`'s exhaustive `Record`; `@IsOptionalNotNull` verified field-by-field against the schema in **both** directions — no NOT NULL field missed, no nullable field swept up (`{room: null}` → 200 is the regression guard). |
+| 6 | Documentation updated | `DATABASE_PLAN.md`, `DOMAIN_MODEL.md`, `API_SPEC.yaml`, `CHANGELOG.md` (incl. **`D-10`**), `IMPLEMENTATION_PLAN.md`, `project_log.md`, `CLAUDE.md` §4.1 |
+| 7 | `IMPLEMENTATION_PLAN.md` updated | `DOM-0`/`DOM-1`/`DOM-2` `[x]`; `F2A-1`…`F2A-8` closed, `F2A-9` `[!]` |
+| 8 | This file updated | this block |
+| 9 | Zero unresolved blockers **in scope** | `F2A-9` is recorded as unfixable-by-edit, not open work. `D-10` is closed and lands in `AUTH-2` (2b). |
+
+**What the first real run of `012` and `013` found: nothing** — and `009`/`010`, which
+`DATABASE_PLAN.md` §8 recorded as never having run, applied cleanly, closing that risk row. That
+breaks the streak where 001–008 each found something on their first run.
+
+**Two nits recorded, neither a condition of approval.** `groups.service.ts:250` takes `.length` of
+`findMembers` where `countMembersByGroups` exists — thirty rows, below §1's threshold, and it
+matches what `get()` already does; the notes call it "one count", which it is not.
 The unit is `[~]` until a reviewer verdict of `APPROVED` (§2 condition 3).
 
 #### Unit 2b — scope, people and courses `[ ]`

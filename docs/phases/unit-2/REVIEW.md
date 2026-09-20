@@ -514,3 +514,162 @@ already closed and needs nothing from anyone.
 | **Generate `frontend/lib/types.ts` from `API_SPEC.yaml`, or add a CI drift check** | Medium | `CLAUDE.md` §6 already calls for it. **F-4** and **F-5** are two more instances of exactly the drift it predicts, found by hand in one review. |
 | **Replace the `≤301` frontend gate with `^lib/` = 0** | Trivial | The total is the wrong invariant and will fail every unit that touches the mirror before `SHELL-4`. The anchored `lib/` count is the one that means something. |
 | **A second in-memory fixture course with recordings and no sessions** | Small | Closes the untested half-empty direction (**D-3**, **F-6**). |
+
+---
+---
+
+# Re-check — unit 2, slice 2a remediation
+
+**VERDICT: APPROVED**
+
+**Reviewer:** `redesign-reviewer` · **Date:** 2026-09-20 · **Range:** `4e11a69..248da24`
+
+All seven closable findings are closed. `F2A-9` is correctly left `[!]` and untouched. Two cosmetic
+nits are recorded below; neither is a condition. **Unit 2a may go `[x]`.**
+
+## Scope re-reviewed
+
+`4e11a69..248da24`, 25 files, +1109/−79. Remediation only — I did not re-review the original slice,
+and slice 2b's work is not in this range.
+
+**Suites I ran myself**, all reproducing the executor's report exactly:
+
+| Command | Result |
+|---|---|
+| `npm test --workspace=backend` | **473 passed, 29 files** (+2 tests, +1 file — the new spec), exit 0 |
+| `npm run test:e2e --workspace=backend` | **217 passed**, exit 0 |
+| `TEST_DATABASE_URL=…/lms_rev_rem npm run test:integration` | **87 passed, 0 skipped**, exit 0, database created empty immediately before the run |
+| `cd frontend && npx tsc --noEmit` | **326** total, **0** anchored `^lib/` — unchanged by the response-shape change |
+| `npm run lint` | Clean but for the one pre-existing `EXTERNAL_WORK_BINDER` warning |
+
+## Finding by finding
+
+### F2A-1 — closed. The test can genuinely fail.
+
+`backend/src/groups/student-groups.service.spec.ts` (new, +98). **The test is order-sensitive by
+construction, not by luck**, which was the whole point:
+
+- Insertion order into the memory array is `[group-1 (seed), march, february]` — `create` appends,
+  and the March placement is written first.
+- Expected order is `[group-1, february, march]` — the seed membership is stamped `2026-01-20`
+  (`in-memory-group.repository.ts:58`), and the fake timer stamps the other two `2026-03-01` and
+  `2026-02-01`.
+
+The two orders differ in their last two elements. `findStudentGroups` is `filter` → `sort` → `map`;
+delete the comparator at `in-memory-group.repository.ts:198-201` and `filter` alone yields
+`[group-1, march, february]`, which fails the assertion. The fake timer is what makes this possible
+at all — `addMember` stamps from the clock, so without it insertion order would always equal
+chronological order and the test could not fail. The executor's red/green pair in
+`EXECUTION_NOTES.md` agrees with this derivation.
+
+The second case ("empty for an enrolled but unplaced student") duplicates coverage that already
+existed at `groups.controller.spec.ts:381`; harmless, and it puts the rule next to its tie-break.
+
+### F2A-2 — closed at the root, and the sweep is both complete and not over-wide.
+
+`backend/src/common/validators/is-optional-not-null.ts` is one line of mechanism
+(`ValidateIf((_o, v) => v !== undefined)`) with the defect and the rule in the docstring. Fixing the
+decorator rather than the two fields I named is the right call — I named the two I could prove, and
+the class of defect was repository-wide.
+
+**The count is right.** 39 grep matches, of which one is the docstring in the validator's own file →
+**38 applications** across 7 DTO files.
+
+**Nothing was missed.** I enumerated every remaining `@IsOptional()` in a body DTO and checked each
+field against its column:
+
+| Remaining `@IsOptional()` | Column | Correct? |
+|---|---|---|
+| `AssessmentTargetDto.availableFrom/availableTo/dueAt` | `assessment_targets.*`, **nullable** (`006_groups.sql:164-166`) — per-group *overrides* where `null` means inherit | Yes |
+| `Create/UpdateAssessmentDto.externalUrl`, `googleForm`, `lessonId` | nullable | Yes |
+| `blog` caption, mimeType, sizeBytes, excerpt, media | nullable | Yes |
+| `submit-assessment` fileUrl, answerText · `grade-submission` feedback, annotatedFileUrl | nullable | Yes |
+| `update-profile` phone, avatarUrl | nullable, and already carried an explicit `ValidateIf(v !== null)` | Yes |
+| `group.dto.ts` assistantId, meets, room (both classes) | nullable | Yes |
+| every `*-query.dto.ts` limit/offset/filter | see below | Yes |
+
+**Nothing was over-swept.** I resolved all 24 distinct converted field names to their columns in the
+migrations, and **every one is `NOT NULL`** — `allowed_file_types`, `max_file_size_bytes`,
+`work_type`, `duration_minutes`, `duration_seconds`, `lesson_date`, `publish_at`, `zoom_link`,
+`video_url`, `chapter`, `category`, `tags`, `status`, `body`, `max_score`, `topics`, `title`,
+`description`, `instructions`, `name`, `course_id`, `available_from`, `available_to`, `due_at`. No
+field that was correctly nullable turned into a 400.
+
+The `NOT NULL` fields on `UpdateAssessmentDto` were the nearest miss and were caught: `availableFrom`
+/ `availableTo` / `dueAt` are `NOT NULL` on `assessments` (`001_student_platform.sql:209-211`) and
+were converted, while the identically-named nullable overrides on `AssessmentTargetDto` were
+correctly left alone. Getting that pair right in one pass is the evidence the sweep was checked
+rather than pattern-matched.
+
+**The query-DTO exclusion is sound.** A `@Query()`-bound DTO receives values Express parsed from the
+query string: `?limit=` is `''`, `?limit` is `''`, an absent key is `undefined`. JSON `null` is not
+reachable, so `@IsOptional()` and `@IsOptionalNotNull()` are indistinguishable there and converting
+them would be noise. `@Transform(toNumber)` does not manufacture one either — `Number('')` is `0`.
+
+**Tested in both directions**, which is what makes it a boundary rather than a happy path —
+`staff.e2e-spec.ts:970-990`: `{name: null}` gives 400, `{courseId: null}` gives 400, and
+`{room: null}` gives **200**, the nullable column still clearing. That last assertion is the
+regression guard for the over-sweep risk.
+
+### F2A-3 — closed, and it points at the decision rather than making a new argument.
+
+`staff-groups.controller.ts:30-48` now states what is true today ("unscoped today — an assistant can
+fetch any group and its members, name and email included"), names it "deliberate and temporary, not a
+posture", says why the old premise is dead, cites **`D-10`** and its 404-with-identical-message
+outcome, points at `AUTH-2` / slice 2b as where it lands, and closes with *"Slice 2a changed this
+comment and nothing else about the behaviour."* It advances no reasoning of its own — a 2b executor
+building from it is sent to `D-10` and `AUTHORIZATION_MODEL.md:105,207`.
+
+`D-10` is present as the last entry in `docs/CHANGELOG.md:833-865`, attributed to the finding, closed
+by the user, and it carries the refusal test it requires **plus the positive case**. That is
+`CLAUDE.md` §10's both-directions rule written into the decision rather than left to the executor.
+
+### F2A-4 / F2A-5 — closed; all three artifacts now agree.
+
+| Artifact | POST body | PATCH body | Both responses |
+|---|---|---|---|
+| `docs/API_SPEC.yaml:251-284` | `GroupWrite`, `required: [name, courseId]` | `GroupPatch`, all optional | `Group`, `memberCount` required |
+| Backend | `CreateGroupDto` | `UpdateGroupDto` | `GroupSummary` (`groups.service.ts:155,207`; `admin-groups.controller.ts:68,87`) |
+| `frontend/lib/types.ts:702-728` | `GroupWrite` (required) | `GroupPatch` (optional) | `GroupSummary` (`lib/api.ts:820,832`) |
+
+Asserted over the wire at `staff.e2e-spec.ts:880,888` — `memberCount` is `0` on both the create and
+the edit. **Nothing else moved with the return-type change**: the diff to `groups.service.ts` is 13
+lines, all of it the two return statements and their comments; the audit payloads, the 409, the scope
+check and `GroupWrite`'s own shape are untouched. `frontend/lib/` stayed at 0 errors and the total
+did not move from 326 — the legacy screens do not read these two call sites.
+
+### F2A-6 / F2A-7 — closed.
+
+`courses.controller.spec.ts:73-83` now describes the two cases that ship, names the third as **not**
+covered, gives the fixture reason, and points at the follow-up. `reports.service.ts` and
+`manage.service.ts` lost their orphaned comments.
+
+### F2A-9 — correctly left open.
+
+`git diff 4e11a69..248da24 -- backend/src/database/migrations/` is **empty**. `012` was not edited.
+Leaving an applied migration alone and carrying the limitation as `[!]` is the right reading of
+`CLAUDE.md` §9.
+
+## Nits — not conditions
+
+**N-1 · Four zero-byte untracked files in the repository root:** `1`, `before`, `value`, `[a.id`.
+Shell-redirect debris from the remediation pass (an unquoted pattern containing a redirect
+character). Harmless, but `git add -A` would commit them. Delete before committing.
+
+**N-2 · `groups.service.ts:250` fetches rows to produce an integer.** `update` calls
+`findMembers(groupId)` and takes `.length` where `countMembersByGroups` exists;
+`EXECUTION_NOTES.md` describes it as "one count", which it is not. It matches what `get()` already
+does at `:115-116` and it is at most thirty rows, so it is consistent with the surrounding code and
+below `CLAUDE.md` §1's threshold. Worth one word in the notes rather than a change.
+
+## Definition of Done — the points the remediation touched
+
+| # | Point | Verdict |
+|---|---|---|
+| 3 | Both drivers hold the same contract | **Now holds.** The `null` divergence is refused at the boundary before either driver sees it. |
+| 4 | DTO validation, no undeclared value accepted | **Now holds**, repository-wide rather than on the two fields the finding named. |
+| 7 | Every test in `PHASE_PLAN.md` §4.7 named and passing | **Now holds.** The memory-driver tie-break ships, and it can fail. |
+| 10 | `API_SPEC.yaml` matches the implementation | **Now holds** for the group surface, in both directions. |
+| 13 | Documentation updated | **Holds.** `CHANGELOG.md` gains `D-10`; `IMPLEMENTATION_PLAN.md`, `PHASE_ROADMAP.md`, `EXECUTION_NOTES.md` and `project_log.md` record the pass. |
+
+All other points were verified in the original review and are unaffected by this range.

@@ -200,17 +200,27 @@ project_log.md     The narrative
 
 ### 4.1 The frontend does not currently typecheck, and that is expected
 
-`npx tsc --noEmit` in `frontend/` reports **~301 errors**, all in `app/` and
-`components/{app,site}`. The new `components/ui/` is clean; the legacy components and pages still
-call the retired system's API (`Tabs`, `Chip`, `Field`, `Input`, `Textarea`, `uiSize`, sizes
-`"sm"/"md"/"lg"`).
+`npx tsc --noEmit` in `frontend/` reports **~326 errors** (300 in `app/`, 26 in
+`components/{app,site}`, **0 in `lib/`**). The new `components/ui/` is clean; the legacy components
+and pages still call the retired system's API (`Tabs`, `Chip`, `Field`, `Input`, `Textarea`,
+`uiSize`, sizes `"sm"/"md"/"lg"`).
+
+**The total rises with each unit, by design, and is not the thing to gate on.** `frontend/lib/` is
+the hand-written mirror of the API, and a unit that changes a response shape updates the mirror in
+the same commit (§6) — which adds errors to the legacy screens that read the old shape and are
+already scheduled for deletion. Unit 2a took it 301 → 326 that way. **The invariant is
+`npx tsc --noEmit 2>&1 | grep -cE "^lib/"` = `0`**, not the total; a stale mirror is a worse failure
+than a rising count in doomed code. Beware the unanchored `grep -c "lib/"`: it matches the error
+*message* text `Module '"@/lib/types"'` on files under `app/` and reads non-zero when `lib/` is
+clean.
 
 **Do not fix these by patching the legacy components.** They are deleted by `SHELL-4` in
 `docs/IMPLEMENTATION_PLAN.md`, after which the frontend builds again. Patching them is work thrown
 away, and it re-entrenches the visual system being retired. If you need a green typecheck before
 `SHELL-4`, say so and scope it as its own task.
 
-The backend, by contrast, **is** green and must stay green: 467 tests, 28 files (and 216 e2e).
+The backend, by contrast, **is** green and must stay green: **471 tests, 28 files** (and **217 e2e**,
+**87 integration**) as of unit 2a.
 
 ---
 

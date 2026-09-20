@@ -116,7 +116,8 @@ and is **already handled**: `postgres-work.repository.ts:37-38` declares the row
 
 ### Slice 2a follow-ups — `APPROVED WITH FOLLOW-UP`, 2026-09-20
 
-`docs/phases/unit-2/REVIEW.md`. Unit 2a stays `[~]` until these close (`PHASE_ROADMAP.md` §2).
+`docs/phases/unit-2/REVIEW.md`. **All closed 2026-09-20; the re-check returned `APPROVED` and unit 2a
+is `[x]`.** `F2A-9` is recorded as unfixable-by-edit rather than open.
 **None blocks slice 2b from starting.** No security or authorization finding; every number the
 executor reported was independently reproduced by the reviewer on a dropped-and-recreated database.
 
