@@ -234,16 +234,34 @@ needs anything from the other's migration.
 
 | Slice | Tasks | Migration | Status |
 |---|---|---|---|
-| **2b-i — people and courses** | `DOM-3`, `DOM-4`, `DOM-5`, seeds `001`/`002` for `014` | `014`, additive | `[x]` COMPLETE, pending review |
+| **2b-i — people and courses** | `DOM-3`, `DOM-4`, `DOM-5`, seeds `001`/`002` for `014` | `014`, additive | `[x]` **COMPLETE — `APPROVED` 2026-09-20** |
 | **2b-ii — scope** | `AUTH-2` + `D-10`, final `DOM-6` | `015`, destructive | `[ ]` |
 
 **Out of 2b-i, explicitly:** `AUTH-2`, `D-10`, migration `015` (not authored, not even as an empty
 file), the final `DOM-6` pass, `backend/src/staff/**` including `staff-scope.service.spec.ts`, and
 `admin-staff.controller.ts`. None was touched.
 
-**2b-i exit, as measured:** 515 unit / 32 files · 224 e2e · 103 integration, **0 skipped**, all 14
+**2b-i exit, as measured:** 515 unit / 32 files · 228 e2e · 103 integration, **0 skipped**, all 14
 migrations from an empty schema; `frontend/lib/` at 0 typecheck errors; the registration queue works
 end to end over HTTP. `EXECUTION_NOTES_2B_I.md` carries the pasted output.
+
+**`APPROVED` 2026-09-20** (`docs/phases/unit-2/REVIEW_2B_I.md`). The verdict was `APPROVED WITH
+FOLLOW-UP` on three documentation/evidence findings — no security, authorization, correctness or
+requirements failure at either pass. All three closed in `ab0f492`/`662c8c1` and confirmed.
+Every number was reproduced on the reviewer's own machine, including **228 e2e across four
+consecutive runs with zero worker exits**.
+
+> The status above read `[x] COMPLETE, pending review` when the executor set it. Those are
+> contradictory: §2 condition 3 makes a reviewer verdict of `APPROVED` part of what `[x]` *means*.
+> Corrected by the coordinator once the verdict landed — as in 2a, where the same reset was needed.
+
+**Both status gates, and they carry two different byte-identical messages on purpose:** `login`
+refuses with `'Invalid credentials'` — identical to a wrong password and an unknown email, so
+registration cannot be enumerated — and **`JwtStrategy.validate` refuses with `'Account no longer
+exists'`** (`jwt.strategy.ts:57`), identical to a *deleted* account. A gate at `login` alone would
+leave every already-issued token working and could not cover a token minted before a rejection.
+Consequence for unit 4, filed as `SHELL-5`: **no API error distinguishes waiting from rejected from
+wrong-password from deleted**, so the waiting state is knowable only from register's own 201 body.
 
 **Scope (the unit as a whole)** `DOM-3`, `DOM-4`, `AUTH-2`, `DOM-5`, the final `DOM-6` pass. Student
 profile columns; registration approval; course scoping → group scoping; course CRUD.
