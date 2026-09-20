@@ -169,7 +169,7 @@ already handled in `postgres-work.repository.ts`. Real output: `docs/phases/unit
 
 ### Chat unit 2 — Domain reshaping `[ ]`
 
-**Scope** `DOM-1` … `DOM-6`, **plus `AUTH-2`** (re-homed from unit 1 on 2026-09-19, to sit
+**Scope** **`DOM-0`** (new: retire `learning_mode`, `D-9` — sequence it **first**), `DOM-1` … `DOM-6`, **plus `AUTH-2`** (re-homed from unit 1 on 2026-09-19, to sit
 immediately after `DOM-1` and beside `DOM-2`). Collapse `group_courses` → `groups.course_id`; group
 columns; student profile columns; registration approval; course CRUD; regenerate seeds; course
 scoping → group scoping.
@@ -379,6 +379,7 @@ narrow scope and one overrides the design. Full reasoning in `docs/CHANGELOG.md`
 | `D-1` | ~~`AUTH-5`~~ | 1 | **CLOSED: drop the Security tab.** No Redis; `AUTH-5` dropped from scope. |
 | `D-2` | `MARK-*` | 7 | **CLOSED: rendered overlay** — freehand marker/eraser strokes stored as data, drawn over an immutable original. No PDF library. |
 | `D-3` | `RPT-3` | 9 | **CLOSED: on-demand button only.** No cron. |
-| `D-4` | `DOM-3`, `SESS-1` | 2, 8 | **CLOSED: one axis** — the group's `learning_mode`. `students.mode` and session `mode` are not built. |
+| `D-4` | `DOM-3`, `SESS-1` | 2, 8 | **SUPERSEDED by `D-9`:** zero mode axes, not one. |
 | `D-5` | `DOM-6` | 2 | **CLOSED: regenerate** the fixtures. |
-| `D-6` | `SESS-1` | 8 | **CLOSED: yes, any session.** Session routes widen to `STAFF_ALL`. |
+| `D-9` | `DOM-0`, `DOM-1`, `SESS-1` | 2 | **CLOSED: `learning_mode` retired entirely.** No live/recorded distinction — every group runs external-link sessions and accumulates uploaded recordings. New `DOM-0` slice, sequenced before `DOM-1`. |
+| `D-6` | `SESS-1` | 8 | **REVISED: their own groups only.** Supersedes "any session" — one `StaffScopeService` check. |

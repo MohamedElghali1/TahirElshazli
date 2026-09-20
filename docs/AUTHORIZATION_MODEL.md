@@ -130,7 +130,7 @@ dropped. Group is the finer grain and the one the design actually assigns; cours
 | Mark attendance | — | ✓ | ✓ | ✓ |
 | Publish the draft timetable | — | — | ✓ | ✓ |
 | **Content** |
-| Upload / edit a recording | — | — | ✓ | ✓ |
+| Upload / edit a recording | — | **✓ own groups** ¹ | ✓ | ✓ |
 | Upload material | — | ✓ | ✓ | ✓ |
 | Author a blog post | — | ✓ (own only) | ✓ | ✓ |
 | **Communication** |
@@ -141,6 +141,13 @@ dropped. Group is the finer grain and the one the design actually assigns; cours
 | Course CRUD | — | — | ✓ | ✓ |
 | Google connection | — | — | ✓ | ✓ |
 | Notification preferences | own | own | own | own |
+
+¹ **Changed 2026-09-20 (`D-9`), not yet implemented.** Recordings were teacher-only. The user's
+account of how live teaching works — the session runs on an external meeting link, then *"the teacher
+will download the meeting from his end and then upload it, or maybe he'll tell the assistant to upload
+it"* — makes an assistant a legitimate uploader, scoped to their own groups. Until `SESS-1`/`STU-2`
+widen the routes the code is still teacher-only, and `audit-log-repository.interface.ts:21` carries a
+comment stating the old rule that must be corrected in the same change.
 
 ### The four withheld verbs
 The client's rule was *"one type of assistant can see and alter all the groups, but his difference

@@ -541,3 +541,95 @@ login timestamp. `PEOPLE-5` owns the screen; `PEOPLE-4` emits the field.
 "**`STAFF_ADMIN` must never contain `Role.Assistant`**" stays. It restates the §6 boundary, loosens
 nothing, and names the one silent failure mode of Phase 1: an over-widened `STAFF_ADMIN` is invisible
 until someone reaches `/admin/*` who should not.
+
+---
+
+## 2026-09-20 — `learning_mode` retired; assistant session editing scoped to their groups; `D-1` settled
+
+Three corrections from the user, same day, revising decisions recorded hours earlier. Recorded as
+revisions rather than edited over, because one of them reverses a decision this file already carries.
+
+### `D-6` REVISED — an assistant edits sessions **for their own groups only**
+
+Supersedes this morning's "yes, any session". The earlier reading gave every assistant the whole
+timetable, which the user has now narrowed: **per group.**
+
+Implementation is one scope check, not a new mechanism — `StaffScopeService` already answers "may this
+staff member reach this?", and `SESS-1` re-parents sessions to the group, so the session's group *is*
+the scope key. `CRS-11` is still honoured; the blast radius is not. This also removes the oddity the
+previous entry flagged, where an assistant could edit any group's meeting link but could not remove a
+student from their own group.
+
+### `D-9` NEW — **there is no live/recorded distinction. `learning_mode` is retired entirely.**
+
+The user: *"there's no difference between live and recorded — either way when the live is working it'll
+be an external link for Zoom or Google Meet or any type of meeting, then the teacher will download the
+meeting from his end and then upload it, or maybe he'll tell the assistant to upload it."*
+
+So **every group works one way**: sessions happen on an external meeting link, and the recording is
+uploaded afterwards. A group is never recorded-*only* or live-*only*; it is always both, in sequence.
+
+This goes further than `D-4`, which kept one axis. **There are now zero.**
+
+**What it costs, measured rather than estimated.** 46 files reference `learning_mode` /
+`LearningModeService`, and it is not a carried-around flag — it changes a **response shape**.
+`courses.service.ts:24,39` declares a discriminated union, and `:120` branches on it:
+`{ type: 'recorded', … }` or `{ type: 'live', … }`. Retiring it collapses that union into one shape
+carrying **both** completion and attendance, for everyone.
+
+That is consistent with what the design already draws: `PRODUCT_SPEC.md` §6 gives every student both
+*My lessons* (a recording library with a watched bar) **and** *Attendance* as separate pages. The two
+were never alternatives on the student surface; only the backend treated them as such.
+
+**Consequences, all of them:**
+- `DOM-1` no longer adds `learning_mode` to `groups`. It collapses `group_courses` →
+  `groups.course_id` and nothing else, which makes the riskiest migration in the plan smaller.
+- `LearningModeService` is retired, and `GroupDataModule` loses half its reason to be `@Global()`.
+  Re-examine whether it still earns the third global module.
+- Migration 007 (`learning_mode_moves_to_the_group`) becomes history: the column it moved is dropped.
+  `courses.default_learning_mode` and `enrollments.learning_mode` go with it.
+- The progress union collapses. `frontend/lib/types.ts` mirrors it, so this is a **frontend-visible
+  contract change** — the one in this batch that is.
+- **Deletion, not addition.** Roughly 46 files get simpler. This is the cheapest kind of change to get
+  right and the easiest to get wrong halfway, so it wants its own slice inside unit 2, sequenced
+  **before** `DOM-1` rather than tangled with it.
+
+**Sessions, consequently:** a session carries an **external meeting link** — Zoom, Google Meet, or
+any other. Combined with `D-4`, there is no `mode` and no `room`. `PRODUCT_SPEC.md` §4.1's
+"a room **or** a meeting link" resolves to the link. The T-30-minute server-side withholding of that
+link (`SESS-6`) is unaffected and still required.
+
+**Recordings become assistant-reachable, scoped to their groups.** *"Or maybe he'll tell the assistant
+to upload it."* This widens `recording.created` / `.updated` / `.deleted` from teacher-only —
+`AUTHORIZATION_MODEL.md` §2.2's "a TA gets materials, not recordings" no longer holds, and
+`audit-log-repository.interface.ts:21-23` carries a comment stating that rule which must be corrected
+when the routes widen. Already audited, so the widening stays attributable.
+
+> **Flagged as inference, cheap to correct:** "maybe" is permissive, not explicit. I have recorded
+> assistants *may* upload recordings for their own groups. If uploads should stay teacher-only, say so
+> and it is one decorator plus one scope check undone, before `STU-2`/`SESS-1` are planned.
+
+### `D-1` SETTLED — drop the Account → Security tab. No Redis.
+
+Asked to pick the best option rather than the lazy one; the answer is the same, and on the merits.
+
+Device listing and per-device sign-out require **shared, enumerable session state**. The current
+denylist is an in-process `Map` — it cannot list sessions and cannot revoke across replicas. Redis
+would fix both and would also close `SECURITY.md` §3.1, the main known weakness.
+
+**It is still the wrong trade here, for three reasons that are about this product and not about
+Redis:**
+1. `CLAUDE.md` §5 names exactly one trigger for Redis — **a second replica** — and it has not fired.
+   One VPS, one replica, ~300 students.
+2. The weakness Redis would close is not currently *exploitable* in the way it reads: on one replica
+   the rate limiter and denylist are **correct**. They break on the second replica — which is the same
+   trigger, so the mitigation and the need arrive together rather than the need arriving first.
+3. A component to run, back up, monitor and fail over, introduced to power **one settings tab** that
+   `PRODUCT_SPEC.md` §1.4 already marks `[UNCERTAIN]`, is infrastructure with no user benefit. It also
+   adds a new way for sign-in to fail at 9pm before an exam.
+
+**So: `AUTH-5` is dropped, and the per-process limitation is accepted as permanent** until a second
+replica is configured — at which point it must be fixed *and* the tab becomes buildable for free. The
+honest cost of dropping it: **a stolen token cannot be revoked before it expires**, and nobody can see
+their active devices. Token lifetime is therefore the only control, and that makes it worth keeping
+short.
