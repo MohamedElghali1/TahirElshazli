@@ -1,5 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { vi } from 'vitest';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { AdminGroupsController } from './admin-groups.controller.js';
 import { StaffGroupsController } from './staff-groups.controller.js';
 import { ClassmatesController } from './classmates.controller.js';
@@ -38,6 +43,10 @@ const UNASSIGNED_TA = {
 const ADMIN = {
   user: { sub: 'teacher-1', email: 't@example.com', role: 'teacher', jti: 'j3' },
 };
+/** The Full admin (AUTH-1): the teacher's reach under her own identity. */
+const FULL_ADMIN = {
+  user: { sub: 'admin-1', email: 'admin@example.com', role: 'admin', jti: 'j6' },
+};
 const STUDENT_1 = {
   user: { sub: 'student-1', email: 's1@example.com', role: 'student', jti: 'j4' },
 };
@@ -52,6 +61,7 @@ describe('Groups', () => {
   let audit: AuditService;
   let enrollments: InMemoryEnrollmentRepository;
   let learningMode: LearningModeService;
+  let groupRepo: InMemoryGroupRepository;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -97,6 +107,9 @@ describe('Groups', () => {
     // writes to - which is a test that cannot fail.
     enrollments = module.get(ENROLLMENT_REPOSITORY);
     learningMode = module.get(LearningModeService);
+    // The same instance the service holds, so a spy on it observes the real
+    // calls rather than a second repository nothing writes to.
+    groupRepo = module.get(GROUP_REPOSITORY);
   });
 
   const entries = async () =>
@@ -397,6 +410,84 @@ describe('Groups', () => {
       expect(byStudent['student-1'] ?? courseDefault).toBe(
         await learningMode.resolve('course-1', 'student-1'),
       );
+    });
+  });
+
+  /**
+   * `AUTH-3`, at the service layer. The method-level `@Roles(...STAFF_ADMIN)` on
+   * the controller is the outer gate and the e2e suite proves it over HTTP; this
+   * proves the rule is in the **service**, which is `IMPLEMENTATION_PLAN.md`'s
+   * Definition of Done point 5 and `CLAUDE.md` §5. A permission enforced only at
+   * a decorator is one refactor away from being enforced nowhere.
+   */
+  describe('AUTH-3: removing a member is withheld from an assistant', () => {
+    it('refuses an assistant before the repository is touched', async () => {
+      // `findById` is the **first** read `removeMember` performs, via
+      // `requireGroup`. Spying only on `findMembers` or `removeMember` would not
+      // pin the ordering: `assertMay` placed after the group read still refuses
+      // before either of those, so the test would pass with the check in the
+      // wrong place. Verified by moving the assertion and watching this go red.
+      const findById = vi.spyOn(groupRepo, 'findById');
+      const findMembers = vi.spyOn(groupRepo, 'findMembers');
+      const removeMember = vi.spyOn(groupRepo, 'removeMember');
+
+      await expect(
+        staff.removeMember('group-1', 'student-2', ASSIGNED_TA),
+      ).rejects.toThrow(ForbiddenException);
+
+      // Not merely "did not remove" - did not *read*. The capability check is
+      // the first statement in the method, so a refused assistant cannot use the
+      // difference between a 403 and a 404 to learn whether a group or a
+      // membership exists.
+      expect(findById).not.toHaveBeenCalled();
+      expect(findMembers).not.toHaveBeenCalled();
+      expect(removeMember).not.toHaveBeenCalled();
+    });
+
+    it('writes no audit entry for the refused removal', async () => {
+      await expect(
+        staff.removeMember('group-1', 'student-2', ASSIGNED_TA),
+      ).rejects.toThrow(ForbiddenException);
+      expect(
+        (await entries()).filter((e) => e.action === 'group.student_removed'),
+      ).toEqual([]);
+    });
+
+    it('leaves the student in the group', async () => {
+      await expect(
+        staff.removeMember('group-1', 'student-2', ASSIGNED_TA),
+      ).rejects.toThrow(ForbiddenException);
+      const members = await staff.members('group-1');
+      expect(members.map((m) => m.studentId)).toContain('student-2');
+    });
+
+    it('still lets the assistant add a member - add stays, remove moves', async () => {
+      // The paired grant from the client's 2026-09-10 answer. Losing it would
+      // be an over-correction, and the e2e suite alone would not distinguish
+      // "the assistant cannot remove" from "the assistant cannot place".
+      await staff.addMember('group-2', { studentId: 'student-1' }, ASSIGNED_TA);
+      const members = await staff.members('group-2');
+      expect(members.map((m) => m.studentId)).toContain('student-1');
+    });
+
+    it.each([
+      ['the teacher', ADMIN],
+      ['the full admin', FULL_ADMIN],
+    ])('lets %s remove a member', async (_label, actor) => {
+      await staff.removeMember('group-1', 'student-2', actor);
+      const members = await staff.members('group-1');
+      expect(members.map((m) => m.studentId)).not.toContain('student-2');
+    });
+
+    it('records the full admin as admin on the removal', async () => {
+      await staff.removeMember('group-1', 'student-2', FULL_ADMIN);
+      const entry = (await entries()).find(
+        (e) => e.action === 'group.student_removed',
+      );
+      expect(entry).toMatchObject({
+        actorId: 'admin-1',
+        actorRole: Role.Admin,
+      });
     });
   });
 });

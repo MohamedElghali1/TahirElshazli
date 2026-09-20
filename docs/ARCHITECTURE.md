@@ -99,11 +99,17 @@ The redesign adds ~17 actions. Each needs the union entry, the `Record` entry, a
 the entry it writes.
 
 ### 2.4 One scoping chokepoint
-`StaffScopeService` is the only place that answers "may this staff member reach this?". Eight
-services call it. It 404s rather than 403s, with a message identical to a genuine miss.
+`StaffScopeService` is the only place that answers "may this staff member reach this?". **Nine**
+services call it, across 22 `assertAssigned`/`scopeFor` call sites. It 404s rather than 403s, with a
+message identical to a genuine miss.
+
+(Corrected from "eight" on 2026-09-19. The nine are `announcements`, `groups`,
+`manage/assessment-authoring`, `manage/grading`, `manage/manage-live-sessions`,
+`manage/manage-recordings`, `manage/manage`, `manage/work-analytics-gate`, `staff/staff`. Planning a
+chokepoint rewrite against eight of nine callers leaves one un-migrated.)
 
 `AUTH-2` rewrites its internals from course-scoped to group-scoped. **Its interface and its 404
-behaviour must not change** — the eight callers and the anti-enumeration property both depend on
+behaviour must not change** — the nine callers and the anti-enumeration property both depend on
 them, and `staff-scope.service.spec.ts` is the contract.
 
 ### 2.5 Config ports with honest degradation

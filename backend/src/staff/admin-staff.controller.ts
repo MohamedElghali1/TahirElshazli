@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { StaffService, type CourseStaffMember } from './staff.service.js';
 import { Roles } from '../auth/roles.decorator.js';
-import { Role } from '../auth/roles.enum.js';
+import { STAFF_ADMIN } from '../auth/staff-roles.js';
 import { AssignStaffDto } from './dto/assign-staff.dto.js';
 import type { JwtPayload } from '../auth/jwt.strategy.js';
 
@@ -25,7 +25,7 @@ import type { JwtPayload } from '../auth/jwt.strategy.js';
  * and mixing the two role sets in one file makes it stop being the answer.
  */
 @Controller('admin/courses/:courseId/staff')
-@Roles(Role.Teacher)
+@Roles(...STAFF_ADMIN)
 export class AdminStaffController {
   constructor(private readonly staffService: StaffService) {}
 

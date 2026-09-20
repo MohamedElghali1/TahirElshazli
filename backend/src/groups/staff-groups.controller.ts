@@ -10,7 +10,7 @@ import {
   Request,
 } from '@nestjs/common';
 import { Roles } from '../auth/roles.decorator.js';
-import { Role } from '../auth/roles.enum.js';
+import { STAFF_ADMIN, STAFF_ALL } from '../auth/staff-roles.js';
 import type { JwtPayload } from '../auth/jwt.strategy.js';
 import { AddGroupMemberDto } from './dto/group.dto.js';
 import type { GroupMemberView, GroupSummary } from './groups.service.js';
@@ -40,7 +40,7 @@ import { GroupsService } from './groups.service.js';
  * `app.module.ts`, and `RolesGuard` refuses any route with no `@Roles`.
  */
 @Controller('staff')
-@Roles(Role.Assistant, Role.Teacher)
+@Roles(...STAFF_ALL)
 export class StaffGroupsController {
   constructor(private readonly groups: GroupsService) {}
 
@@ -89,7 +89,24 @@ export class StaffGroupsController {
     return { ok: true };
   }
 
+  /**
+   * **Teacher and admin only** (`AUTH-3`, `API_SPEC.yaml:713-727`), which is a
+   * narrowing of shipped behaviour: this route was TA-reachable through the
+   * class-level `@Roles`.
+   *
+   * A **method-level** override rather than a move to `AdminGroupsController`,
+   * because the path stays `/staff/groups/…` in the contract and moving the
+   * handler would change the URL. `RolesGuard` reads
+   * `getAllAndOverride(ROLES_KEY, [handler, class])` (`roles.guard.ts:62-65`),
+   * so handler metadata wins over the class's.
+   *
+   * **403, not 404.** The assistant is looking at the roster - they can see the
+   * group and the student - so it is the verb that is refused, not the
+   * resource's existence. `GroupsService.removeMember` refuses again with the
+   * same status regardless of what reaches it.
+   */
   @Delete('groups/:groupId/members/:studentId')
+  @Roles(...STAFF_ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
   async removeMember(
     @Param('groupId') groupId: string,

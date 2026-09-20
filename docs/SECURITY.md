@@ -77,9 +77,24 @@ an existing password account by email alone** — that is an account-takeover pr
 can register the same address at Google first.
 
 ### 2.7 Role widening
-`AUTH-1` touches ~30 routes. The risk is a missed `@Roles` widening (a broken feature — loud) or an
-**over-widening** (a silent hole). Mitigation: define the teacher/admin pair once as a constant, and
-add `admin` to the existing `it.each` refusal tables so every route is asserted in both directions.
+`AUTH-1` touches **63 routes across 14 `@Roles` decorator sites** (corrected 2026-09-19 from "~30
+routes"; `@Roles` is class-level throughout, so sites and routes differ by more than a factor of
+four). The risk is a missed `@Roles` widening (a broken feature — loud) or an **over-widening** (a
+silent hole).
+
+**The compiler helps with neither.** There is no `Record<Role, …>` and no `switch` on a role value
+anywhere in `backend/src` or `frontend/`, so adding a `Role` member produces **zero** compile errors
+and every site must be found by enumeration.
+
+Mitigation, as built: the teacher/admin pair is defined once as `STAFF_ADMIN` and the three staff
+roles once as `STAFF_ALL`; the existing `it.each` refusal tables asserting a TA gets 403 on `/admin/*`
+were kept **unedited** and still pass; a 24-route parity table asserts the admin and the teacher
+receive identical status codes on every `/admin/*` route; and
+`backend/src/auth/role-guards.spec.ts` discovers every controller with `import.meta.glob` and asserts
+`STAFF_ADMIN` excludes `Role.Assistant`, that no `admin/`-mounted controller admits an assistant, a
+student, a parent or a visitor, that the `@Public()` surface is exactly the ten intended handlers, and
+that no route handler relies on `RolesGuard`'s fail-closed 403 to hide it. That test was verified to
+**fail** on both an over-widening and a missed widening before being relied on.
 
 ---
 

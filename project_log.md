@@ -3174,3 +3174,131 @@ already components rather than lines inside the page.
   than in all three states.
 - `/dashboard` is now the only student page on the shell's 40px header; the
   rest still draw their own. Unchanged from yesterday and still open.
+
+---
+
+## 2026-09-19 — Chat unit 1: the Full admin becomes a real role (`AUTH-1`, `AUTH-3`)
+
+First unit of the redesign to write backend code. Run through the three-agent pipeline:
+`redesign-planner` produced `docs/phases/unit-1/PHASE_PLAN.md` (993 lines), the coordinator ruled on
+its eight open questions in `COORDINATOR_RULINGS.md`, and this is the executor's pass.
+`docs/phases/unit-1/EXECUTION_NOTES.md` has the real command output.
+
+**A previous executor run died on a session limit having written nothing**, and its brief died with
+it. That is why the rulings are a file rather than a prompt, and why the execution notes are appended
+step by step instead of written at the end.
+
+### What landed
+
+`Role.Admin` — a sixth role, identical to the teacher in permission and distinct in identity, because
+attribution is the entire reason it is a role rather than a second teacher account. Migration `011`
+widens `users_role_check` and `audit_log_actor_role_check` to admit `'admin'`. Both staff role sets are
+defined once (`auth/staff-roles.ts`) and applied at 14 `@Roles` decorator sites covering 63 routes.
+An `admin-1` / `admin@example.com` fixture exists in both drivers. `AUTH-3` adds
+`auth/capabilities.ts` — the four withheld verbs as an exhaustive `Record` — and moves
+`DELETE /staff/groups/:groupId/members/:studentId` to teacher/admin with a 403.
+
+### The part that mattered, and it was not the enum
+
+**Fourteen hand-written `actorRole` ternaries would have made the new role useless.** Nine services
+carried an expression collapsing the role to a binary, in two families that failed in *opposite*
+directions: seven sites `role === Assistant ? Assistant : Teacher` (an admin logged as **teacher**),
+five `role === Teacher ? Teacher : Assistant` (an admin logged as **assistant**, landing inside the
+assistant activity trail that `PEOPLE-5` will render). Two more in `staff/staff.service.ts` were
+hardcoded `Role.Teacher`.
+
+Nothing would have errored. Migration `011` makes the column *able* to hold `'admin'`, so **the
+database accepts the lie** — and the audit log has no UPDATE and no DELETE path, so every entry
+written in that window would have been wrong permanently. The role would have existed and provided
+exactly none of the attribution it was added for.
+
+All fourteen now go through one `actorRoleOf` (`auth/actor-role.ts`), which **validates and throws**
+rather than defaulting: a role that is not a `Role` member means the actor construction upstream is
+broken, and filing it as `assistant` to keep the request alive is how the defect recurs.
+
+The plan's sequencing put this refactor *before* the decorators widened, so the window never opened.
+
+### Two tests that were made to fail on purpose
+
+Neither of these is worth having unless it can fail, and both were checked rather than assumed.
+
+- `auth/role-guards.spec.ts` discovers every controller with `import.meta.glob` and reflects `@Roles`
+  off all 25 of them. It exists because **adding a `Role` member produces zero compile errors** — no
+  `Record<Role, …>`, no `switch` on a role, anywhere in either workspace — so a missed widening (loud)
+  and an over-widening (**silent**, and the `/admin/*` hole) are both found only by enumeration.
+  Verified by over-widening `/admin/audit-log` to the assistant (2 failures) and by reverting
+  `StaffManageController` to its old role pair (1 failure), then restoring both.
+- The service-layer refusal in `groups.controller.spec.ts` asserts the capability check runs **before**
+  any repository read. The first version spied on `findMembers` and `removeMember` and **passed even
+  with the check moved after the group read** — `assertMay` still threw before those two. Strengthened
+  to spy on `findById`, the actual first read, which does fail in the wrong position. A test that
+  cannot fail is a comment; this one nearly shipped as one.
+
+### Not done, and why
+
+**Migration `011` has never run against real PostgreSQL.** No Docker daemon on this machine, nothing
+on 5432, no `psql`. `SPEC-12` is the open gate. So Definition-of-Done point 2 is **NOT MET**, `AUTH-1`
+is held at `[~]` and unit 1 is **not** complete — the *environment* blocked verification, not the
+work. `011` is the lowest-risk migration in the plan (two CHECK widenings, strictly looser, no data
+loss possible), which is what makes authoring it unverified defensible where it would not be for
+`DOM-1`'s destructive collapse. The integration suite **skipped itself**: 81 tests skipped, and a
+skipped suite is not a passing one.
+
+### Scope narrowed, deliberately
+
+`AUTH-2` moved to unit 2 and `AUTH-4` to unit 5 (`docs/CHANGELOG.md` has the full argument). The
+forcing constraint is mechanical: `AUTH-2`'s migration `014` joins `groups.course_id`, which `DOM-1`'s
+`013` creates, and `MigrationRunner` sorts filenames lexicographically — so a `014` with no `013`
+applies straight after `012` and aborts every boot and every integration run. The better reason is
+that `groups.assistant_id` (`DOM-2`) and `assistant_group_assignments` (`AUTH-2`) record the same
+authorization-bearing fact twice, and designing them in different units is how they end up
+disagreeing. Nothing downstream slipped: unit 5 depended on units 1 **and** 2 either way.
+
+### Follow-ups found and recorded rather than fixed
+
+- **`/notifications` is absent from `API_SPEC.yaml` entirely** — three implemented routes, widened by
+  this unit, with no entry in a spec marked `[x]` and validated.
+- Two `/admin/*` spec paths carry `x-roles: [… assistant]` (`/admin/students/{studentId}`,
+  `/admin/announcements/reach`) against the rule that `/admin/*` is teacher/admin and unscoped. Both
+  are unimplemented target routes, so nothing is wrong in the code — but the contract disagrees with
+  itself.
+- `GET /admin/assistants` now lists the Full admin, and `StaffService.assign` refuses a
+  non-assistant — so the course-staff picker shows a row it cannot act on. The emitted `role` field is
+  what lets the console suppress it; `PEOPLE-4` owns the screen.
+- `Assistant.lastSeenAt` has no source anywhere in the repository. Filed as `PEOPLE-6` `[!]`, emitting
+  `null`. Populating it means a write on every authenticated request for a figure nobody has asked to
+  act on.
+
+---
+
+## 2026-09-20 — Phase 1 complete; the migration gate closed
+
+`SPEC-12` had been the hard gate since phase 0: migrations 009 and 010 had never run against a real
+database, and unit 1 wrote `011` on top of them. Docker Desktop was started and the suite run against
+a **fresh, empty** database created beside the dev one — `CREATE DATABASE lms_migtest` rather than
+dropping `tahirelshazli_postgres_data`, which held 27 tables of existing data.
+
+All eleven migrations applied in order, four seed files, **81/81 integration tests passed**.
+
+**It found nothing, and that is the notable part.** 001–008 had each found something on their first
+real run. The one defect unit 1's review specifically predicted — `010`'s `score NUMERIC(10,2)`
+coming back from `pg` as the string `"85.00"`, the same class as the audit cursor bug — was probed
+directly and is already handled: the repository declares the row type as `string | null` and maps
+through `numOrNull`. The risk was real; the code was already right.
+
+`011` was verified behaviourally rather than merely applied: `admin` inserts, `'admln'` is rejected by
+`users_role_check`, and `audit_log_actor_role_check` admits `admin`. Review risk R-5 — Postgres having
+named the inline CHECK something other than `<table>_<column>_check`, which would have aborted the
+migration — did not materialise.
+
+**Chat unit 1 is COMPLETE**, all nine conditions of `PHASE_ROADMAP.md` §2. Final state: 467 unit ·
+216 e2e · 81 integration · frontend 301 pre-existing errors, 0 in `lib/`.
+
+The pipeline itself earned its keep three times: the planner refused to build `AUTH-2` and proved why
+from `MigrationRunner`'s lexicographic sort; the reviewer caught the executor overstating twice and
+caught a capability spec that could not fail; and two executors died on session limits without
+corrupting anything, because the handoff lives in files.
+
+**Not done:** `SPEC-16` and `SPEC-17` — two `API_SPEC.yaml` reconciliations unit 1 surfaced, both
+awaiting a decision (`D-7`, `D-8`), which is why unit 0 stays `[~]`. Next is unit 2 (`DOM-1` + the
+re-homed `AUTH-2`), in a new conversation.

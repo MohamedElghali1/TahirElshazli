@@ -55,26 +55,37 @@ export interface UserRepository {
    */
   findByIds(userIds: readonly string[]): Promise<StoredUser[]>;
   /**
-   * The admin directory read: accounts of one role, paged and optionally
+   * The admin directory read: accounts of the given roles, paged and optionally
    * name/email searched.
    *
-   * `role` is required rather than optional, and that is the safety property -
-   * there is no call shape here that returns "every account on the platform",
-   * so the student directory cannot accidentally list teachers and the TA
-   * picker cannot accidentally list students. Admin-only either way
+   * `roles` is required **and must be non-empty**, and that is the safety
+   * property - there is no call shape here that returns "every account on the
+   * platform", so the student directory cannot accidentally list teachers and
+   * the TA picker cannot accidentally list students. Admin-only either way
    * (CLAUDE.md §2.2); the controller enforces that.
+   *
+   * It takes a list rather than one role because the staff directory has to
+   * show the Full admin beside the assistants (AUTH-1, `API_SPEC.yaml:210-221`
+   * - the `Assistant` schema's `role` is `[assistant, admin]`). Both
+   * implementations **throw on an empty array**: read as "no filter" it would
+   * hand the caller every account, which is exactly the shape the single-role
+   * parameter existed to make unwritable.
    */
   findByRole(
-    role: Role,
+    roles: readonly Role[],
     options: { search?: string; limit: number; offset: number },
   ): Promise<StoredUser[]>;
   /**
    * Every account id holding a role, resolved *now*.
    *
    * This is what CLAUDE.md §5.14 requires: an announcement's `all_tas` audience
-   * resolves from `role = 'assistant'` at the moment of sending, never from a
-   * list of ids frozen when it was drafted - which would silently miss a TA
-   * hired in between.
+   * resolves from the role at the moment of sending, never from a list of ids
+   * frozen when it was drafted - which would silently miss a TA hired in
+   * between.
+   *
+   * A list of roles, for the same reason `findByRole` takes one, and **empty
+   * throws** rather than meaning "everyone": an audience bug here does not
+   * return too little, it mails the whole platform.
    *
    * Ids only, and unpaged. Ids only because the caller writes one notification
    * row per recipient and needs nothing else - `findByRole` would drag a name,
@@ -84,7 +95,7 @@ export interface UserRepository {
    * with no ceiling, and it is why a platform-wide send belongs in a background
    * job once the roll is in the thousands (§1) rather than in a request.
    */
-  findIdsByRole(role: Role): Promise<string[]>;
+  findIdsByRole(roles: readonly Role[]): Promise<string[]>;
   /**
    * Students whose LMS address *or* recorded Google address is in this list.
    *

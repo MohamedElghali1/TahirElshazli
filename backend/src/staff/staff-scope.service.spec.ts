@@ -9,6 +9,13 @@ const ASSIGNED_TA: StaffActor = { id: 'assistant-1', role: 'assistant' };
 /** A TA with no assignments at all. */
 const UNASSIGNED_TA: StaffActor = { id: 'assistant-2', role: 'assistant' };
 const ADMIN: StaffActor = { id: 'teacher-1', role: 'teacher' };
+/**
+ * The Full admin (AUTH-1). Unscoped for the same reason the teacher is, and
+ * covered here because `isAdmin` is one line: if it is missed, an admin passes
+ * `RolesGuard`, finds no assignment row and 404s on every course. The e2e parity
+ * table would catch that, but this catches it a suite earlier.
+ */
+const FULL_ADMIN: StaffActor = { id: 'admin-1', role: 'admin' };
 
 describe('StaffScopeService', () => {
   let service: StaffScopeService;
@@ -62,11 +69,14 @@ describe('StaffScopeService', () => {
       );
     });
 
-    it('should let an admin through without an assignment row', async () => {
+    it.each([
+      ['the teacher', ADMIN],
+      ['the full admin', FULL_ADMIN],
+    ])('should let %s through without an assignment row', async (_label, actor) => {
       // §5.11: admin queries never join through CourseStaffAssignment.
-      await expect(service.assertAssigned('course-2', ADMIN)).resolves.toBeNull();
+      await expect(service.assertAssigned('course-2', actor)).resolves.toBeNull();
       await expect(
-        service.assertAssigned('course-does-not-exist', ADMIN),
+        service.assertAssigned('course-does-not-exist', actor),
       ).resolves.toBeNull();
     });
   });
@@ -86,14 +96,19 @@ describe('StaffScopeService', () => {
       expect(scope.assignments).toEqual([]);
     });
 
-    it('should report an admin as unscoped', async () => {
-      await expect(service.scopeFor(ADMIN)).resolves.toEqual({ unscoped: true });
+    it.each([
+      ['the teacher', ADMIN],
+      ['the full admin', FULL_ADMIN],
+    ])('should report %s as unscoped', async (_label, actor) => {
+      await expect(service.scopeFor(actor)).resolves.toEqual({ unscoped: true });
     });
 
     it('should not treat any other role as unscoped', async () => {
       // A student or parent should never reach these services, but if a future
       // @Roles slip lets one through, the scope must still be a closed one.
-      for (const role of ['student', 'parent', 'visitor', '']) {
+      // 'ADMIN' is in the list on purpose: the comparison is case-sensitive
+      // and must stay so, or a mis-cased role on a hand-made token is unscoped.
+      for (const role of ['student', 'parent', 'visitor', '', 'ADMIN', 'administrator']) {
         const scope = await service.scopeFor({ id: 'someone', role });
         expect(scope.unscoped).toBe(false);
       }

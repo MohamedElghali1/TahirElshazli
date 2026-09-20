@@ -11,6 +11,7 @@ import { COURSE_REPOSITORY } from '../courses/interfaces/course-repository.inter
 import type { UserRepository } from '../auth/interfaces/user-repository.interface.js';
 import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js';
 import { Role } from '../auth/roles.enum.js';
+import { actorRoleOf } from '../auth/actor-role.js';
 import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
 
@@ -177,7 +178,10 @@ export class StaffService {
 
       await this.audit.record({
         actorId: admin.id,
-        actorRole: Role.Teacher,
+        // Derived, not assumed. These two routes widen to the Full admin with
+        // AUTH-1, and a hardcoded `Role.Teacher` would file an admin's staff
+        // assignment as Dr. Tahir's - permanently, the log has no UPDATE.
+        actorRole: actorRoleOf(admin),
         action: 'course_staff.assigned',
         targetType: 'course_staff_assignment',
         targetId: row.id,
@@ -225,7 +229,10 @@ export class StaffService {
 
       await this.audit.record({
         actorId: admin.id,
-        actorRole: Role.Teacher,
+        // Derived, not assumed. These two routes widen to the Full admin with
+        // AUTH-1, and a hardcoded `Role.Teacher` would file an admin's staff
+        // assignment as Dr. Tahir's - permanently, the log has no UPDATE.
+        actorRole: actorRoleOf(admin),
         action: 'course_staff.unassigned',
         targetType: 'course_staff_assignment',
         targetId: existing.id,

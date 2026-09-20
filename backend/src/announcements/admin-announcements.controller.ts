@@ -9,7 +9,7 @@ import {
   Request,
 } from '@nestjs/common';
 import { Roles } from '../auth/roles.decorator.js';
-import { Role } from '../auth/roles.enum.js';
+import { STAFF_ADMIN } from '../auth/staff-roles.js';
 import type { JwtPayload } from '../auth/jwt.strategy.js';
 import {
   AnnouncementsService,
@@ -33,7 +33,7 @@ import {
  * route is not something they could ever hold.
  */
 @Controller('admin')
-@Roles(Role.Teacher)
+@Roles(...STAFF_ADMIN)
 export class AdminAnnouncementsController {
   constructor(private readonly announcements: AnnouncementsService) {}
 

@@ -16,7 +16,7 @@ import type { CourseRepository } from '../courses/interfaces/course-repository.i
 import { COURSE_REPOSITORY } from '../courses/interfaces/course-repository.interface.js';
 import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
-import { Role } from '../auth/roles.enum.js';
+import { actorRoleOf } from '../auth/actor-role.js';
 
 /** What a teacher supplies to publish a recording. `courseId` comes from the URL. */
 export interface CreateRecordingInput {
@@ -52,16 +52,6 @@ export class ManageRecordingsService {
   ) {}
 
   /** Shared read: the TA sees their assigned courses, the teacher sees any. */
-  /**
-   * The role recorded on the audit entry, derived from the caller rather than
-   * assumed. These routes are teacher-only today (§2.2 grants a TA materials
-   * and never recordings), but if that widens an assistant's upload must not
-   * be attributed to Dr. Tahir.
-   */
-  private roleOf(actor: StaffActor): Role {
-    return actor.role === Role.Assistant ? Role.Assistant : Role.Teacher;
-  }
-
   /**
    * The scope check for a write addressed by resource id. Collapses the
    * out-of-scope 404 into the resource's own wording, so a real id on another
@@ -137,7 +127,7 @@ export class ManageRecordingsService {
 
       await this.audit.record({
         actorId: actor.id,
-        actorRole: this.roleOf(actor),
+        actorRole: actorRoleOf(actor),
         action: 'recording.created',
         targetType: 'recording',
         targetId: recording.id,
@@ -178,7 +168,7 @@ export class ManageRecordingsService {
 
       await this.audit.record({
         actorId: actor.id,
-        actorRole: this.roleOf(actor),
+        actorRole: actorRoleOf(actor),
         action: 'recording.updated',
         targetType: 'recording',
         targetId: recordingId,
@@ -215,7 +205,7 @@ export class ManageRecordingsService {
 
       await this.audit.record({
         actorId: actor.id,
-        actorRole: this.roleOf(actor),
+        actorRole: actorRoleOf(actor),
         action: 'recording.deleted',
         targetType: 'recording',
         targetId: recordingId,

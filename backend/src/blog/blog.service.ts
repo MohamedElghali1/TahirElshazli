@@ -6,7 +6,8 @@ import {
 } from '@nestjs/common';
 import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
-import { Role } from '../auth/roles.enum.js';
+import { isUnscopedStaffRole } from '../auth/staff-roles.js';
+import { actorRoleOf } from '../auth/actor-role.js';
 import type { StaffActor } from '../staff/staff-scope.service.js';
 import type { UserRepository } from '../auth/interfaces/user-repository.interface.js';
 import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js';
@@ -187,7 +188,7 @@ export class BlogService {
         // Dr. Tahir's must not read alike in the log - which matters more here
         // than usual, because the byline on the public page comes from the
         // same id.
-        actorRole: actor.role === Role.Assistant ? Role.Assistant : Role.Teacher,
+        actorRole: actorRoleOf(actor),
         action: 'blog_post.created',
         targetType: 'blog_post',
         targetId: post.id,
@@ -254,7 +255,7 @@ export class BlogService {
 
       await this.audit.record({
         actorId: actor.id,
-        actorRole: actor.role === Role.Assistant ? Role.Assistant : Role.Teacher,
+        actorRole: actorRoleOf(actor),
         action: 'blog_post.updated',
         targetType: 'blog_post',
         targetId: postId,
@@ -315,7 +316,7 @@ export class BlogService {
 
       await this.audit.record({
         actorId: actor.id,
-        actorRole: actor.role === Role.Assistant ? Role.Assistant : Role.Teacher,
+        actorRole: actorRoleOf(actor),
         action: 'blog_post.media_set',
         targetType: 'blog_post',
         targetId: postId,
@@ -349,7 +350,7 @@ export class BlogService {
       await this.blogRepo.remove(postId);
       await this.audit.record({
         actorId: actor.id,
-        actorRole: actor.role === Role.Assistant ? Role.Assistant : Role.Teacher,
+        actorRole: actorRoleOf(actor),
         action: 'blog_post.deleted',
         targetType: 'blog_post',
         targetId: postId,
@@ -391,7 +392,7 @@ export class BlogService {
    * pretending otherwise would just make the UI lie about a row it is showing.
    */
   private assertMayMutate(post: BlogPostWithMedia, actor: StaffActor): void {
-    if (actor.role === Role.Teacher) {
+    if (isUnscopedStaffRole(actor.role)) {
       return;
     }
     if (post.authorId !== actor.id) {

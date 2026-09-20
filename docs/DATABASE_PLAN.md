@@ -214,14 +214,28 @@ this scale round trips and row volume matter and query counts mostly do not.
 
 ## 7. Migration order
 
-`011` roles + user status · `012` student profile fields · `013` **group collapse** (destructive) ·
+`011` **the two role CHECK widenings, and nothing else** · `012` `users.status` (registration
+approval, `DOM-4`) **+** student profile fields · `013` **group collapse** (destructive) ·
 `014` assistant scope tables + data move · `015` task drafts + assessment columns ·
 `016` annotations + submission columns · `017` sessions rework · `018` attendance enum ·
 `019` weekly reports · `020` announcements (group audience, media, draft) ·
 `021` notification preferences + mail deliveries
 
+**Corrected 2026-09-19.** This list previously read "`011` roles + user status", which attributed two
+different units' work to one file: `AUTH-1` (unit 1) and `DOM-4` (unit 2). **A migration file is
+immutable once applied** — the ledger records it by filename — so unit 2 could not have appended to
+it. `011_full_admin_role.sql` shipped in unit 1 as two `ALTER TABLE … DROP CONSTRAINT … ADD
+CONSTRAINT` statements widening `users_role_check` and `audit_log_actor_role_check` to admit
+`'admin'`, and **`users.status` is not in it**. `DOM-4` takes its own number.
+
+(The one precedent for amending a migration in place is 002, and it required proof the file had never
+been applied anywhere real. 011 is in the same position *today* — it has never run — but that is an
+argument for running it, not for treating it as editable.)
+
 013 and 014 are the pair to be careful with: **013 must land and be verified before 014**, because
-014's backfill joins through `groups.course_id`.
+014's backfill joins through `groups.course_id`. That is also why `AUTH-2` moved out of unit 1 and
+into unit 2 on 2026-09-19 (`CHANGELOG.md`): a `014` authored with no `013` present applies straight
+after `012` and aborts every boot, because `MigrationRunner.sqlFilesIn` sorts lexicographically.
 
 ---
 
@@ -232,7 +246,7 @@ this scale round trips and row volume matter and query counts mostly do not.
 | A group studying two courses | Migration raises rather than guessing (§4.1) |
 | A course with two groups, when re-parenting sessions | Same (§4.4) |
 | Seed fixtures break on 013/`users.status` | **Regenerate, don't migrate** — the precedent is `CLAUDE.md` §7.1's call on assessment targeting: fixtures exist to make a dev database useful, and preserving them would add permanent concepts to protect throwaway rows |
-| Migrations 009 and 010 have never run against real Postgres | Run the integration suite **before** authoring 011; every prior first-run in this project found something |
+| Migrations 009 and 010 have never run against real Postgres | **Still open as of 2026-09-19.** The mitigation was "run the integration suite before authoring 011"; it was **not** met — `011` was authored unverified on the user's direction, because there is no reachable PostgreSQL on the development machine (Docker daemon down). `011` is the lowest-risk migration in the plan — two CHECK widenings, strictly looser, no data loss possible — which is what makes proceeding defensible where it would not be for `013`. **The exposure that remains:** `011` will be applied for the first time in the same run as 009 and 010, and the runner stops at the first failing file, so a defect in either **masks `011` entirely**. Named candidates in `docs/phases/unit-1/PHASE_PLAN.md` §9 R-2 — the likeliest is `010`'s `NUMERIC(10,2)` columns, which `pg` returns as **strings**, invisible on the memory driver where the fixture is a JS number |
 | An audit action added to the union but not the DTO's exhaustive `Record` | Compile error by construction — keep that pattern for all ~17 new actions |
 | In-memory and Postgres drivers drifting | Every new table gets both, and an integration test; the suite already covers all 17 existing pairs |
 

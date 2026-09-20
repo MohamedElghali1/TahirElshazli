@@ -8,8 +8,15 @@
 -- (CLAUDE.md §5.11), which is the one thing worth testing here. The gap is the
 -- fixture.
 
--- Same bcrypt hash of "password123" as every other seeded account.
+-- `admin-1` is the Full admin (AUTH-1) - the teacher's permission under her
+-- own identity. She needs migration 011 to have run: before it, `users_role_check`
+-- refuses the value `'admin'` and this INSERT aborts the seed.
+--
+-- Same bcrypt hash of "password123" as every other seeded account. That hash is
+-- published, which is why `resolveAutoSeed` refuses to seed in production
+-- (CLAUDE.md §8) - seeding a real database would hand out a full-admin login.
 INSERT INTO users (id, email, password_hash, role, name, created_at) VALUES
+  ('admin-1',     'admin@example.com',      '$2b$10$vH5MRaUG1QbYnIcsyN12zOEvyckQqIdz9bB93STxpIzDiIVDQF81i', 'admin',     'Mona Saleh',  '2026-01-20T09:00:00Z'),
   ('assistant-1', 'assistant@example.com',  '$2b$10$vH5MRaUG1QbYnIcsyN12zOEvyckQqIdz9bB93STxpIzDiIVDQF81i', 'assistant', 'Nour Hassan', '2026-01-25T09:00:00Z'),
   ('assistant-2', 'assistant2@example.com', '$2b$10$vH5MRaUG1QbYnIcsyN12zOEvyckQqIdz9bB93STxpIzDiIVDQF81i', 'assistant', 'Omar Fathy',  '2026-02-10T09:00:00Z')
 ON CONFLICT (id) DO NOTHING;

@@ -9,7 +9,7 @@ import {
   Request,
 } from '@nestjs/common';
 import { Roles } from '../auth/roles.decorator.js';
-import { Role } from '../auth/roles.enum.js';
+import { STAFF_ALL } from '../auth/staff-roles.js';
 import type { JwtPayload } from '../auth/jwt.strategy.js';
 import {
   WorkAnalyticsService,
@@ -41,7 +41,7 @@ import type { ExternalResult } from '../assessments/interfaces/work-repository.i
  * behind a course id that they do.
  */
 @Controller('staff')
-@Roles(Role.Assistant, Role.Teacher)
+@Roles(...STAFF_ALL)
 export class WorkAnalyticsController {
   constructor(
     private readonly analytics: WorkAnalyticsService,

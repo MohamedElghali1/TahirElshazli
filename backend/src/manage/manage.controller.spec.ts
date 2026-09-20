@@ -28,6 +28,7 @@ import { InMemoryRecordingRepository } from '../recordings/repositories/in-memor
 import { LIVE_SESSION_REPOSITORY } from '../live-sessions/interfaces/live-session-repository.interface.js';
 import { InMemoryLiveSessionRepository } from '../live-sessions/repositories/in-memory-live-session.repository.js';
 import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js';
+import { Role } from '../auth/roles.enum.js';
 import { InMemoryUserRepository } from '../auth/repositories/in-memory-user.repository.js';
 import { AUDIT_LOG_REPOSITORY } from '../audit/interfaces/audit-log-repository.interface.js';
 import { InMemoryAuditLogRepository } from '../audit/repositories/in-memory-audit-log.repository.js';
@@ -47,12 +48,17 @@ const UNASSIGNED_TA = {
 const ADMIN = {
   user: { sub: 'teacher-1', email: 't@example.com', role: 'teacher', jti: 'j3' },
 };
+/** The Full admin (AUTH-1): the teacher's reach under her own identity. */
+const FULL_ADMIN = {
+  user: { sub: 'admin-1', email: 'admin@example.com', role: 'admin', jti: 'j4' },
+};
 
 describe('Manage surface', () => {
   let staff: StaffManageController;
   let admin: AdminManageController;
   let audit: AuditService;
   let assessments: InMemoryAssessmentRepository;
+  let users: InMemoryUserRepository;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -106,6 +112,7 @@ describe('Manage surface', () => {
     admin = module.get(AdminManageController);
     audit = module.get(AuditService);
     assessments = module.get(ASSESSMENT_REPOSITORY);
+    users = module.get(USER_REPOSITORY);
   });
 
   describe('GET /staff/overview', () => {
@@ -285,6 +292,18 @@ describe('Manage surface', () => {
       const page = await audit.find({ limit: 10 });
       const entry = page.entries.find((e) => e.action === 'submission.graded');
       expect(entry?.actorRole).toBe('teacher');
+    });
+
+    it('records the full admin as admin, not as a teacher or an assistant', async () => {
+      // AUTH-1's whole reason for existing. Before `actorRoleOf` this line
+      // returned 'assistant' here - `grading.service.ts` carried the
+      // `=== Teacher ? Teacher : Assistant` form - so an admin's marking landed
+      // inside the assistant activity trail, permanently: the audit log has no
+      // UPDATE and no DELETE path.
+      await staff.grade('sub-2', { score: 11 }, FULL_ADMIN);
+      const page = await audit.find({ limit: 10 });
+      const entry = page.entries.find((e) => e.action === 'submission.graded');
+      expect(entry).toMatchObject({ actorId: 'admin-1', actorRole: 'admin' });
     });
   });
 
@@ -575,7 +594,30 @@ describe('Manage surface', () => {
     it('lists assistants for the assignment picker', async () => {
       const assistants = await admin.assistants({});
       expect(assistants.length).toBeGreaterThan(0);
-      expect(assistants.every((a) => a.email.includes('assistant'))).toBe(true);
+      // Assistants and the Full admin, and nothing else. The list used to be
+      // assistants alone; an `admin` account that appeared in no directory
+      // would be a person with the teacher's access whom nobody can see
+      // (AUTH-1, `API_SPEC.yaml:217`).
+      expect(
+        assistants.every(
+          (a) => a.role === Role.Assistant || a.role === Role.Admin,
+        ),
+      ).toBe(true);
+      expect(assistants.map((a) => a.id)).toContain('assistant-1');
+      expect(assistants.map((a) => a.id)).toContain('admin-1');
+      expect(assistants.map((a) => a.id)).not.toContain('student-1');
+      expect(assistants.map((a) => a.id)).not.toContain('teacher-1');
+      // `role` is emitted so the console can tell the tiers apart - the picker
+      // must not offer to assign an admin, whom `StaffService.assign` refuses.
+      expect(assistants.find((a) => a.id === 'admin-1')?.role).toBe(Role.Admin);
+    });
+
+    it('refuses a role filter that would return every account', async () => {
+      // The safety property behind `findByRole`'s required, non-empty list: an
+      // empty filter must never be read as "no filter".
+      await expect(
+        users.findByRole([], { limit: 50, offset: 0 }),
+      ).rejects.toThrow();
     });
   });
 });

@@ -12,7 +12,7 @@ import {
   Request,
 } from '@nestjs/common';
 import { Roles } from '../auth/roles.decorator.js';
-import { Role } from '../auth/roles.enum.js';
+import { STAFF_ADMIN } from '../auth/staff-roles.js';
 import type { JwtPayload } from '../auth/jwt.strategy.js';
 import {
   AddGroupCourseDto,
@@ -45,7 +45,7 @@ import type {
  * rather than assuming the teacher.
  */
 @Controller('admin')
-@Roles(Role.Teacher)
+@Roles(...STAFF_ADMIN)
 export class AdminGroupsController {
   constructor(private readonly groups: GroupsService) {}
 

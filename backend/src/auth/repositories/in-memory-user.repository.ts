@@ -15,6 +15,22 @@ import type {
 const SEED_PASSWORD_HASH =
   '$2b$10$vH5MRaUG1QbYnIcsyN12zOEvyckQqIdz9bB93STxpIzDiIVDQF81i';
 
+/**
+ * An empty role list is a bug, never "every account".
+ *
+ * The single-role parameter this replaced made "return everything" unwritable
+ * by construction (`user-repository.interface.ts`); an array quietly makes it
+ * writable again, and `[].includes` is false for every row, so the honest
+ * failures are a silent empty page here and a silent empty audience in
+ * `findIdsByRole`. Refusing is the only reading that cannot be got wrong.
+ */
+function requireRoles(roles: readonly Role[]): Set<Role> {
+  if (roles.length === 0) {
+    throw new Error('a role filter requires at least one role');
+  }
+  return new Set(roles);
+}
+
 @Injectable()
 export class InMemoryUserRepository implements UserRepository {
   private users: StoredUser[] = [
@@ -43,6 +59,23 @@ export class InMemoryUserRepository implements UserRepository {
       role: Role.Teacher,
       name: 'Dr. Tahir Elshazli',
       createdAt: '2025-11-01T09:00:00Z',
+      googleEmail: null,
+    },
+    // The Full admin (AUTH-1): the teacher's permission under her own
+    // identity, which is the entire point of the role - every audit entry she
+    // writes says `admin`, not `teacher`. Mirrors
+    // `database/seeds/002_staff_fixtures.sql`.
+    //
+    // Not optional: the whole e2e suite runs on this driver and logs in by
+    // email, so without this row there is no admin token and none of the
+    // admin-parity or attribution tests can exist at all.
+    {
+      id: 'admin-1',
+      email: 'admin@example.com',
+      passwordHash: SEED_PASSWORD_HASH,
+      role: Role.Admin,
+      name: 'Mona Saleh',
+      createdAt: '2026-01-20T09:00:00Z',
       googleEmail: null,
     },
     // Two assistants, because one cannot demonstrate scoping: assistant-1 is
@@ -85,12 +118,13 @@ export class InMemoryUserRepository implements UserRepository {
   }
 
   async findByRole(
-    role: Role,
+    roles: readonly Role[],
     options: { search?: string; limit: number; offset: number },
   ): Promise<StoredUser[]> {
+    const wanted = requireRoles(roles);
     const needle = options.search?.trim().toLowerCase();
     return this.users
-      .filter((u) => u.role === role)
+      .filter((u) => wanted.has(u.role))
       .filter(
         (u) =>
           !needle ||
@@ -101,8 +135,9 @@ export class InMemoryUserRepository implements UserRepository {
       .slice(options.offset, options.offset + options.limit);
   }
 
-  async findIdsByRole(role: Role): Promise<string[]> {
-    return this.users.filter((u) => u.role === role).map((u) => u.id);
+  async findIdsByRole(roles: readonly Role[]): Promise<string[]> {
+    const wanted = requireRoles(roles);
+    return this.users.filter((u) => wanted.has(u.role)).map((u) => u.id);
   }
 
   async findStudentsByEmails(

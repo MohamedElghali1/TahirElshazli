@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Roles } from '../../auth/roles.decorator.js';
-import { Role } from '../../auth/roles.enum.js';
+import { STAFF_ALL } from '../../auth/staff-roles.js';
 import { RateLimit } from '../rate-limit/rate-limit.guard.js';
 import { UPLOAD_LIMIT } from '../rate-limit/limits.js';
 import { MAX_UPLOAD_BYTES, ALLOWED_UPLOAD_MIME_TYPES } from './upload-types.js';
@@ -41,7 +41,7 @@ import {
  * disk takes deliberate effort rather than one loop.
  */
 @Controller('staff')
-@Roles(Role.Assistant, Role.Teacher)
+@Roles(...STAFF_ALL)
 export class UploadsController {
   constructor(private readonly uploads: UploadsService) {}
 

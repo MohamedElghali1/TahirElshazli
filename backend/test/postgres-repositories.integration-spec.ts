@@ -722,7 +722,7 @@ describeIfDb('Postgres repositories', () => {
       // What CLAUDE.md §5.14 turns on: `all_tas` is this query, run at the
       // moment of sending, never a stored list.
       const repo = new PostgresUserRepository(db);
-      const before = await repo.findIdsByRole(Role.Assistant);
+      const before = await repo.findIdsByRole([Role.Assistant]);
       expect(before).toContain('assistant-1');
       expect(before).not.toContain('student-1');
 
@@ -732,7 +732,47 @@ describeIfDb('Postgres repositories', () => {
         name: 'Late Assistant',
         role: Role.Assistant,
       });
-      expect(await repo.findIdsByRole(Role.Assistant)).toContain(hire.id);
+      expect(await repo.findIdsByRole([Role.Assistant])).toContain(hire.id);
+    });
+
+    // AUTH-1. The `admin` value has to survive a real round trip, because
+    // migration 011 is the only thing that lets `users_role_check` accept it -
+    // on the memory driver the column does not exist and this cannot fail.
+    it('stores and reads back the admin role', async () => {
+      const repo = new PostgresUserRepository(db);
+      const seeded = await repo.findById('admin-1');
+      expect(seeded?.role).toBe(Role.Admin);
+
+      const created = await repo.create({
+        email: 'second.admin@example.com',
+        passwordHash: 'hash',
+        name: 'Second Admin',
+        role: Role.Admin,
+      });
+      expect((await repo.findById(created.id))?.role).toBe(Role.Admin);
+    });
+
+    it('matches any of several roles, and refuses an empty list', async () => {
+      // The staff directory reads both tiers in one query (AUTH-1); the
+      // `= ANY($1::text[])` predicate is what makes that one round trip.
+      const repo = new PostgresUserRepository(db);
+      const staff = await repo.findByRole([Role.Assistant, Role.Admin], {
+        limit: 50,
+        offset: 0,
+      });
+      const ids = staff.map((u) => u.id);
+      expect(ids).toContain('assistant-1');
+      expect(ids).toContain('assistant-2');
+      expect(ids).toContain('admin-1');
+      expect(ids).not.toContain('student-1');
+      expect(ids).not.toContain('teacher-1');
+
+      // The safety property the single-role parameter used to give for free:
+      // an empty list must never be read as "every account on the platform".
+      await expect(
+        repo.findByRole([], { limit: 50, offset: 0 }),
+      ).rejects.toThrow();
+      await expect(repo.findIdsByRole([])).rejects.toThrow();
     });
   });
   describe('course staff assignments', () => {

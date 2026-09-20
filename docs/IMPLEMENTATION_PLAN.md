@@ -9,6 +9,11 @@ Companion docs: `PRODUCT_SPEC.md` (what) · `DOMAIN_MODEL.md` (entities) ·
 `AUTHORIZATION_MODEL.md` (who) · `API_SPEC.yaml` (contract) · `DATABASE_PLAN.md` (schema) ·
 `SECURITY.md` · `ARCHITECTURE.md` · `CHANGELOG.md` (decisions).
 
+**`PHASE_ROADMAP.md` controls what may be worked on now**, and groups the phases below into fifteen
+chat units with entry and exit criteria. This file answers *is this task done*; that one answers *may
+this start, and is the phase closable*. The nine-condition phase completion protocol and the
+three-agent pipeline live there.
+
 ---
 
 ## Definition of done
@@ -45,29 +50,39 @@ A task is `[x]` only when **all applicable** hold:
 | `SPEC-2` | `DOMAIN_MODEL.md` | `[x]` |
 | `SPEC-3` | `AUTHORIZATION_MODEL.md` | `[x]` |
 | `SPEC-4` | `API_GAP_ANALYSIS.md` | `[x]` |
-| `SPEC-5` | `API_SPEC.yaml` (validated: 40 paths, 54 ops, 150 refs resolve) | `[x]` |
+| `SPEC-5` | `API_SPEC.yaml` (validated: 40 paths, 54 ops, 150 refs resolve). **The `[x]` is overstated** — validation proved the document is well-formed and its `$ref`s resolve, not that it covers what is implemented. `/notifications` has three implemented routes and no path entry at all (`SPEC-16`). | `[x]`* |
 | `SPEC-6` | `DATABASE_PLAN.md` | `[x]` |
 | `SPEC-7` | `SECURITY.md` | `[x]` |
 | `SPEC-8` | `ARCHITECTURE.md` | `[x]` |
 | `SPEC-9` | `IMPLEMENTATION_PLAN.md` (this file) | `[x]` |
 | `SPEC-10` | `CHANGELOG.md` | `[x]` |
 | `SPEC-11` | Amend `CLAUDE.md` §0, §2.1, §5.11.1, §5.16, §6.1, §7.2; mark `frontend-design-system.md` superseded | `[x]` |
-| `SPEC-12` | **Run migrations 009 + 010 against real Postgres** — never yet done; every prior first run found something | `[!]` |
+| `SPEC-12` | **Run migrations 009 + 010 against real Postgres.** **Done 2026-09-20.** All eleven migrations applied in order from an empty schema (`lms_migtest`, created beside the dev database rather than wiping it), all four seeds, **81/81 integration tests passed**. First ever run of 009, 010 **and** 011. | `[x]` |
+| `SPEC-13` | **Rewrite `CLAUDE.md`** as a durable engineering contract (1,687 → ~430 lines); correct the drifted facts (17 repositories not 15, `app/tokens/` not `app/tokens.css`, exact stack versions, vitest/oxlint/Tailwind v4/npm workspaces). **Superseded in one detail:** the rewrite also claimed 39 audit actions, which was wrong — `AuditAction` has **27** members and `CLAUDE.md` §5.4's original "twenty-seven" was correct. Corrected 2026-09-19 after `unit-1/PHASE_PLAN.md` §2 re-counted. | `[x]` |
+| `SPEC-14` | `PHASE_ROADMAP.md` — 15 chat units, entry/exit criteria, the 9-condition completion protocol | `[x]` |
+| `SPEC-15` | The sequential pipeline: `redesign-planner` → `redesign-executor` → `redesign-reviewer` + `/redesign-phase` | `[x]` |
+| `SPEC-16` | **Reconcile `/notifications` into `API_SPEC.yaml`.** `NotificationsController` implements three routes — `GET /notifications`, `POST /notifications/read-all`, `POST /notifications/:id/read` — and the spec has **no path entry for any of them**. Found during unit 1's DoD point 10 check, filed rather than authored: adding a path to the target contract is a contract decision, and whether the path stays `/notifications` or moves is not the executor's to settle. **`D-8` closed: fix the spec to match the redesign** — path entries shaped by `PRODUCT_SPEC.md` §5.2 (bell + `Menu`, plus teacher notification preferences), not transcribed from current code. | `[ ]` |
+| `SPEC-17` | **Two `/admin/*` spec paths admit an assistant.** `API_SPEC.yaml:460` (`/admin/students/{studentId}`) reads `x-roles: [teacher, admin, assistant]` and `:1124` (`/admin/announcements/reach`) reads `[assistant, teacher, admin]`, against `CLAUDE.md` §6's rule that `/admin/*` is teacher and admin, unscoped. **Both routes are unimplemented, so no code is wrong today** — but either the two spec entries are wrong or the §6 rule is, and that is a question for the user, not a fix. **`D-7` closed: the spec was wrong.** Strip `assistant` from both; `CLAUDE.md` §6 stands. | `[ ]` |
 
-`SPEC-12` is blocked only on the environment: Docker 29.7.2 is installed but the daemon is not
-running. To close it, start Docker Desktop and then:
+**`SPEC-12` closed 2026-09-20.** Docker Desktop was started and the suite run against a **fresh,
+empty** database created beside the dev one (`CREATE DATABASE lms_migtest`) rather than wiping
+`tahirelshazli_postgres_data`, which held 27 tables:
 
 ```
-docker compose up -d db
-TEST_DATABASE_URL=postgres://… npm run test:integration --workspace=backend
+docker compose up -d postgres
+TEST_DATABASE_URL=postgresql://dev:devpassword@localhost:5432/lms_migtest   npm run test:integration --workspace=backend
 ```
 
-against an **empty** schema, so all ten migrations run in order. It is a gate rather than a
-nice-to-have: 001–008 have each been verified this way and **every single first run found
-something** — the audit log's microsecond-cursor bug among them. Authoring migration 011 on top of
-two unverified ones would bury whatever 009 or 010 gets wrong.
+All eleven migrations applied in order, all four seeds, **81/81 passed**.
 
-**Gate:** `SPEC-12` closes before Phase 1 starts. (`SPEC-11` is done.)
+**The streak is broken, and honestly so.** 001-008 had each found something on their first real run;
+009, 010 and 011 found nothing. The one defect the unit-1 review specifically predicted -
+`010`'s `score NUMERIC(10,2)` coming back from `pg` as the **string** `"85.00"` - was probed directly
+and is **already handled**: `postgres-work.repository.ts:37-38` declares the row type as
+`string | null` and maps both columns through `numOrNull` (`:77-78`), as it does the `AVG` aggregates
+(`:321-322`). The risk was real, the code was already right.
+
+**Gate:** closed. Phase 1 was unblocked by this run.
 
 ---
 
@@ -75,11 +90,13 @@ two unverified ones would bury whatever 009 or 010 gets wrong.
 
 | ID | Task | Deps | DB | API | Authz | Tests |
 |---|---|---|---|---|---|---|
-| `AUTH-1` `[ ]` | Add `Role.Admin`. Migration for both role CHECKs. Define `STAFF_ADMIN` once and use it at ~30 sites. | `SPEC-12` | 011 | ~30 routes widen | New role reaches all teacher routes | Extend the `it.each` refusal tables; one test proving admin ≡ teacher |
-| `AUTH-2` `[ ]` | **Course scoping → group scoping.** `assistant_scopes` + `assistant_group_assignments`; rewrite `StaffScopeService` internals; migrate and drop `course_staff_assignments`. | `AUTH-1`, `DOM-1` | 014 | `[REPLACE]` ×3 | The chokepoint itself | **404-not-403 and the identical message must survive**; both scope values tested |
-| `AUTH-3` `[ ]` | `AssistantCapabilities` preset gating the four withheld verbs. `DELETE /staff/groups/:id/members/:studentId` → teacher/admin. | `AUTH-2` | — | 1 route | The four verbs | One refusal test per verb |
-| `AUTH-4` `[ ]` | Assistant invitations: table, 4 admin routes, public accept. | `AUTH-2`, `MAIL-1` | 014 | 5 new | Teacher/admin only | Token reuse, expiry, and unknown all give one message |
-| `AUTH-5` `[!]` | Device/session list. **Blocked on decision 1** (Redis, or drop the tab). | — | — | 2 new | Own sessions only | — |
+| `AUTH-1` `[x]` | Add `Role.Admin`. Migration for both role CHECKs. Define `STAFF_ADMIN`/`STAFF_ALL` once and use them at **14 decorator sites covering 63 routes** (not "~30"). One exhaustive `actorRoleOf` replacing **fourteen** `actorRole` derivations. | `SPEC-12` | 011 | 63 routes widen, 1 narrows | New role reaches every teacher route; `/admin/*` does **not** widen to `assistant` | `role-guards.spec.ts` enumerates all 25 controllers; a 24-route admin≡teacher parity table; attribution asserted in the audit log |
+| | **Built 2026-09-19 · reviewed 2026-09-19 · closed 2026-09-20.** DoD point 2 is now **MET**: `011` applied from an empty schema and verified behaviourally — `admin` accepted, `'admln'` rejected by `users_role_check` (so review risk R-5, a constraint-name mismatch, did not materialise), and `audit_log_actor_role_check` widened to admit `admin`. Green: **467** unit, **216** e2e, **81** integration, frontend 301 with 0 in `lib/`. | | | | | |
+| | Reviewer verdict `APPROVED WITH FOLLOW-UP` (`docs/phases/unit-1/REVIEW.md`), whose own words were *"once the blocker closes and F-1/F-2 land, the verdict is APPROVED. Nothing else holds it back."* Both follow-ups landed in the same-day remediation pass (frontend mirror `role`, capability spec derived from the module's `Record`, guard test's method-level gap) and the blocker closed with `SPEC-12`. **Conditions met.** | | | | | |
+| `AUTH-2` `[ ]` **→ unit 2** | **Course scoping → group scoping.** `assistant_scopes` + `assistant_group_assignments`; rewrite `StaffScopeService` internals; migrate and drop `course_staff_assignments`. **Re-homed to unit 2, beside `DOM-1`/`DOM-2`,** by the 2026-09-19 ruling: its migration `014` joins `groups.course_id`, which does not exist until `DOM-1`'s `013`, and `MigrationRunner.sqlFilesIn` sorts lexicographically — so a `014` with no `013` applies straight after `012` and aborts every boot and every integration run. See `docs/CHANGELOG.md`. | `AUTH-1`, `DOM-1` | 014 | `[REPLACE]` ×3 | The chokepoint itself | **404-not-403 and the identical message must survive**; both scope values tested |
+| `AUTH-3` `[x]` | `AssistantCapabilities` preset gating the four withheld verbs (`backend/src/auth/capabilities.ts`). `DELETE /staff/groups/:id/members/:studentId` → teacher/admin with a **403**. **Dep corrected: `AUTH-1`, not `AUTH-2`** — the preset is a pure module and the one routed verb needs no scope table, which is what let it ship in unit 1 while `AUTH-2` deferred. | `AUTH-1` | — | 1 route | The four verbs | One refusal test per verb (`capabilities.spec.ts`), plus a service-layer refusal proving the repository is never read. **Strengthened 2026-09-19:** `WITHHELD` is now derived from an exhaustive `Record<Capability, true>` in the spec and asserted against the module's exported `ALL_CAPABILITIES`, so a fifth capability fails the spec (proved by adding one and watching it go red) rather than shipping with no refusal test. The module's preset already gave the compile error; it was the spec's mirror that did not. |
+| `AUTH-4` `[ ]` **→ unit 5** | Assistant invitations: table, 4 admin routes, public accept. **Re-homed to unit 5** (beside `PEOPLE-4`): doubly blocked — on `AUTH-2` for `scope`/`groupIds`, and on `MAIL-1` (unit 3), because an invitation that cannot be emailed is not an invitation. Its planner should cost `assistant.invitation_accepted` and `assistant.invitation_resent` as audited actions (unit-1 `PHASE_PLAN.md` §8 D-d) rather than discover them. | `AUTH-2`, `MAIL-1` | 015 (own number) | 5 new | Teacher/admin only | Token reuse, expiry, and unknown all give one message |
+| ~~`AUTH-5`~~ `[REMOVED]` | ~~Device/session list.~~ **Dropped from scope 2026-09-20 (`D-1`): no Redis, no Security tab.** Not deferred — dropped. The per-process rate limiter and token denylist therefore stay as they are, and `SECURITY.md` §3.1 is a **permanent** known weakness until a second replica is configured. | — | — | — | — | — |
 
 ---
 
@@ -90,7 +107,7 @@ two unverified ones would bury whatever 009 or 010 gets wrong.
 | `DOM-1` `[ ]` | **Collapse `group_courses` → `groups.course_id` + `learning_mode`.** Migration **raises** if any group holds two courses. | `SPEC-12` | 013 | **Highest.** Destructive, one-way. Touches GroupRepository ×2, LearningModeService, StudentGroupsService, dashboard, reports, assessments |
 | `DOM-2` `[ ]` | `groups` gains `assistant_id`, `meets`, `room`. | `DOM-1` | 013 | Low |
 | `DOM-3` `[ ]` | `student_profiles` gains `mode`, `school_name`, `parent_email`, `staff_notes` + the conditional CHECK. | — | 012 | Low |
-| `DOM-4` `[ ]` | Registration approval: `users.status`; accept/reject routes; `POST /courses/:id/enroll` → staff-only. **Keep `CoursesService.enroll`.** | `AUTH-1` | 011 | Medium — changes the login path |
+| `DOM-4` `[ ]` | Registration approval: `users.status`; accept/reject routes; `POST /courses/:id/enroll` → staff-only. **Keep `CoursesService.enroll`.** **Takes its own migration number (012+), not `011`** — `011_full_admin_role.sql` shipped in unit 1 with the two role CHECK widenings and nothing else, and a migration file is immutable once the ledger records it by filename. | `AUTH-1` | **its own number, not 011** | Medium — changes the login path |
 | `DOM-5` `[ ]` | Course CRUD. | `AUTH-1` | — | Low |
 | `DOM-6` `[ ]` | **Regenerate seed fixtures** for the new shape. | `DOM-1`…`DOM-4` | seeds | Medium |
 
@@ -125,8 +142,24 @@ Each slice: migration → repositories (both) → service → authz → API → 
 `PEOPLE-1` `[ ]` Student directory + waiting queue (`DOM-4`) ·
 `PEOPLE-2` `[ ]` Student detail + edit ·
 `PEOPLE-3` `[ ]` Create student directly (emails a sign-in link; needs `MAIL-3`) ·
-`PEOPLE-4` `[ ]` Assistants list + invite + scope editing (`AUTH-4`) ·
-`PEOPLE-5` `[ ]` Assistant activity screen over the existing audit log
+`PEOPLE-4` `[ ]` Assistants list + invite + scope editing (`AUTH-4`). **Inherits a known response-schema
+gap on `GET /admin/assistants`:** `API_SPEC.yaml:563` responds `Assistant[]`, whose
+`required` set is `[id, name, email, role, scope, status]`, and the implementation returns
+`{ id, name, email, createdAt, role }` — `scope` and `status` **absent** (deferred by unit-1 ruling 2,
+because both need `AUTH-2`'s scope tables), `createdAt` **undeclared in the schema**. Closing the row
+means adding `scope`/`status` to the response *and* declaring `createdAt` in the contract, or dropping
+it from the response. Costed here so it is not rediscovered. The frontend mirror's missing `role` was
+closed in unit 1's remediation pass (`StaffDirectoryEntry` in `lib/types.ts`); `scope` and `status`
+will need the same treatment. ·
+`PEOPLE-5` `[ ]` Assistant activity screen over the existing audit log ·
+`PEOPLE-6` `[ ]` **`Assistant.lastSeenAt` — derived from the audit log.** Closed 2026-09-20: match
+the redesign, where the teacher sees assistant *activity*. That activity **is** the audit log
+(`PRODUCT_SPEC.md` §3.3), which already timestamps every staff action — so the field is
+`MAX(created_at)` for that actor. **No `users.last_seen_at` column and no write on the hot path.**
+
+One caveat to carry into the UI: this is *last acted*, not *last seen*. An assistant who signs in and
+only reads shows nothing. That is the right figure for the screen the redesign draws, but the label
+must not imply a login time. `PEOPLE-4` emits it; `PEOPLE-5` renders it.
 
 ### Phase 6 — Groups
 `GROUP-1` `[ ]` Group CRUD with course/assistant/meets/room (`DOM-2`) ·
@@ -148,7 +181,7 @@ Each slice: migration → repositories (both) → service → authz → API → 
 `MARK-2` `[ ]` Split save from save-and-return (`returned_at`) ·
 `MARK-3` `[ ]` Submissions-for-one-task **including non-submitters** ·
 `MARK-4` `[ ]` Marking view (page, toolbar, annotation list, mark, feedback) ·
-`MARK-5` `[!]` Marked-copy delivery. **Blocked on decision 2** (flattened PDF vs rendered overlay)
+`MARK-5` `[ ]` Marked-copy delivery — **rendered overlay** (`D-2`, closed). No server-side PDF library. **Annotations include freehand stroke paths, not only pins:** the teacher draws over the PDF with marker and eraser tools and never edits it; the eraser clears the teacher's own strokes only. Original stays immutable. A downloadable flattened PDF is additive and out of scope.
 
 ### Phase 9 — Mark book
 `BOOK-1` `[ ]` Grid endpoint · `BOOK-2` `[ ]` Screen (sticky first column, em-dash for missing) ·
@@ -166,7 +199,7 @@ Each slice: migration → repositories (both) → service → authz → API → 
 ### Phase 11 — Weekly reports  *(the flagship; 9 routes, none exist)*
 `RPT-1` `[ ]` `weekly_reports` table + repositories ·
 `RPT-2` `[ ]` Generation service (pure composition over attendance/submissions/progress; **idempotent; never overwrites `sent`**) ·
-`RPT-3` `[!]` Generation trigger. **Blocked on decision 3** ·
+`RPT-3` `[ ]` Generation trigger — **on-demand button only** (`D-3`, closed). No cron, no scheduler. Still idempotent; still must never overwrite a report already `sent`. ·
 `RPT-4` `[ ]` List + detail routes ·
 `RPT-5` `[ ]` Note save + review transition (requires a non-empty note) ·
 `RPT-6` `[ ]` **Send to parent** — teacher/admin only, requires `reviewed` + `parentEmail`, irreversible, audited, `mail_deliveries` row ·
@@ -216,9 +249,10 @@ account to a password account by email alone.
 
 ```
 SPEC-12 ─┬─> DOM-1 ─┬─> DOM-2 ──> GROUP-*
-         │          ├─> AUTH-2 ──> AUTH-3 ──> (all /staff/*)
+         │          ├─> AUTH-2 ──> (all /staff/* rescoped group-wise)
          │          └─> SESS-1 ──> SESS-2..7 ──┐
-         ├─> AUTH-1 ─┬─> DOM-4 ──> PEOPLE-1..3 │
+         ├─> AUTH-1 ─┬─> AUTH-3                │
+         │           ├─> DOM-4 ──> PEOPLE-1..3 │
          │           └─> DOM-5 ──> SET-4       ├──> RPT-2 ──> RPT-4..9
          ├─> DOM-3 ────────────────────────────┤
          └─> MAIL-1 ──> MAIL-2 ──> MAIL-3 ─────┴──> AUTH-4, ANN-4, RPT-6
@@ -230,6 +264,10 @@ TASK-1..6 ──> MARK-1..4 ──> BOOK-1..3 ──> RPT-2
 
 **Critical path:** `SPEC-12 → DOM-1 → AUTH-2 → SESS-1 → RPT-2 → RPT-6`.
 `DOM-1` and `AUTH-2` gate the most work; do them carefully and first.
+
+`AUTH-3` hangs off `AUTH-1`, **not** `AUTH-2` — corrected 2026-09-19, matching line 89 and
+`PHASE_ROADMAP.md` §5. It shipped in unit 1; a planner reading the old edge would budget a slice for
+work that is already done.
 
 ---
 
@@ -258,16 +296,18 @@ Report findings; do not fix silently.
 
 ---
 
-## Blocked — needs a decision
+## Decisions — all closed 2026-09-20
 
 | ID | Blocks | Question |
 |---|---|---|
-| `D-1` | `AUTH-5` | Redis for shared session state, or drop the Security tab for launch? |
-| `D-2` | `MARK-5` | Marked copy: flattened PDF (needs a server-side PDF library) or rendered overlay? |
-| `D-3` | `RPT-3` | Report generation: scheduled job, on-demand button, or both? |
-| `D-4` | `DOM-3`, `SESS-1` | Are `students.mode`, session `mode` and `learning_mode` really three axes? |
-| `D-5` | `DOM-6` | Confirm fixtures are regenerated, not migrated. |
-| `D-6` | `SESS-1` | May an assistant create or edit a session? The board's `CRS-11` says yes; the current preset says no. |
+| `D-1` | ~~`AUTH-5`~~ | **CLOSED 2026-09-20: drop the Security tab.** No Redis. `CLAUDE.md` §5's named trigger for Redis is a second replica, which has not fired. `AUTH-5` is **dropped from scope**, not deferred. |
+| `D-2` | `MARK-*` | **CLOSED 2026-09-20: rendered overlay, no server-side PDF library.** The teacher marks up with in-app **marker and eraser** tools that draw *over* the PDF and never edit it, then submits the overlaid result. So annotations are wider than `{page,x,y,kind,text}` — they include **freehand stroke paths**, and the eraser removes the teacher's own strokes, never page content. Original stays immutable. |
+| `D-3` | `RPT-3` | **CLOSED 2026-09-20: on-demand button only.** No cron, no scheduler, no unattended run over 300 students' data. Generation stays idempotent and never overwrites a report already `sent`. |
+| `D-4` | `DOM-3`, `SESS-1` | **CLOSED 2026-09-20: ONE axis — the group's `learning_mode` only.** `students.mode` and session `mode` are **not** built; both derive from the group. See the CHANGELOG entry for the design consequence this accepts. |
+| `D-5` | `DOM-6` | **CLOSED 2026-09-20: regenerate.** Seeds are rewritten for the new shape, not migrated. Fixtures are dev data carrying a published password hash; auto-seeding is refused in production. |
+| `D-6` | `SESS-1` | **CLOSED 2026-09-20: yes — assistants may create and edit any session.** Routes widen to `STAFF_ALL`. Honours the board's `CRS-11`. Note the accepted consequence in the CHANGELOG: an assistant can edit a session for a group they do not hold. |
+| `D-7` | `SPEC-17` | **CLOSED 2026-09-20: fix the spec to match the redesign.** `/admin/*` is teacher and admin, unscoped, per `AUTHORIZATION_MODEL.md`; `assistant` is stripped from `API_SPEC.yaml:460` and `:1124`. `CLAUDE.md` §6 stands. |
+| `D-8` | `SPEC-16` | **CLOSED 2026-09-20: fix the spec to match the redesign.** `/notifications` gains its path entries, shaped by `PRODUCT_SPEC.md` §5.2 (the student surface becomes a bell + `Menu`, and teacher notification preferences are added) rather than transcribed from current code. |
 
 ---
 
@@ -276,9 +316,9 @@ Report findings; do not fix silently.
 | | |
 |---|---|
 | Phases | 18 |
-| Tasks | 84 |
-| Blocked | 6 |
-| Complete | 10 (Phase 0) |
+| Tasks | 86, less `AUTH-5` (dropped) = **85** |
+| Blocked | **0** — all eight decisions closed 2026-09-20 |
+| Complete | **15** — Phase 0's 13 done (`SPEC-16`/`SPEC-17` outstanding), plus `AUTH-1` and `AUTH-3` |
 | Migrations | 11 (011–021), one destructive |
 | New backend routes | ~48 |
 | Routes modified | ~28 |

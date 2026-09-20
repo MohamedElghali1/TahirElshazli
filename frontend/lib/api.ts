@@ -13,7 +13,6 @@ import type {
   CourseRosterResponse,
   CourseStaffMember,
   DashboardResponse,
-  DirectoryEntry,
   GradingQueueItem,
   GradingQueueResponse,
   GradingStatus,
@@ -36,6 +35,7 @@ import type {
   ReportDocument,
   ReportSummary,
   StaffCourseSummary,
+  StaffDirectoryEntry,
   StaffRecording,
   StudentDirectoryEntry,
   StudentHomeResponse,
@@ -849,7 +849,7 @@ export const api = {
       request<StudentDirectoryEntry[]>(`/admin/students${qs({ search })}`, { token }),
 
     assistants: (token: string, search?: string) =>
-      request<DirectoryEntry[]>(`/admin/assistants${qs({ search })}`, { token }),
+      request<StaffDirectoryEntry[]>(`/admin/assistants${qs({ search })}`, { token }),
 
     courseStaff: (token: string, courseId: string) =>
       request<CourseStaffMember[]>(`/admin/courses/${courseId}/staff`, { token }),

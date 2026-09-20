@@ -7,6 +7,7 @@ import {
 import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import { Role } from '../auth/roles.enum.js';
+import { actorRoleOf } from '../auth/actor-role.js';
 import type { UserRepository } from '../auth/interfaces/user-repository.interface.js';
 import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js';
 import type { AssessmentRepository } from '../assessments/interfaces/assessment-repository.interface.js';
@@ -53,10 +54,6 @@ export class WorkAnalyticsGateService {
     private readonly studentGroups: StudentGroupsService,
     private readonly analytics: WorkAnalyticsService,
   ) {}
-
-  private actorRole(actor: StaffActor): Role {
-    return actor.role === Role.Teacher ? Role.Teacher : Role.Assistant;
-  }
 
   /**
    * Resolves the assessment, proves the caller holds its course, and returns
@@ -191,7 +188,7 @@ export class WorkAnalyticsGateService {
 
       await this.audit.record({
         actorId: actor.id,
-        actorRole: this.actorRole(actor),
+        actorRole: actorRoleOf(actor),
         action: 'external_result.attached',
         targetType: 'external_result',
         targetId: attached.id,

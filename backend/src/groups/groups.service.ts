@@ -7,6 +7,8 @@ import {
 import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import { Role } from '../auth/roles.enum.js';
+import { actorRoleOf } from '../auth/actor-role.js';
+import { assertMay } from '../auth/capabilities.js';
 import type { UserRepository } from '../auth/interfaces/user-repository.interface.js';
 import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js';
 import type { CourseRepository } from '../courses/interfaces/course-repository.interface.js';
@@ -66,14 +68,6 @@ export class GroupsService {
     /** `DatabaseModule` is `@Global()`; this needs no import edge. */
     private readonly db: DatabaseService,
   ) {}
-
-  private actorRole(actor: StaffActor): Role {
-    // Derived from the caller, never assumed. If a teacher-only write here is
-    // later widened to TAs, the log must not keep attributing an assistant's
-    // action to Dr. Tahir - the defect CLAUDE.md §5.4 records finding in
-    // `ManageRecordingsService`.
-    return actor.role === Role.Teacher ? Role.Teacher : Role.Assistant;
-  }
 
   private async requireGroup(groupId: string): Promise<Group> {
     const group = await this.groupRepo.findById(groupId);
@@ -153,7 +147,7 @@ export class GroupsService {
       const group = await this.groupRepo.create({ name, teacherId: actor.id });
       await this.audit.record({
         actorId: actor.id,
-        actorRole: this.actorRole(actor),
+        actorRole: actorRoleOf(actor),
         action: 'group.created',
         targetType: 'group',
         targetId: group.id,
@@ -182,7 +176,7 @@ export class GroupsService {
       }
       await this.audit.record({
         actorId: actor.id,
-        actorRole: this.actorRole(actor),
+        actorRole: actorRoleOf(actor),
         action: 'group.renamed',
         targetType: 'group',
         targetId: groupId,
@@ -225,7 +219,7 @@ export class GroupsService {
       });
       await this.audit.record({
         actorId: actor.id,
-        actorRole: this.actorRole(actor),
+        actorRole: actorRoleOf(actor),
         action: 'group.course_added',
         targetType: 'group_course',
         targetId: pairing.id,
@@ -256,7 +250,7 @@ export class GroupsService {
       await this.groupRepo.removeCourse(groupId, courseId);
       await this.audit.record({
         actorId: actor.id,
-        actorRole: this.actorRole(actor),
+        actorRole: actorRoleOf(actor),
         action: 'group.course_removed',
         targetType: 'group_course',
         targetId: existing.id,
@@ -304,7 +298,7 @@ export class GroupsService {
       });
       await this.audit.record({
         actorId: actor.id,
-        actorRole: this.actorRole(actor),
+        actorRole: actorRoleOf(actor),
         action: 'group.student_assigned',
         targetType: 'group_membership',
         targetId: membership.id,
@@ -317,11 +311,29 @@ export class GroupsService {
     });
   }
 
+  /**
+   * Removing a person from a group. **Teacher and admin only** (`AUTH-3`).
+   *
+   * One of the four verbs withheld from an assistant
+   * (`AUTHORIZATION_MODEL.md` §3), from the client's rule that an assistant's
+   * *"difference from the teacher is he can't remove students"*. The paired
+   * grant survives: `addMember` above is still TA-reachable, because *"a student
+   * is assigned to a group by the assistant or the teacher"*. Add stays, remove
+   * moves.
+   *
+   * The check is **here**, not only on the controller's `@Roles`. The decorator
+   * is the cheap outer gate; a permission enforced only at the decorator is one
+   * refactor away from being enforced nowhere, and `CLAUDE.md` §5 puts the rule
+   * in the service. It is also the **first** statement - before the group is
+   * read, before the membership is read - so a refused caller learns nothing
+   * about whether either exists.
+   */
   async removeMember(
     groupId: string,
     studentId: string,
     actor: StaffActor,
   ): Promise<void> {
+    assertMay(actor, 'group.member.remove');
     return this.db.runInTransaction(async () => {
       await this.requireGroup(groupId);
       const existing = (await this.groupRepo.findMembers(groupId)).find(
@@ -333,7 +345,7 @@ export class GroupsService {
       await this.groupRepo.removeMember(groupId, studentId);
       await this.audit.record({
         actorId: actor.id,
-        actorRole: this.actorRole(actor),
+        actorRole: actorRoleOf(actor),
         action: 'group.student_removed',
         targetType: 'group_membership',
         targetId: existing.id,

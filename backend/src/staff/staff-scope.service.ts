@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { Role } from '../auth/roles.enum.js';
+import { isUnscopedStaffRole } from '../auth/staff-roles.js';
 import type {
   CourseStaffAssignment,
   CourseStaffRepository,
@@ -52,9 +52,18 @@ export class StaffScopeService {
     private readonly staffRepo: CourseStaffRepository,
   ) {}
 
-  /** True for the teacher/admin account, which is unscoped by definition (§2.2). */
+  /**
+   * True for an unscoped staff account - the teacher, or the Full admin, who is
+   * identical to the teacher in permission (AUTH-1).
+   *
+   * `isUnscopedStaffRole` rather than a hand-written pair, because this is the
+   * one line that decides whether an admin can reach anything at all: missed,
+   * an admin passes `RolesGuard`, finds no `course_staff_assignments` row and
+   * 404s on every course. That fails safe - a broken console, not a leak - but
+   * it fails on 63 routes at once.
+   */
   private isAdmin(actor: StaffActor): boolean {
-    return actor.role === Role.Teacher;
+    return isUnscopedStaffRole(actor.role);
   }
 
   /**

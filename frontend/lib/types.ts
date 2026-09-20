@@ -8,7 +8,13 @@
 
 /* --- auth (auth/auth.service.ts, auth/roles.enum.ts) ---------------------- */
 
-export type Role = 'visitor' | 'student' | 'parent' | 'assistant' | 'teacher';
+export type Role =
+  | 'visitor'
+  | 'student'
+  | 'parent'
+  | 'assistant'
+  | 'admin'
+  | 'teacher';
 
 export interface AuthenticatedUser {
   id: string;
@@ -523,6 +529,19 @@ export interface DirectoryEntry {
 
 export interface StudentDirectoryEntry extends DirectoryEntry {
   enrolledCourseCount: number;
+}
+
+/**
+ * A staff directory row, from `GET /admin/assistants`. Mirrors
+ * `manage/directory.service.ts` `StaffDirectoryEntry`.
+ *
+ * `role` is on the wire because the list holds two tiers - assistants and the
+ * Full admin - and the course-staff picker must not offer to assign an admin,
+ * whom `StaffService.assign` refuses. `scope`, `groupIds`, `status` and
+ * `lastSeenAt` are absent from the response today: they are `PEOPLE-4`.
+ */
+export interface StaffDirectoryEntry extends DirectoryEntry {
+  role: Role;
 }
 
 /* --- staff assignment (staff/staff.service.ts) --------------------------- */

@@ -12,12 +12,12 @@ import {
   Request,
 } from '@nestjs/common';
 import { Roles } from '../auth/roles.decorator.js';
-import { Role } from '../auth/roles.enum.js';
+import { STAFF_ADMIN } from '../auth/staff-roles.js';
 import type { JwtPayload } from '../auth/jwt.strategy.js';
 import {
   DirectoryService,
   DEFAULT_DIRECTORY_PAGE_SIZE,
-  type DirectoryEntry,
+  type StaffDirectoryEntry,
   type StudentDirectoryEntry,
 } from './directory.service.js';
 import { ManageRecordingsService } from './manage-recordings.service.js';
@@ -50,7 +50,7 @@ import { ListDirectoryQueryDto } from './dto/queries.dto.js';
  * sets in one file makes it stop being the answer.
  */
 @Controller('admin')
-@Roles(Role.Teacher)
+@Roles(...STAFF_ADMIN)
 export class AdminManageController {
   constructor(
     private readonly directory: DirectoryService,
@@ -78,7 +78,7 @@ export class AdminManageController {
   @Get('assistants')
   async assistants(
     @Query() query: ListDirectoryQueryDto,
-  ): Promise<DirectoryEntry[]> {
+  ): Promise<StaffDirectoryEntry[]> {
     return this.directory.assistants({
       search: query.search,
       limit: query.limit ?? DEFAULT_DIRECTORY_PAGE_SIZE,

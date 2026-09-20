@@ -206,7 +206,11 @@ describe('Announcements', () => {
         { ...MESSAGE, audience: 'all_tas' },
         ADMIN,
       );
-      expect(posted.recipientCount).toBe(3);
+      // Four: assistant-1, assistant-2, the late hire - and admin-1. `all_tas`
+      // is the staff broadcast channel and there is no other route to staff, so
+      // it includes the Full admin (AUTH-1, unit-1 ruling 3). Was 3 before the
+      // `admin` role existed.
+      expect(posted.recipientCount).toBe(4);
 
       const feed = await notifications.list(newHire.id, false);
       expect(feed.notifications).toHaveLength(1);

@@ -17,6 +17,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { RolesGuard } from '../auth/roles.guard.js';
 import { Roles } from '../auth/roles.decorator.js';
 import { Role } from '../auth/roles.enum.js';
+import { STAFF_ALL } from '../auth/staff-roles.js';
 import { ListNotificationsQueryDto } from './dto/list-notifications-query.dto.js';
 import type { Notification } from './interfaces/notification-repository.interface.js';
 import type { JwtPayload } from '../auth/jwt.strategy.js';
@@ -38,7 +39,7 @@ import type { JwtPayload } from '../auth/jwt.strategy.js';
  */
 @Controller('notifications')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.Student, Role.Assistant, Role.Teacher)
+@Roles(Role.Student, ...STAFF_ALL)
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 

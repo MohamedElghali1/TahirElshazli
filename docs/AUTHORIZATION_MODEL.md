@@ -30,11 +30,28 @@ reason `admin` exists as a role rather than as a second teacher account — attr
 **Implementation note.** Because the pair is always allowed together, define it once:
 
 ```ts
-export const STAFF_ADMIN = [Role.Teacher, Role.Admin] as const;
+export const STAFF_ADMIN = [Role.Teacher, Role.Admin] as const;   // the /admin/* surface
+export const STAFF_ALL = [Role.Assistant, Role.Teacher, Role.Admin] as const;  // /staff/*
 ```
 
-and use `@Roles(...STAFF_ADMIN)` everywhere. Writing the pair out by hand at ~30 call sites is how
-one of them silently drifts.
+and use `@Roles(...STAFF_ADMIN)` / `@Roles(...STAFF_ALL)` everywhere. Writing a set out by hand is how
+one of them silently drifts. Two constants, not one, because
+`@Roles(Role.Assistant, ...STAFF_ADMIN)` hand-written at seven sites is the same argument one level
+up. **`STAFF_ADMIN` must never contain `Role.Assistant`** — that is the `/admin/*` boundary, and
+unlike a missed widening it is silent when broken.
+
+**The real size of the change, corrected 2026-09-19 on building `AUTH-1`.** Not "~30 call sites":
+`@Roles` is applied at **class level throughout**, so the work is **14 decorator sites covering 63
+routes** — 6 `/admin/*` controllers (25 routes) → `STAFF_ADMIN`, 7 `/staff/*` controllers (35 routes)
+→ `STAFF_ALL`, and `NotificationsController` (3 routes) → `Role.Student, ...STAFF_ALL`. Eleven
+student-only sites and four public controllers are untouched. The figure matters operationally: an
+executor planning against "~30" stops at roughly half the boundary.
+
+**Adding a `Role` member produces zero compile errors** — there is no `Record<Role, …>` and no `switch`
+on a role value anywhere in either workspace — so none of this is found by the compiler.
+`backend/src/auth/role-guards.spec.ts` reflects `@Roles` off all 25 controllers and asserts the table,
+that no `admin/`-mounted controller admits an assistant, and that every route handler reaches an
+explicit verdict rather than relying on `RolesGuard`'s fail-closed 403 to hide it.
 
 ---
 
@@ -134,14 +151,38 @@ from the teacher is he can't remove students"*. Concretely, an assistant may nev
 3. remove a student from a group,
 4. reject a pending registration.
 
-Note (3) narrows shipped behaviour: `DELETE /staff/groups/:groupId/members/:studentId` is
-TA-reachable today. **Add stays, remove moves to teacher/admin** — which preserves the client's
-2026-09-10 grant that "a student is assigned to a group by the assistant or the teacher" while
-honouring the new rule.
+Note (3) narrowed shipped behaviour: `DELETE /staff/groups/:groupId/members/:studentId` **was**
+TA-reachable. **Add stays, remove moves to teacher/admin** — which preserves the client's 2026-09-10
+grant that "a student is assigned to a group by the assistant or the teacher" while honouring the new
+rule.
 
-Implement these as a **single capability preset object**, not as `if (role === 'assistant')`
-scattered through services. `CLAUDE.md` §2.2 has required this from the start and it is what makes
-the next permission question a data change rather than an audit.
+**Built 2026-09-19 (`AUTH-3`).** `backend/src/auth/capabilities.ts` — a **single capability preset**,
+not `if (role === 'assistant')` scattered through services, which `CLAUDE.md` §7 has required from the
+start and which is what makes the next permission question a data change rather than an audit. It is a
+**pure module, not a provider**: it holds no state and reads no repository, so a fourth `@Global()` or
+even a plain `@Injectable()` would buy only ceremony.
+
+Three properties worth knowing before changing it:
+
+- The preset is an **exhaustive `Record<Capability, boolean>`**, so adding a capability without
+  deciding whether an assistant holds it is a **compile error**, not an oversight. Same device as
+  `ListAuditLogQueryDto`'s `Record<AuditAction, true>`.
+- **Default-deny for every other role.** The teacher and the admin hold everything; an assistant holds
+  what the `Record` says; a student, a parent, a visitor, `''` or a mis-cased `'ADMIN'` hold nothing.
+- **One refusal message for all four**, capability-independent, so a caller probing the API cannot
+  learn which of four rules they tripped. Asserted identical across all four in
+  `capabilities.spec.ts`.
+
+The one routed verb is refused **twice**: at a method-level `@Roles(...STAFF_ADMIN)` on
+`StaffGroupsController.removeMember` (which `RolesGuard` honours over the class's because it reads
+`getAllAndOverride(ROLES_KEY, [handler, class])`), and again as the **first statement** of
+`GroupsService.removeMember`, before the group or the membership is read — so a refused assistant
+cannot use the difference between a 403 and a 404 as an existence oracle. Over HTTP the guard wins and
+the body reads `'Forbidden resource'`; the service message appears only on a direct service call,
+which is why both layers have their own test. **403, not 404**: this is *capability*, not scope — the
+assistant is looking at the roster, so a 404 would make the UI lie about a row it is rendering.
+
+The other three verbs have no route yet (`DOM-4`, `PEOPLE-1`) and each already has its refusal test.
 
 ---
 
@@ -187,9 +228,9 @@ must stay so.
 
 | Gap | Severity | Fix |
 |---|---|---|
-| No `admin` role — a second full-access person must share the teacher account, destroying attribution | High | `AUTH-1` |
+| ~~No `admin` role~~ — **closed 2026-09-19 by `AUTH-1`.** `Role.Admin` exists, migration `011` widens both role CHECKs, 63 routes admit it, and one exhaustive `actorRoleOf` replaced fourteen `actorRole` derivations so the audit log attributes an admin's action to the admin. **Migration `011` has not yet run against real PostgreSQL** (`SPEC-12`), so the task is held at `[~]`. | High | `AUTH-1` |
 | Scoping is per course, the product is per group | High | `AUTH-2` |
-| Assistant capability is implicit in which controller a route sits on, not declared | Medium | `AUTH-3` |
+| ~~Assistant capability is implicit in which controller a route sits on~~ — **closed 2026-09-19 by `AUTH-3`.** `backend/src/auth/capabilities.ts` declares the four withheld verbs as an exhaustive `Record<Capability, boolean>`, so adding a capability without deciding whether an assistant holds it is a compile error. `DELETE /staff/groups/:groupId/members/:studentId` is now teacher/admin with a **403**, refused both at a method-level `@Roles` and again in `GroupsService.removeMember` before any repository read. | Medium | `AUTH-3` |
 | Token denylist and rate limiter are **per-process** — logout and lockout do not cross replicas | Medium (High once a second replica exists) | Redis; `CLAUDE.md` §7.3's named trigger |
 | No object-level gate yet exists for reports, annotations, drafts, attendance — they do not exist | — | Build with the feature, never after |
 | `forbidNonWhitelisted` is off — unknown body fields are dropped silently | Low | Considered: dropping is currently load-bearing (the TA announcement DTO relies on it) |

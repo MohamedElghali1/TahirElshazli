@@ -16,7 +16,7 @@ import type { UserRepository } from '../auth/interfaces/user-repository.interfac
 import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js';
 import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
-import { Role } from '../auth/roles.enum.js';
+import { actorRoleOf } from '../auth/actor-role.js';
 
 /** A submission is awaiting marking exactly while nobody has corrected it. */
 export type GradingStatus = 'awaiting' | 'graded';
@@ -230,7 +230,7 @@ export class GradingService {
       // to dispute - before/after carries the marks, not the whole submission.
       await this.audit.record({
         actorId: actor.id,
-        actorRole: actor.role === Role.Teacher ? Role.Teacher : Role.Assistant,
+        actorRole: actorRoleOf(actor),
         action: 'submission.graded',
         targetType: 'assessment_submission',
         targetId: submissionId,

@@ -11,7 +11,7 @@ import {
   Request,
 } from '@nestjs/common';
 import { Roles } from '../../auth/roles.decorator.js';
-import { Role } from '../../auth/roles.enum.js';
+import { STAFF_ADMIN } from '../../auth/staff-roles.js';
 import { Public } from '../../auth/public.decorator.js';
 import { RateLimit } from '../../common/rate-limit/rate-limit.guard.js';
 import { OAUTH_CALLBACK_LIMIT } from '../../common/rate-limit/limits.js';
@@ -38,7 +38,7 @@ import { InspectFormDto } from './dto/google-integration.dto.js';
  * explanation.
  */
 @Controller('admin/integrations/google')
-@Roles(Role.Teacher)
+@Roles(...STAFF_ADMIN)
 export class AdminGoogleIntegrationController {
   constructor(private readonly google: GoogleIntegrationService) {}
 
