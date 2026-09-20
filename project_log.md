@@ -3400,3 +3400,52 @@ unchanged at 326.
 
 Unit 2a's status is the coordinator's call; slice 2b — `DOM-3`, `DOM-4`, `AUTH-2`, `DOM-5` — is
 unstarted and untouched.
+
+## 2026-09-20 — unit 2, slice 2b-i: the registration queue, and course lifecycle
+
+Ruling R-5 split 2b again, at the same kind of boundary that produced the 2a/2b split: `014` is
+additive, `015` is destructive, and `AUTH-2` is the only item in the unit carrying an authorization
+contract. This slice is the additive half — `DOM-3`, `DOM-4`, `DOM-5`. Migration `015` was not
+authored, not even as an empty file, and nothing under `backend/src/staff/` was touched.
+
+**Registration is now a queue.** `users.status` is `waiting | active | rejected`; registering
+creates a `waiting` student and returns `{ status: 'waiting' }` with **no token**. Staff clear the
+queue from `/admin/students?status=waiting` with `POST /admin/students/:id/accept` — which
+activates, enrols on the group's course and places the student in the group inside **one**
+transaction — or `.../reject`, which keeps the row and marks it refused.
+
+The part worth writing down is where the gate went. `login` refusing to mint a token is the obvious
+half and the weaker one: every token issued before a rejection keeps working until it expires. The
+gate that closes it is one clause in `JwtStrategy.validate`, which already re-reads the user from
+the database on every request for existence and role — `status` has exactly that property, so it
+cost a condition on a query that was already running, at the chokepoint every route goes through.
+Both are built; the second has a named test, because without one it is simply forgotten.
+
+The second thing worth writing down is the explicit `'waiting'`. `users.status` defaults to
+`'active'`, which is right for every account that predates the queue and wrong for every one written
+after it. A service that leaned on that default would not fail — the waiting queue would just always
+be empty, and accounts that needed approval would quietly not need it. So the spec asserts the value
+passed to `UserRepository.create`, not the row that comes back, and an e2e proves a fresh
+registration cannot sign in.
+
+`POST /courses/:id/enroll` is gone rather than re-roled — a student cannot enrol themselves at all
+now. `CoursesService.enroll` stays and is what `accept` calls, so its three properties kept their
+tests, retargeted at the service. One consequence rippled further than expected: a signed-in student
+with zero enrollments is no longer reachable through the API, so four e2e cases that needed one
+moved to an account accepted into a cohort studying a course that holds none of the fixtures.
+
+`DOM-5` added `POST|PATCH /admin/courses` on a new controller in `CoursesModule`, beside the
+repository that owns the aggregate. A course is created as a **draft**; publishing is a separate,
+deliberate PATCH, because a course that published itself would put an empty outline on the
+marketing site.
+
+Ruling R-2's five documents were amended — `students.mode` is struck everywhere, including the
+`StudyMode` enum and the two schemas that made `mode` **required** on a field nothing emits.
+
+**Verified:** 515 unit / 32 files (from 473/29) · 224 e2e (from 217) · **103 integration on a
+database created empty immediately before the run, 0 skipped, all 14 migrations from nothing**.
+`frontend/lib/` still at 0 typecheck errors; the legacy total moved 326 → 328, both new errors under
+`app/` and both caused by this slice's contract changes (`api.courses.enroll` is gone;
+`register` no longer returns a user). Unit 4 deletes those files.
+
+Slice 2b-ii — `AUTH-2`, `D-10`, `015`, the final `DOM-6` pass — is unstarted and untouched.

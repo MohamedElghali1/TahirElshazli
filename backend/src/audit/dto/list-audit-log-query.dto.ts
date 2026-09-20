@@ -41,6 +41,10 @@ const AUDIT_ACTION_VALUES: Record<AuditAction, true> = {
   'group.course_removed': true,
   'group.student_assigned': true,
   'group.student_removed': true,
+  'student.accepted': true,
+  'student.rejected': true,
+  'course.created': true,
+  'course.updated': true,
   'assessment.created': true,
   'assessment.updated': true,
   'assessment.targeted': true,
@@ -67,6 +71,8 @@ const AUDIT_TARGET_TYPE_VALUES: Record<AuditTargetType, true> = {
   blog_post: true,
   google_credential: true,
   external_result: true,
+  student: true,
+  course: true,
 };
 
 export const AUDIT_ACTIONS = Object.keys(

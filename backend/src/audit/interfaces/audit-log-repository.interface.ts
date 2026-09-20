@@ -62,6 +62,20 @@ export type AuditAction =
   | 'group.course_removed'
   | 'group.student_assigned'
   | 'group.student_removed'
+  // The registration queue (`DOM-4`). Accepting a student is the single
+  // highest-consequence staff action on the people surface: it activates an
+  // account, enrols it and places it in a cohort in one transaction, and there
+  // is no undo. Rejecting one refuses a person access to a course they may
+  // have paid for. "Who let this account in, and when" is exactly the question
+  // §5.4 exists to answer.
+  | 'student.accepted'
+  | 'student.rejected'
+  // Course lifecycle (`DOM-5`). A course is what every enrollment, group,
+  // task and report hangs off, and un-publishing one removes it from the
+  // public site - a change to the platform's shape rather than to one
+  // student's record.
+  | 'course.created'
+  | 'course.updated'
   // Authoring (§5.18). Reachable by an assistant as of 2026-09-10 - the client
   // settled §11's open question in the wide direction - so these are TA
   // mutations of the kind §5.4 was written for: they decide what students are
@@ -134,7 +148,15 @@ export type AuditTargetType =
   // A mirrored external response. Its own target type rather than the
   // assessment's, because "what happened to this response" and "what happened
   // to this task" are different questions.
-  | 'external_result';
+  | 'external_result'
+  // The account, for the registration queue. The target of an accept or a
+  // reject is the *person*, not their group placement - the placement that
+  // `accept` also writes gets its own `group.student_assigned` entry, and
+  // filing both under `group_membership` would make "what happened to this
+  // student's account" unanswerable.
+  | 'student'
+  // The course itself, for create and update.
+  | 'course';
 
 /**
  * One side of a before/after pair.

@@ -1,5 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { UserRepository } from '../auth/interfaces/user-repository.interface.js';
+import type {
+  UserRepository,
+  UserStatus,
+} from '../auth/interfaces/user-repository.interface.js';
 import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js';
 import type { EnrollmentRepository } from '../enrollments/interfaces/enrollment-repository.interface.js';
 import { ENROLLMENT_REPOSITORY } from '../enrollments/interfaces/enrollment-repository.interface.js';
@@ -12,8 +15,19 @@ export interface DirectoryEntry {
   createdAt: string;
 }
 
+/**
+ * `status` is emitted because this list is the **only** place a waiting
+ * registration is visible (`DOM-4`). Without it the queue screen cannot tell a
+ * student who is studying from one who is waiting for a decision, and the
+ * accept/reject routes would have nothing to list.
+ *
+ * The four percentage fields `API_SPEC.yaml`'s `StudentDetail` carries are
+ * still absent: they have no source until the reports and analytics units, and
+ * emitting a shape the server cannot fill is drift (`CLAUDE.md` §6).
+ */
 export interface StudentDirectoryEntry extends DirectoryEntry {
   enrolledCourseCount: number;
+  status: UserStatus;
 }
 
 /**
@@ -26,7 +40,9 @@ export interface StudentDirectoryEntry extends DirectoryEntry {
  *
  * `scope`, `groupIds`, `status` and `lastSeenAt` are deliberately absent -
  * those are `PEOPLE-4`, and `lastSeenAt` has no source anywhere in the
- * repository today (unit-1 ruling 4).
+ * repository today (unit-1 ruling 4). `status` here would be the *account*
+ * status added by `DOM-4`, which for staff is always `active` and would read
+ * as the scope field this row does not yet carry.
  */
 export interface StaffDirectoryEntry extends DirectoryEntry {
   role: Role;
@@ -52,8 +68,14 @@ export class DirectoryService {
     private readonly enrollmentRepo: EnrollmentRepository,
   ) {}
 
+  /**
+   * `status` is optional and its absence means **every** status, not `active` -
+   * this is the admin's whole student list, and a filter that quietly hid the
+   * waiting accounts would hide the queue from the one person who can clear it.
+   */
   async students(options: {
     search?: string;
+    status?: UserStatus;
     limit: number;
     offset: number;
   }): Promise<StudentDirectoryEntry[]> {
@@ -67,7 +89,31 @@ export class DirectoryService {
       email: user.email,
       createdAt: user.createdAt,
       enrolledCourseCount: counts[user.id] ?? 0,
+      status: user.status,
     }));
+  }
+
+  /**
+   * One directory row by id. The accept route's response: the row the queue
+   * screen was showing, as it now is.
+   *
+   * Here rather than in `RegistrationApprovalService` because this service owns
+   * the row shape - building it a second time over there is how the two drift.
+   */
+  async student(userId: string): Promise<StudentDirectoryEntry | null> {
+    const user = await this.userRepo.findById(userId);
+    if (!user || user.role !== Role.Student) {
+      return null;
+    }
+    const counts = await this.enrollmentRepo.countByStudents([user.id]);
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      createdAt: user.createdAt,
+      enrolledCourseCount: counts[user.id] ?? 0,
+      status: user.status,
+    };
   }
 
   /**

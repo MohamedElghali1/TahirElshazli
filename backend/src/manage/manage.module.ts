@@ -6,6 +6,7 @@ import { GradingService } from './grading.service.js';
 import { ManageRecordingsService } from './manage-recordings.service.js';
 import { ManageLiveSessionsService } from './manage-live-sessions.service.js';
 import { DirectoryService } from './directory.service.js';
+import { RegistrationApprovalService } from './registration-approval.service.js';
 import { AssessmentAuthoringService } from './assessment-authoring.service.js';
 import { WorkAnalyticsController } from './work-analytics.controller.js';
 import { WorkAnalyticsGateService } from './work-analytics-gate.service.js';
@@ -52,6 +53,10 @@ import { LiveSessionsModule } from '../live-sessions/live-sessions.module.js';
     ManageRecordingsService,
     ManageLiveSessionsService,
     DirectoryService,
+    // The registration queue (`DOM-4`). Needs no new import edge: CoursesModule
+    // is already here for CoursesService, GROUP_REPOSITORY is global, and
+    // USER_REPOSITORY arrives with AuthModule.
+    RegistrationApprovalService,
     // Authoring (§5.18). Needs no new import: ASSESSMENT_REPOSITORY comes from
     // AssessmentsModule above, and GROUP_REPOSITORY is global.
     AssessmentAuthoringService,

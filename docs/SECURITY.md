@@ -49,6 +49,32 @@ of their progress to an address typed into a form by staff.
   land in object storage, they need signed, expiring URLs — `CLAUDE.md` §8 already requires this for
   all media and the current local driver does not provide it.
 
+### 2.1a The registration queue, and where the status gate has to live — **BUILT 2026-09-20**
+
+`users.status` (`waiting | active | rejected`, migration `014`) decides who may authenticate. Two
+properties, both load-bearing:
+
+- **The gate is enforced twice, and the second one is the fix.** `AuthService.login` refuses to mint
+  a token for a non-`active` account; `JwtStrategy.validate` refuses one already minted. A gate at
+  `login` alone leaves every token issued **before** a rejection working until it expires, which is
+  exactly the window an account gets rejected in. `validate` already re-reads the user for existence
+  and role on every request, so this is one clause on a query that was already running.
+- **The refusals leak nothing.** The login refusal is a third clause on the existing condition,
+  **after** the single `DUMMY_PASSWORD_HASH` verify, reusing `'Invalid credentials'` — a distinct
+  "pending approval" message would make login a registration oracle, and an early return would
+  re-open the timing side channel. `validate` reuses `'Account no longer exists'`, so a rejected
+  account is indistinguishable from a deleted one. `accept`/`reject` answer the same 404 for an
+  unknown id and for a staff id.
+- **The `'waiting'` is written explicitly, never defaulted.** `users.status DEFAULT 'active'` is
+  correct for the rows that predate the queue and wrong for every row after. A service leaning on it
+  would not fail; the queue would simply always be empty, and accounts needing approval would
+  quietly not need it. The spec asserts the value passed to `UserRepository.create`, and an e2e
+  proves a fresh registration cannot sign in.
+- **`parent_email` and `staff_notes` (migration `014`) are never student-facing.**
+  `StudentsService` returns a view built key by key rather than the stored row, so a staff column
+  added later cannot reach `GET /students/me/profile` by accident. Neither ever enters an audit
+  payload, a log line or an error message.
+
 ### 2.2 Announcements now send email
 Publishing fans out to every recipient once. Risks: a double-publish sending twice (make publish
 idempotent on `published_at`), and the audience being resolved from a stored list rather than live

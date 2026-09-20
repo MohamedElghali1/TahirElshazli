@@ -24,6 +24,7 @@ const STUDENT = {
 
 describe('CoursesController', () => {
   let controller: CoursesController;
+  let coursesService: CoursesService;
   let courseRepo: InMemoryCourseRepository;
 
   beforeEach(async () => {
@@ -55,6 +56,7 @@ describe('CoursesController', () => {
       .compile();
 
     controller = module.get<CoursesController>(CoursesController);
+    coursesService = module.get<CoursesService>(CoursesService);
     courseRepo = module.get(COURSE_REPOSITORY);
   });
 
@@ -150,7 +152,17 @@ describe('CoursesController', () => {
     ).rejects.toThrow();
   });
 
-  describe('catalog and self-enrollment', () => {
+  /**
+   * `POST /courses/:id/enroll` is retired (`DOM-4`): a student no longer
+   * enrols themselves, staff accepting their registration does it.
+   *
+   * These cases now exercise **`CoursesService.enroll` directly**, because the
+   * method did not go anywhere - `RegistrationApprovalService.accept` calls it,
+   * and its three properties (idempotent, 404 on an unknown course, refuses an
+   * unpublished one) are exactly what that transaction depends on. Deleting
+   * them with the route would have dropped the coverage and kept the risk.
+   */
+  describe('catalog, and enrolment through the service', () => {
     const STUDENT_2 = {
       user: { sub: 'student-2', email: 's2@example.com', role: 'student', jti: 'j2' },
     };
@@ -185,7 +197,7 @@ describe('CoursesController', () => {
         controller.getCourseDetail('course-2', STUDENT_2),
       ).rejects.toThrow();
 
-      const enrolled = await controller.enroll('course-2', STUDENT_2);
+      const enrolled = await coursesService.enroll('course-2', 'student-2');
       expect(enrolled.id).toBe('course-2');
 
       // After: the same read succeeds, and the course is on the dashboard.
@@ -198,7 +210,7 @@ describe('CoursesController', () => {
     it('should report zeroed progress on a course just enrolled on', async () => {
       // A fresh enrollment has watched nothing and attended nothing, and both
       // halves say so rather than one of them being absent.
-      const enrolled = await controller.enroll('course-2', STUDENT_2);
+      const enrolled = await coursesService.enroll('course-2', 'student-2');
       expect(enrolled.progress).toMatchObject({
         completedLessons: 0,
         attendedSessions: 0,
@@ -206,12 +218,12 @@ describe('CoursesController', () => {
     });
 
     it('should treat a repeated enrollment as success without resetting it', async () => {
-      const first = await controller.enroll('course-1', STUDENT_2);
+      const first = await coursesService.enroll('course-1', 'student-2');
       // student-2 was already enrolled on course-1 in March; a second click
       // must not restamp that date.
       expect(first.id).toBe('course-1');
 
-      const second = await controller.enroll('course-1', STUDENT_2);
+      const second = await coursesService.enroll('course-1', 'student-2');
       expect(second.id).toBe('course-1');
 
       const mine = await controller.listCourses(STUDENT_2);
@@ -219,7 +231,7 @@ describe('CoursesController', () => {
     });
 
     it('should 404 an enrollment on a course that does not exist', async () => {
-      await expect(controller.enroll('course-nope', STUDENT_2)).rejects.toThrow();
+      await expect(coursesService.enroll('course-nope', 'student-2')).rejects.toThrow();
     });
 
     it('should read the catalog from the published courses, not from every row', async () => {
@@ -243,15 +255,16 @@ describe('CoursesController', () => {
         isPublished: false,
       });
 
-      await expect(controller.enroll('course-2', STUDENT_2)).rejects.toThrow(
+      await expect(coursesService.enroll('course-2', 'student-2')).rejects.toThrow(
         'Course not found',
       );
     });
 
-    it('should enroll the caller from the token, never a supplied id', async () => {
-      await controller.enroll('course-2', STUDENT_2);
-      // The other student's roster is untouched - there is no parameter on
-      // the route that could have named them.
+    it('should enroll exactly the named student and nobody else', async () => {
+      await coursesService.enroll('course-2', 'student-2');
+      // Another student's roster is untouched. With the self-enrol route gone
+      // the caller is never the subject anyway: `accept` names the student it
+      // was given, under a `@Roles(...STAFF_ADMIN)` route.
       const other = await controller.listCourses({
         user: { sub: 'student-3', email: 's3@example.com', role: 'student', jti: 'j3' },
       });

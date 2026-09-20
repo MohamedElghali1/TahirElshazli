@@ -223,10 +223,30 @@ breaks the streak where 001–008 each found something on their first run.
 matches what `get()` already does; the notes call it "one count", which it is not.
 The unit is `[~]` until a reviewer verdict of `APPROVED` (§2 condition 3).
 
-#### Unit 2b — scope, people and courses `[ ]`
+#### Unit 2b — scope, people and courses **— SPLIT into 2b-i and 2b-ii (ruling R-5, 2026-09-20)**
 
-**Scope** `DOM-3`, `DOM-4`, `AUTH-2`, `DOM-5`, the final `DOM-6` pass. Student profile columns;
-registration approval; course scoping → group scoping; course CRUD.
+Same reasoning that produced the 2a/2b split, and that split worked: the only irreversible drop
+gets its own review, and `AUTH-2` is the only item carrying an **authorization contract** — seven
+spec cases that must pass unmodified, two byte-identical messages, 21 call sites and `D-10`'s
+both-directions refusal tests. 2b measured the same size as 2a, and 2a was tractable **and still
+returned nine findings.** The two slices share four files, all additive on one side, and neither
+needs anything from the other's migration.
+
+| Slice | Tasks | Migration | Status |
+|---|---|---|---|
+| **2b-i — people and courses** | `DOM-3`, `DOM-4`, `DOM-5`, seeds `001`/`002` for `014` | `014`, additive | `[x]` COMPLETE, pending review |
+| **2b-ii — scope** | `AUTH-2` + `D-10`, final `DOM-6` | `015`, destructive | `[ ]` |
+
+**Out of 2b-i, explicitly:** `AUTH-2`, `D-10`, migration `015` (not authored, not even as an empty
+file), the final `DOM-6` pass, `backend/src/staff/**` including `staff-scope.service.spec.ts`, and
+`admin-staff.controller.ts`. None was touched.
+
+**2b-i exit, as measured:** 515 unit / 32 files · 224 e2e · 103 integration, **0 skipped**, all 14
+migrations from an empty schema; `frontend/lib/` at 0 typecheck errors; the registration queue works
+end to end over HTTP. `EXECUTION_NOTES_2B_I.md` carries the pasted output.
+
+**Scope (the unit as a whole)** `DOM-3`, `DOM-4`, `AUTH-2`, `DOM-5`, the final `DOM-6` pass. Student
+profile columns; registration approval; course scoping → group scoping; course CRUD.
 **Depends on** unit 2a (verified `013`). `DOM-4` and `AUTH-2` depend on `AUTH-1` (unit 1, built).
 **Migrations** `014_registration_and_student_profile.sql`, `015_assistant_group_scope.sql`.
 **Not authored in 2a, not even as empty files** — a `014` present with no `013` applies straight
@@ -249,8 +269,10 @@ that service's attribution is already correct going in.
 **and** on a group with no course; a student in no group resolves to `[]` rather than throwing.
 *(That last case replaces `LearningModeService`'s fallback-chain test — the chain is deleted, the
 case it protected is not.)* **All done in 2a.**
-**Security** `POST /courses/:id/enroll` becomes staff-only. **Keep `CoursesService.enroll`** — only
-the route moves. Accept/reject are audited.
+**Security** `POST /courses/:id/enroll` is **retired**, not merely re-roled: it answers 404, and a
+student cannot enrol themselves at all. **`CoursesService.enroll` kept** — `accept` calls it.
+Accept/reject are audited. The status gate is in **two** places, `login` and
+`JwtStrategy.validate` (ruling R-6) — **all done in 2b-i.**
 **Exit** universal, plus: no code path reads `group_courses`; `DATABASE_PLAN.md` §4.1 reconciled with
 what ran.
 **Blocked within scope** `DOM-3`/`DOM-6` partially — decisions `D-4`, `D-5`.

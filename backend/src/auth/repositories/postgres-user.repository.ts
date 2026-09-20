@@ -8,6 +8,7 @@ import type {
   StoredUser,
   StudentEmailIdentity,
   UserRepository,
+  UserStatus,
 } from '../interfaces/user-repository.interface.js';
 
 interface UserRow {
@@ -18,6 +19,7 @@ interface UserRow {
   name: string;
   created_at: Date;
   google_email: string | null;
+  status: UserStatus;
 }
 
 interface ResetTokenRow {
@@ -28,7 +30,7 @@ interface ResetTokenRow {
 }
 
 const USER_COLUMNS =
-  'id, email, password_hash, role, name, created_at, google_email';
+  'id, email, password_hash, role, name, created_at, google_email, status';
 
 /**
  * An empty role list is a bug, never "every account". Same refusal as the
@@ -51,6 +53,7 @@ function toUser(row: UserRow): StoredUser {
     name: row.name,
     createdAt: iso(row.created_at),
     googleEmail: row.google_email,
+    status: row.status,
   };
 }
 
@@ -80,7 +83,12 @@ export class PostgresUserRepository implements UserRepository {
 
   async findByRole(
     roles: readonly Role[],
-    options: { search?: string; limit: number; offset: number },
+    options: {
+      search?: string;
+      status?: UserStatus;
+      limit: number;
+      offset: number;
+    },
   ): Promise<StoredUser[]> {
     requireRoles(roles);
     // Both the role list and the search term are parameters, not interpolated
@@ -93,6 +101,7 @@ export class PostgresUserRepository implements UserRepository {
        WHERE role = ANY($1::text[])
          AND ($2::text IS NULL OR name ILIKE '%' || $2 || '%'
                                OR email ILIKE '%' || $2 || '%')
+         AND ($5::text IS NULL OR status = $5)
        ORDER BY name
        LIMIT $3 OFFSET $4`,
       [
@@ -100,6 +109,7 @@ export class PostgresUserRepository implements UserRepository {
         search && search.length > 0 ? search : null,
         options.limit,
         options.offset,
+        options.status ?? null,
       ],
     );
     return rows.map(toUser);
@@ -181,10 +191,15 @@ export class PostgresUserRepository implements UserRepository {
     passwordHash: string;
     name: string;
     role: Role;
+    status: UserStatus;
   }): Promise<StoredUser> {
+    // `status` is written explicitly rather than left to the column's
+    // `DEFAULT 'active'` (migration 014). The default exists for the rows that
+    // predate the queue; relying on it for a new registration would make the
+    // queue silently always empty.
     const row = await this.db.queryOne<UserRow>(
-      `INSERT INTO users (id, email, password_hash, role, name)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO users (id, email, password_hash, role, name, status)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING ${USER_COLUMNS}`,
       [
         randomUUID(),
@@ -192,11 +207,19 @@ export class PostgresUserRepository implements UserRepository {
         user.passwordHash,
         user.role,
         user.name,
+        user.status,
       ],
     );
     // The INSERT ... RETURNING either produced a row or threw; a null here
     // would mean the driver contract changed underneath us.
     return toUser(row!);
+  }
+
+  async setStatus(userId: string, status: UserStatus): Promise<void> {
+    await this.db.query('UPDATE users SET status = $2 WHERE id = $1', [
+      userId,
+      status,
+    ]);
   }
 
   async updatePassword(userId: string, passwordHash: string): Promise<void> {

@@ -6,6 +6,7 @@ import type {
   StoredUser,
   StudentEmailIdentity,
   UserRepository,
+  UserStatus,
 } from '../interfaces/user-repository.interface.js';
 
 /**
@@ -42,6 +43,9 @@ export class InMemoryUserRepository implements UserRepository {
       name: 'Ali Esam',
       createdAt: '2026-01-15T10:00:00Z',
       googleEmail: null,
+      // Every seeded account predates the queue and is signed in with by the
+      // e2e suite. Mirrors `database/seeds/001`/`002`, which write it out too.
+      status: 'active',
     },
     {
       id: 'student-2',
@@ -51,6 +55,9 @@ export class InMemoryUserRepository implements UserRepository {
       name: 'Sara Ahmed',
       createdAt: '2026-03-10T08:00:00Z',
       googleEmail: null,
+      // Every seeded account predates the queue and is signed in with by the
+      // e2e suite. Mirrors `database/seeds/001`/`002`, which write it out too.
+      status: 'active',
     },
     {
       id: 'teacher-1',
@@ -60,6 +67,9 @@ export class InMemoryUserRepository implements UserRepository {
       name: 'Dr. Tahir Elshazli',
       createdAt: '2025-11-01T09:00:00Z',
       googleEmail: null,
+      // Every seeded account predates the queue and is signed in with by the
+      // e2e suite. Mirrors `database/seeds/001`/`002`, which write it out too.
+      status: 'active',
     },
     // The Full admin (AUTH-1): the teacher's permission under her own
     // identity, which is the entire point of the role - every audit entry she
@@ -77,6 +87,9 @@ export class InMemoryUserRepository implements UserRepository {
       name: 'Mona Saleh',
       createdAt: '2026-01-20T09:00:00Z',
       googleEmail: null,
+      // Every seeded account predates the queue and is signed in with by the
+      // e2e suite. Mirrors `database/seeds/001`/`002`, which write it out too.
+      status: 'active',
     },
     // Two assistants, because one cannot demonstrate scoping: assistant-1 is
     // assigned to course-1, assistant-2 to nothing. Mirrors
@@ -89,6 +102,9 @@ export class InMemoryUserRepository implements UserRepository {
       name: 'Nour Hassan',
       createdAt: '2026-01-25T09:00:00Z',
       googleEmail: null,
+      // Every seeded account predates the queue and is signed in with by the
+      // e2e suite. Mirrors `database/seeds/001`/`002`, which write it out too.
+      status: 'active',
     },
     {
       id: 'assistant-2',
@@ -98,6 +114,9 @@ export class InMemoryUserRepository implements UserRepository {
       name: 'Omar Fathy',
       createdAt: '2026-02-10T09:00:00Z',
       googleEmail: null,
+      // Every seeded account predates the queue and is signed in with by the
+      // e2e suite. Mirrors `database/seeds/001`/`002`, which write it out too.
+      status: 'active',
     },
   ];
 
@@ -119,12 +138,20 @@ export class InMemoryUserRepository implements UserRepository {
 
   async findByRole(
     roles: readonly Role[],
-    options: { search?: string; limit: number; offset: number },
+    options: {
+      search?: string;
+      status?: UserStatus;
+      limit: number;
+      offset: number;
+    },
   ): Promise<StoredUser[]> {
     const wanted = requireRoles(roles);
     const needle = options.search?.trim().toLowerCase();
     return this.users
       .filter((u) => wanted.has(u.role))
+      // Absent means every status - the admin directory is the only place a
+      // waiting registration is visible at all.
+      .filter((u) => !options.status || u.status === options.status)
       .filter(
         (u) =>
           !needle ||
@@ -179,6 +206,7 @@ export class InMemoryUserRepository implements UserRepository {
     passwordHash: string;
     name: string;
     role: Role;
+    status: UserStatus;
   }): Promise<StoredUser> {
     const created: StoredUser = {
       id: randomUUID(),
@@ -190,9 +218,18 @@ export class InMemoryUserRepository implements UserRepository {
       // Nobody registers with one; it is recorded later, by the student or by
       // staff resolving an unmatched response.
       googleEmail: null,
+      // Taken from the caller, never defaulted here. See the interface.
+      status: user.status,
     };
     this.users.push(created);
     return created;
+  }
+
+  async setStatus(userId: string, status: UserStatus): Promise<void> {
+    const user = this.users.find((u) => u.id === userId);
+    if (user) {
+      user.status = status;
+    }
   }
 
   async updatePassword(userId: string, passwordHash: string): Promise<void> {

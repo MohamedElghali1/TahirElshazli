@@ -105,6 +105,7 @@ const EXPECTED: Record<string, readonly Role[]> = {
   AdminAnnouncementsController: STAFF_ADMIN,
   AdminAuditController: STAFF_ADMIN,
   AdminGoogleIntegrationController: STAFF_ADMIN,
+  AdminCoursesController: STAFF_ADMIN,
   AdminGroupsController: STAFF_ADMIN,
   AdminManageController: STAFF_ADMIN,
   AdminStaffController: STAFF_ADMIN,
@@ -143,10 +144,11 @@ const PER_METHOD_CONTROLLERS = ['AppController', 'AuthController'];
 
 describe('the authorization boundary', () => {
   it('discovers every controller in the build', () => {
-    // 29 controller files, 29 classes. If this number moves, a controller was
+    // 30 controller files, 30 classes. If this number moves, a controller was
     // added or removed and its row below has to be decided rather than
     // defaulted - which is the entire point of asserting a count.
-    expect(CONTROLLERS).toHaveLength(29);
+    // `AdminCoursesController` (`DOM-5`) is the thirtieth.
+    expect(CONTROLLERS).toHaveLength(30);
     const named = CONTROLLERS.map((c) => c.name);
     expect(new Set(named).size).toBe(named.length);
     for (const name of [
@@ -156,7 +158,7 @@ describe('the authorization boundary', () => {
     ]) {
       expect(named).toContain(name);
     }
-    expect(Object.keys(EXPECTED)).toHaveLength(25);
+    expect(Object.keys(EXPECTED)).toHaveLength(26);
   });
 
   describe('@Roles, read back off the decorator', () => {
@@ -201,9 +203,10 @@ describe('the authorization boundary', () => {
       const adminControllers = CONTROLLERS.filter((c) =>
         c.path.startsWith('admin'),
       );
-      // Six today. Asserted so a seventh admin controller cannot arrive without
-      // this test looking at it.
-      expect(adminControllers).toHaveLength(6);
+      // Seven today - `AdminCoursesController` joined for `DOM-5`. Asserted so
+      // an eighth admin controller cannot arrive without this test looking at
+      // it.
+      expect(adminControllers).toHaveLength(7);
       for (const entry of adminControllers) {
         // Per **handler**, through `resolve()` - the guard's own precedence -
         // and not off the class. A method-level `@Roles(...STAFF_ALL)` on a

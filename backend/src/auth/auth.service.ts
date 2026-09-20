@@ -30,6 +30,20 @@ export interface AuthResult {
   user: AuthenticatedUser;
 }
 
+/**
+ * What registration returns: the queue position, and **nothing else**.
+ *
+ * No `accessToken` and no `user` (ruling R-6). A new account is `waiting` and
+ * `DOMAIN_MODEL.md:23` says only `active` may authenticate, so handing back a
+ * credential in the same response that records the account as unable to
+ * authenticate contradicts the model in the API's own body - and it is the
+ * kind of contradiction someone later resolves by deleting the gate rather
+ * than the token.
+ */
+export interface RegistrationResult {
+  status: 'waiting';
+}
+
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
 
 /**
@@ -74,11 +88,15 @@ export class AuthService {
     return this.jwtService.signAsync(payload);
   }
 
+  /**
+   * Creates a student account **in the waiting queue**. It cannot sign in
+   * until staff accept it (`POST /admin/students/:id/accept`).
+   */
   async register(
     email: string,
     password: string,
     name: string,
-  ): Promise<AuthResult> {
+  ): Promise<RegistrationResult> {
     const existing = await this.userRepo.findByEmail(email);
     if (existing) {
       throw new ConflictException('An account with this email already exists');
@@ -89,6 +107,13 @@ export class AuthService {
       passwordHash,
       name,
       role: Role.Student,
+      // **Explicit, never the column default.** `users.status` defaults to
+      // `'active'` (migration 014) so the accounts that predate the queue keep
+      // working; leaning on that here would put every new registration
+      // straight past the queue and leave it permanently empty - a silent
+      // authorization hole. `auth.service.spec.ts` asserts the value passed to
+      // `create`, not the row read back, so the default cannot mask it.
+      status: 'waiting',
     });
     // A student user without a profile row is a half-created account: the
     // profile and dashboard endpoints both 404 for them.
@@ -97,11 +122,7 @@ export class AuthService {
       name: user.name,
       email: user.email,
     });
-    const accessToken = await this.issueToken(user);
-    return {
-      accessToken,
-      user: { id: user.id, email: user.email, name: user.name, role: user.role },
-    };
+    return { status: 'waiting' };
   }
 
   async login(email: string, password: string): Promise<AuthResult> {
@@ -112,7 +133,15 @@ export class AuthService {
       password,
       user?.passwordHash ?? DUMMY_PASSWORD_HASH,
     );
-    if (!user || !passwordMatches) {
+    // One condition, one message, and it runs **after** the verify.
+    //
+    // `user.status !== 'active'` is a third clause on the existing refusal
+    // rather than a check of its own, deliberately: a distinct "your account is
+    // pending approval" message turns login into a registration oracle, and an
+    // early return before the verify re-opens the timing side channel that
+    // DUMMY_PASSWORD_HASH exists to close. Nothing here reveals which clause
+    // failed.
+    if (!user || !passwordMatches || user.status !== 'active') {
       throw new UnauthorizedException('Invalid credentials');
     }
     const accessToken = await this.issueToken(user);

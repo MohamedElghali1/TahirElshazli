@@ -70,6 +70,281 @@ describeIfDb('Postgres repositories', () => {
     expect(applied).toEqual([]);
   });
 
+  /**
+   * Migration 014's post-conditions, asserted against the catalog rather than
+   * inferred from a repository read (`DOM-3` + `DOM-4`). Every one of
+   * migrations 001-008 found something on its first real run; this is what
+   * that habit looks like written down.
+   */
+  describe('migration 014', () => {
+    it('constrains users.status to the three values', async () => {
+      const bad = db.query(
+        `INSERT INTO users (id, email, password_hash, role, name, status)
+         VALUES ('bad-status', 'bad@example.com', 'x', 'student', 'Bad', 'pendng')`,
+      );
+      await expect(bad).rejects.toThrow(/users_status_check/);
+    });
+
+    it('defaults an existing-style insert to active, so nobody predating the queue is locked out', async () => {
+      await db.query(
+        `INSERT INTO users (id, email, password_hash, role, name)
+         VALUES ('legacy-1', 'legacy@example.com', 'x', 'student', 'Legacy')`,
+      );
+      const row = await db.queryOne<{ status: string }>(
+        `SELECT status FROM users WHERE id = 'legacy-1'`,
+      );
+      expect(row?.status).toBe('active');
+      await db.query(`DELETE FROM users WHERE id = 'legacy-1'`);
+    });
+
+    it('indexes the waiting queue, partially', async () => {
+      const row = await db.queryOne<{ indexdef: string }>(
+        `SELECT indexdef FROM pg_indexes
+          WHERE schemaname = current_schema() AND indexname = 'users_waiting_idx'`,
+      );
+      expect(row?.indexdef).toMatch(/WHERE \(status = 'waiting'/);
+    });
+
+    it('adds the three staff columns to student_profiles, all nullable', async () => {
+      const rows = await db.query<{ column_name: string; is_nullable: string }>(
+        `SELECT column_name, is_nullable FROM information_schema.columns
+          WHERE table_schema = current_schema()
+            AND table_name = 'student_profiles'
+            AND column_name IN ('school_name', 'parent_email', 'staff_notes')
+          ORDER BY column_name`,
+      );
+      expect(rows).toEqual([
+        { column_name: 'parent_email', is_nullable: 'YES' },
+        { column_name: 'school_name', is_nullable: 'YES' },
+        { column_name: 'staff_notes', is_nullable: 'YES' },
+      ]);
+    });
+
+    it('does not add a students.mode column (ruling R-2)', async () => {
+      // `D-4` struck `students.mode`. Asserted rather than assumed, because
+      // five documents still described it when this slice started and the
+      // cheapest way for it to reappear is somebody trusting one of them.
+      const rows = await db.query(
+        `SELECT column_name FROM information_schema.columns
+          WHERE table_schema = current_schema()
+            AND table_name = 'student_profiles'
+            AND column_name = 'mode'`,
+      );
+      expect(rows).toEqual([]);
+    });
+  });
+
+  /**
+   * The registration queue, through the Postgres driver, and **the rollback
+   * `RegistrationApprovalService.accept` depends on**.
+   *
+   * The unit spec proves every write of `accept` is inside one
+   * `runInTransaction`; only this driver can prove that the wrap actually
+   * undoes them. The memory driver's `runInTransaction` is a documented
+   * passthrough with no rollback.
+   */
+  describe('the registration queue in Postgres', () => {
+    const repo = () => new PostgresUserRepository(db);
+
+    it('round-trips a waiting account and moves it through the queue', async () => {
+      const r = repo();
+      const created = await r.create({
+        email: `queued-${Date.now()}@example.com`,
+        passwordHash: 'hash',
+        name: 'Queued Student',
+        role: Role.Student,
+        status: 'waiting',
+      });
+      expect(created.status).toBe('waiting');
+      expect((await r.findById(created.id))?.status).toBe('waiting');
+
+      await r.setStatus(created.id, 'active');
+      expect((await r.findById(created.id))?.status).toBe('active');
+
+      await r.setStatus(created.id, 'rejected');
+      expect((await r.findById(created.id))?.status).toBe('rejected');
+      await db.query('DELETE FROM users WHERE id = $1', [created.id]);
+    });
+
+    it('filters the directory by status, and shows every status when given none', async () => {
+      const r = repo();
+      const created = await r.create({
+        email: `queued2-${Date.now()}@example.com`,
+        passwordHash: 'hash',
+        name: 'Zzz Queued Student',
+        role: Role.Student,
+        status: 'waiting',
+      });
+
+      const waiting = await r.findByRole([Role.Student], {
+        status: 'waiting',
+        limit: 50,
+        offset: 0,
+      });
+      expect(waiting.map((u) => u.id)).toEqual([created.id]);
+
+      const everyone = await r.findByRole([Role.Student], {
+        limit: 50,
+        offset: 0,
+      });
+      expect(everyone.map((u) => u.id)).toContain(created.id);
+      expect(everyone.length).toBeGreaterThan(waiting.length);
+
+      // The status filter and the search filter compose rather than replace.
+      const searched = await r.findByRole([Role.Student], {
+        status: 'waiting',
+        search: 'Zzz',
+        limit: 50,
+        offset: 0,
+      });
+      expect(searched.map((u) => u.id)).toEqual([created.id]);
+      await db.query('DELETE FROM users WHERE id = $1', [created.id]);
+    });
+
+    it('rolls a half-finished acceptance back', async () => {
+      // The named risk: activation committing without the enrolment leaves a
+      // student who is `active`, in a group, and enrolled on nothing - every
+      // course read 404s and nothing on any screen says why.
+      const r = repo();
+      const created = await r.create({
+        email: `rollback-${Date.now()}@example.com`,
+        passwordHash: 'hash',
+        name: 'Rollback Student',
+        role: Role.Student,
+        status: 'waiting',
+      });
+
+      await expect(
+        db.runInTransaction(async () => {
+          await r.setStatus(created.id, 'active');
+          // Stands in for `CoursesService.enroll` failing mid-accept.
+          throw new Error('enrol failed');
+        }),
+      ).rejects.toThrow('enrol failed');
+
+      expect((await r.findById(created.id))?.status).toBe('waiting');
+      await db.query('DELETE FROM users WHERE id = $1', [created.id]);
+    });
+  });
+
+  describe('student profile staff fields', () => {
+    it('reads the three staff-owned columns from the seeded profile', async () => {
+      const profile = await new PostgresStudentRepository(db).findByUserId(
+        'student-1',
+      );
+      expect(profile).toMatchObject({
+        schoolName: 'El Alsson School',
+        parentEmail: 'parent1@example.com',
+        staffNotes: 'Needs extra practice on titration.',
+      });
+    });
+
+    it('leaves them null on a profile created at registration', async () => {
+      const r = new PostgresStudentRepository(db);
+      const user = await new PostgresUserRepository(db).create({
+        email: `profiled-${Date.now()}@example.com`,
+        passwordHash: 'hash',
+        name: 'Profiled Student',
+        role: Role.Student,
+        status: 'waiting',
+      });
+      const profile = await r.createForUser({
+        userId: user.id,
+        name: 'Profiled Student',
+        email: user.email,
+      });
+      expect(profile).toMatchObject({
+        schoolName: null,
+        parentEmail: null,
+        staffNotes: null,
+      });
+      await db.query('DELETE FROM users WHERE id = $1', [user.id]);
+    });
+  });
+
+  describe('course lifecycle in Postgres', () => {
+    const repo = () => new PostgresCourseRepository(db);
+
+    it('creates a draft course with an empty outline', async () => {
+      const created = await repo().create({
+        slug: `igcse-physics-${Date.now()}`,
+        isPublished: false,
+        title: 'IGCSE Physics',
+        description: 'Papers 1 and 2',
+        thumbnailUrl: null,
+        teacherName: 'Dr. Tahir Elshazli',
+        sequentialLockEnabled: false,
+      });
+      expect(created).toMatchObject({
+        title: 'IGCSE Physics',
+        isPublished: false,
+        modules: [],
+      });
+      expect(await repo().findById(created.id)).toMatchObject({
+        id: created.id,
+      });
+      // A draft is absent from the published read, which is what the public
+      // catalog is built on.
+      const published = await repo().findPublished(100, 0);
+      expect(published.map((c) => c.id)).not.toContain(created.id);
+      await db.query('DELETE FROM courses WHERE id = $1', [created.id]);
+    });
+
+    it('refuses a duplicate slug at the index, even if a service check is skipped', async () => {
+      await expect(
+        repo().create({
+          slug: 'as-chemistry',
+          isPublished: false,
+          title: 'Clash',
+          description: 'x',
+          thumbnailUrl: null,
+          teacherName: 'x',
+          sequentialLockEnabled: false,
+        }),
+      ).rejects.toThrow(/courses_slug_key/);
+    });
+
+    it('updates only the named columns and keeps the outline', async () => {
+      const updated = await repo().update('course-1', {
+        title: 'AS Chemistry (2026)',
+      });
+      expect(updated).toMatchObject({
+        title: 'AS Chemistry (2026)',
+        slug: 'as-chemistry',
+        // COALESCE left these alone rather than nulling them.
+        sequentialLockEnabled: true,
+        isPublished: true,
+      });
+      expect(updated!.modules.length).toBeGreaterThan(0);
+      await repo().update('course-1', { title: 'AS Chemistry' });
+    });
+
+    it('tells "leave alone" from "clear it" on the one nullable column', async () => {
+      const r = repo();
+      await r.update('course-1', { thumbnailUrl: 'https://example.com/a.png' });
+      // Absent: untouched.
+      expect((await r.update('course-1', { title: 'AS Chemistry' }))?.thumbnailUrl)
+        .toBe('https://example.com/a.png');
+      // Explicit null: cleared. COALESCE alone cannot express this, which is
+      // why the column carries the extra boolean parameter.
+      expect((await r.update('course-1', { thumbnailUrl: null }))?.thumbnailUrl)
+        .toBeNull();
+    });
+
+    it('sets false rather than reading it as "leave alone"', async () => {
+      // The COALESCE trap on a boolean column: `false` is not NULL, so it must
+      // survive. A driver that tested truthiness would silently ignore it.
+      const r = repo();
+      expect((await r.update('course-1', { isPublished: false }))?.isPublished)
+        .toBe(false);
+      await r.update('course-1', { isPublished: true });
+    });
+
+    it('returns null for a course that does not exist', async () => {
+      expect(await repo().update('course-nope', { title: 'x' })).toBeNull();
+    });
+  });
+
   describe('users', () => {
     const repo = () => new PostgresUserRepository(db);
 
@@ -86,6 +361,7 @@ describeIfDb('Postgres repositories', () => {
         passwordHash: 'hash',
         name: 'New Student',
         role: Role.Student,
+        status: 'active',
       });
       expect(created.email).toBe('new.student@example.com');
       expect(await repo().findById(created.id)).toMatchObject({
@@ -735,6 +1011,7 @@ describeIfDb('Postgres repositories', () => {
         passwordHash: 'hash',
         name: 'Late Assistant',
         role: Role.Assistant,
+        status: 'active',
       });
       expect(await repo.findIdsByRole([Role.Assistant])).toContain(hire.id);
     });
@@ -752,6 +1029,7 @@ describeIfDb('Postgres repositories', () => {
         passwordHash: 'hash',
         name: 'Second Admin',
         role: Role.Admin,
+        status: 'active',
       });
       expect((await repo.findById(created.id))?.role).toBe(Role.Admin);
     });

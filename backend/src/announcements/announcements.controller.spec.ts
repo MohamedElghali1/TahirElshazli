@@ -200,6 +200,7 @@ describe('Announcements', () => {
         passwordHash: 'hash',
         name: 'Late Arrival',
         role: Role.Assistant,
+        status: 'active',
       });
 
       const posted = await admin.post(

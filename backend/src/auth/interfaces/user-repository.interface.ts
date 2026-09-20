@@ -1,5 +1,21 @@
 import { Role } from '../roles.enum.js';
 
+/**
+ * Where an account sits in the registration queue (`DOM-4`).
+ *
+ * - `waiting` - registered, approved by nobody yet. **May not authenticate.**
+ * - `active` - the only value that may sign in.
+ * - `rejected` - refused by staff. Kept rather than deleted, so the same
+ *   address cannot quietly re-register into a clean slate and so the audit
+ *   entry that rejected them still names a row.
+ *
+ * `DOMAIN_MODEL.md:23`. The rule is enforced in **two** places, and both are
+ * load-bearing: `AuthService.login` refuses to mint a token, and
+ * `JwtStrategy.validate` refuses a token already minted - without the second,
+ * every token issued before a rejection keeps working until it expires.
+ */
+export type UserStatus = 'waiting' | 'active' | 'rejected';
+
 export interface StoredUser {
   id: string;
   email: string;
@@ -17,6 +33,7 @@ export interface StoredUser {
    * this there is no way to attribute those responses to anybody.
    */
   googleEmail: string | null;
+  status: UserStatus;
 }
 
 /**
@@ -73,7 +90,20 @@ export interface UserRepository {
    */
   findByRole(
     roles: readonly Role[],
-    options: { search?: string; limit: number; offset: number },
+    options: {
+      search?: string;
+      /**
+       * Optional, and its absence means **every status**, not `active`.
+       *
+       * The opposite default was tempting and is wrong: the admin directory is
+       * the only screen from which a waiting registration can be seen at all,
+       * so a filter that silently hid them would hide the queue from the one
+       * person who can clear it.
+       */
+      status?: UserStatus;
+      limit: number;
+      offset: number;
+    },
   ): Promise<StoredUser[]>;
   /**
    * Every account id holding a role, resolved *now*.
@@ -124,12 +154,30 @@ export interface UserRepository {
    * used an unrecognised address is the least likely person to notice.
    */
   setGoogleEmail(userId: string, googleEmail: string | null): Promise<void>;
+  /**
+   * `status` is **required**, with no default here and none defaulted in the
+   * service either.
+   *
+   * The column carries `DEFAULT 'active'` (migration 014) because every row
+   * that predates the queue must keep working. That default is exactly wrong
+   * for a new registration, and an optional parameter here would let one
+   * caller forget - which would not fail, it would simply make the waiting
+   * queue permanently empty. Requiring the argument makes forgetting a compile
+   * error instead.
+   */
   create(user: {
     email: string;
     passwordHash: string;
     name: string;
     role: Role;
+    status: UserStatus;
   }): Promise<StoredUser>;
+  /**
+   * Moves an account through the queue. Written only from
+   * `RegistrationApprovalService`, inside the transaction that also enrols and
+   * places the student - so an activation cannot commit without the rest.
+   */
+  setStatus(userId: string, status: UserStatus): Promise<void>;
   updatePassword(userId: string, passwordHash: string): Promise<void>;
   createPasswordResetToken(
     userId: string,

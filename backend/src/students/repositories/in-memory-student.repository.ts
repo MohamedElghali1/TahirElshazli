@@ -19,6 +19,12 @@ export class InMemoryStudentRepository implements StudentRepository {
       enrolledCourseCount: 2,
       createdAt: '2026-01-15T10:00:00Z',
       updatedAt: '2026-08-01T12:00:00Z',
+      // Populated on exactly one fixture, mirroring `seeds/001`: a fixture
+      // where every staff field is null cannot tell "never read" apart from
+      // "never leaked", and the second is the property under test.
+      schoolName: 'El Alsson School',
+      parentEmail: 'parent1@example.com',
+      staffNotes: 'Needs extra practice on titration.',
     },
     {
       id: 'profile-2',
@@ -30,6 +36,9 @@ export class InMemoryStudentRepository implements StudentRepository {
       enrolledCourseCount: 1,
       createdAt: '2026-03-10T08:00:00Z',
       updatedAt: '2026-07-20T14:00:00Z',
+      schoolName: null,
+      parentEmail: null,
+      staffNotes: null,
     },
   ];
 
@@ -53,6 +62,10 @@ export class InMemoryStudentRepository implements StudentRepository {
       enrolledCourseCount: 0,
       createdAt: now,
       updatedAt: now,
+      // Staff fill these in later, if ever.
+      schoolName: null,
+      parentEmail: null,
+      staffNotes: null,
     };
     this.profiles.push(profile);
     return profile;

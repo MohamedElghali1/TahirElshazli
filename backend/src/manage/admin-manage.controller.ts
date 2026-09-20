@@ -29,6 +29,11 @@ import { UpdateRecordingDto } from './dto/update-recording.dto.js';
 import { CreateLiveSessionDto } from './dto/create-live-session.dto.js';
 import { UpdateLiveSessionDto } from './dto/update-live-session.dto.js';
 import { ListDirectoryQueryDto } from './dto/queries.dto.js';
+import { RegistrationApprovalService } from './registration-approval.service.js';
+import {
+  AcceptRegistrationDto,
+  RejectRegistrationDto,
+} from './dto/registration.dto.js';
 
 /**
  * `/admin/*` - teacher only and unscoped (CLAUDE.md §5.11). Nothing in this
@@ -56,6 +61,7 @@ export class AdminManageController {
     private readonly directory: DirectoryService,
     private readonly recordings: ManageRecordingsService,
     private readonly liveSessions: ManageLiveSessionsService,
+    private readonly registrations: RegistrationApprovalService,
   ) {}
 
   private actor(req: { user: JwtPayload }) {
@@ -69,9 +75,43 @@ export class AdminManageController {
   ): Promise<StudentDirectoryEntry[]> {
     return this.directory.students({
       search: query.search,
+      status: query.status,
       limit: query.limit ?? DEFAULT_DIRECTORY_PAGE_SIZE,
       offset: query.offset ?? 0,
     });
+  }
+
+  /**
+   * Accept a waiting registration: activate, enrol, place - one transaction
+   * (`DOM-4`). 200, not 201: nothing is created here that the caller did not
+   * already have an id for.
+   *
+   * Teacher and admin only, by the class-level `@Roles(...STAFF_ADMIN)`. An
+   * assistant gets 403 before the service is reached.
+   */
+  @Post('students/:studentId/accept')
+  @HttpCode(HttpStatus.OK)
+  async acceptRegistration(
+    @Param('studentId') studentId: string,
+    @Body() body: AcceptRegistrationDto,
+    @Request() req: { user: JwtPayload },
+  ): Promise<StudentDirectoryEntry> {
+    return this.registrations.accept(studentId, body.groupId, this.actor(req));
+  }
+
+  /**
+   * Reject one. Also `registration.reject`, one of the four verbs withheld
+   * from an assistant - the decorator is the outer gate and the service
+   * asserts the capability as its first statement.
+   */
+  @Post('students/:studentId/reject')
+  @HttpCode(HttpStatus.OK)
+  async rejectRegistration(
+    @Param('studentId') studentId: string,
+    @Body() body: RejectRegistrationDto,
+    @Request() req: { user: JwtPayload },
+  ): Promise<{ ok: true }> {
+    return this.registrations.reject(studentId, body.reason, this.actor(req));
   }
 
   /** The picker behind "assign a TA to this course". */

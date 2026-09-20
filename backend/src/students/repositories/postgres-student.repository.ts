@@ -18,6 +18,9 @@ interface ProfileRow {
   enrolled_course_count: string;
   created_at: Date;
   updated_at: Date;
+  school_name: string | null;
+  parent_email: string | null;
+  staff_notes: string | null;
 }
 
 /**
@@ -34,6 +37,9 @@ const PROFILE_SELECT = `
          p.avatar_url,
          p.created_at,
          p.updated_at,
+         p.school_name,
+         p.parent_email,
+         p.staff_notes,
          (SELECT count(*) FROM enrollments e WHERE e.student_id = p.user_id)
            AS enrolled_course_count
   FROM student_profiles p
@@ -50,6 +56,9 @@ function toProfile(row: ProfileRow): StudentProfile {
     enrolledCourseCount: num(row.enrolled_course_count),
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
+    schoolName: row.school_name,
+    parentEmail: row.parent_email,
+    staffNotes: row.staff_notes,
   };
 }
 
@@ -78,6 +87,7 @@ export class PostgresStudentRepository implements StudentRepository {
        )
        SELECT p.id, p.user_id, p.name, p.email, p.phone, p.avatar_url,
               p.created_at, p.updated_at,
+              p.school_name, p.parent_email, p.staff_notes,
               (SELECT count(*) FROM enrollments e WHERE e.student_id = p.user_id)
                 AS enrolled_course_count
        FROM inserted p`,
@@ -106,6 +116,7 @@ export class PostgresStudentRepository implements StudentRepository {
        )
        SELECT p.id, p.user_id, p.name, p.email, p.phone, p.avatar_url,
               p.created_at, p.updated_at,
+              p.school_name, p.parent_email, p.staff_notes,
               (SELECT count(*) FROM enrollments e WHERE e.student_id = p.user_id)
                 AS enrolled_course_count
        FROM updated p`,

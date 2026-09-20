@@ -28,6 +28,29 @@ export interface AuthResult {
   user: AuthenticatedUser;
 }
 
+/**
+ * Where an account sits in the registration queue (`DOM-4`). Mirrors
+ * `auth/interfaces/user-repository.interface.ts` `UserStatus`.
+ *
+ * Only `active` may authenticate, and that is enforced twice on the server -
+ * at `login`, and at `JwtStrategy.validate`, which every authenticated request
+ * passes through. Nothing here is a permission check; it is a label.
+ */
+export type UserStatus = 'waiting' | 'active' | 'rejected';
+
+/**
+ * What `POST /auth/register` returns now: the queue position, and **no
+ * credential** (ruling R-6).
+ *
+ * A new account is `waiting` and cannot sign in until staff accept it, so the
+ * sign-up screen shows a "waiting for approval" state rather than navigating
+ * to the dashboard. That screen is unit 4's work; this type is what it will
+ * be built against.
+ */
+export interface RegistrationResult {
+  status: 'waiting';
+}
+
 /* --- courses (courses/courses.service.ts, interfaces/course-repository) --- */
 
 export interface Lesson {
@@ -93,6 +116,41 @@ export interface CourseListItem {
   teacherName: string;
   progress: CourseProgress;
 }
+
+/**
+ * A course as `/admin/courses` writes and returns it (`DOM-5`). Mirrors
+ * `courses/interfaces/course-repository.ts` `StoredCourse`.
+ *
+ * Deliberately not `CourseDetail`: that one carries `progress`, which is a
+ * fact about a *student's* relationship to a course and has no meaning on the
+ * row an admin is editing.
+ */
+export interface AdminCourse {
+  id: string;
+  slug: string;
+  isPublished: boolean;
+  title: string;
+  description: string;
+  thumbnailUrl: string | null;
+  teacherName: string;
+  sequentialLockEnabled: boolean;
+  modules: CourseModule[];
+}
+
+/** The body of `POST /admin/courses`. */
+export interface AdminCourseWrite {
+  title: string;
+  description: string;
+  slug: string;
+  teacherName: string;
+  thumbnailUrl?: string | null;
+  sequentialLockEnabled?: boolean;
+  /** Absent means **draft**: publishing is a separate, deliberate PATCH. */
+  isPublished?: boolean;
+}
+
+/** The body of `PATCH /admin/courses/:courseId`. Every field optional. */
+export type AdminCoursePatch = Partial<AdminCourseWrite>;
 
 export interface CourseDetail extends CourseListItem {
   sequentialLockEnabled: boolean;
@@ -528,8 +586,16 @@ export interface DirectoryEntry {
   createdAt: string;
 }
 
+/**
+ * `status` is on the wire because this list is the only place a waiting
+ * registration is visible at all (`DOM-4`) - the queue screen is built on it.
+ *
+ * `API_SPEC.yaml`'s `StudentDetail` percentages are still absent: they have no
+ * source until the reports and analytics units.
+ */
 export interface StudentDirectoryEntry extends DirectoryEntry {
   enrolledCourseCount: number;
+  status: UserStatus;
 }
 
 /**

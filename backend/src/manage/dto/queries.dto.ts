@@ -4,6 +4,7 @@ import {
   DEFAULT_DIRECTORY_PAGE_SIZE,
   MAX_DIRECTORY_PAGE_SIZE,
 } from '../directory.service.js';
+import type { UserStatus } from '../../auth/interfaces/user-repository.interface.js';
 
 /**
  * `enableImplicitConversion` is off globally (`main.ts`), so query strings stay
@@ -18,6 +19,17 @@ export class ListDirectoryQueryDto {
   @IsString()
   @MaxLength(120)
   search?: string;
+
+  /**
+   * Narrows the student directory to one queue (`DOM-4`). Absent means every
+   * status, not `active` - hiding the waiting accounts by default would hide
+   * the queue from the only person who can clear it.
+   *
+   * Applies to `GET /admin/students` only; a staff account is always `active`.
+   */
+  @IsOptional()
+  @IsIn(['waiting', 'active', 'rejected'])
+  status?: UserStatus;
 
   @IsOptional()
   @Transform(toNumber)

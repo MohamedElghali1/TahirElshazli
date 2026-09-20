@@ -12,13 +12,13 @@ import {
 import { RateLimit } from '../common/rate-limit/rate-limit.guard.js';
 import { AUTH_ATTEMPT_LIMIT } from '../common/rate-limit/limits.js';
 import { StudentsService } from './students.service.js';
+import type { StudentProfileView } from './students.service.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { RolesGuard } from '../auth/roles.guard.js';
 import { Roles } from '../auth/roles.decorator.js';
 import { Role } from '../auth/roles.enum.js';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
 import { ChangePasswordDto } from './dto/change-password.dto.js';
-import type { StudentProfile } from './interfaces/student-repository.interface.js';
 import type { JwtPayload } from '../auth/jwt.strategy.js';
 
 @Controller('students')
@@ -30,7 +30,7 @@ export class StudentsController {
   @Get('me/profile')
   async getMyProfile(
     @Request() req: { user: JwtPayload },
-  ): Promise<StudentProfile> {
+  ): Promise<StudentProfileView> {
     return this.studentsService.getProfile(req.user.sub);
   }
 
@@ -38,7 +38,7 @@ export class StudentsController {
   async updateMyProfile(
     @Body() dto: UpdateProfileDto,
     @Request() req: { user: JwtPayload },
-  ): Promise<StudentProfile> {
+  ): Promise<StudentProfileView> {
     return this.studentsService.updateProfile(req.user.sub, dto);
   }
 

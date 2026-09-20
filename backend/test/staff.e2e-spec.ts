@@ -1201,6 +1201,37 @@ describe('Staff and admin API (e2e)', () => {
       // admin-manage (8)
       { method: 'get', path: '/admin/students' },
       { method: 'get', path: '/admin/assistants' },
+      // The registration queue (`DOM-4`). Both probes name an *active*
+      // student, so both roles get the same 409 and neither call changes any
+      // state - a parity probe that mutated would make the second role's
+      // answer depend on the first.
+      {
+        method: 'post',
+        path: '/admin/students/student-1/accept',
+        body: { groupId: 'group-1' },
+      },
+      {
+        method: 'post',
+        path: '/admin/students/student-1/reject',
+        body: { reason: 'Parity probe' },
+      },
+      // Course lifecycle (`DOM-5`). A slug that is already taken, so both get
+      // 409 and nothing is created twice.
+      {
+        method: 'post',
+        path: '/admin/courses',
+        body: {
+          title: 'Parity probe',
+          description: 'Parity probe',
+          slug: 'as-chemistry',
+          teacherName: 'Dr. Tahir Elshazli',
+        },
+      },
+      {
+        method: 'patch',
+        path: '/admin/courses/course-does-not-exist',
+        body: { title: 'Parity probe' },
+      },
       {
         method: 'post',
         path: '/admin/courses/course-does-not-exist/recordings',
@@ -1247,11 +1278,12 @@ describe('Staff and admin API (e2e)', () => {
       },
     ];
 
-    it('covers all 22 role-gated admin routes', () => {
-      // Asserted, because a parity table that quietly covers 12 of 22 routes
+    it('covers all 26 role-gated admin routes', () => {
+      // Asserted, because a parity table that quietly covers 12 of 26 routes
       // proves parity on 12 routes while reading as though it proved it on all.
-      // 24 before `DOM-1` retired the two group-course routes.
-      expect(ADMIN_ROUTES).toHaveLength(22);
+      // 24 before `DOM-1` retired the two group-course routes; 22 after; 26
+      // once `DOM-4` added accept/reject and `DOM-5` added course create/edit.
+      expect(ADMIN_ROUTES).toHaveLength(26);
     });
 
     it.each(ADMIN_ROUTES)(

@@ -6,6 +6,11 @@ import type {
   AuthoredAssessment,
   AuditLogPage,
   AuthResult,
+  RegistrationResult,
+  UserStatus,
+  AdminCourse,
+  AdminCourseWrite,
+  AdminCoursePatch,
   CatalogItem,
   ClassmateGroup,
   CourseDetail,
@@ -363,8 +368,13 @@ export const api = {
   },
 
   auth: {
+    /**
+     * Creates an account **in the waiting queue**. Returns `{ status:
+     * 'waiting' }` and no token (ruling R-6) - the account cannot sign in
+     * until staff accept it, so there is no session to start here.
+     */
     register: (body: { email: string; password: string; name: string }) =>
-      request<AuthResult>('/auth/register', { method: 'POST', body }),
+      request<RegistrationResult>('/auth/register', { method: 'POST', body }),
 
     login: (body: { email: string; password: string }) =>
       request<AuthResult>('/auth/login', { method: 'POST', body }),
@@ -393,16 +403,12 @@ export const api = {
     catalog: (token: string) =>
       request<CatalogItem[]>('/courses/catalog', { token }),
 
-    /**
-     * Enrolls the signed-in student. Takes no student id - the backend reads
-     * it from the token, so there is nothing here to point at someone else.
-     * Enrolling twice succeeds and returns the existing enrollment.
+    /*
+     * `enroll` is gone. `POST /courses/:id/enroll` is retired by `DOM-4`: a
+     * student no longer puts themselves on a course, staff accepting their
+     * registration does it (`admin.acceptRegistration` below). The route
+     * answers 404.
      */
-    enroll: (token: string, courseId: string) =>
-      request<CourseListItem>(`/courses/${courseId}/enroll`, {
-        method: 'POST',
-        token,
-      }),
 
     get: (token: string, courseId: string) =>
       request<CourseDetail>(`/courses/${courseId}`, { token }),
@@ -836,8 +842,56 @@ export const api = {
         body,
       }),
 
-    students: (token: string, search?: string) =>
-      request<StudentDirectoryEntry[]>(`/admin/students${qs({ search })}`, { token }),
+    /**
+     * The student directory. `status` narrows it to one queue; **absent means
+     * every status**, not `active` - this list is the only place a waiting
+     * registration is visible, so a default that hid them would hide the queue
+     * from the one person who can clear it.
+     */
+    students: (token: string, search?: string, status?: UserStatus) =>
+      request<StudentDirectoryEntry[]>(
+        `/admin/students${qs({ search, status })}`,
+        { token },
+      ),
+
+    /**
+     * Accepts a waiting registration: activates the account, enrols it on the
+     * group's course and places it in the cohort - one transaction on the
+     * server, so it is all three or none.
+     *
+     * The group decides the course; there is no separate course parameter,
+     * because a group studies exactly one.
+     */
+    acceptRegistration: (token: string, studentId: string, groupId: string) =>
+      request<StudentDirectoryEntry>(`/admin/students/${studentId}/accept`, {
+        method: 'POST',
+        token,
+        body: { groupId },
+      }),
+
+    /**
+     * Rejects one. The account is kept, not deleted. Teacher and admin only -
+     * `registration.reject` is one of the four verbs withheld from an
+     * assistant, refused server-side with 403 whatever the nav renders.
+     */
+    rejectRegistration: (token: string, studentId: string, reason?: string) =>
+      request<{ ok: true }>(`/admin/students/${studentId}/reject`, {
+        method: 'POST',
+        token,
+        body: reason === undefined ? {} : { reason },
+      }),
+
+    /** Creates a course. It is a **draft** unless `isPublished` says otherwise. */
+    createCourse: (token: string, body: AdminCourseWrite) =>
+      request<AdminCourse>('/admin/courses', { method: 'POST', token, body }),
+
+    /** Edits one. 409 on a slug another course already holds. */
+    updateCourse: (token: string, courseId: string, body: AdminCoursePatch) =>
+      request<AdminCourse>(`/admin/courses/${courseId}`, {
+        method: 'PATCH',
+        token,
+        body,
+      }),
 
     assistants: (token: string, search?: string) =>
       request<StaffDirectoryEntry[]>(`/admin/assistants${qs({ search })}`, { token }),

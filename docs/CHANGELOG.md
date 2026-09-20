@@ -897,3 +897,78 @@ a second response schema without the field — buys one saved count per edit at 
 shapes for one resource, and `CLAUDE.md` §6 wants the mirror generated from this contract.
 `frontend/lib/types.ts`'s `GroupWrite` — which named the *PATCH* body while the spec's `GroupWrite`
 is the *POST* body — is now `GroupPatch`, with `GroupWrite` re-added as the create shape (`F2A-5`).
+
+---
+
+## Unit 2, slice 2b-i — people and courses (2026-09-20)
+
+`DOM-3`, `DOM-4`, `DOM-5`, migration `014`, seeds `001`/`002`. Coordinator rulings **R-5** (2b
+splits again), **R-6** (register returns no token; the gate goes in `JwtStrategy`) and **R-2**
+(`students.mode` is not built) are implemented here.
+
+### `D-13` — **`students.mode` is struck from the five documents that still required it.**
+
+`D-4` decided it, `D-9` removed the last mode axis, and ruling **R-2** ratified it — but
+`IMPLEMENTATION_PLAN.md`, `DOMAIN_MODEL.md`, `DATABASE_PLAN.md` §2 and §6, `PRODUCT_SPEC.md` and
+`API_SPEC.yaml` all still described a `mode` column, and `API_SPEC.yaml` made it **required** on
+`StudentSummary` and `StudentWrite`. A contract that requires a field nothing emits is drift, not
+ambition — the same finding unit 1 closed for `Assistant`. All five are amended; `StudyMode` is
+removed from the spec and the conditional
+`CHECK ((mode = 'school') = (school_name IS NOT NULL))` is struck as unbuildable, since there is no
+column for it to be conditional on. **Accepted cost, restated:** the roster cannot show one student
+as Online inside a School group. Additive and cheap if it comes back.
+
+### `D-14` — **`POST /auth/register` returns `{ status: 'waiting' }`, and the status gate lives in `JwtStrategy`.**
+
+Ruling **R-6**, Reading A. `DOMAIN_MODEL.md:23` says only `active` may authenticate, so returning a
+credential in the same response that records the account as unable to authenticate contradicts the
+model in the API's own body — and it is the kind of contradiction someone later resolves by deleting
+the gate rather than the token.
+
+**The security half does not depend on that, and is the part that closes the hole.**
+`JwtStrategy.validate` already re-reads the user from the database on every request, for existence
+and role, on the stated principle that *"a deleted or demoted user keeps their old access until the
+token expires"*. `status` has exactly that property, so it is one clause on a read that already
+happens, at the chokepoint every route passes through. A gate at `login` alone leaves every token
+minted **before** a rejection working until it expires — precisely the window an account gets
+rejected in. Both gates are built, and both are named tests.
+
+The login refusal is a **third clause on the existing condition**, after the single
+`DUMMY_PASSWORD_HASH` verify, with the unchanged `'Invalid credentials'` message: a distinct
+"pending approval" message turns login into a registration oracle, and an early return before the
+verify re-opens the timing side channel. A spec asserts exactly one `hasher.verify` on all four
+paths — unknown email, wrong password, waiting, rejected.
+
+### `D-15` — **`POST /courses/:id/enroll` is retired outright, not re-roled.**
+
+`PHASE_ROADMAP.md` said the route "becomes staff-only". It does not: it is deleted and answers 404.
+Staff enrol a student by accepting their registration, which is the only enrolment path there is.
+`CoursesService.enroll` is untouched and is what `accept` calls, so the three properties that
+mattered — idempotent, 404 on an unknown course, refuses an unpublished one — keep their tests,
+retargeted from the controller to the service.
+
+**Consequence, recorded because it changed four e2e tests:** a signed-in student with **zero
+enrollments** is no longer reachable through the API, because acceptance always enrols. The cases
+that needed "holds none of the fixtures" now use an account accepted into a group studying
+`course-2`, where no assessment, recording or report fixture lives.
+
+### `D-16` — **`accept` returns a directory row, not `StudentDetail`.**
+
+`API_SPEC.yaml` specified `StudentDetail`, which required `mode` (struck by R-2) and carries four
+percentage fields with no source until the reports and analytics units. The spec is amended to a new
+`StudentDirectoryEntry` schema — the shape the server actually emits — with `PEOPLE-1` (unit 5)
+named as the task that widens it back to `StudentSummary`. Emitting a shape the server cannot fill
+is the drift `CLAUDE.md` §6 names.
+
+### `D-17` — **the three staff fields are on the stored profile and on no student-facing response.**
+
+`student_profiles` gains `school_name`, `parent_email`, `staff_notes` (migration `014`).
+`parentEmail` is a third party's PII on a child's record and `staffNotes` is staff writing *about*
+the student, so `StudentsService` returns a `StudentProfileView` built **key by key** rather than
+spreading the stored row — a spread would carry the next staff column added to the table straight
+onto `GET /students/me/profile`. An exact-key-set test asserts it, on `student-1`, whose fixture
+carries all three values so the leak is actually possible on that row.
+
+**`StudentProfileUpdate` deliberately does not carry them.** Nothing writes them in this slice —
+`PEOPLE-1` owns `PATCH /admin/students/:id` — and a writable member with no writer, on the one
+update path a *student* drives, is an open door waiting for someone to widen the DTO.

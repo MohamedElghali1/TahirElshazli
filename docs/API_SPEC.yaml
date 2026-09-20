@@ -153,7 +153,10 @@ components:
       type: string
       enum: [all_groups, assigned_groups]
 
-    StudyMode:    { type: string, enum: [school, online] }
+    # StudyMode is REMOVED. `CHANGELOG.md` `D-4`, ruling R-2 (2026-09-20):
+    # `students.mode` is not built, so the enum had no producer and no consumer
+    # and `mode` was `required` on two schemas nothing could satisfy. Removing
+    # it is the same reconciliation unit 1 did for `Assistant`.
     SessionMode:  { type: string, enum: [on_ground, online] }
     AttendanceStatus: { type: string, enum: [present, absent, late] }
     TaskVisibility:   { type: string, enum: [published, scheduled, hidden] }
@@ -163,15 +166,17 @@ components:
     AnnotationKind:   { type: string, enum: [comment, tick, cross] }
 
     # --- People ------------------------------------------------------------
+    # The TARGET shape, filled in by `PEOPLE-1` (unit 5). What the server emits
+    # today is `StudentDirectoryEntry` below - the percentages have no source
+    # until the reports and analytics units.
     StudentSummary:
       type: object
-      required: [id, name, email, status, mode]
+      required: [id, name, email, status]
       properties:
         id:        { $ref: '#/components/schemas/Id' }
         name:      { type: string }
         email:     { type: string, format: email }
         status:    { $ref: '#/components/schemas/UserStatus' }
-        mode:      { $ref: '#/components/schemas/StudyMode' }
         schoolName: { type: [string, 'null'] }
         groupId:   { type: [string, 'null'] }
         groupName: { type: [string, 'null'] }
@@ -195,16 +200,78 @@ components:
 
     StudentWrite:
       type: object
-      required: [name, email, mode]
+      required: [name, email]
       properties:
         name:        { type: string, minLength: 2, maxLength: 100 }
         email:       { type: string, format: email }
-        mode:        { $ref: '#/components/schemas/StudyMode' }
         schoolName:  { type: [string, 'null'], maxLength: 160 }
         parentEmail: { type: [string, 'null'], format: email }
         staffNotes:  { type: [string, 'null'], maxLength: 4000 }
         groupId:     { type: [string, 'null'] }
         avatarUrl:   { type: [string, 'null'], maxLength: 2048 }
+
+    # **What `GET /admin/students` and `POST .../accept` return today**
+    # (`manage/directory.service.ts` `StudentDirectoryEntry`, `DOM-4`).
+    #
+    # A narrower shape than `StudentSummary` on purpose: `groupId`, `groupName`
+    # and the four percentages have no source in the repository until the
+    # reports and analytics units, and emitting a shape the server cannot fill
+    # is the drift `CLAUDE.md` §6 names. `PEOPLE-1` widens this to
+    # `StudentSummary`.
+    StudentDirectoryEntry:
+      type: object
+      required: [id, name, email, createdAt, enrolledCourseCount, status]
+      properties:
+        id:        { $ref: '#/components/schemas/Id' }
+        name:      { type: string }
+        email:     { type: string, format: email }
+        createdAt: { type: string, format: date-time }
+        enrolledCourseCount: { type: integer, minimum: 0 }
+        status:    { $ref: '#/components/schemas/UserStatus' }
+
+    # --- Courses, as an admin writes them (`DOM-5`) -------------------------
+    Course:
+      type: object
+      required:
+        [id, slug, isPublished, title, description, teacherName,
+         sequentialLockEnabled, modules]
+      properties:
+        id:          { $ref: '#/components/schemas/Id' }
+        slug:        { type: string, pattern: '^[a-z0-9-]+$', maxLength: 120 }
+        isPublished: { type: boolean }
+        title:       { type: string, maxLength: 200 }
+        description: { type: string, maxLength: 4000 }
+        thumbnailUrl: { type: [string, 'null'], maxLength: 2048 }
+        teacherName: { type: string, maxLength: 160 }
+        sequentialLockEnabled: { type: boolean }
+        modules:     { type: array, items: { type: object } }
+
+    CourseWrite:
+      type: object
+      required: [title, description, slug, teacherName]
+      properties:
+        title:       { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 4000 }
+        slug:        { type: string, pattern: '^[a-z0-9-]+$', maxLength: 120 }
+        teacherName: { type: string, minLength: 1, maxLength: 160 }
+        thumbnailUrl: { type: [string, 'null'], maxLength: 2048 }
+        sequentialLockEnabled: { type: boolean }
+        # Absent means DRAFT. A course that published itself on creation would
+        # put an empty outline on the public site.
+        isPublished: { type: boolean }
+
+    # Every field optional. `thumbnailUrl` is the only one where `null` is a
+    # value ("clear it") rather than a 400 - the rest are NOT NULL columns.
+    CoursePatch:
+      type: object
+      properties:
+        title:       { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 4000 }
+        slug:        { type: string, pattern: '^[a-z0-9-]+$', maxLength: 120 }
+        teacherName: { type: string, minLength: 1, maxLength: 160 }
+        thumbnailUrl: { type: [string, 'null'], maxLength: 2048 }
+        sequentialLockEnabled: { type: boolean }
+        isPublished: { type: boolean }
 
     Assistant:
       type: object
@@ -461,7 +528,9 @@ paths:
           description: OK
           content:
             application/json:
-              schema: { type: array, items: { $ref: '#/components/schemas/StudentSummary' } }
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/StudentDirectoryEntry' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
     post:
@@ -538,8 +607,16 @@ paths:
           description: Accepted
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/StudentDetail' }
-        '404': { $ref: '#/components/responses/NotFound' }
+              # The directory row, as it now is - not `StudentDetail`, which
+              # carries fields with no source until the reports unit.
+              schema: { $ref: '#/components/schemas/StudentDirectoryEntry' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          # An unknown student, a staff id, and an unknown group all answer
+          # with the same 404. A staff id is not a registration, and saying so
+          # would confirm which ids name staff.
+          $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
       x-audit: student.accepted
@@ -562,9 +639,19 @@ paths:
               properties:
                 reason: { type: string, maxLength: 500 }
       responses:
-        '200': { description: Rejected }
+        '200':
+          description: Rejected
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
       x-audit: student.rejected
 
   /admin/students/{studentId}/enrollments/{courseId}:
@@ -650,6 +737,49 @@ paths:
       responses:
         '200': { description: Invitation resent }
         '409': { $ref: '#/components/responses/Conflict' }
+
+  # `POST /courses/{id}/enroll` is RETIRED (`DOM-4`, `PRODUCT_SPEC.md:41-49`)
+  # and was never written into this file. A student no longer enrols
+  # themselves; staff accepting their registration does it, at
+  # `POST /admin/students/{studentId}/accept`. The path answers 404.
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: Register, into the waiting queue
+      description: >
+        Creates a `student` account with `status = waiting` and its profile
+        row. **Returns no credential** (ruling R-6, 2026-09-20): only `active`
+        may authenticate, so a token here would authenticate an account the
+        same response records as unable to. The account cannot sign in until
+        staff accept it.
+        A 409 on a taken email is an account-existence oracle that signup
+        genuinely needs to report; rate limiting is what stops it being
+        enumerable in bulk.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, name]
+              properties:
+                email:    { type: string, format: email }
+                password: { type: string, minLength: 8 }
+                name:     { type: string, minLength: 1 }
+      responses:
+        '201':
+          description: Registered, and waiting for a decision
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [waiting] }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { description: Rate limited }
 
   /auth/invitations/{token}/accept:
     post:
@@ -1255,19 +1385,53 @@ paths:
   /admin/courses:
     post:
       tags: [settings]
+      summary: Create a course
+      description: >
+        Created as a DRAFT unless `isPublished` says otherwise, with an empty
+        outline - modules and lessons are authored afterwards. Unscoped:
+        creating a course is not a question an assistant is asked.
       x-roles: [teacher, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CourseWrite' }
       responses:
-        '201': { description: Created }
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Course' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
       x-audit: course.created
 
   /admin/courses/{courseId}:
     patch:
       tags: [settings]
+      summary: Edit a course
+      description: >
+        Partial. The outline is not writable here. 409 on a slug another course
+        already holds.
       x-roles: [teacher, admin]
       parameters:
         - { name: courseId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CoursePatch' }
       responses:
-        '200': { description: OK }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Course' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
       x-audit: course.updated
 
   /me/profile:

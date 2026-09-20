@@ -17,15 +17,24 @@
 -- Accounts
 -- ============================================================
 
-INSERT INTO users (id, email, password_hash, role, name, created_at) VALUES
-  ('student-1', 'student@example.com',  '$2b$10$vH5MRaUG1QbYnIcsyN12zOEvyckQqIdz9bB93STxpIzDiIVDQF81i', 'student', 'Ali Esam',           '2026-01-15T10:00:00Z'),
-  ('student-2', 'student2@example.com', '$2b$10$vH5MRaUG1QbYnIcsyN12zOEvyckQqIdz9bB93STxpIzDiIVDQF81i', 'student', 'Sara Ahmed',         '2026-03-10T08:00:00Z'),
-  ('teacher-1', 'teacher@example.com',  '$2b$10$vH5MRaUG1QbYnIcsyN12zOEvyckQqIdz9bB93STxpIzDiIVDQF81i', 'teacher', 'Dr. Tahir Elshazli', '2025-11-01T09:00:00Z')
+-- `status` is written out rather than left to migration 014's `DEFAULT
+-- 'active'`: these accounts are meant to be signed in with, and a fixture that
+-- depends on a column default is a fixture that breaks silently the day the
+-- default changes.
+INSERT INTO users (id, email, password_hash, role, name, status, created_at) VALUES
+  ('student-1', 'student@example.com',  '$2b$10$vH5MRaUG1QbYnIcsyN12zOEvyckQqIdz9bB93STxpIzDiIVDQF81i', 'student', 'Ali Esam',           'active', '2026-01-15T10:00:00Z'),
+  ('student-2', 'student2@example.com', '$2b$10$vH5MRaUG1QbYnIcsyN12zOEvyckQqIdz9bB93STxpIzDiIVDQF81i', 'student', 'Sara Ahmed',         'active', '2026-03-10T08:00:00Z'),
+  ('teacher-1', 'teacher@example.com',  '$2b$10$vH5MRaUG1QbYnIcsyN12zOEvyckQqIdz9bB93STxpIzDiIVDQF81i', 'teacher', 'Dr. Tahir Elshazli', 'active', '2025-11-01T09:00:00Z')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO student_profiles (id, user_id, name, email, phone, avatar_url, created_at, updated_at) VALUES
-  ('profile-1', 'student-1', 'Ali Esam',   'student@example.com',  '+201234567890', NULL, '2026-01-15T10:00:00Z', '2026-08-01T12:00:00Z'),
-  ('profile-2', 'student-2', 'Sara Ahmed', 'student2@example.com', NULL,            NULL, '2026-03-10T08:00:00Z', '2026-07-20T14:00:00Z')
+-- `school_name`, `parent_email` and `staff_notes` (migration 014) are staff
+-- fields and are populated on exactly one profile, on purpose: a fixture where
+-- every row is NULL cannot tell "the column is never read" apart from "the
+-- column never leaks", and the second is the property that matters - none of
+-- the three may reach a student-facing response (`DOMAIN_MODEL.md:35`).
+INSERT INTO student_profiles (id, user_id, name, email, phone, avatar_url, school_name, parent_email, staff_notes, created_at, updated_at) VALUES
+  ('profile-1', 'student-1', 'Ali Esam',   'student@example.com',  '+201234567890', NULL, 'El Alsson School', 'parent1@example.com', 'Needs extra practice on titration.', '2026-01-15T10:00:00Z', '2026-08-01T12:00:00Z'),
+  ('profile-2', 'student-2', 'Sara Ahmed', 'student2@example.com', NULL,            NULL, NULL,               NULL,                  NULL,                                  '2026-03-10T08:00:00Z', '2026-07-20T14:00:00Z')
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================

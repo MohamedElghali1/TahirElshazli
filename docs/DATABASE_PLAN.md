@@ -44,7 +44,7 @@ would be a one-way door for no benefit.
 | `users` | `status` | `TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('waiting','active','rejected'))` | Registration approval queue |
 | `users` | *(role CHECK)* | add `'admin'` | New Full admin role |
 | `audit_log` | *(actor_role CHECK)* | add `'admin'` | Same |
-| `student_profiles` | `mode` | `TEXT NOT NULL DEFAULT 'online' CHECK (mode IN ('school','online'))` | School vs online student |
+| `student_profiles` | ~~`mode`~~ | **NOT BUILT** — `CHANGELOG.md` `D-4`, ruling **R-2** (2026-09-20). `D-9` removed the last mode axis; a column nothing reads is a constraint carrying no decision. Migration `014` adds the three columns below and no `mode`. | — |
 | `student_profiles` | `school_name` | `TEXT` | Reports group by school |
 | `student_profiles` | `parent_email` | `TEXT` | **The entire parent relationship** |
 | `student_profiles` | `staff_notes` | `TEXT` | Never shown to the student |
@@ -246,7 +246,9 @@ this scale round trips and row volume matter and query counts mostly do not.
 
 ## 6. Constraints worth having
 
-- `CHECK ((mode = 'school') = (school_name IS NOT NULL))` on `student_profiles` — the design's
+- ~~`CHECK ((mode = 'school') = (school_name IS NOT NULL))` on `student_profiles`~~ — **not
+  built**, and cannot be: ruling **R-2** struck `students.mode`, so there is no column for this
+  constraint to be conditional on. `school_name` is plain nullable `TEXT`. The design's
   conditional field, enforced rather than trusted.
 - `CHECK (scheduled_at < ends_at)` on `live_sessions`.
 - `CHECK (status <> 'sent' OR sent_at IS NOT NULL)` on `weekly_reports` — a sent report with no
@@ -265,6 +267,21 @@ this scale round trips and row volume matter and query counts mostly do not.
 `016` task drafts + assessment columns · `017` annotations + submission columns ·
 `018` sessions rework · `019` attendance enum · `020` weekly reports ·
 `021` announcements (group audience, media, draft) · `022` notification preferences + mail deliveries
+
+**`014` ran 2026-09-20 (unit 2 slice 2b-i), against real PostgreSQL 15 from an empty schema**, 14
+migrations applied in order and the integration suite green at 103 tests, 0 skipped. It is purely
+additive — one defaulted column, one partial index, three nullable columns — so there was nothing to
+validate before writing and no abort path to author. Its post-conditions are asserted against
+`information_schema` and `pg_indexes` rather than inferred from a repository read: the CHECK refuses
+`'pendng'`, `users_waiting_idx` is partial on `status = 'waiting'`, the three profile columns exist
+and are nullable, and **no `mode` column exists** (ruling R-2, asserted rather than assumed because
+five documents described it when the slice started).
+
+**The `DEFAULT 'active'` on `users.status` is right for the rows that existed and wrong for every
+row written after it.** `AuthService.register` sets `'waiting'` explicitly and a unit spec asserts
+the value passed to `UserRepository.create` rather than the row read back — if the service ever
+leans on the default, the waiting queue is silently always empty, which is an authorization hole
+that fails in both directions without anything going red.
 
 **Renumbered 2026-09-20, unit 2 slice 2a.** The list above previously started `012` `users.status`.
 It was written before `D-9` created `DOM-0`, which must be **first** so the destructive collapse

@@ -89,13 +89,25 @@ describe('AuthController', () => {
     ).rejects.toThrow();
   });
 
-  it('should register a new student and reject a duplicate email', async () => {
+  it('should register a new student into the waiting queue, with no token', async () => {
     const result = await controller.register({
       email: 'new@example.com',
       password: 'newpass123',
       name: 'New Student',
     });
-    expect(result.user).toMatchObject({ email: 'new@example.com', role: 'student' });
+    // Ruling R-6: `{ status: 'waiting' }` and nothing else. A token here would
+    // authenticate an account that `login` refuses.
+    expect(result).toEqual({ status: 'waiting' });
+    expect(result).not.toHaveProperty('accessToken');
+    expect(result).not.toHaveProperty('user');
+  });
+
+  it('should reject a duplicate email', async () => {
+    await controller.register({
+      email: 'new@example.com',
+      password: 'newpass123',
+      name: 'New Student',
+    });
 
     await expect(
       controller.register({

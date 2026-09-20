@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import type {
+  CoursePatch,
   CourseRepository,
+  NewCourse,
   StoredCourse,
 } from '../interfaces/course-repository.interface.js';
 
@@ -79,28 +82,75 @@ const STUB_COURSES: StoredCourse[] = [
 
 @Injectable()
 export class InMemoryCourseRepository implements CourseRepository {
+  /**
+   * A per-instance copy of the fixtures, not the shared module constant.
+   *
+   * It became writable with `create`/`update` (`DOM-5`), and a shared array
+   * would let a course authored in one spec appear in the next - the kind of
+   * cross-test leakage that makes a suite pass in one order and fail in
+   * another. Every other in-memory driver here already holds its rows on the
+   * instance.
+   */
+  private courses: StoredCourse[] = STUB_COURSES.map((c) => ({ ...c }));
+
   async findById(courseId: string): Promise<StoredCourse | null> {
-    return STUB_COURSES.find((c) => c.id === courseId) ?? null;
+    return this.courses.find((c) => c.id === courseId) ?? null;
   }
 
   async findAll(limit: number, offset: number): Promise<StoredCourse[]> {
-    return [...STUB_COURSES]
+    return [...this.courses]
       .sort((a, b) => a.title.localeCompare(b.title))
       .slice(offset, offset + limit);
   }
 
   async findPublished(limit: number, offset: number): Promise<StoredCourse[]> {
-    return STUB_COURSES.filter((c) => c.isPublished)
+    return this.courses
+      .filter((c) => c.isPublished)
       .sort((a, b) => a.title.localeCompare(b.title))
       .slice(offset, offset + limit);
   }
 
   async findBySlug(slug: string): Promise<StoredCourse | null> {
-    return STUB_COURSES.find((c) => c.slug === slug) ?? null;
+    return this.courses.find((c) => c.slug === slug) ?? null;
   }
 
   async findByIds(courseIds: readonly string[]): Promise<StoredCourse[]> {
     const wanted = new Set(courseIds);
-    return STUB_COURSES.filter((c) => wanted.has(c.id));
+    return this.courses.filter((c) => wanted.has(c.id));
+  }
+
+  async create(course: NewCourse): Promise<StoredCourse> {
+    const created: StoredCourse = {
+      ...course,
+      id: randomUUID(),
+      // Created empty; the outline is authored afterwards.
+      modules: [],
+    };
+    this.courses.push(created);
+    return created;
+  }
+
+  async update(
+    courseId: string,
+    patch: CoursePatch,
+  ): Promise<StoredCourse | null> {
+    const course = this.courses.find((c) => c.id === courseId);
+    if (!course) {
+      return null;
+    }
+    // Field by field, because `{...course, ...patch}` would write `undefined`
+    // over a value for every member the caller left out.
+    if (patch.slug !== undefined) course.slug = patch.slug;
+    if (patch.isPublished !== undefined) course.isPublished = patch.isPublished;
+    if (patch.title !== undefined) course.title = patch.title;
+    if (patch.description !== undefined) course.description = patch.description;
+    if (patch.thumbnailUrl !== undefined)
+      course.thumbnailUrl = patch.thumbnailUrl;
+    if (patch.teacherName !== undefined) course.teacherName = patch.teacherName;
+    if (patch.sequentialLockEnabled !== undefined)
+      course.sequentialLockEnabled = patch.sequentialLockEnabled;
+    // A copy: the caller must not hold a handle on the stored row, or an audit
+    // `before` read a moment earlier would mutate underneath it.
+    return { ...course };
   }
 }

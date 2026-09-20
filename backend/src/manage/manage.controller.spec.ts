@@ -7,6 +7,7 @@ import { GradingService } from './grading.service.js';
 import { ManageRecordingsService } from './manage-recordings.service.js';
 import { ManageLiveSessionsService } from './manage-live-sessions.service.js';
 import { DirectoryService } from './directory.service.js';
+import { RegistrationApprovalService } from './registration-approval.service.js';
 import { AssessmentAuthoringService } from './assessment-authoring.service.js';
 import { StaffScopeService } from '../staff/staff-scope.service.js';
 import { COURSE_STAFF_REPOSITORY } from '../staff/interfaces/course-staff-repository.interface.js';
@@ -18,6 +19,10 @@ import { InMemoryEnrollmentRepository } from '../enrollments/repositories/in-mem
 import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interface.js';
 import { InMemoryGroupRepository } from '../groups/repositories/in-memory-group.repository.js';
 import { StudentGroupsService } from '../groups/student-groups.service.js';
+import { CoursesService } from '../courses/courses.service.js';
+import { EnrollmentsService } from '../enrollments/enrollments.service.js';
+import { RecordingsService } from '../recordings/recordings.service.js';
+import { LiveSessionsService } from '../live-sessions/live-sessions.service.js';
 import { ASSESSMENT_REPOSITORY } from '../assessments/interfaces/assessment-repository.interface.js';
 import { WORK_REPOSITORY, EXTERNAL_WORK_BINDER } from '../assessments/interfaces/work-repository.interface.js';
 import { InMemoryWorkRepository } from '../assessments/repositories/in-memory-work.repository.js';
@@ -68,6 +73,15 @@ describe('Manage surface', () => {
         ManageRecordingsService,
         ManageLiveSessionsService,
         DirectoryService,
+        // The registration queue (`DOM-4`). `accept` runs activation,
+        // enrolment and placement in one transaction, so the real
+        // `CoursesService` is wired rather than a stub - the point of the
+        // transaction test is that a failing enrol really does roll back.
+        RegistrationApprovalService,
+        CoursesService,
+        EnrollmentsService,
+        RecordingsService,
+        LiveSessionsService,
         AssessmentAuthoringService,
         StaffScopeService,
         AuditService,
@@ -574,6 +588,70 @@ describe('Manage surface', () => {
     it('never returns a password hash', async () => {
       const students = await admin.students({});
       expect(JSON.stringify(students)).not.toMatch(/passwordHash|\$2[aby]\$/);
+    });
+
+    it('carries each student’s account status', async () => {
+      const students = await admin.students({});
+      expect(students.every((s) => s.status === 'active')).toBe(true);
+    });
+
+    it('filters to the waiting queue, and shows every status when asked for none', async () => {
+      const queued = await users.create({
+        email: 'queued@example.com',
+        passwordHash: 'hash',
+        name: 'Queued Student',
+        role: Role.Student,
+        status: 'waiting',
+      });
+
+      const waiting = await admin.students({ status: 'waiting' });
+      expect(waiting.map((s) => s.id)).toEqual([queued.id]);
+
+      // Absent means every status, not `active` - this list is the only place
+      // the queue is visible at all.
+      const everyone = await admin.students({});
+      expect(everyone.map((s) => s.id)).toContain(queued.id);
+      expect(everyone.length).toBeGreaterThan(waiting.length);
+    });
+
+    it('accepts a waiting registration and moves it out of the queue', async () => {
+      const queued = await users.create({
+        email: 'queued@example.com',
+        passwordHash: 'hash',
+        name: 'Queued Student',
+        role: Role.Student,
+        status: 'waiting',
+      });
+
+      const row = await admin.acceptRegistration(
+        queued.id,
+        { groupId: 'group-1' },
+        FULL_ADMIN,
+      );
+
+      expect(row).toMatchObject({ id: queued.id, status: 'active' });
+      expect(await admin.students({ status: 'waiting' })).toEqual([]);
+    });
+
+    it('rejects a waiting registration', async () => {
+      const queued = await users.create({
+        email: 'queued2@example.com',
+        passwordHash: 'hash',
+        name: 'Queued Two',
+        role: Role.Student,
+        status: 'waiting',
+      });
+
+      expect(
+        await admin.rejectRegistration(
+          queued.id,
+          { reason: 'Wrong year group' },
+          ADMIN,
+        ),
+      ).toEqual({ ok: true });
+      expect(
+        (await admin.students({ status: 'rejected' })).map((s) => s.id),
+      ).toEqual([queued.id]);
     });
 
     it('counts each student’s enrollments without an N+1', async () => {

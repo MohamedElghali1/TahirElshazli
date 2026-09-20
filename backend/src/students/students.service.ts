@@ -17,6 +17,44 @@ import type { PasswordHasher } from '../auth/interfaces/password-hasher.interfac
 import { PASSWORD_HASHER } from '../auth/interfaces/password-hasher.interface.js';
 import { TokenDenylistService } from '../auth/token-denylist.service.js';
 
+/**
+ * The student's own profile, as the student may see it.
+ *
+ * Built key by key from `StudentProfile` rather than spread from it, and the
+ * three staff fields (`schoolName`, `parentEmail`, `staffNotes`) are the
+ * reason. `parentEmail` is a third party's PII on a child's record and
+ * `staffNotes` is staff writing about the student; `DOMAIN_MODEL.md:35` says
+ * neither is student-facing. A spread would carry the next staff field added
+ * to the table straight onto this response without anyone noticing, which is
+ * exactly the failure mode - so the allowed keys are listed, and
+ * `students.service.spec.ts` asserts the exact key set.
+ */
+export interface StudentProfileView {
+  id: string;
+  userId: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  avatarUrl: string | null;
+  enrolledCourseCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function toStudentView(profile: StudentProfile): StudentProfileView {
+  return {
+    id: profile.id,
+    userId: profile.userId,
+    name: profile.name,
+    email: profile.email,
+    phone: profile.phone,
+    avatarUrl: profile.avatarUrl,
+    enrolledCourseCount: profile.enrolledCourseCount,
+    createdAt: profile.createdAt,
+    updatedAt: profile.updatedAt,
+  };
+}
+
 @Injectable()
 export class StudentsService {
   constructor(
@@ -29,18 +67,18 @@ export class StudentsService {
     private readonly denylist: TokenDenylistService,
   ) {}
 
-  async getProfile(userId: string): Promise<StudentProfile> {
+  async getProfile(userId: string): Promise<StudentProfileView> {
     const profile = await this.studentRepo.findByUserId(userId);
     if (!profile) {
       throw new NotFoundException('Student profile not found');
     }
-    return profile;
+    return toStudentView(profile);
   }
 
   async updateProfile(
     userId: string,
     update: StudentProfileUpdate,
-  ): Promise<StudentProfile> {
+  ): Promise<StudentProfileView> {
     if (Object.keys(update).length === 0) {
       throw new BadRequestException('No profile fields supplied');
     }
@@ -48,7 +86,7 @@ export class StudentsService {
     if (!profile) {
       throw new NotFoundException('Student profile not found');
     }
-    return profile;
+    return toStudentView(profile);
   }
 
   async changePassword(

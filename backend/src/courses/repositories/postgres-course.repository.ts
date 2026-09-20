@@ -1,9 +1,12 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { DatabaseService } from '../../database/database.service.js';
 import type {
   CourseModule,
+  CoursePatch,
   CourseRepository,
   Lesson,
+  NewCourse,
   StoredCourse,
 } from '../interfaces/course-repository.interface.js';
 
@@ -34,6 +37,20 @@ const COURSE_COLUMNS = `
   id, slug, is_published, title, description, thumbnail_url, teacher_name,
   sequential_lock_enabled
 `;
+
+/** A course row without its outline. `loadCourses` attaches the modules. */
+function toCourse(row: CourseRow): Omit<StoredCourse, 'modules'> {
+  return {
+    id: row.id,
+    slug: row.slug,
+    isPublished: row.is_published,
+    title: row.title,
+    description: row.description,
+    thumbnailUrl: row.thumbnail_url,
+    teacherName: row.teacher_name,
+    sequentialLockEnabled: row.sequential_lock_enabled,
+  };
+}
 
 @Injectable()
 export class PostgresCourseRepository implements CourseRepository {
@@ -82,6 +99,74 @@ export class PostgresCourseRepository implements CourseRepository {
       limit,
       offset,
     );
+  }
+
+  async create(course: NewCourse): Promise<StoredCourse> {
+    const row = await this.db.queryOne<CourseRow>(
+      `INSERT INTO courses
+         (id, slug, is_published, title, description, thumbnail_url,
+          teacher_name, sequential_lock_enabled)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING ${COURSE_COLUMNS}`,
+      [
+        randomUUID(),
+        course.slug,
+        course.isPublished,
+        course.title,
+        course.description,
+        course.thumbnailUrl,
+        course.teacherName,
+        course.sequentialLockEnabled,
+      ],
+    );
+    // No module/lesson read: a course is created empty, so the outline is
+    // known to be `[]` without a second query.
+    return { ...toCourse(row!), modules: [] };
+  }
+
+  async update(
+    courseId: string,
+    patch: CoursePatch,
+  ): Promise<StoredCourse | null> {
+    // COALESCE per column with a fixed parameter list - never a string-built
+    // SET clause. Every column is named in the SQL at author time, so no key
+    // of `patch` reaches the query as identifier text (`CLAUDE.md` §8).
+    //
+    // `thumbnail_url` is the one nullable column, and COALESCE cannot tell
+    // "leave alone" from "set to NULL" - both arrive as NULL - so it carries
+    // the extra boolean. The two booleans are NOT NULL columns, where `false`
+    // is not NULL and COALESCE is unambiguous.
+    const row = await this.db.queryOne<CourseRow>(
+      `UPDATE courses SET
+         slug                    = COALESCE($2, slug),
+         is_published            = COALESCE($3, is_published),
+         title                   = COALESCE($4, title),
+         description             = COALESCE($5, description),
+         thumbnail_url           = CASE WHEN $6 THEN $7 ELSE thumbnail_url END,
+         teacher_name            = COALESCE($8, teacher_name),
+         sequential_lock_enabled = COALESCE($9, sequential_lock_enabled)
+       WHERE id = $1
+       RETURNING ${COURSE_COLUMNS}`,
+      [
+        courseId,
+        patch.slug ?? null,
+        patch.isPublished ?? null,
+        patch.title ?? null,
+        patch.description ?? null,
+        patch.thumbnailUrl !== undefined,
+        patch.thumbnailUrl ?? null,
+        patch.teacherName ?? null,
+        patch.sequentialLockEnabled ?? null,
+      ],
+    );
+    if (!row) {
+      return null;
+    }
+    // The outline is untouched by this method but is part of the shape, so it
+    // is read back rather than returned empty - a caller rendering the updated
+    // course must not see its modules vanish.
+    const courses = await this.loadCourses([courseId]);
+    return courses[0] ?? null;
   }
 
   /**

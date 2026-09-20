@@ -116,6 +116,17 @@ describe('DashboardController', () => {
     });
   });
 
+  it('should carry no staff-owned field from the student record', async () => {
+    // `student-1`'s profile fixture holds all three of `DOM-3`'s staff fields.
+    // The dashboard does not read `student_profiles` today, and this is what
+    // keeps that true: the next thing that joins it in must not bring them.
+    const body = JSON.stringify(await controller.getDashboard('course-1', STUDENT));
+    expect(body).not.toContain('parent1@example.com');
+    expect(body).not.toContain('titration');
+    expect(body).not.toContain('El Alsson');
+    expect(body).not.toMatch(/parentEmail|staffNotes|schoolName/);
+  });
+
   it('should back the progress bar with real completion numbers', async () => {
     const dashboard = await controller.getDashboard('course-1', STUDENT);
     expect(dashboard.progress).toMatchObject({

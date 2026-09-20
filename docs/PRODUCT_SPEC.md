@@ -143,7 +143,8 @@ completion figure below is understated"). **Frontend only.**
 - **Assistants may add to a group but not remove from one.**
 
 ### 3.2 Students `[CHANGED]`
-Gains `mode` (School | Online), `school_name`, `parent_email`, staff-only `notes`, and a profile
+Gains `school_name`, `parent_email`, staff-only `notes` — **but not `mode`** (`CHANGELOG.md`
+`D-4`, ruling **R-2**, 2026-09-20: the School/Online axis is not built) — and a profile
 photo. The roster shows attendance, quiz average, task average, performance and progress as
 **separate columns** — never merged.
 

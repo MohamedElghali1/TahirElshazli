@@ -29,11 +29,20 @@ The account. One row per person, whatever their role.
 ### `StudentProfile`
 One-to-one with a `User` of role `student`. The pastoral record, separate from the account.
 
-- **Fields.** `userId`, `name`, `email`, `phone?`, `avatarUrl?`, **`mode` (`school | online`)**,
-  **`schoolName?`**, **`parentEmail?`**, **`staffNotes?`**, timestamps
+- **Fields.** `userId`, `name`, `email`, `phone?`, `avatarUrl?`, **`schoolName?`**,
+  **`parentEmail?`**, **`staffNotes?`**, timestamps
+- **No `mode`.** `CHANGELOG.md` `D-4`, ratified as coordinator ruling **R-2** (2026-09-20): the
+  school/online axis is not built. `D-9` removed the last mode axis from the product, and a
+  `students.mode` with nothing reading it is a column and a CHECK constraint carrying no decision.
+  **Accepted cost:** the roster cannot show one student as Online inside a School group. Additive
+  and cheap if it comes back.
 - **`parentEmail`** is the entire parent relationship. There is no `Parent` entity.
-- **`staffNotes`** is never shown to the student.
-- **Invariant.** `schoolName` is required when `mode = school`, meaningless otherwise.
+- **Neither `parentEmail` nor `staffNotes` is ever student-facing.** `parentEmail` is a third
+  party's PII on a child's record; `staffNotes` is staff writing *about* the student.
+  `StudentsService` returns a `StudentProfileView` built key by key rather than the stored row, so
+  a field added to the table cannot reach `GET /students/me/profile` by accident.
+- **`schoolName`** is free text, filled in by staff. It is required by nothing, now that there is
+  no `mode` for it to be conditional on.
 
 ### `AssistantScope` / `AssistantGroupAssignment`
 **New.** Replaces `CourseStaffAssignment` entirely.
