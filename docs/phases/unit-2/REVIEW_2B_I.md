@@ -274,3 +274,57 @@ Nothing here blocks slice 2b-ii. Ordered.
 - **`F2B-5`** — junk in the repository root (`1`, `[a.id`, `before`, `value`) is still untracked and
   still nobody's. The executor deleted the three it created. Someone should confirm they are worthless
   and remove them; `CLAUDE.md` §12 forbids destroying work you did not create, so this needs a human.
+
+---
+
+# Follow-up pass — `20580a1..662c8c1` (2026-09-20)
+
+**VERDICT: APPROVED**
+
+Short pass, not a re-review. Three files of backend change, none behavioural: one comment, one
+citation, one test name. `git diff 20580a1..HEAD -- backend/` is 25 lines across
+`audit-log-repository.interface.ts`, `students.service.ts` and `registration.e2e-spec.ts`.
+
+| Follow-up | Verdict |
+|---|---|
+| **F2B-1** | **Closed, and the ruling is the right half.** |
+| **F2B-2** | **Closed.** `students.service.ts:30` now cites `students.controller.spec.ts`, which is where the assertion is. |
+| **F2B-3** | **Closed, and the rename was the right choice.** |
+| **F2B-4** | **Closed, and it reads correctly.** |
+
+**F2B-1 — you have not talked yourself into the wrong half.** The ruling is correct on both counts I
+can check:
+
+- **The union member is not orphaned.** `group.student_assigned` is still written by
+  `groups.service.ts:309`, reached from a live route — `staff-groups.controller.ts:99`
+  (`POST /staff/groups/:groupId/members`). It remains a different decision by a different actor, as
+  the new comment says.
+- **The nested-transaction argument holds.** `GroupsService.addMember` opens its own
+  `runInTransaction`, so routing `accept` through it would nest inside the transaction `accept`
+  already holds — `CLAUDE.md` §9's named hazard. Calling `GroupRepository.addMember` directly was
+  right in the original commit and stays right.
+- **Nothing is unanswerable.** `student.accepted.after` carries `groupId` and `courseId`
+  (`registration-approval.service.ts:131`), with the same actor and the same commit. My finding was
+  that the comment described a log that did not exist; the log was never the defect.
+
+**F2B-3 — agree with the rename; do not add the undeclared-field send.** The global
+`ValidationPipe({whitelist: true})` is asserted where it is configured, not per-DTO, and a case
+proving `smuggled` is stripped would prove a property of `main.ts`, not of `CreateCourseDto`. The
+three assertions under the new name are the real DTO refusals. The comment naming *why* the old name
+was unprovable is the part worth having — it stops the next person restoring it.
+
+**F2B-4 — correct as written.** Both messages, both reasons, and the conclusion that matters: the UI
+cannot distinguish waiting from rejected from wrong-password from deleted by any API error, so the
+waiting state comes from register's 201 body and nowhere else. That is what unit 4 needs.
+
+**Suites.** I re-ran **unit: 515 passed (515), 32 files**. I accept not re-running integration: a
+comment, a citation and a test name are unreachable from the integration spec, and no migration,
+seed or SQL string changed in this range (`git diff --stat` confirms — nothing under
+`database/`). The e2e rename is a string in a `it(...)` title.
+
+**One nit, cosmetic.** The `F2B-1` correction in `PHASE_PLAN_2B.md` §4.5 is a blockquote inserted
+**between two rows of a markdown table**, which ends the table there — the `student.rejected`,
+`course.created` and `course.updated` rows render as loose text. Move it below the table. Not worth
+a commit of its own; fold it into the next docs touch.
+
+**Slice 2b-i may go `[x]`.** 2b-ii is unblocked from my side.

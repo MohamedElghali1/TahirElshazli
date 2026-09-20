@@ -452,6 +452,9 @@ here, in writing, and it is the only one. Its two behavioural properties are rep
 | Action | Target type | Union entry | `AUDIT_ACTION_VALUES` entry | Spec asserting the row |
 |---|---|---|---|---|
 | `student.accepted` | `student` (**new**) | ✓ | ✓ | `{before:{status:'waiting'}, after:{status:'active', groupId, courseId}}` |
+| `student.rejected` | `student` | ✓ | ✓ | `{before:{status:'waiting'}, after:{status:'rejected'}}` — **`reason` is not `parentEmail`, but keep the payload minimal** |
+| `course.created` | `course` (**new**) | ✓ | ✓ | `after` carries the created course; `before` is null |
+| `course.updated` | `course` | ✓ | ✓ | `expect(entry.before).not.toEqual(entry.after)` — the `before` is a **copy**, read before the write |
 
 > **Correction, 2b-i review finding `F2B-1` (coordinator ruling, 2026-09-20).** An earlier comment
 > on `AuditTargetType` claimed `accept` *also* writes a `group.student_assigned` entry. **It does
@@ -461,9 +464,6 @@ here, in writing, and it is the only one. Its two behavioural properties are rep
 > `accept` already holds. `accept` calls `GroupRepository.addMember` directly and writes exactly one
 > entry. `group.student_assigned` is still written by the staff placement route — a different
 > decision by a different actor.
-| `student.rejected` | `student` | ✓ | ✓ | `{before:{status:'waiting'}, after:{status:'rejected'}}` — **`reason` is not `parentEmail`, but keep the payload minimal** |
-| `course.created` | `course` (**new**) | ✓ | ✓ | `after` carries the created course; `before` is null |
-| `course.updated` | `course` | ✓ | ✓ | `expect(entry.before).not.toEqual(entry.after)` — the `before` is a **copy**, read before the write |
 
 `AUDIT_ACTION_VALUES` is `Record<AuditAction, true>`; a missing entry is a **compile error**, which
 is the mechanism. `AuditService.record` throws outside a transaction — every one of these is inside
