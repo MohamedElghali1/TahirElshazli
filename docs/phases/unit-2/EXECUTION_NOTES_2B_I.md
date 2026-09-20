@@ -351,3 +351,45 @@ no self-enrol button, and a sign-up that shows "waiting for approval" instead of
    473 pre-existing tests still pass — but it is the kind of change that bites later.
 6. **The `enrolledCourseCount` driver divergence** (§F-2) is real and untouched. It predates this
    slice and the fix is a design decision.
+
+---
+
+# Review follow-ups — closed 2026-09-20
+
+`REVIEW_2B_I.md` returned **APPROVED WITH FOLLOW-UP**: no security, authorization, correctness or
+requirements failure. All three items are documentation/evidence and none changes behaviour. The
+reviewer reproduced every number independently, including 228 e2e across four consecutive runs with
+zero worker exits, and **accepted the `pool: 'threads'` change**.
+
+| Item | Status | What changed |
+|---|---|---|
+| **`F2B-1`** | `[x]` | `backend/src/audit/interfaces/audit-log-repository.interface.ts` — the comment on `AuditTargetType`'s `student` member claimed `accept` also writes a `group.student_assigned` entry. It does not. Rewritten to say what is actually written and **why one entry is right**: `student.accepted`'s `after` already carries `groupId` and `courseId`, and a second entry would be redundant *and* would mean routing through `GroupsService.addMember`, opening a nested transaction inside the one `accept` already holds. Since `DOM-4`, acceptance is the only placement path at registration, so no history is lost; `group.student_assigned` is still written by the staff placement route. The same correction is recorded in `PHASE_PLAN_2B.md` §4.5, where the claim originated. **Comment only — no code change, and none wanted.** |
+| **`F2B-2`** | `[x]` | `backend/src/students/students.service.ts:30` cited `students.service.spec.ts`, which does not exist. The exact-key-set assertion is in `students.controller.spec.ts`. Citation fixed. |
+| **`F2B-3`** | `[x]` | `backend/test/registration.e2e-spec.ts` — the case named *"400s a body the DTO does not declare"* never sent an undeclared field, and could not have proved that name: `whitelist: true` **strips** an undeclared field, it does not reject one. Renamed to *"400s a null over a NOT NULL column, a malformed slug and a missing required field"*, which is what its three assertions actually prove, with a comment naming the strip behaviour so the next reader does not re-file the finding. The `@IsOptionalNotNull` half was already sound and is untouched. |
+
+**`SHELL-5` in `IMPLEMENTATION_PLAN.md` was corrected by the coordinator**, not by me: it said the
+`JwtStrategy` refusal carries `'Invalid credentials'`; it carries `'Account no longer exists'`
+(`jwt.strategy.ts:57`), identical to a deleted account, which is the correct property there.
+
+**Recorded from the reviewer's `F2B-3` note: the threads pool is headroom, not immunity.** A
+**fifth** booted `AppModule` will find the same wall. `fileParallelism: false` is still doing the
+real work and `isolate` stays at its `true` default, so no two apps share a heap concurrently — the
+thread pool only removed the second V8 per file. The next set of e2e cases that needs a booted app
+should go into one of the four existing files, and a fifth file is a decision, not a default.
+
+## Verification after the follow-ups
+
+```
+$ npm test --workspace=backend
+ Test Files  32 passed (32)
+      Tests  515 passed (515)
+
+$ npm run test:e2e --workspace=backend
+ Test Files  4 passed (4)
+      Tests  228 passed (228)
+```
+
+**The integration suite was not re-run, and did not need to be:** all three items are a comment, a
+citation and a test name, none of which is reachable from `postgres-repositories.integration-spec.ts`
+or from any migration or SQL. Its last run stands as recorded above — 103 passing, 0 skipped, all 14
+migrations from an empty database.

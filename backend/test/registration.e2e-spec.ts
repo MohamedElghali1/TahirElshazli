@@ -200,7 +200,9 @@ describe('Registration queue and course lifecycle (e2e)', () => {
         .expect(404);
     });
 
-    it('400s a body the DTO does not declare, and a null over a NOT NULL column', async () => {
+    // Not "rejects an undeclared field": `whitelist: true` **strips** one, it
+    // does not 400. The three below are what the DTOs actually refuse.
+    it('400s a null over a NOT NULL column, a malformed slug and a missing required field', async () => {
       await request(app.getHttpServer())
         .patch('/admin/courses/course-1')
         .set(bearer(adminToken))

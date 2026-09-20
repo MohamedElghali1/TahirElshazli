@@ -150,10 +150,21 @@ export type AuditTargetType =
   // to this task" are different questions.
   | 'external_result'
   // The account, for the registration queue. The target of an accept or a
-  // reject is the *person*, not their group placement - the placement that
-  // `accept` also writes gets its own `group.student_assigned` entry, and
-  // filing both under `group_membership` would make "what happened to this
-  // student's account" unanswerable.
+  // reject is the *person*, not their group placement, and filing one under
+  // `group_membership` would make "what happened to this student's account"
+  // unanswerable.
+  //
+  // **`accept` writes exactly one entry, and it is this one.** It does not
+  // also write `group.student_assigned`, deliberately: `student.accepted`
+  // already carries `groupId` *and* `courseId` in its `after`
+  // (`registration-approval.service.ts`), so the placement is auditable under
+  // that action, and a second entry would be redundant - and would mean going
+  // through `GroupsService.addMember`, which opens a nested transaction
+  // inside the one `accept` already holds. Since `DOM-4`, acceptance is the
+  // only path by which a student is placed at registration, so there is no
+  // history being lost. `group.student_assigned` is still written by the
+  // staff placement route, which is a different decision by a different
+  // actor.
   | 'student'
   // The course itself, for create and update.
   | 'course';

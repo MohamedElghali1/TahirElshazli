@@ -27,7 +27,7 @@ import { TokenDenylistService } from '../auth/token-denylist.service.js';
  * neither is student-facing. A spread would carry the next staff field added
  * to the table straight onto this response without anyone noticing, which is
  * exactly the failure mode - so the allowed keys are listed, and
- * `students.service.spec.ts` asserts the exact key set.
+ * `students.controller.spec.ts` asserts the exact key set.
  */
 export interface StudentProfileView {
   id: string;
