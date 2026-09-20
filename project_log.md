@@ -3487,3 +3487,50 @@ unit 4 deletes.
 
 One open question is recorded rather than answered: whether an assistant may read work analytics
 for a task targeted at a group they do not hold (`B-4`). Nothing was guessed; the gate is unchanged.
+
+
+---
+
+## 2026-09-21 — slice 2b-ii reviewed; the second door gets a decision, not a patch
+
+**`APPROVED WITH FOLLOW-UP`** (`docs/phases/unit-2/REVIEW_2B_II.md`). The reviewer did not take the
+executor's numbers on trust: it re-ran all three suites on its own tree (517 / 228 / 110, 0 skipped),
+created an empty database and applied all fifteen migrations into it, read the resulting
+`assistant_scopes` rows directly, and re-derived every claim in the execution notes — the seven
+unmodified contract cases hunk by hunk, the four deleted cases, the twenty-one untouched call sites,
+the four `===`-against-a-genuine-miss assertions, and ruling R-1 by grep *and* by both behavioural
+tests. It reported **no finding attributable to the change itself**. That is the first slice in
+unit 2 to come back that way.
+
+**What it did find is that the slice closed one of two doors.** `D-10` scoped every route that names
+a **group**. The routes that name a **course** are still course-grained — and once scope lives at the
+group grain, those are no longer the same thing. An assistant given one cohort of IGCSE was still
+reading every cohort on the course: names, emails and averages from the roster, the whole submission
+queue, analytics for tasks set to groups they cannot open, and the ability to *target* new work at
+those groups. Roughly 150 students where the grant was thirty. Pre-existing, not a regression — the
+executor had seen the shape of it, named the analytics instance `B-4`, and refused to invent the
+answer, which was the right call: the alternative on hand was not "refuse" but "silently narrow a
+denominator", and two staff members seeing different completion rates for one task with nothing
+failing is worse than an open door that is written down.
+
+**The user ruled: narrow everything to the held groups** — `D-23`, filed as task `AUTH-6`, and
+deliberately **not** folded into phase 2. The deciding argument was not the size of the leak but the
+disagreement: `AUTHORIZATION_MODEL.md` already said *any* assistant-facing read or write is
+group-scoped, and a model the code contradicts is worse than either rule adopted honestly. The
+accepted cost is stated rather than discovered — each affected screen now needs an explicit ruling on
+whether its numbers may depend on who is looking.
+
+The other gating finding was a documentation line that had quietly become the most dangerous kind:
+`AUTHORIZATION_MODEL.md:217` read *"group scope → 404. **Built**"*, which a future agent would cite to
+conclude the question was settled. It is qualified now, with a second row naming the open course door
+and pointing at `AUTH-6`, and the strike-through in `IMPLEMENTATION_PLAN.md` narrowed from *closed* to
+*partly closed*.
+
+`AUTH-2` is `[x]`. **Unit 2 is complete.** Three follow-ups remain and none blocks phase 3: an
+assistant created at runtime still gets no scope row (`D-20`, fails closed, `PEOPLE-4` owns it), a
+dead frontend screen that `SHELL-4` deletes, and a once-seen `npm run test:e2e` teardown abort
+(exit `3221226505`) that CI must not be able to read as a pass — invoke vitest directly when CI is
+authored.
+
+*Bookkeeping: the new decision is `D-23`, not `D-11`. `D-11` was taken on 2026-09-20 by the
+`@IsOptional()`-over-`NOT NULL` ruling, and the series had already run to `D-22`.*

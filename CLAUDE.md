@@ -335,6 +335,13 @@ withheld verbs. The durable rules:
   course grain leaked every cohort on a course. **A missing `assistant_scopes` row is "never
   configured" and refuses** — nothing in the product creates an assistant account yet, so whatever
   gains that ability must write the row.
+- **Enforcement is at the group grain only where the route *names* a group.** `D-10` scoped the
+  `/staff/groups/*` routes; a route naming a **course** still calls `assertAssigned(courseId)`, which
+  after `015` no longer implies group scope — one held cohort reaches the whole course's roster,
+  submission queue, analytics and assessment targeting. Pre-existing, ruled on as `D-23` (narrow to
+  held groups) and open as task `AUTH-6`. **Until it lands, do not read a "group scope" statement in
+  `AUTHORIZATION_MODEL.md` as describing the course-named routes**, and do not add a new
+  course-grained staff route without saying which grain it is on.
 - **Object-level authorization is not optional.** A role check alone — "is this user an assistant?" —
   is the single easiest way to leak the whole platform through the API. Every request that names a
   resource must prove the caller may reach *that* resource. Enrollment alone is not enough where work

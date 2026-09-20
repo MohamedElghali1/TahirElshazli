@@ -1037,3 +1037,51 @@ deliberately"*, so that naming an assistant on a group could be proved to grant 
 group-1 is the only group on it. The display/authorization disagreement is proved by `assistant-2`
 instead: named on no group, holding no group, and named on one by the specs to show it still grants
 nothing. The proof moved; it was not dropped.
+
+---
+
+## 2026-09-21 — slice 2b-ii reviewed; `D-23` rules on the door `D-10` left open
+
+**Verdict `APPROVED WITH FOLLOW-UP`** — `docs/phases/unit-2/REVIEW_2B_II.md`. The reviewer re-ran
+every suite on its own tree (517 unit / 32 files · 228 e2e · 110 integration, 0 skipped) and applied
+all fifteen migrations into a database it created empty seconds before. It found **no finding
+attributable to the change itself**: the seven contract cases genuinely survived unmodified, the
+404-not-403 property is asserted `===` against the genuine-miss path at four sites, `015`'s backfill
+is proved on a multi-group course, and ruling R-1 holds by grep and by two behavioural tests.
+
+Two things held the clean `APPROVED`, and both are closed here: one documentation line that claimed
+more than the code does (F2), and one question that was the user's to answer (F1/F3/F4). `AUTH-2` is
+now `[x]`.
+
+### `D-23` NEW — **the course-named staff routes narrow to the held groups.**
+
+`D-10` moved assistant scope to the group grain and enforced it on every route that **names a
+group**. The routes that name a **course** were left course-grained, and after `015` that is no
+longer the same thing: an assistant holding one cohort of a course reads *every* cohort on it —
+`GET /staff/courses/:id/roster` (names, emails, averages), `GET /staff/courses/:id/submissions` (the
+work itself), `GET /staff/courses/:id/groups`, the work-analytics pair, and
+`assessment-authoring.service.ts:170` lets them **target** new work at a cohort they cannot read.
+Roughly 150 students where the grant was thirty.
+
+**Ruled: narrow everything to held groups.** The alternative — keep course-grained reads and narrow
+only writes — would have kept every analytic a single fact about the task, which is a real
+advantage. It loses because `AUTHORIZATION_MODEL.md:207` already states that *any* assistant-facing
+read or write is group-scoped: a model the code contradicts is worse than either rule adopted
+honestly, and it was the roster leak that raised `D-10` in the first place.
+
+**Accepted cost, stated rather than discovered:** each affected screen now needs an explicit ruling
+on whether its numbers may depend on who is looking. That is exactly the trap `B-4` avoided by
+preserving behaviour instead of silently narrowing a denominator — two staff members seeing
+different completion rates for one task, with nothing failing, is a worse outcome than a door that
+is open and written down.
+
+**Filed as task `AUTH-6`, not folded into phase 2.** It is unplanned scope and genuine design work
+per screen, not a patch, and the leak is older than the slice that exposed it. `D-11`'s number was
+already taken (2026-09-20, `@IsOptional()` over a `NOT NULL` column); this decision is `D-23`.
+
+### `B-4` — resolved by `D-23`
+
+The blocker the executor recorded rather than guessed at. Its read half (analytics and
+`.../students/:studentId/work` for a task targeted at a group the caller does not hold) is `AUTH-6`
+scope. `D-21` stands unchanged: `WorkAnalyticsService` reads `GROUP_REPOSITORY` directly, so the
+denominator stays caller-independent whatever `AUTH-6` does to the gate.

@@ -223,7 +223,11 @@ breaks the streak where 001–008 each found something on their first run.
 matches what `get()` already does; the notes call it "one count", which it is not.
 The unit is `[~]` until a reviewer verdict of `APPROVED` (§2 condition 3).
 
-#### Unit 2b — scope, people and courses **— SPLIT into 2b-i and 2b-ii (ruling R-5, 2026-09-20)**
+#### Unit 2b — scope, people and courses `[x]` COMPLETE **— SPLIT into 2b-i and 2b-ii (ruling R-5, 2026-09-20)**
+
+Both slices carry an `APPROVED`-family verdict: 2b-i `APPROVED` 2026-09-20, 2b-ii
+`APPROVED WITH FOLLOW-UP` 2026-09-21 with both gating findings closed. **Unit 2 is complete; unit 3
+begins in a new conversation.**
 
 Same reasoning that produced the 2a/2b split, and that split worked: the only irreversible drop
 gets its own review, and `AUTH-2` is the only item carrying an **authorization contract** — seven
@@ -235,7 +239,7 @@ needs anything from the other's migration.
 | Slice | Tasks | Migration | Status |
 |---|---|---|---|
 | **2b-i — people and courses** | `DOM-3`, `DOM-4`, `DOM-5`, seeds `001`/`002` for `014` | `014`, additive | `[x]` **COMPLETE — `APPROVED` 2026-09-20** |
-| **2b-ii — scope** | `AUTH-2` + `D-10`, final `DOM-6` | `015`, destructive | `[~]` **BUILT 2026-09-20 — awaiting review.** 517 unit / 32 files · 228 e2e · 110 integration, **0 skipped**, all 15 migrations from an empty schema. `course_staff_assignments` referenced nowhere; the seven contract cases pass unmodified. `[x]` needs a reviewer verdict of `APPROVED`. |
+| **2b-ii — scope** | `AUTH-2` + `D-10`, final `DOM-6` | `015`, destructive | `[x]` **COMPLETE — `APPROVED WITH FOLLOW-UP` 2026-09-21.** 517 unit / 32 files · 228 e2e · 110 integration, **0 skipped**, all 15 migrations from an empty schema. `course_staff_assignments` referenced nowhere; the seven contract cases pass unmodified — all re-run and re-derived by the reviewer on its own tree, with the fifteen migrations applied into a database created empty. **No finding was attributable to the change itself.** The two that gated it are closed: `AUTHORIZATION_MODEL.md`'s overstated row (F2) is qualified, and the user ruled on the course door as `D-23` → task `AUTH-6`. Remaining follow-ups `F2B2-3`…`F2B2-5` are recorded in `IMPLEMENTATION_PLAN.md` and **none blocks phase 3**. `docs/phases/unit-2/REVIEW_2B_II.md`. |
 
 **Out of 2b-i, explicitly:** `AUTH-2`, `D-10`, migration `015` (not authored, not even as an empty
 file), the final `DOM-6` pass, `backend/src/staff/**` including `staff-scope.service.spec.ts`, and
@@ -293,7 +297,7 @@ Accept/reject are audited. The status gate is in **two** places, `login` and
 `JwtStrategy.validate` (ruling R-6) — **all done in 2b-i.**
 **Exit** universal, plus: no code path reads `group_courses`; `DATABASE_PLAN.md` §4.1 reconciled with
 what ran.
-**Blocked within scope** `DOM-3`/`DOM-6` partially — decisions `D-4`, `D-5`.
+**Blocked within scope** ~~`DOM-3`/`DOM-6` partially — decisions `D-4`, `D-5`~~ — **both closed 2026-09-20; nothing remained blocked at exit.**
 
 ---
 
