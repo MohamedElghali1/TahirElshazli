@@ -209,15 +209,27 @@ components:
 
     Assistant:
       type: object
-      required: [id, name, email, role, scope, status]
+      # `required` carries what GET /admin/assistants returns TODAY (AUTH-1).
+      # `scope`, `groupIds` and `status` have no data source until AUTH-2 creates
+      # assistant_scopes and AUTH-4 creates assistant_invitations, so they are
+      # declared-but-optional rather than required-and-absent. Move them into
+      # `required` in the same change that populates them - a contract that
+      # requires a field nothing emits is drift, not ambition.
+      required: [id, name, email, role, createdAt]
       properties:
         id:     { $ref: '#/components/schemas/Id' }
         name:   { type: string }
         email:  { type: string, format: email }
         role:   { type: string, enum: [assistant, admin] }
+        createdAt: { type: string, format: date-time }
+        # --- Arrive with AUTH-2 (unit 2) ---
         scope:  { $ref: '#/components/schemas/AssistantScope' }
         groupIds: { type: array, items: { $ref: '#/components/schemas/Id' } }
+        # --- Arrives with AUTH-4 (unit 5) ---
         status: { type: string, enum: [invited, active] }
+        # Derived from the audit log, not stored (D-9 / PEOPLE-6): MAX(created_at)
+        # for that actor. It is *last acted*, not *last seen* - an assistant who
+        # signs in and only reads shows null. Label it accordingly.
         lastSeenAt: { type: [string, 'null'], format: date-time }
 
     AssistantWrite:

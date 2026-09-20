@@ -599,15 +599,20 @@ any other. Combined with `D-4`, there is no `mode` and no `room`. `PRODUCT_SPEC.
 "a room **or** a meeting link" resolves to the link. The T-30-minute server-side withholding of that
 link (`SESS-6`) is unaffected and still required.
 
-**Recordings become assistant-reachable, scoped to their groups.** *"Or maybe he'll tell the assistant
-to upload it."* This widens `recording.created` / `.updated` / `.deleted` from teacher-only —
-`AUTHORIZATION_MODEL.md` §2.2's "a TA gets materials, not recordings" no longer holds, and
-`audit-log-repository.interface.ts:21-23` carries a comment stating that rule which must be corrected
-when the routes widen. Already audited, so the widening stays attributable.
+**Recordings stay teacher-only.** *Corrected the same day.* This entry originally recorded recordings
+widening to assistants for their own groups, inferred from *"or maybe he'll tell the assistant to
+upload it."* The user confirmed: **teacher and admin only.** `AUTHORIZATION_MODEL.md` §2.2's "a TA gets
+materials, not recordings" **stands unchanged**, and `audit-log-repository.interface.ts:21`'s comment
+stating that rule is correct and must stay.
 
-> **Flagged as inference, cheap to correct:** "maybe" is permissive, not explicit. I have recorded
-> assistants *may* upload recordings for their own groups. If uploads should stay teacher-only, say so
-> and it is one decorator plus one scope check undone, before `STU-2`/`SESS-1` are planned.
+The inference was the wrong call to bank: "maybe" was permission to *consider*, not a decision, and a
+permission widening is exactly the class of change `CLAUDE.md` §13 says to stop and ask about rather
+than read into a sentence. Who may write to a resource is business behaviour, not a judgement call.
+Recorded here rather than quietly deleted, because the reasoning is the useful part.
+
+**Unchanged by the correction:** who *uploads* the recording has no bearing on `D-9` itself. The
+live/recorded distinction is still retired — the teacher uploads it, and every group still runs
+external-link sessions and accumulates recordings afterwards.
 
 ### `D-1` SETTLED — drop the Account → Security tab. No Redis.
 
@@ -633,3 +638,46 @@ replica is configured — at which point it must be fixed *and* the tab becomes 
 honest cost of dropping it: **a stolen token cannot be revoked before it expires**, and nobody can see
 their active devices. Token lifetime is therefore the only control, and that makes it worth keeping
 short.
+
+---
+
+## 2026-09-20 — `Assistant` schema reconciled; recordings confirmed teacher-only
+
+Two closing corrections to Phase 1.
+
+### Recordings stay teacher-only
+See the correction inside the `D-9` entry above. The widening was an inference from the word "maybe"
+and the user has confirmed the opposite. `AUTHORIZATION_MODEL.md` §2.2 stands; the capability matrix
+row is restored to teacher/admin.
+
+**The lesson, since it cost a revision:** "maybe he'll tell the assistant to upload it" is permission
+to *consider*, not a decision to *record*. Who may write to a resource is business behaviour, and
+`CLAUDE.md` §13 says to ask rather than infer. The pipeline's own planner is instructed to do exactly
+that and would have flagged it; the coordinator read it into a sentence instead.
+
+### `GET /admin/assistants` — the last open Definition-of-Done point in Phase 1
+
+The unit-1 review's lower finding 4 was a genuine DoD point 10 failure ("`API_SPEC.yaml` matches what
+was built"), drifting in **both** directions:
+
+- the schema marked `scope` and `status` **required**, and neither has a data source until `AUTH-2`
+  creates `assistant_scopes` and `AUTH-4` creates `assistant_invitations`;
+- the route returns `createdAt`, which the schema did not declare at all.
+
+**Fixed by making the contract describe what exists.** `Assistant.required` is now
+`[id, name, email, role, createdAt]`; `scope`, `groupIds` and `status` stay declared but optional, each
+annotated with the task that populates it and an instruction to move it into `required` in that same
+change. `lastSeenAt` carries the `D-9`/`PEOPLE-6` note that it is derived from the audit log and means
+*last acted*, not *last seen*.
+
+**A contract that requires a field nothing emits is drift, not ambition** — it makes every conformance
+check fail for a reason nobody intends to fix this quarter, which is how a spec stops being consulted.
+
+Verified field-by-field: `directory.service.ts:92-97`, `API_SPEC.yaml`'s `Assistant`, and
+`frontend/lib/types.ts`'s `DirectoryEntry`/`StaffDirectoryEntry` now carry the same five fields.
+
+**Phase 1's thirteen-point DoD now holds in full.** Points not applicable to this unit are recorded as
+such rather than ticked: no new tables (3), no new request bodies (4), no new audit actions (6), no
+screens (9, 12). Point 11's `npx tsc --noEmit` remains at **301 pre-existing errors** in the legacy
+`app/` and `components/{app,site}` that `SHELL-4` deletes — documented in `CLAUDE.md` §4.1, zero in
+`lib/`, and not a Phase 1 regression.
