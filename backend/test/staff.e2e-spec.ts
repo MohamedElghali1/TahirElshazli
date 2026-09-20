@@ -84,7 +84,6 @@ describe('Staff and admin API (e2e)', () => {
       '/staff/courses/course-1/recordings',
       '/staff/courses/course-1/live-sessions',
       '/staff/courses/course-1/announcements',
-      '/admin/courses/course-1/staff',
       '/admin/students',
       '/admin/assistants',
       '/admin/announcements',
@@ -100,7 +99,6 @@ describe('Staff and admin API (e2e)', () => {
       '/staff/courses/course-1/submissions',
       '/staff/courses/course-1/live-sessions',
       '/staff/courses/course-1/announcements',
-      '/admin/courses/course-1/staff',
       '/admin/students',
       '/admin/announcements',
       '/admin/audit-log',
@@ -113,7 +111,6 @@ describe('Staff and admin API (e2e)', () => {
     });
 
     it.each([
-      '/admin/courses/course-1/staff',
       '/admin/students',
       '/admin/assistants',
       '/admin/announcements',
@@ -130,15 +127,23 @@ describe('Staff and admin API (e2e)', () => {
 
     it('refuses a TA the admin write routes, not just the reads', async () => {
       // The reads leak; the writes grant. Both are checked because a @Roles
-      // that covers only the GET is a plausible mistake.
+      // that covers only the GET is a plausible mistake. The two probes were
+      // `/admin/courses/:id/staff` until `AUTH-2` retired it; course create and
+      // edit are the same shape of admin-only write.
       await request(app.getHttpServer())
-        .post('/admin/courses/course-2/staff')
+        .post('/admin/courses')
         .set(bearer(assignedTaToken))
-        .send({ userId: 'assistant-1' })
+        .send({
+          title: 'TA should not be able to create this',
+          description: 'x',
+          slug: 'ta-cannot-create',
+          teacherName: 'Dr. Tahir Elshazli',
+        })
         .expect(403);
       await request(app.getHttpServer())
-        .delete('/admin/courses/course-1/staff/assistant-1')
+        .patch('/admin/courses/course-1')
         .set(bearer(assignedTaToken))
+        .send({ title: 'TA should not be able to rename this' })
         .expect(403);
     });
 
@@ -643,96 +648,39 @@ describe('Staff and admin API (e2e)', () => {
     });
   });
 
-  describe('assignment is admin-only, audited, and immediately effective', () => {
-    it('rejects a malformed userId at the API boundary', async () => {
+  /**
+   * **`AUTH-2` retired `/admin/courses/:courseId/staff`** - the three routes
+   * that assigned an assistant to a *course*. Scope is held at the group grain
+   * now (`assistant_scopes` + `assistant_group_assignments`), and the route
+   * that edits it is unit 5's `PATCH /admin/assistants/{userId}`.
+   *
+   * Asserted as 404 rather than merely deleted from this file, because a route
+   * that quietly still answers is exactly what a deleted test cannot notice.
+   */
+  describe('the retired course-staff routes answer 404', () => {
+    it.each([
+      ['get', '/admin/courses/course-1/staff'],
+      ['post', '/admin/courses/course-1/staff'],
+      ['delete', '/admin/courses/course-1/staff/assistant-1'],
+    ] as const)('%s %s', async (method, path) => {
       await request(app.getHttpServer())
-        .post('/admin/courses/course-2/staff')
+        [method](path)
         .set(bearer(adminToken))
-        .send({ userId: 'not a valid id!' })
-        .expect(400);
+        .expect(404);
     });
 
-    it('refuses to assign an account that is not an assistant', async () => {
+    it('still filters the audit log by the retained course_staff actions', async () => {
+      // The table is gone; its history is not. `AUDIT_ACTION_VALUES` is built
+      // from the `AuditAction` union, so removing the member "for tidiness"
+      // would make every historical row of that action unfilterable with a 400.
       await request(app.getHttpServer())
-        .post('/admin/courses/course-2/staff')
-        .set(bearer(adminToken))
-        .send({ userId: 'student-1' })
-        .expect(400);
-    });
-
-    it('assigns, widens the TA scope, and writes an audit entry', async () => {
-      const before = await request(app.getHttpServer())
-        .get('/staff/courses')
-        .set(bearer(unassignedTaToken))
-        .expect(200);
-      expect(before.body).toEqual([]);
-
-      await request(app.getHttpServer())
-        .post('/admin/courses/course-2/staff')
-        .set(bearer(adminToken))
-        .send({ userId: 'assistant-2' })
-        .expect(201);
-
-      // Exactly the course they were granted, and no other.
-      const after = await request(app.getHttpServer())
-        .get('/staff/courses')
-        .set(bearer(unassignedTaToken))
-        .expect(200);
-      expect(after.body.map((course: { id: string }) => course.id)).toEqual([
-        'course-2',
-      ]);
-
-      const log = await request(app.getHttpServer())
         .get('/admin/audit-log?action=course_staff.assigned')
         .set(bearer(adminToken))
         .expect(200);
-      expect(log.body.entries[0]).toMatchObject({
-        actorId: 'teacher-1',
-        actorRole: 'teacher',
-        action: 'course_staff.assigned',
-        courseId: 'course-2',
-      });
-    });
-
-    it('refuses a duplicate assignment', async () => {
       await request(app.getHttpServer())
-        .post('/admin/courses/course-2/staff')
-        .set(bearer(adminToken))
-        .send({ userId: 'assistant-2' })
-        .expect(409);
-    });
-
-    it('unassigns, narrows the scope again, and logs the removal', async () => {
-      await request(app.getHttpServer())
-        .delete('/admin/courses/course-2/staff/assistant-2')
-        .set(bearer(adminToken))
-        .expect(200);
-
-      const after = await request(app.getHttpServer())
-        .get('/staff/courses')
-        .set(bearer(unassignedTaToken))
-        .expect(200);
-      expect(after.body).toEqual([]);
-
-      const log = await request(app.getHttpServer())
         .get('/admin/audit-log?action=course_staff.unassigned')
         .set(bearer(adminToken))
         .expect(200);
-      expect(log.body.entries[0]).toMatchObject({
-        actorId: 'teacher-1',
-        action: 'course_staff.unassigned',
-        courseId: 'course-2',
-      });
-      expect(log.body.entries[0].before).toMatchObject({
-        userId: 'assistant-2',
-      });
-    });
-
-    it('404s an unassignment that was never there', async () => {
-      await request(app.getHttpServer())
-        .delete('/admin/courses/course-2/staff/assistant-2')
-        .set(bearer(adminToken))
-        .expect(404);
     });
   });
 
@@ -841,14 +789,17 @@ describe('Staff and admin API (e2e)', () => {
       // is now a 403 and the teacher does the removal. The placement half is
       // unchanged, and that is the point of keeping both in one test: "add
       // stays, remove moves" is two assertions, and the pair is the requirement.
+      // **group-1, not the group created above** (`D-10`): assistant-1 holds
+      // group-1 and nothing else, so a group an admin just created is a 404 to
+      // them - asserted in its own describe below.
       await request(app.getHttpServer())
-        .post(`/staff/groups/${groupId}/members`)
+        .post('/staff/groups/group-1/members')
         .set(bearer(assignedTaToken))
         .send({ studentId: 'student-2' })
         .expect(201);
 
       const members = await request(app.getHttpServer())
-        .get(`/staff/groups/${groupId}/members`)
+        .get('/staff/groups/group-1/members')
         .set(bearer(assignedTaToken))
         .expect(200);
       expect(
@@ -856,12 +807,12 @@ describe('Staff and admin API (e2e)', () => {
       ).toContain('student-2');
 
       await request(app.getHttpServer())
-        .delete(`/staff/groups/${groupId}/members/student-2`)
+        .delete('/staff/groups/group-1/members/student-2')
         .set(bearer(assignedTaToken))
         .expect(403);
 
       await request(app.getHttpServer())
-        .delete(`/staff/groups/${groupId}/members/student-2`)
+        .delete('/staff/groups/group-1/members/student-2')
         .set(bearer(adminToken))
         .expect(204);
     });
@@ -992,7 +943,7 @@ describe('Staff and admin API (e2e)', () => {
 
     it('records the placement in the audit log with the TA as actor', async () => {
       await request(app.getHttpServer())
-        .post(`/staff/groups/${groupId}/members`)
+        .post('/staff/groups/group-1/members')
         .set(bearer(assignedTaToken))
         .send({ studentId: 'student-1' })
         .expect(201);
@@ -1126,13 +1077,136 @@ describe('Staff and admin API (e2e)', () => {
   });
 
   /**
+   * **`D-10` over the wire.** An assistant whose scope is `assigned_groups`
+   * reaches only the groups `assistant_group_assignments` grants them; everyone
+   * else reaches any. The refusal is a **404 with a message byte-identical to a
+   * genuine miss**, on the reads *and* the write
+   * (`AUTHORIZATION_MODEL.md:105,207`).
+   *
+   * Both directions in every case, per `CLAUDE.md` §10: a boundary proved only
+   * by its happy path is not proved.
+   */
+  describe('D-10: the group surface is scoped to the groups an assistant holds', () => {
+    /** The group `assistant-1` holds in the fixture, and one they do not. */
+    const HELD = 'group-1';
+    const NOT_HELD = 'group-2';
+
+    const messageOf = async (
+      method: 'get' | 'post',
+      path: string,
+      token: string,
+      body?: object,
+    ): Promise<string> => {
+      const req = request(app.getHttpServer())[method](path).set(bearer(token));
+      const res = await (body ? req.send(body) : req).expect(404);
+      return res.body.message as string;
+    };
+
+    it('lets the holding assistant read the group and its roster', async () => {
+      await request(app.getHttpServer())
+        .get(`/staff/groups/${HELD}`)
+        .set(bearer(assignedTaToken))
+        .expect(200);
+      await request(app.getHttpServer())
+        .get(`/staff/groups/${HELD}/members`)
+        .set(bearer(assignedTaToken))
+        .expect(200);
+    });
+
+    it.each([
+      ['the group', `/staff/groups/${NOT_HELD}`, `/staff/groups/group-nope`],
+      [
+        'the roster',
+        `/staff/groups/${NOT_HELD}/members`,
+        `/staff/groups/group-nope/members`,
+      ],
+    ])(
+      '404s %s of a group the assistant does not hold, identically to a genuine miss',
+      async (_what, outOfScope, missing) => {
+        const denied = await messageOf('get', outOfScope, assignedTaToken);
+        const gone = await messageOf('get', missing, assignedTaToken);
+        expect(denied).toBe(gone);
+        // And it leaks nothing else: no SQL, no stack, no confirmation.
+        expect(denied).not.toMatch(/select |from |where |stack/i);
+      },
+    );
+
+    it('404s the placement write too, not only the reads', async () => {
+      const denied = await messageOf(
+        'post',
+        `/staff/groups/${NOT_HELD}/members`,
+        assignedTaToken,
+        { studentId: 'student-2' },
+      );
+      const gone = await messageOf(
+        'post',
+        '/staff/groups/group-nope/members',
+        assignedTaToken,
+        { studentId: 'student-2' },
+      );
+      expect(denied).toBe(gone);
+
+      // A refusal that refuses and then writes anyway is not a refusal.
+      const members = await request(app.getHttpServer())
+        .get(`/staff/groups/${NOT_HELD}/members`)
+        .set(bearer(adminToken))
+        .expect(200);
+      expect(
+        members.body.map((m: { studentId: string }) => m.studentId),
+      ).not.toContain('student-2');
+    });
+
+    it('404s an assistant who holds no group at all, on a group that exists', async () => {
+      await request(app.getHttpServer())
+        .get(`/staff/groups/${HELD}`)
+        .set(bearer(unassignedTaToken))
+        .expect(404);
+    });
+
+    it.each([
+      ['the teacher', () => adminToken],
+      ['the full admin', () => fullAdminToken],
+    ])('lets %s read every group', async (_label, token) => {
+      await request(app.getHttpServer())
+        .get(`/staff/groups/${NOT_HELD}`)
+        .set(bearer(token()))
+        .expect(200);
+      await request(app.getHttpServer())
+        .get(`/staff/groups/${NOT_HELD}/members`)
+        .set(bearer(token()))
+        .expect(200);
+    });
+
+    it('does not let naming an assistant on a group grant them it (ruling R-1)', async () => {
+      // `groups.assistant_id` is the DISPLAY field. Naming assistant-2 on a
+      // group must leave them exactly as unable to read it - with the same 404,
+      // not a 403, so they cannot tell it apart from a miss.
+      const named = await request(app.getHttpServer())
+        .post('/admin/groups')
+        .set(bearer(adminToken))
+        .send({
+          name: 'E2E - D-10 display-only assistant',
+          courseId: 'course-1',
+          assistantId: 'assistant-2',
+        })
+        .expect(201);
+      expect(named.body.assistantId).toBe('assistant-2');
+
+      await request(app.getHttpServer())
+        .get(`/staff/groups/${named.body.id}`)
+        .set(bearer(unassignedTaToken))
+        .expect(404);
+    });
+  });
+
+  /**
    * `AUTH-1`: the Full admin is the teacher's permission under a distinct
    * identity. Both halves are asserted here - the reach, and the attribution -
    * because they fail independently and in opposite directions.
    *
    * Reach: `staff-scope.service.ts`'s `isAdmin` is the single line that decides
    * whether an admin can do anything at all. Missed, they pass `RolesGuard`,
-   * find no `course_staff_assignments` row and 404 on every course.
+   * find no `assistant_scopes` row and 404 on every course.
    *
    * Attribution: twelve `actorRole` ternaries used to collapse the role to a
    * binary. Nothing errors when they are wrong - migration 011 widens the CHECK,
@@ -1150,10 +1224,10 @@ describe('Staff and admin API (e2e)', () => {
      * is being proved is that the **role gate** is passed identically, and a 403
      * would appear in place of the 404 or 503 if it were not.
      *
-     * 24 routes. The 25th on these six controllers is
-     * `GET /admin/integrations/google/callback`, which is `@Public()` - Google's
-     * browser redirect carries no Authorization header - so it has no role
-     * parity to prove.
+     * The one route on these six controllers that is absent is
+     * `GET /admin/integrations/google/callback`, which is `@Public()` -
+     * Google's browser redirect carries no Authorization header - so it has no
+     * role parity to prove.
      */
     const ADMIN_ROUTES: {
       method: 'get' | 'post' | 'patch' | 'delete';
@@ -1265,25 +1339,15 @@ describe('Staff and admin API (e2e)', () => {
         body: { title: 'Parity probe' },
       },
       { method: 'delete', path: '/admin/live-sessions/session-does-not-exist' },
-      // admin-staff (3)
-      { method: 'get', path: '/admin/courses/course-1/staff' },
-      {
-        method: 'post',
-        path: '/admin/courses/course-does-not-exist/staff',
-        body: { userId: 'assistant-2' },
-      },
-      {
-        method: 'delete',
-        path: '/admin/courses/course-does-not-exist/staff/assistant-2',
-      },
     ];
 
-    it('covers all 26 role-gated admin routes', () => {
-      // Asserted, because a parity table that quietly covers 12 of 26 routes
+    it('covers all 23 role-gated admin routes', () => {
+      // Asserted, because a parity table that quietly covers 12 of 23 routes
       // proves parity on 12 routes while reading as though it proved it on all.
       // 24 before `DOM-1` retired the two group-course routes; 22 after; 26
-      // once `DOM-4` added accept/reject and `DOM-5` added course create/edit.
-      expect(ADMIN_ROUTES).toHaveLength(26);
+      // once `DOM-4` added accept/reject and `DOM-5` added course create/edit;
+      // 23 now that `AUTH-2` retired the three course-staff routes.
+      expect(ADMIN_ROUTES).toHaveLength(23);
     });
 
     it.each(ADMIN_ROUTES)(
@@ -1428,16 +1492,15 @@ describe('Staff and admin API (e2e)', () => {
    * That is two assertions, not one, and the second is the easier to lose.
    */
   describe('AUTH-3: an assistant may place a student, and may not remove one', () => {
-    let groupId: string;
-
-    beforeAll(async () => {
-      const created = await request(app.getHttpServer())
-        .post('/admin/groups')
-        .set(bearer(adminToken))
-        .send({ name: 'E2E - AUTH-3 withheld verbs', courseId: 'course-1' })
-        .expect(201);
-      groupId = created.body.id;
-    });
+    /**
+     * **group-1**, the group `assistant-1` holds. It used to be a group created
+     * here; `D-10` scoped the group surface, and an assistant reaches only what
+     * `assistant_group_assignments` grants them - which, until unit 5's
+     * `PATCH /admin/assistants/{userId}`, only the seed fixture can grant.
+     * Proving "add stays, remove moves" needs a group the assistant can reach
+     * at all, or the 403 under test would be indistinguishable from a 404.
+     */
+    const groupId = 'group-1';
 
     const membersOf = async (token: string): Promise<string[]> => {
       const res = await request(app.getHttpServer())

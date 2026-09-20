@@ -12,7 +12,8 @@ import type {
   WorkType,
 } from './interfaces/work-repository.interface.js';
 import { WORK_REPOSITORY } from './interfaces/work-repository.interface.js';
-import { GroupsService } from '../groups/groups.service.js';
+import type { GroupRepository } from '../groups/interfaces/group-repository.interface.js';
+import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interface.js';
 
 /**
  * Where one student stands on one piece of work, whatever kind it is.
@@ -107,7 +108,20 @@ export class WorkAnalyticsService {
     @Inject(ASSESSMENT_REPOSITORY)
     private readonly assessments: AssessmentRepository,
     @Inject(USER_REPOSITORY) private readonly users: UserRepository,
-    private readonly groups: GroupsService,
+    /**
+     * The **repository**, not `GroupsService.members`, and that is the point.
+     *
+     * `members` became group-scoped with `D-10`, so calling it here would
+     * compute the denominator over only the groups the *caller* holds - a
+     * silently wrong number rather than a refusal, which is the worse of the
+     * two failures. The denominator is a fact about the task, not about who is
+     * looking at it. Whether an assistant may see analytics for a task targeted
+     * at a group they do not hold is a separate, open question (`B-4`,
+     * `EXECUTION_NOTES_2B_II.md`); the gate on the route is unchanged until it
+     * is answered. `GroupDataModule` is `@Global()`, so this needs no import
+     * edge.
+     */
+    @Inject(GROUP_REPOSITORY) private readonly groupRepo: GroupRepository,
   ) {}
 
   /**
@@ -126,7 +140,7 @@ export class WorkAnalyticsService {
     const targets = await this.assessments.findTargets(assessmentId);
     const ids = new Set<string>();
     for (const target of targets) {
-      const members = await this.groups.members(target.groupId);
+      const members = await this.groupRepo.findMembers(target.groupId);
       for (const member of members) {
         ids.add(member.studentId);
       }

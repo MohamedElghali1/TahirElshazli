@@ -26,6 +26,18 @@ import { GROUP_REPOSITORY } from './interfaces/group-repository.interface.js';
 export const MAX_GROUP_PAGE_SIZE = 100;
 export const DEFAULT_GROUP_PAGE_SIZE = 50;
 
+/**
+ * The message a group an assistant may not reach and a group that does not
+ * exist **both** get (`D-10`).
+ *
+ * One exported `const` used by every throw in this file, and asserted `===`
+ * between the two paths in `groups.controller.spec.ts`. The anti-enumeration
+ * property (`CLAUDE.md` §7) dies silently if the two strings drift by one byte,
+ * and a spec comparing each against its own literal would pass while it was
+ * gone.
+ */
+export const GROUP_NOT_FOUND = 'Group not found';
+
 /** One group as a console row: the group, and how many sit in it. */
 export interface GroupSummary extends Group {
   memberCount: number;
@@ -85,10 +97,31 @@ export class GroupsService {
     private readonly db: DatabaseService,
   ) {}
 
-  private async requireGroup(groupId: string): Promise<Group> {
+  /**
+   * The group, if this actor may reach it. **`D-10`.**
+   *
+   * An assistant whose scope is `assigned_groups` reaches only the groups they
+   * hold; everyone else - an admin, or an `all_groups` assistant - reaches any.
+   * Out of scope and nonexistent answer with the **same `GROUP_NOT_FOUND`**, so
+   * an assistant cannot enumerate cohorts one id at a time. Before this check,
+   * any assistant could read any group's roster, every member's name and email
+   * included.
+   *
+   * It is here rather than on the controller because this is the one place
+   * every group read and write already passes through - `get`, `members`,
+   * `addMember`, `update` and `removeMember` all call it - so a new route
+   * cannot be added that forgets it.
+   */
+  private async requireGroup(
+    groupId: string,
+    actor: StaffActor,
+  ): Promise<Group> {
     const group = await this.groupRepo.findById(groupId);
     if (!group) {
-      throw new NotFoundException('Group not found');
+      throw new NotFoundException(GROUP_NOT_FOUND);
+    }
+    if (!(await this.scope.mayReachGroup(groupId, actor))) {
+      throw new NotFoundException(GROUP_NOT_FOUND);
     }
     return group;
   }
@@ -110,8 +143,8 @@ export class GroupsService {
     }));
   }
 
-  async get(groupId: string): Promise<GroupSummary> {
-    const group = await this.requireGroup(groupId);
+  async get(groupId: string, actor: StaffActor): Promise<GroupSummary> {
+    const group = await this.requireGroup(groupId, actor);
     const members = await this.groupRepo.findMembers(groupId);
     return { ...group, memberCount: members.length };
   }
@@ -125,8 +158,11 @@ export class GroupsService {
    * not widen that one, and they are built by different methods so that it
    * cannot happen by editing one line.
    */
-  async members(groupId: string): Promise<GroupMemberView[]> {
-    await this.requireGroup(groupId);
+  async members(
+    groupId: string,
+    actor: StaffActor,
+  ): Promise<GroupMemberView[]> {
+    await this.requireGroup(groupId, actor);
     const memberships = await this.groupRepo.findMembers(groupId);
     const users = await this.userRepo.findByIds(
       memberships.map((m) => m.studentId),
@@ -209,7 +245,7 @@ export class GroupsService {
       // Read before the write, so `before` is the old value and not an alias of
       // the new one. Both repositories return copies for exactly this reason
       // (§7.1: the before/after aliasing defect, found twice).
-      const before = await this.requireGroup(groupId);
+      const before = await this.requireGroup(groupId, actor);
 
       if (patch.courseId !== undefined && patch.courseId !== before.courseId) {
         await this.requireCourse(patch.courseId, actor);
@@ -223,7 +259,7 @@ export class GroupsService {
 
       const after = await this.groupRepo.update(groupId, patch);
       if (!after) {
-        throw new NotFoundException('Group not found');
+        throw new NotFoundException(GROUP_NOT_FOUND);
       }
       await this.audit.record({
         actorId: actor.id,
@@ -290,7 +326,7 @@ export class GroupsService {
     actor: StaffActor,
   ): Promise<void> {
     return this.db.runInTransaction(async () => {
-      await this.requireGroup(groupId);
+      await this.requireGroup(groupId, actor);
       const student = await this.userRepo.findById(studentId);
       if (!student) {
         throw new NotFoundException('Student not found');
@@ -342,7 +378,7 @@ export class GroupsService {
   ): Promise<void> {
     assertMay(actor, 'group.member.remove');
     return this.db.runInTransaction(async () => {
-      await this.requireGroup(groupId);
+      await this.requireGroup(groupId, actor);
       const existing = (await this.groupRepo.findMembers(groupId)).find(
         (m) => m.studentId === studentId,
       );

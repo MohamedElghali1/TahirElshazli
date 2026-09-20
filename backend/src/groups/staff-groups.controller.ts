@@ -27,25 +27,22 @@ import { GroupsService } from './groups.service.js';
  * in among people who already hold the course; enrolling and unenrolling remain
  * teacher-only.
  *
- * **What is scoped here, what is not, and for how long.** The course-tab read
- * below names a course, so it goes through `StaffScopeService` like every other
- * `/staff` route. The group reads and the placement writes name a *group*, and
- * they are **unscoped today** - an assistant can fetch any group and its
- * members, name and email included.
+ * **Every route here is scoped.** The course-tab read names a course and goes
+ * through `StaffScopeService.assertAssigned`; the group reads and the placement
+ * write name a *group* and go through `GroupsService.requireGroup`, which asks
+ * `StaffScopeService.mayReachGroup`. An assistant whose scope is
+ * `assigned_groups` gets a **404 with the byte-identical message** on a group
+ * they do not hold - reads included.
  *
- * That is deliberate and temporary, not a posture. It was argued from "a group
- * spans courses, so there is no course to scope by"; migration `013` made every
- * group study exactly one course, so the premise is dead and the earlier *"TAs
- * are allowed to access all groups"* instruction is superseded. **Decision
- * `D-10`, closed 2026-09-20:** an assistant whose scope is `assigned_groups`
- * gets a **404 with the byte-identical message** (CLAUDE.md §7) on a group they
- * do not hold - reads included. `AUTHORIZATION_MODEL.md:105,207` already said
- * so; the code had not caught up.
+ * That closes **decision `D-10`** (2026-09-20), built by `AUTH-2` in unit 2
+ * slice 2b-ii. Until then these three routes were unscoped: any assistant could
+ * fetch any group and its roster, every member's name and email included. It
+ * had been argued from "a group spans courses, so there is no course to scope
+ * by"; migration `013` made every group study exactly one course, which killed
+ * the premise, and `AUTHORIZATION_MODEL.md:105,207` had said so all along.
  *
- * **`AUTH-2` (unit 2 slice 2b) implements it**, inside the same rewrite of
- * `StaffScopeService`'s internals, and the check belongs in `GroupsService`
- * beside the one `listForCourse` already makes - not here. Slice 2a changed
- * this comment and nothing else about the behaviour.
+ * The check is in `GroupsService`, not here - one chokepoint every group read
+ * and write already passes through, so a route added later cannot forget it.
  *
  * No `@UseGuards`: `JwtAuthGuard` and `RolesGuard` are global in
  * `app.module.ts`, and `RolesGuard` refuses any route with no `@Roles`.
@@ -69,16 +66,20 @@ export class StaffGroupsController {
   }
 
   @Get('groups/:groupId')
-  async get(@Param('groupId') groupId: string): Promise<GroupSummary> {
-    return this.groups.get(groupId);
+  async get(
+    @Param('groupId') groupId: string,
+    @Request() req: { user: JwtPayload },
+  ): Promise<GroupSummary> {
+    return this.groups.get(groupId, this.actor(req));
   }
 
   /** The staff roster: names and emails (§5.17 keeps the student view narrower). */
   @Get('groups/:groupId/members')
   async members(
     @Param('groupId') groupId: string,
+    @Request() req: { user: JwtPayload },
   ): Promise<GroupMemberView[]> {
-    return this.groups.members(groupId);
+    return this.groups.members(groupId, this.actor(req));
   }
 
   /**

@@ -10,8 +10,8 @@ import { DirectoryService } from './directory.service.js';
 import { RegistrationApprovalService } from './registration-approval.service.js';
 import { AssessmentAuthoringService } from './assessment-authoring.service.js';
 import { StaffScopeService } from '../staff/staff-scope.service.js';
-import { COURSE_STAFF_REPOSITORY } from '../staff/interfaces/course-staff-repository.interface.js';
-import { InMemoryCourseStaffRepository } from '../staff/repositories/in-memory-course-staff.repository.js';
+import { ASSISTANT_SCOPE_REPOSITORY } from '../staff/interfaces/assistant-scope-repository.interface.js';
+import { InMemoryAssistantScopeRepository } from '../staff/repositories/in-memory-assistant-scope.repository.js';
 import { COURSE_REPOSITORY } from '../courses/interfaces/course-repository.interface.js';
 import { InMemoryCourseRepository } from '../courses/repositories/in-memory-course.repository.js';
 import { ENROLLMENT_REPOSITORY } from '../enrollments/interfaces/enrollment-repository.interface.js';
@@ -91,7 +91,10 @@ describe('Manage surface', () => {
         // `runInTransaction` is a passthrough that still enters the context.
         DatabaseService,
         { provide: DATABASE_POOL, useValue: null },
-        { provide: COURSE_STAFF_REPOSITORY, useClass: InMemoryCourseStaffRepository },
+        {
+          provide: ASSISTANT_SCOPE_REPOSITORY,
+          useClass: InMemoryAssistantScopeRepository,
+        },
         { provide: COURSE_REPOSITORY, useClass: InMemoryCourseRepository },
         { provide: ENROLLMENT_REPOSITORY, useClass: InMemoryEnrollmentRepository },
         // The learning mode lives on the group now (CLAUDE.md §5.2), so every

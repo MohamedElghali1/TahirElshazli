@@ -17,7 +17,6 @@ import { WorkAnalyticsService } from './work-analytics.service.js';
 import { repositoryProvider } from '../database/repository.provider.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { EnrollmentsModule } from '../enrollments/enrollments.module.js';
-import { GroupsModule } from '../groups/groups.module.js';
 import { GoogleIntegrationModule } from '../integrations/google/google-integration.module.js';
 
 /**
@@ -28,16 +27,17 @@ import { GoogleIntegrationModule } from '../integrations/google/google-integrati
  * exported, so the stored refresh token has exactly one reader and it is not
  * here.
  *
- * `GroupsModule` is for `GroupsService.members`: the denominator of a
- * completion rate is the union of the *targeted groups'* members (§5.16), never
- * the course roster. Getting that wrong makes a teacher chase students who were
- * never set the work.
+ * **`GroupsModule` is no longer imported.** The denominator of a completion
+ * rate is the union of the *targeted groups'* members (§5.16), never the course
+ * roster - but `WorkAnalyticsService` now reads `GROUP_REPOSITORY` from the
+ * global `GroupDataModule` for it, because `GroupsService.members` became
+ * caller-scoped with `D-10` and a scoped read would make the denominator quietly
+ * depend on who is looking.
  */
 @Module({
   imports: [
     AuthModule,
     EnrollmentsModule,
-    GroupsModule,
     GoogleIntegrationModule,
   ],
   controllers: [AssessmentsController],

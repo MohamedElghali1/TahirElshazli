@@ -56,8 +56,14 @@ export class AdminGroupsController {
   }
 
   @Get('groups/:groupId')
-  async get(@Param('groupId') groupId: string): Promise<GroupSummary> {
-    return this.groups.get(groupId);
+  async get(
+    @Param('groupId') groupId: string,
+    @Request() req: { user: JwtPayload },
+  ): Promise<GroupSummary> {
+    // Unscoped in practice - this controller is `STAFF_ADMIN` - but the actor
+    // is passed rather than a stand-in so `GroupsService` has exactly one
+    // group-reachability chokepoint (`D-10`).
+    return this.groups.get(groupId, this.actor(req));
   }
 
   @Post('groups')

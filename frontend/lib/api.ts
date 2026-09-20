@@ -16,7 +16,6 @@ import type {
   CourseDetail,
   CourseListItem,
   CourseRosterResponse,
-  CourseStaffMember,
   DashboardResponse,
   GradingQueueItem,
   GradingQueueResponse,
@@ -896,21 +895,10 @@ export const api = {
     assistants: (token: string, search?: string) =>
       request<StaffDirectoryEntry[]>(`/admin/assistants${qs({ search })}`, { token }),
 
-    courseStaff: (token: string, courseId: string) =>
-      request<CourseStaffMember[]>(`/admin/courses/${courseId}/staff`, { token }),
-
-    assignStaff: (token: string, courseId: string, userId: string) =>
-      request<CourseStaffMember>(`/admin/courses/${courseId}/staff`, {
-        method: 'POST',
-        token,
-        body: { userId },
-      }),
-
-    unassignStaff: (token: string, courseId: string, userId: string) =>
-      request<{ removed: true }>(`/admin/courses/${courseId}/staff/${userId}`, {
-        method: 'DELETE',
-        token,
-      }),
+    // `courseStaff`/`assignStaff`/`unassignStaff` are gone with
+    // `/admin/courses/:courseId/staff` (`AUTH-2`): an assistant's reach is held
+    // at the group grain now, and the route that edits it is unit 5's
+    // `PATCH /admin/assistants/{userId}`.
 
     createRecording: (
       token: string,

@@ -611,15 +611,12 @@ export interface StaffDirectoryEntry extends DirectoryEntry {
   role: Role;
 }
 
-/* --- staff assignment (staff/staff.service.ts) --------------------------- */
-
-export interface CourseStaffMember {
-  userId: string;
-  name: string;
-  email: string;
-  assignedAt: string;
-  assignedBy: string;
-}
+/* --- staff assignment ----------------------------------------------------
+ * `CourseStaffMember` is gone with `course_staff_assignments` and
+ * `/admin/courses/:courseId/staff` (`AUTH-2`). An assistant's scope is
+ * `assistant_scopes` + `assistant_group_assignments`; the shape the admin
+ * screen will read is unit 5's, on `PATCH /admin/assistants/{userId}`.
+ * ----------------------------------------------------------------------- */
 
 /* --- audit log (audit/interfaces/audit-log-repository) ------------------- */
 

@@ -10,13 +10,13 @@ import { AdminGroupsController } from './admin-groups.controller.js';
 import { StaffGroupsController } from './staff-groups.controller.js';
 import { ClassmatesController } from './classmates.controller.js';
 import { ClassmatesService } from './classmates.service.js';
-import { GroupsService } from './groups.service.js';
+import { GROUP_NOT_FOUND, GroupsService } from './groups.service.js';
 import { StudentGroupsService } from './student-groups.service.js';
 import { GROUP_REPOSITORY } from './interfaces/group-repository.interface.js';
 import { InMemoryGroupRepository } from './repositories/in-memory-group.repository.js';
 import { StaffScopeService } from '../staff/staff-scope.service.js';
-import { COURSE_STAFF_REPOSITORY } from '../staff/interfaces/course-staff-repository.interface.js';
-import { InMemoryCourseStaffRepository } from '../staff/repositories/in-memory-course-staff.repository.js';
+import { ASSISTANT_SCOPE_REPOSITORY } from '../staff/interfaces/assistant-scope-repository.interface.js';
+import { InMemoryAssistantScopeRepository } from '../staff/repositories/in-memory-assistant-scope.repository.js';
 import { COURSE_REPOSITORY } from '../courses/interfaces/course-repository.interface.js';
 import { InMemoryCourseRepository } from '../courses/repositories/in-memory-course.repository.js';
 import { ENROLLMENT_REPOSITORY } from '../enrollments/interfaces/enrollment-repository.interface.js';
@@ -61,6 +61,7 @@ describe('Groups', () => {
   let audit: AuditService;
   let enrollments: InMemoryEnrollmentRepository;
   let groupRepo: InMemoryGroupRepository;
+  let scopeRepo: InMemoryAssistantScopeRepository;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -83,7 +84,10 @@ describe('Groups', () => {
         DatabaseService,
         { provide: DATABASE_POOL, useValue: null },
         { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },
-        { provide: COURSE_STAFF_REPOSITORY, useClass: InMemoryCourseStaffRepository },
+        {
+          provide: ASSISTANT_SCOPE_REPOSITORY,
+          useClass: InMemoryAssistantScopeRepository,
+        },
         { provide: COURSE_REPOSITORY, useClass: InMemoryCourseRepository },
         { provide: ENROLLMENT_REPOSITORY, useClass: InMemoryEnrollmentRepository },
         { provide: USER_REPOSITORY, useClass: InMemoryUserRepository },
@@ -107,6 +111,7 @@ describe('Groups', () => {
     // The same instance the service holds, so a spy on it observes the real
     // calls rather than a second repository nothing writes to.
     groupRepo = module.get(GROUP_REPOSITORY);
+    scopeRepo = module.get(ASSISTANT_SCOPE_REPOSITORY);
   });
 
   const entries = async () =>
@@ -167,9 +172,14 @@ describe('Groups', () => {
 
   describe('placement is a staff action, and it is audited (§5.4, §5.16)', () => {
     it('lets an assistant place a student and records who did it', async () => {
-      await staff.addMember('group-2', { studentId: 'student-2' }, ASSIGNED_TA);
+      // **group-1, not group-2** (`D-10`): assistant-1 holds group-1 and
+      // nothing else, so placing into group-2 is now a 404 - asserted in its
+      // own case below. The property under test is unchanged: an assistant may
+      // place, and the log names them.
+      await staff.removeMember('group-1', 'student-2', ADMIN);
+      await staff.addMember('group-1', { studentId: 'student-2' }, ASSIGNED_TA);
 
-      const members = await staff.members('group-2');
+      const members = await staff.members('group-1', ASSIGNED_TA);
       expect(members.map((m) => m.studentId).sort()).toEqual([
         'student-1',
         'student-2',
@@ -184,7 +194,7 @@ describe('Groups', () => {
       expect(entry?.actorId).toBe('assistant-1');
       expect(entry?.actorRole).toBe(Role.Assistant);
       expect(entry?.after).toMatchObject({
-        groupId: 'group-2',
+        groupId: 'group-1',
         studentId: 'student-2',
       });
     });
@@ -207,7 +217,7 @@ describe('Groups', () => {
       await staff.addMember('group-2', { studentId: 'student-2' }, ADMIN);
       await staff.addMember('group-2', { studentId: 'student-2' }, ADMIN);
 
-      const members = await staff.members('group-2');
+      const members = await staff.members('group-2', ADMIN);
       expect(members.filter((m) => m.studentId === 'student-2')).toHaveLength(1);
     });
 
@@ -253,7 +263,7 @@ describe('Groups', () => {
     });
 
     it('leaves fields the patch omits alone', async () => {
-      const before = await admin.get('group-1');
+      const before = await admin.get('group-1', ADMIN);
       const after = await admin.update('group-1', { room: 'Room 9' }, ADMIN);
       expect(after.name).toBe(before.name);
       expect(after.courseId).toBe(before.courseId);
@@ -306,6 +316,110 @@ describe('Groups', () => {
       await expect(
         admin.update('group-nope', { name: 'x' }, ADMIN),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  /**
+   * **`D-10`**, closed 2026-09-20 and built by `AUTH-2`. Until this, any
+   * assistant could read any group and its roster - every member's name and
+   * email. The refusal is a **404 byte-identical to a genuine miss**, so an
+   * assistant cannot enumerate cohorts one id at a time, and it covers the
+   * write as well as the reads (`AUTHORIZATION_MODEL.md:207`).
+   *
+   * Both directions, per `CLAUDE.md` §10: the assistant who holds the group
+   * succeeds, the one who does not is refused.
+   */
+  describe('D-10: an assistant reaches only the groups they hold', () => {
+    const message = async (p: Promise<unknown>) =>
+      p.then(() => 'no error', (e: Error) => e.message);
+
+    it('lets the holding assistant read the group and its roster', async () => {
+      // assistant-1 holds group-1. The positive half, without which the
+      // negative half below could be satisfied by refusing everyone.
+      await expect(staff.get('group-1', ASSIGNED_TA)).resolves.toMatchObject({
+        id: 'group-1',
+      });
+      const members = await staff.members('group-1', ASSIGNED_TA);
+      expect(members.map((m) => m.studentId)).toContain('student-1');
+    });
+
+    it('404s a group they do not hold, with the message of a genuine miss', async () => {
+      // The two messages compared IN THE SAME TEST. Comparing each against its
+      // own literal would pass while the property was gone.
+      await expect(staff.get('group-2', ASSIGNED_TA)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(await message(staff.get('group-2', ASSIGNED_TA))).toBe(
+        await message(staff.get('group-does-not-exist', ASSIGNED_TA)),
+      );
+      expect(await message(staff.get('group-2', ASSIGNED_TA))).toBe(
+        GROUP_NOT_FOUND,
+      );
+    });
+
+    it('404s the roster of a group they do not hold, identically', async () => {
+      // The leak `D-10` names: this read carries names and email addresses.
+      expect(await message(staff.members('group-2', ASSIGNED_TA))).toBe(
+        await message(staff.members('group-does-not-exist', ASSIGNED_TA)),
+      );
+      expect(await message(staff.members('group-2', ASSIGNED_TA))).toBe(
+        GROUP_NOT_FOUND,
+      );
+    });
+
+    it('404s placing a student into a group they do not hold, identically', async () => {
+      // The write, not only the reads. And it must not have written first.
+      expect(
+        await message(
+          staff.addMember('group-2', { studentId: 'student-2' }, ASSIGNED_TA),
+        ),
+      ).toBe(
+        await message(
+          staff.addMember(
+            'group-does-not-exist',
+            { studentId: 'student-2' },
+            ASSIGNED_TA,
+          ),
+        ),
+      );
+      const members = await staff.members('group-2', ADMIN);
+      expect(members.map((m) => m.studentId)).not.toContain('student-2');
+      expect(
+        (await entries()).filter((e) => e.action === 'group.student_assigned'),
+      ).toEqual([]);
+    });
+
+    it('refuses an assistant with no groups at all, on a group that exists', async () => {
+      expect(await message(staff.get('group-1', UNASSIGNED_TA))).toBe(
+        GROUP_NOT_FOUND,
+      );
+    });
+
+    it('lets an all_groups assistant read any group (ruling R-7)', async () => {
+      await scopeRepo.setScope('assistant-2', 'all_groups');
+      await expect(staff.get('group-1', UNASSIGNED_TA)).resolves.toMatchObject({
+        id: 'group-1',
+      });
+      await expect(staff.get('group-2', UNASSIGNED_TA)).resolves.toMatchObject({
+        id: 'group-2',
+      });
+    });
+
+    it.each([
+      ['the teacher', ADMIN],
+      ['the full admin', FULL_ADMIN],
+    ])('lets %s read every group', async (_label, actor) => {
+      await expect(staff.get('group-1', actor)).resolves.toBeDefined();
+      await expect(staff.get('group-2', actor)).resolves.toBeDefined();
+    });
+
+    it('does not read groups.assistant_id to decide reach (ruling R-1)', async () => {
+      // The binding rule, at the group grain this time. Naming assistant-2 on
+      // group-2 is a DISPLAY change; it must not make group-2 reachable.
+      await admin.update('group-2', { assistantId: 'assistant-2' }, ADMIN);
+      expect(await message(staff.get('group-2', UNASSIGNED_TA))).toBe(
+        GROUP_NOT_FOUND,
+      );
     });
   });
 
@@ -437,7 +551,7 @@ describe('Groups', () => {
       await expect(
         staff.removeMember('group-1', 'student-2', ASSIGNED_TA),
       ).rejects.toThrow(ForbiddenException);
-      const members = await staff.members('group-1');
+      const members = await staff.members('group-1', ADMIN);
       expect(members.map((m) => m.studentId)).toContain('student-2');
     });
 
@@ -445,8 +559,11 @@ describe('Groups', () => {
       // The paired grant from the client's 2026-09-10 answer. Losing it would
       // be an over-correction, and the e2e suite alone would not distinguish
       // "the assistant cannot remove" from "the assistant cannot place".
-      await staff.addMember('group-2', { studentId: 'student-1' }, ASSIGNED_TA);
-      const members = await staff.members('group-2');
+      // group-1, for the same `D-10` reason as above: it is the group this
+      // assistant holds.
+      await staff.removeMember('group-1', 'student-1', ADMIN);
+      await staff.addMember('group-1', { studentId: 'student-1' }, ASSIGNED_TA);
+      const members = await staff.members('group-1', ASSIGNED_TA);
       expect(members.map((m) => m.studentId)).toContain('student-1');
     });
 
@@ -455,7 +572,7 @@ describe('Groups', () => {
       ['the full admin', FULL_ADMIN],
     ])('lets %s remove a member', async (_label, actor) => {
       await staff.removeMember('group-1', 'student-2', actor);
-      const members = await staff.members('group-1');
+      const members = await staff.members('group-1', ADMIN);
       expect(members.map((m) => m.studentId)).not.toContain('student-2');
     });
 

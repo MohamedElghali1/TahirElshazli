@@ -28,15 +28,25 @@
 -- `course_id` is a column here rather than a `group_courses` row: migration 013
 -- collapsed the join table. `learning_mode` is gone with migration 012 (`D-9`).
 --
--- **`assistant_id` on group-1 is a DISPLAY fact and grants nothing.** It is set
--- and `assistant-1` has no group assignment, deliberately - the fixtures are
--- where a test can prove that naming an assistant on a group does not let them
--- reach it (`AUTH-2`). If those two ever agree by default, the test that would
--- have caught them being conflated stops being able to.
+-- **`assistant_id` on group-1 is a DISPLAY fact and grants nothing.** The
+-- authorization fact is the `assistant_group_assignments` row below, and the
+-- two are separate columns in separate tables that happen to agree here.
+-- `assistant-2` is where they disagree: named on no group, holding no group,
+-- and the specs name them on one to prove that still grants nothing (`AUTH-2`,
+-- ruling R-1). If the two facts were ever derived from each other, the test
+-- that would have caught them being conflated stops being able to.
 INSERT INTO groups (id, name, teacher_id, course_id, assistant_id, meets, room, created_at) VALUES
   ('group-1', 'IGCSE Chemistry — Saturday 18:00', 'teacher-1', 'course-1', 'assistant-1', 'Saturday 18:00', NULL, '2026-01-15T09:00:00Z'),
   ('group-2', 'IGCSE Chemistry — Tuesday 20:00',  'teacher-1', 'course-2', NULL,          'Tuesday 20:00',  NULL, '2026-05-20T09:00:00Z')
 ON CONFLICT (id) DO NOTHING;
+
+-- The authorization grant (`AUTH-2`): `assistant-1` reaches group-1, and
+-- through it course-1 - and nothing else. `assistant-2` holds nothing at all,
+-- which is what makes the scoping test able to fail. Their `assistant_scopes`
+-- rows are in 002; these reference `groups`, so they wait for the insert above.
+INSERT INTO assistant_group_assignments (id, user_id, group_id, assigned_at, assigned_by) VALUES
+  ('assistant-group-1', 'assistant-1', 'group-1', '2026-02-01T09:00:00Z', 'teacher-1')
+ON CONFLICT (user_id, group_id) DO NOTHING;
 
 -- `assigned_by` differs across these rows on purpose: one placement by the
 -- teacher and one by an assistant is what makes an audit-log read of §5.4's

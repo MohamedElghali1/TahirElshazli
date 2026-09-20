@@ -11,8 +11,10 @@ import {
   AUDIENCE_PATTERN,
 } from './announcement-audience.js';
 import { StaffScopeService } from '../staff/staff-scope.service.js';
-import { COURSE_STAFF_REPOSITORY } from '../staff/interfaces/course-staff-repository.interface.js';
-import { InMemoryCourseStaffRepository } from '../staff/repositories/in-memory-course-staff.repository.js';
+import { ASSISTANT_SCOPE_REPOSITORY } from '../staff/interfaces/assistant-scope-repository.interface.js';
+import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interface.js';
+import { InMemoryGroupRepository } from '../groups/repositories/in-memory-group.repository.js';
+import { InMemoryAssistantScopeRepository } from '../staff/repositories/in-memory-assistant-scope.repository.js';
 import { COURSE_REPOSITORY } from '../courses/interfaces/course-repository.interface.js';
 import { InMemoryCourseRepository } from '../courses/repositories/in-memory-course.repository.js';
 import { ENROLLMENT_REPOSITORY } from '../enrollments/interfaces/enrollment-repository.interface.js';
@@ -67,7 +69,11 @@ describe('Announcements', () => {
         DatabaseService,
         { provide: DATABASE_POOL, useValue: null },
         { provide: ANNOUNCEMENT_REPOSITORY, useClass: InMemoryAnnouncementRepository },
-        { provide: COURSE_STAFF_REPOSITORY, useClass: InMemoryCourseStaffRepository },
+        {
+          provide: ASSISTANT_SCOPE_REPOSITORY,
+          useClass: InMemoryAssistantScopeRepository,
+        },
+        { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },
         { provide: COURSE_REPOSITORY, useClass: InMemoryCourseRepository },
         { provide: ENROLLMENT_REPOSITORY, useClass: InMemoryEnrollmentRepository },
         { provide: USER_REPOSITORY, useClass: InMemoryUserRepository },
