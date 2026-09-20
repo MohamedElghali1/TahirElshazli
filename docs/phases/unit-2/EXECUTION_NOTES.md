@@ -429,3 +429,181 @@ correct outcome; hiding it by not updating the mirror would not be.
 | Error leakage | No new message reveals a resource's existence. The 409 names no id. |
 | Output filtering | No new field on any student-facing response. `assistantId` appears only on `/admin` and `/staff` responses. |
 | CSRF · CORS · XSS · upload · path traversal · SSRF · secrets · rate limiting · dependencies | Not touched — no new upload path, external call, dependency, or HTML sink. |
+
+---
+
+# Remediation pass — unit 2, slice 2a follow-ups
+
+**Executor:** `redesign-executor` · **Date:** 2026-09-20 · **Input:** `docs/phases/unit-2/REVIEW.md`
+(`APPROVED WITH FOLLOW-UP`) and `IMPLEMENTATION_PLAN.md` § "Slice 2a follow-ups". Checklist only —
+no slice design re-opened, no 2b work started.
+
+## What was built
+
+| ID | Disposition | Files |
+|---|---|---|
+| `F2A-1` | **Closed.** New `backend/src/groups/student-groups.service.spec.ts` — the §4.7 case that did not ship. Two cases: the tie-break, and the unplaced student. | `src/groups/student-groups.service.spec.ts` |
+| `F2A-2` | **Closed, at the root.** New `@IsOptionalNotNull()` decorator; **38 fields across 7 DTO files** swapped, not the two shown. `null` on a non-nullable field is now 400 at the boundary. | `src/common/validators/is-optional-not-null.ts` (new), `src/groups/dto/group.dto.ts`, `src/blog/dto/blog.dto.ts`, `src/manage/dto/{assessment,create-recording,update-live-session,update-recording}.dto.ts`, `src/students/dto/update-profile.dto.ts`, `test/staff.e2e-spec.ts` |
+| `F2A-3` | **Closed, comment only.** The dead `addCourse` argument is gone; the comment now states what is true today, that it is deliberate and temporary, and that `D-10`/`AUTH-2` closes it. **No behaviour changed.** | `src/groups/staff-groups.controller.ts` |
+| `F2A-4` | **Closed toward the spec** — see Deviations. | `src/groups/groups.service.ts`, `src/groups/admin-groups.controller.ts`, `docs/API_SPEC.yaml`, `frontend/lib/api.ts`, `test/staff.e2e-spec.ts` |
+| `F2A-5` | **Closed.** `frontend/lib/types.ts`'s `GroupWrite` → `GroupPatch`; `GroupWrite` re-added as the POST shape and now types `createGroup`, which had an inline literal. | `frontend/lib/types.ts`, `frontend/lib/api.ts` |
+| `F2A-6` | **Closed.** The block comment describes the two cases that ship and names the untested direction and why it is unreachable. | `src/courses/courses.controller.spec.ts` |
+| `F2A-7` | **Closed.** Both orphaned comments deleted. | `src/reports/reports.service.ts`, `src/manage/manage.service.ts` |
+| `F2A-8` | Already closed by the coordinator. Untouched. | — |
+| `F2A-9` | **Left `[!]`.** `012` is applied and its ledger row written; the file is immutable. Not edited, not worked around. | — |
+
+### `F2A-1`, and why the test can fail
+
+`addMember` stamps `assignedAt` from the clock, so appending is always chronological and insertion
+order and correct order agree — a test built on it passes with the comparator deleted. The spec uses
+`vi.setSystemTime` to write the **March** placement before the **February** one, so the array order
+and the expected order differ and only the comparator reconciles them.
+
+### `F2A-2`, the sweep
+
+Every `@IsOptional()` in `backend/src/**/dto/**` was read against its column:
+
+| File | Fields changed | Left as `@IsOptional()` |
+|---|---|---|
+| `groups/dto/group.dto.ts` | `UpdateGroupDto.name`, `.courseId` | `assistantId`, `meets`, `room` (nullable), the two query fields |
+| `blog/dto/blog.dto.ts` | create `category`/`tags`/`status`/`publishAt`; update `title`/`body`/`category`/`tags`/`status`/`publishAt` | `excerpt`, `caption`, `mimeType`, `sizeBytes` (nullable), the query fields |
+| `manage/dto/assessment.dto.ts` | `workType` ×2 and the ten `UpdateAssessmentDto` fields over `NOT NULL` columns | `lessonId`, `externalUrl` (nullable), `googleForm` (a row in another table), `AssessmentTargetDto`'s three window overrides (**nullable on purpose — `NULL` means "inherit"**) |
+| `manage/dto/create-recording.dto.ts` | `chapter`, `topics`, `lessonDate` | — |
+| `manage/dto/update-live-session.dto.ts` | all four | — |
+| `manage/dto/update-recording.dto.ts` | all six | — |
+| `students/dto/update-profile.dto.ts` | `name` | `phone`, `avatarUrl` (nullable) |
+
+**Query DTOs were deliberately not touched**: a query-string value is a string or absent, never
+`null`, so the shape cannot arise. The in-memory repository was **not** hardened to ignore `null`
+per field either — the DTO is the boundary, and teaching a repository which of its columns are
+non-nullable puts schema knowledge in the wrong layer.
+
+## Deviations from the plan
+
+1. **`F2A-4` was reconciled toward the spec, not toward the code** — `create` and `update` now return
+   `GroupSummary`. The brief allowed either direction. Reasons: `create` pays nothing (a new group
+   has zero members, no query), `update` pays one count of ≤30 rows inside a transaction it already
+   holds, and the alternative leaves one resource with two response shapes in a contract `CLAUDE.md`
+   §6 wants to generate the frontend mirror from. Recorded as `D-12` in `CHANGELOG.md`.
+2. **`F2A-2` produced a shared decorator rather than two `@ValidateIf` call sites.** The brief asked
+   for the smallest mechanism that makes the mistake structurally impossible; a named, greppable
+   decorator is what survives the next DTO. Recorded as `D-11`.
+3. **`F2A-5` went one line further than the rename**: `createGroup`'s inline object literal is
+   replaced by the re-added `GroupWrite`. Without it the spec's `GroupWrite` would still have no
+   mirror and the collision could return.
+4. **Two e2e assertions added inside existing tests** (`memberCount` on both writes; `null` refused
+   on `name`/`courseId` and still accepted on `room`). The e2e count is therefore unchanged at 217 —
+   the coverage is not.
+
+## Blockers hit
+
+None. `F2A-9` is not a blocker: it is a recorded limitation on an immutable file, left `[!]`.
+
+## Tests
+
+Baseline before any edit — `npm test --workspace=backend`:
+
+```
+ Test Files  28 passed (28)
+      Tests  471 passed (471)
+```
+
+**`F2A-1`, the deliberate red run.** Comparator at `in-memory-group.repository.ts` deleted, spec run:
+
+```
+ FAIL  src/groups/student-groups.service.spec.ts > StudentGroupsService > returns the longest-standing placement first, not the insertion order
+AssertionError: expected [ 'group-1', …(2) ] to deeply equal [ 'group-1', …(2) ]
+
+- Expected
++ Received
+
+  [
+    "group-1",
+-   "24c97b62-274c-48f2-8549-acf24bd2b04a",
+    "ed8eb40a-c660-46dd-8aea-aee6f220277d",
++   "24c97b62-274c-48f2-8549-acf24bd2b04a",
+  ]
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+```
+
+Comparator restored (`git diff --stat` on the file: empty), same spec:
+
+```
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+```
+
+**Full suites, after every change:**
+
+```
+$ npm test --workspace=backend
+ Test Files  29 passed (29)
+      Tests  473 passed (473)
+   Duration  12.39s
+
+$ npm run test:e2e --workspace=backend
+ Test Files  3 passed (3)
+      Tests  217 passed (217)
+   Duration  12.56s
+
+$ docker compose exec -T postgres psql -U dev -d postgres -c "DROP DATABASE IF EXISTS lms_migtest_u2a_fix"
+$ docker compose exec -T postgres psql -U dev -d postgres -c "CREATE DATABASE lms_migtest_u2a_fix"
+$ TEST_DATABASE_URL=postgresql://dev:devpassword@localhost:5432/lms_migtest_u2a_fix \
+    npm run test:integration --workspace=backend
+[MigrationRunner] Applied 001_student_platform.sql
+... 002 ... 003 ... 004 ... 005 ... 006 ... 007 ... 008 ... 009 ... 010 ... 011 ...
+[MigrationRunner] Applied 012_retire_learning_mode.sql
+[MigrationRunner] Applied 013_group_holds_one_course.sql
+[MigrationRunner] Seeded 001_development_fixtures.sql ... 002 ... 003 ... 004
+ Test Files  1 passed (1)
+      Tests  87 passed (87)
+   Duration  5.23s
+
+$ npm run lint
+src/dashboard/dashboard.controller.spec.ts:17:27: warning eslint(no-unused-vars):
+  Identifier 'EXTERNAL_WORK_BINDER' is imported but never used.
+  (pre-existing — present at HEAD~2, outside this scope)
+
+$ cd frontend && npx tsc --noEmit 2>&1 | grep -cE "^lib/"
+0
+$ cd frontend && npx tsc --noEmit 2>&1 | grep -c "error TS"
+326
+```
+
+All 13 migrations ran from a database created empty immediately before the run; **0 skipped**.
+
+## Not done
+
+- **`F2A-9`** — deliberately. `012` is applied; a later migration is the only legal correction.
+- The reviewer's two open follow-ups, both out of this brief's scope: de-globalising
+  `GroupDataModule`, and a second in-memory fixture course with recordings and no sessions.
+- **Found and not touched:** four empty untracked files at the repository root — `1`, `[a.id`,
+  `before`, `value`, all 0 bytes, timestamped 11:22–11:31 today. They look like stray shell
+  redirections from an earlier session. I did not delete them (`CLAUDE.md` §12).
+
+## Documents updated
+
+- `docs/IMPLEMENTATION_PLAN.md` — `F2A-1`…`F2A-7` ticked, with the new counts and the two follow-ups
+  that stay open.
+- `docs/CHANGELOG.md` — `D-11` (the decorator convention) and `D-12` (the `memberCount` direction).
+  Nothing was added for the comment-only fixes.
+- `docs/API_SPEC.yaml` — one clarifying note on `Group`: every group response is this shape,
+  including both writes.
+- `docs/PHASE_ROADMAP.md` — unit 2a status.
+- `project_log.md` — an entry for the pass.
+
+## For the reviewer — what I am least sure of
+
+1. **The width of the `F2A-2` sweep.** 38 fields changed on a reading of each column's nullability.
+   The ones worth a second pair of eyes are the **create** DTOs whose columns are `NOT NULL DEFAULT`
+   (`blog.category`, `blog.status`, `blog.tags`, `blog.publish_at`, `assessments.work_type`,
+   `recordings.topics`): an explicit `null` there used to reach the service and now 400s. I judged
+   that correct — the field's type says `string`, not `string | null` — but it is a behaviour change
+   on routes outside slice 2a's subject, on an input no client should be sending.
+2. **`update` now spends one `findMembers` per edit** to answer `memberCount`. At ~30 rows a group
+   that is nothing, but it is a read added inside a transaction.
+3. **The fake timer in `student-groups.service.spec.ts`.** It is the only way I found to make the
+   memory driver's insertion order and its correct order disagree, given `addMember` stamps the
+   clock. If a better fixture exists, this is the test to rewrite.

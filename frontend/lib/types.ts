@@ -699,8 +699,25 @@ export interface GroupSummary extends Group {
   memberCount: number;
 }
 
-/** The PATCH body. Every field optional; `null` clears a nullable one. */
+/**
+ * The POST body. `name` and `courseId` are both required: a group IS a cohort
+ * studying one named course (migration 013). `API_SPEC.yaml`'s `GroupWrite`.
+ */
 export interface GroupWrite {
+  name: string;
+  courseId: string;
+  assistantId?: string | null;
+  meets?: string | null;
+  room?: string | null;
+}
+
+/**
+ * The PATCH body. Every field optional; `null` clears a nullable one, and an
+ * omitted field is left alone. `API_SPEC.yaml`'s `GroupPatch` - it used to be
+ * called `GroupWrite` here, which named the create shape in the spec and the
+ * edit shape in the browser (review F2A-5).
+ */
+export interface GroupPatch {
   name?: string;
   courseId?: string;
   assistantId?: string | null;

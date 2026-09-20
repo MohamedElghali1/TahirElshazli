@@ -176,7 +176,7 @@ call sites. Roughly units 1, 3 and 5 combined. **The boundary is itself a verifi
 `015`'s backfill joins `groups.course_id`, and `DATABASE_PLAN.md` requires `013` landed and verified
 first — and it puts the two irreversible `DROP TABLE`s in different reviews.
 
-#### Unit 2a — the group becomes the centre `[x]`
+#### Unit 2a — the group becomes the centre `[~]`
 
 **Scope** `DOM-0`, `DOM-1`, `DOM-2`, the migration renumber, and seeds for those.
 **Migrations** `012_retire_learning_mode.sql`, `013_group_holds_one_course.sql`. **Both run against
@@ -185,9 +185,20 @@ real PostgreSQL 15 from an empty schema.**
 `assistant_group_assignments` (2b) is the **authorization** field. **Nothing may read
 `groups.assistant_id` for an access decision, ever.** Stated on the column, on the interface field,
 in the frontend mirror, and asserted by an e2e test.
-**Exit, met** 470 unit · 217 e2e · 87 integration from an empty schema, 0 skipped; `frontend/lib/`
+**Exit, met** 471 unit · 217 e2e · 87 integration from an empty schema, 0 skipped; `frontend/lib/`
 at 0 typecheck errors; `group_courses` referenced nowhere outside migrations 006/007/013.
 **Landed** 2026-09-20. See `docs/phases/unit-2/EXECUTION_NOTES.md`.
+**Status `[~]`, not `[x]`** — the executor set `[x]`; the coordinator reset it. §2 condition 3
+requires a `redesign-reviewer` verdict of `APPROVED`. The reviewer returned **`APPROVED WITH
+FOLLOW-UP`** (`docs/phases/unit-2/REVIEW.md`, 2026-09-20), which under §2 leaves the unit `[~]`
+until the nine follow-ups in `IMPLEMENTATION_PLAN.md` §"Slice 2a follow-ups" close. **No security or
+authorization finding; no regression.** The reviewer independently re-ran all three suites on a
+dropped-and-recreated database and reproduced every number: 471 unit · 217 e2e · 87 integration,
+0 skipped, all 13 migrations from nothing. **None of the follow-ups blocks slice 2b.**
+**Remediation pass, 2026-09-20:** `F2A-1`…`F2A-7` closed by the executor (`EXECUTION_NOTES.md`
+§"Remediation pass"); `F2A-8` was the coordinator's; **`F2A-9` stays `[!]`** — `012` is applied and
+immutable. Suites after the pass: **473 unit · 217 e2e · 87 integration**, 0 skipped, empty schema.
+The unit is `[~]` until a reviewer verdict of `APPROVED` (§2 condition 3).
 
 #### Unit 2b — scope, people and courses `[ ]`
 

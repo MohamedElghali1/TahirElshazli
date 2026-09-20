@@ -1,12 +1,12 @@
 import {
   IsInt,
   IsISO8601,
-  IsOptional,
   IsString,
   Max,
   MaxLength,
   Min,
 } from 'class-validator';
+import { IsOptionalNotNull } from '../../common/validators/is-optional-not-null.js';
 import { IsPublicHttpUrl } from '../../common/validators/is-public-http-url.validator.js';
 import { MAX_SESSION_MINUTES } from './create-live-session.dto.js';
 
@@ -19,21 +19,21 @@ import { MAX_SESSION_MINUTES } from './create-live-session.dto.js';
  * and a re-schedule.
  */
 export class UpdateLiveSessionDto {
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsString()
   @MaxLength(200)
   title?: string;
 
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsPublicHttpUrl()
   @MaxLength(2048)
   zoomLink?: string;
 
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsISO8601()
   scheduledAt?: string;
 
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsInt()
   @Min(1)
   @Max(MAX_SESSION_MINUTES)

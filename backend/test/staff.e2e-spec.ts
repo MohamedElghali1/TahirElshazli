@@ -877,11 +877,15 @@ describe('Staff and admin API (e2e)', () => {
         .set(bearer(adminToken))
         .send({ name: 'E2E — empty, movable', courseId: 'course-1' })
         .expect(201);
-      await request(app.getHttpServer())
+      // `API_SPEC.yaml`'s `Group` requires `memberCount` and every group
+      // response is that shape, the two writes included (F2A-4).
+      expect(empty.body.memberCount).toBe(0);
+      const moved = await request(app.getHttpServer())
         .patch(`/admin/groups/${empty.body.id}`)
         .set(bearer(adminToken))
         .send({ courseId: 'course-2' })
         .expect(200);
+      expect(moved.body.memberCount).toBe(0);
 
       await request(app.getHttpServer())
         .post(`/staff/groups/${empty.body.id}/members`)
@@ -963,6 +967,27 @@ describe('Staff and admin API (e2e)', () => {
         .set(bearer(adminToken))
         .send({ courseId: 'course 1; drop table' })
         .expect(400);
+      // An explicit `null` on a NOT NULL column is refused rather than let
+      // through to the drivers, which disagreed about it: Postgres COALESCEd it
+      // to a 200 no-op and the memory driver wrote `name = null` (F2A-2).
+      // `@IsOptionalNotNull` is what makes `undefined` and `null` different
+      // here; `@IsOptional()` skips its validators for both.
+      await request(app.getHttpServer())
+        .patch(`/admin/groups/${groupId}`)
+        .set(bearer(adminToken))
+        .send({ name: null })
+        .expect(400);
+      await request(app.getHttpServer())
+        .patch(`/admin/groups/${groupId}`)
+        .set(bearer(adminToken))
+        .send({ courseId: null })
+        .expect(400);
+      // ...while a nullable column still takes one: `null` clears the room.
+      await request(app.getHttpServer())
+        .patch(`/admin/groups/${groupId}`)
+        .set(bearer(adminToken))
+        .send({ room: null })
+        .expect(200);
     });
 
     it('records the placement in the audit log with the TA as actor', async () => {

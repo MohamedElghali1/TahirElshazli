@@ -113,6 +113,40 @@ and is **already handled**: `postgres-work.repository.ts:37-38` declares the row
 | `DOM-5` `[ ]` | Course CRUD. | `AUTH-1` | — | Low |
 | `DOM-6` `[~]` | **Regenerate seed fixtures** for the new shape. **Not a tail task** — the integration suite calls `runner.seed()` in the same `beforeAll` as `runner.migrate()`, so a stale seed fails the migration gate at setup rather than in a test. Seeds `001`/`003` were regenerated **in lock-step with `012` and `013`**; `001`/`002` follow with `014`/`015`. | per migration | seeds | Medium |
 
+
+### Slice 2a follow-ups — `APPROVED WITH FOLLOW-UP`, 2026-09-20
+
+`docs/phases/unit-2/REVIEW.md`. Unit 2a stays `[~]` until these close (`PHASE_ROADMAP.md` §2).
+**None blocks slice 2b from starting.** No security or authorization finding; every number the
+executor reported was independently reproduced by the reviewer on a dropped-and-recreated database.
+
+| ID | Follow-up | Severity |
+|---|---|---|
+| `F2A-1` `[x]` | **The longest-standing-placement tie-break has no memory-driver test**, and the gap is not among the recorded deviations. `PHASE_PLAN.md` §4.7 named a `student-groups.service.spec` case; only the Postgres integration test at `backend/test/postgres-repositories.integration-spec.ts:993` exists. Deleting the comparator at `backend/src/groups/repositories/in-memory-group.repository.ts:198-201` leaves all 471 unit tests green while a student in two groups on one course sees one cohort's classmates and another's due dates. Add the unit test. | medium |
+| `F2A-2` `[x]` | **`UpdateGroupDto` admits `null` for two `NOT NULL` columns and the drivers disagree.** `@IsOptional()` skips every validator when the value is `null`, not only `undefined` (`node_modules/class-validator/cjs/decorator/common/IsOptional.js:19-20` — verified). `PATCH /admin/groups/:id {"name": null}` validates: Postgres `COALESCE`s it to a no-op and returns 200, the memory driver writes `name = null`. Should be 400. `backend/src/groups/dto/group.dto.ts:87,93`. Teacher/admin-only, so correctness rather than security. **Check every other `@IsOptional()` DTO field over a `NOT NULL` column for the same shape.** | medium |
+| `F2A-3` `[x]` | **Migration `013` falsified the rationale that keeps the staff group reads unscoped.** `backend/src/groups/staff-groups.controller.ts:30-37` argues *"a group is not a course — it spans them"* and points at `addCourse`, deleted in this slice. A group now holds exactly one course. Behaviour is unchanged and closing it is `AUTH-2`'s job — but a 2b executor will read a comment arguing against the target model from a false premise. **Fix the comment in 2a; do not change the behaviour.** | medium |
+| `F2A-4` `[x]` | `API_SPEC.yaml`'s `Group` requires `memberCount` and is the documented 201/200 body of `POST`/`PATCH /admin/groups`, but `groups.service.ts:181,246` return a bare `Group` without it. | low-medium |
+| `F2A-5` `[x]` | `GroupWrite` names two different shapes — the POST body at `API_SPEC.yaml:265`, the all-optional PATCH body at `frontend/lib/types.ts:706` (which the spec calls `GroupPatch`). | low-medium |
+| `F2A-6` `[x]` | `backend/src/courses/courses.controller.spec.ts:74-77` claims a fixture combination is unreachable that deviation `D-3` admits is reachable. | low |
+| `F2A-7` `[x]` | Two orphaned comments still say the learning mode lives on the group — `backend/src/reports/reports.service.ts:57`, `backend/src/manage/manage.service.ts:94`. | low |
+| `F2A-8` `[x]` | `PHASE_ROADMAP.md:188` said 470 unit tests where the real output is 471. Corrected by the coordinator 2026-09-20. | info |
+| `F2A-9` `[!]` | Migration `012`'s `information_schema` assertion is not schema-scoped, which matters only because this slice introduced side-schema migration tests. **`012` is applied and its ledger row is written — the file is immutable.** Recorded, not fixed; any correction belongs in a later migration, not an edit. | info |
+
+**Closed 2026-09-20 by the executor's remediation pass** — `F2A-1`…`F2A-7`. Unit counts moved
+471 → **473** (two new cases in a new `student-groups.service.spec.ts`); e2e stays **217** (the new
+assertions sit inside existing tests); integration **87**, from an empty schema. Two follow-ups the
+reviewer listed remain open and are **not** part of this pass: de-globalise `GroupDataModule`, and a
+second in-memory fixture course with recordings and no sessions (the untested progress direction,
+now named in the test-block comment rather than mis-described by it).
+
+**One decision the reviewer raised, open, needed before `AUTH-2` is built** — see `PHASE_ROADMAP.md`
+unit 2b and the Decisions table: now that a group holds exactly one course, does an assistant with
+`assigned_groups` scope get a **404** on `GET /staff/groups/:groupId` for a group whose course they do
+not hold, or does the client's *"TAs are allowed to access all groups"* instruction still stand?
+`AUTH-2` implements it either way. **Today an assistant can read any group's roster with every
+member's name and email** — equally true before this slice, so it is not a regression, but `AUTH-2`
+is the moment it is either closed or deliberately kept.
+
 ---
 
 ## Phase 3 — Mail  *(backend)*
@@ -311,6 +345,7 @@ Report findings; do not fix silently.
 | `D-7` | `SPEC-17` | **CLOSED 2026-09-20: fix the spec to match the redesign.** `/admin/*` is teacher and admin, unscoped, per `AUTHORIZATION_MODEL.md`; `assistant` is stripped from `API_SPEC.yaml:460` and `:1124`. `CLAUDE.md` §6 stands. |
 | `D-8` | `SPEC-16` | **CLOSED 2026-09-20: fix the spec to match the redesign.** `/notifications` gains its path entries, shaped by `PRODUCT_SPEC.md` §5.2 (the student surface becomes a bell + `Menu`, and teacher notification preferences are added) rather than transcribed from current code. |
 | `D-9` | `DOM-1`, `SESS-1`, `STU-2`, dashboard, courses | **CLOSED 2026-09-20: `learning_mode` is retired entirely — there is no live/recorded distinction.** Every group is both: sessions run on an external meeting link, recordings are uploaded afterwards. 46 files reference it and it changes a **response shape** (`courses.service.ts:24,39,120` is a discriminated union), so it wants its own slice in unit 2 **before** `DOM-1`. Assistants may upload recordings for their own groups. |
+| `D-10` | `AUTH-2`, `F2A-3` | **CLOSED 2026-09-20: an assistant's group reads are scoped.** An `assigned_groups` assistant gets a **404 with the byte-identical message** on `GET /staff/groups/:groupId` for a group they do not hold. Raised by the 2a review (F-3): migration `013` falsified the premise — *"a group spans courses"* — that had kept those reads unscoped. Supersedes *"TAs are allowed to access all groups"*. Lands in `AUTH-2` (2b) with a refusal test in both directions; 2a fixes only the stale comment. |
 
 ---
 

@@ -3358,10 +3358,45 @@ migration gate at setup, which is the gate failing silently rather than a test f
 `LearningModeService`. That is written on the module, so nobody cites it later as precedent for a
 fourth global module.
 
-**Verified:** 470 unit (from 467) · 217 e2e (from 216) · **87 integration from an empty schema**
+**Verified:** 471 unit (from 467) · 217 e2e (from 216) · **87 integration from an empty schema**
 (from 81), 0 skipped, all 13 migrations applied against real PostgreSQL 15. `frontend/lib/` stayed
 at 0 typecheck errors; the legacy `app/` and `components/` count rose 301 → 326, every one of them
 a screen that rendered a Live/Recorded badge or branched on `progress.type`, and deliberately not
 patched — `SHELL-4` deletes that code.
 
 Next is unit 2b — `DOM-3`, `DOM-4`, `AUTH-2`, `DOM-5` — in a new conversation.
+
+## 2026-09-20 — unit 2a remediation: the seven closable follow-ups
+
+`redesign-reviewer` returned `APPROVED WITH FOLLOW-UP` on slice 2a with nine findings, none of them
+a security or authorization defect. Seven are now closed, `F2A-8` was the coordinator's, and `F2A-9`
+stays open by design — migration `012` is applied and its ledger row written, so the file is
+immutable and the only legal correction is a later migration.
+
+Two of the seven were more than the line they were reported as.
+
+**The `null` one was a root cause, not two call sites.** `@IsOptional()` skips every other validator
+when the value is `null` as well as `undefined`, so `PATCH /admin/groups/:id {"name": null}`
+validated — and then the two drivers disagreed, Postgres `COALESCE`ing it to a 200 no-op while the
+memory driver wrote `name = null`. The fix is a named decorator, `@IsOptionalNotNull()`, and a
+convention that greps: `@IsOptional()` where the column is nullable, `@IsOptionalNotNull()` where it
+is not. **38 fields across seven DTO files** turned out to have the shape, not two — blog, tasks,
+recordings, live sessions and the student profile as well as groups.
+
+**The tie-break test had to be built to fail.** `addMember` stamps `assignedAt` from the clock, so
+any test that appends placements passes with the comparator deleted. `student-groups.service.spec.ts`
+uses a fake timer to write the March placement before the February one; run with the comparator
+removed it fails, which is the only thing that makes it evidence.
+
+The `API_SPEC.yaml` drift was reconciled **toward the spec**: `POST` and `PATCH /admin/groups` now
+answer a `GroupSummary` like every other group response, so `memberCount` is no longer a required
+property that nothing emitted. `frontend/lib/types.ts`'s `GroupWrite` — which named the PATCH body
+while the spec's `GroupWrite` is the POST body — became `GroupPatch`.
+
+**Verified:** 473 unit (from 471) · 217 e2e, unchanged because the new assertions sit inside
+existing tests · 87 integration on a database created empty immediately before the run, 0 skipped,
+all 13 migrations from nothing. `frontend/lib/` still at 0 typecheck errors; the legacy total is
+unchanged at 326.
+
+Unit 2a's status is the coordinator's call; slice 2b — `DOM-3`, `DOM-4`, `AUTH-2`, `DOM-5` — is
+unstarted and untouched.

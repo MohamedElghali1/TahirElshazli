@@ -91,7 +91,6 @@ const OVERVIEW_COURSE_LIMIT = 100;
 export class ManageService {
   constructor(
     private readonly scope: StaffScopeService,
-    /** Global (`GroupDataModule`); the mode lives on the group now (§5.2). */
     @Inject(COURSE_REPOSITORY) private readonly courseRepo: CourseRepository,
     @Inject(ENROLLMENT_REPOSITORY)
     private readonly enrollmentRepo: EnrollmentRepository,

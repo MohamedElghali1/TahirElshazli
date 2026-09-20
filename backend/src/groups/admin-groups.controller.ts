@@ -23,7 +23,6 @@ import {
   GroupsService,
 } from './groups.service.js';
 import type { GroupSummary } from './groups.service.js';
-import type { Group } from './interfaces/group-repository.interface.js';
 
 /**
  * `/admin/*` - teacher only, unscoped, matching `AdminManageController`.
@@ -66,7 +65,7 @@ export class AdminGroupsController {
   async create(
     @Body() body: CreateGroupDto,
     @Request() req: { user: JwtPayload },
-  ): Promise<Group> {
+  ): Promise<GroupSummary> {
     return this.groups.create(this.actor(req), body);
   }
 
@@ -85,7 +84,7 @@ export class AdminGroupsController {
     @Param('groupId') groupId: string,
     @Body() body: UpdateGroupDto,
     @Request() req: { user: JwtPayload },
-  ): Promise<Group> {
+  ): Promise<GroupSummary> {
     return this.groups.update(groupId, body, this.actor(req));
   }
 }

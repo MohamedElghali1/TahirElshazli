@@ -54,7 +54,6 @@ export class ReportsService {
     private readonly assessmentsService: AssessmentsService,
     private readonly coursesService: CoursesService,
     private readonly enrollmentsService: EnrollmentsService,
-    /** Global (`GroupDataModule`); the mode lives on the group now (§5.2). */
   ) {}
 
   private averagePercentage(

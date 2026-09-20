@@ -27,14 +27,25 @@ import { GroupsService } from './groups.service.js';
  * in among people who already hold the course; enrolling and unenrolling remain
  * teacher-only.
  *
- * **What is scoped here and what is not.** The course-tab read below names a
- * course, so it goes through `StaffScopeService` like every other `/staff`
- * route. The group reads and the placement writes name a *group*, and a group
- * is not a course - it spans them - so there is no course to scope by. That is
- * also what the client asked for directly: *"TAs are allowed to access all
- * groups"* (§5.11.1). If that posture reverses, the check that appears here is
- * "is this TA assigned to a course this group studies", and it belongs in
- * `GroupsService` beside the one `addCourse` already makes.
+ * **What is scoped here, what is not, and for how long.** The course-tab read
+ * below names a course, so it goes through `StaffScopeService` like every other
+ * `/staff` route. The group reads and the placement writes name a *group*, and
+ * they are **unscoped today** - an assistant can fetch any group and its
+ * members, name and email included.
+ *
+ * That is deliberate and temporary, not a posture. It was argued from "a group
+ * spans courses, so there is no course to scope by"; migration `013` made every
+ * group study exactly one course, so the premise is dead and the earlier *"TAs
+ * are allowed to access all groups"* instruction is superseded. **Decision
+ * `D-10`, closed 2026-09-20:** an assistant whose scope is `assigned_groups`
+ * gets a **404 with the byte-identical message** (CLAUDE.md §7) on a group they
+ * do not hold - reads included. `AUTHORIZATION_MODEL.md:105,207` already said
+ * so; the code had not caught up.
+ *
+ * **`AUTH-2` (unit 2 slice 2b) implements it**, inside the same rewrite of
+ * `StaffScopeService`'s internals, and the check belongs in `GroupsService`
+ * beside the one `listForCourse` already makes - not here. Slice 2a changed
+ * this comment and nothing else about the behaviour.
  *
  * No `@UseGuards`: `JwtAuthGuard` and `RolesGuard` are global in
  * `app.module.ts`, and `RolesGuard` refuses any route with no `@Roles`.

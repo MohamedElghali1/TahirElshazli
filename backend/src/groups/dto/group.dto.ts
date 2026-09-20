@@ -10,6 +10,7 @@ import {
   MinLength,
   ValidateIf,
 } from 'class-validator';
+import { IsOptionalNotNull } from '../../common/validators/is-optional-not-null.js';
 import {
   DEFAULT_GROUP_PAGE_SIZE,
   MAX_GROUP_PAGE_SIZE,
@@ -84,13 +85,13 @@ export class CreateGroupDto {
  * dependency here, and repeating five decorators is cheaper than adding one.
  */
 export class UpdateGroupDto {
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsString()
   @MinLength(1)
   @MaxLength(120)
   name?: string;
 
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsString()
   @MaxLength(64)
   @Matches(ID_PATTERN, {

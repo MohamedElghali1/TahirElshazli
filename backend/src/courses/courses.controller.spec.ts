@@ -73,9 +73,14 @@ describe('CoursesController', () => {
 
   // `D-9` collapsed the `{type:'recorded'} | {type:'live'}` union into one
   // shape. The two tests below are the replacements for the two that asserted
-  // each branch, and between them they prove the shape is whole in both
-  // directions: a course with recordings and no sessions, and a course with
-  // sessions and no recordings, each carry BOTH halves.
+  // each branch: a course with **both** halves populated (course-1), and a
+  // course with sessions and no recordings (course-2), each carrying all four
+  // completion fields and all four attendance ones.
+  //
+  // The third direction - recordings and no sessions - is **not** covered, and
+  // cannot be with these fixtures: `InMemoryLiveSessionRepository` seeds
+  // sessions on both courses (deviation `D-3`, review F2A-6). A second fixture
+  // course is on `IMPLEMENTATION_PLAN.md` as the follow-up that closes it.
   it('should carry completion and attendance together for a course that has both', async () => {
     const courses = await controller.listCourses(STUDENT);
     const progress = courses.find((c) => c.id === 'course-1')?.progress;

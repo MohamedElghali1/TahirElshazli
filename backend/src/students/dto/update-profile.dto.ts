@@ -6,10 +6,11 @@ import {
   MinLength,
   ValidateIf,
 } from 'class-validator';
+import { IsOptionalNotNull } from '../../common/validators/is-optional-not-null.js';
 import { IsPublicHttpUrl } from '../../common/validators/is-public-http-url.validator.js';
 
 export class UpdateProfileDto {
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsString()
   @MinLength(2)
   @MaxLength(100)

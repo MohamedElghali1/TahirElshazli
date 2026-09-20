@@ -826,3 +826,74 @@ migration's slice.
 
 **Affected.** `group-data.module.ts`, `groups.module.ts`, `app.module.ts` — comments only. Recorded
 so `R-6` (a global module kept for a reason nobody re-checked) cannot recur silently.
+
+
+---
+
+## 2026-09-20 — `D-10`: an assistant's group reads are scoped
+
+### `D-10` NEW — **`assigned_groups` means a 404 on a group outside the scope, reads included.**
+
+**Raised by** `redesign-reviewer` on unit 2 slice 2a (`docs/phases/unit-2/REVIEW.md`, finding F-3).
+**CLOSED the same day by the user: scope the reads.**
+
+Migration `013` is what forced the question. `staff-groups.controller.ts:30-37` left the staff group
+reads unscoped on an explicit argument — *"a group is not a course — it spans them — so there is no
+course to scope by"* — and pointed at `addCourse` as the proof. `DOM-1` deleted `addCourse` and gave
+every group exactly one course. **The premise is now false, so the conclusion cannot be inherited.**
+
+**The decision.** An assistant whose scope is `assigned_groups` gets a **404 with the byte-identical
+message** on `GET /staff/groups/:groupId` for a group they do not hold. Scope governs what an
+assistant may **read**, not only what they may act on — `AUTHORIZATION_MODEL.md:105` already listed
+assistant group views as in scope and `:207` already specified the 404; this closes the gap between
+that model and the code rather than extending it.
+
+**What it changes, stated plainly.** Today an assistant can read **any** group's roster, with every
+member's name and email. That was equally true before this slice, so it is **not a regression
+introduced by `DOM-1`** — but `AUTH-2` is the moment it is either closed or deliberately kept, and
+it is closed. The earlier *"TAs are allowed to access all groups"* instruction is **superseded**:
+`AUTH-3` already withheld four verbs from assistants, and a scope that governs writing but not
+reading leaks the roster of every cohort in the school to a part-time assistant.
+
+**Where it lands.** `AUTH-2`, unit 2 slice 2b — the same rewrite of `StaffScopeService`'s internals,
+so it costs a refusal test rather than a design. **Not** in 2a: 2a fixes only the comment that
+argues from the dead premise (`F2A-3`), and leaves behaviour untouched.
+
+**The refusal test it requires.** *"an `assigned_groups` assistant gets 404 with the message
+identical to a genuine miss on `GET /staff/groups/:groupId` for a group on a course they do not
+hold"* — plus the positive case, per `CLAUDE.md` §10: a boundary needs both directions.
+
+---
+
+## 2026-09-20 — `D-11`: `@IsOptional()` is the wrong decorator over a `NOT NULL` column
+
+### `D-11` NEW — **`null` on a non-nullable field is a 400, and a named decorator is what makes it one.**
+
+**Raised by** `redesign-reviewer` on unit 2 slice 2a (finding F-2 / `F2A-2`), closed the same day in
+the remediation pass.
+
+`@IsOptional()` skips every other validator when the value is `null` **or** `undefined`. On a field
+whose column is `NOT NULL` that is wrong, and the two drivers disagreed about the consequence:
+`PATCH /admin/groups/:id {"name": null}` validated, then Postgres `COALESCE`d it to a 200 no-op
+while the memory driver wrote `name = null`.
+
+**The decision.** `backend/src/common/validators/is-optional-not-null.ts` adds
+`@IsOptionalNotNull()` — `ValidateIf((_, v) => v !== undefined)`. The rule is now a naming
+convention that greps: **`@IsOptional()` where the column is nullable** (there `null` genuinely
+means "clear it"), **`@IsOptionalNotNull()` where it is not.** Chosen over a per-field
+`@IsNotEmpty()`, which has to be remembered once per field and was already missing on 38 of them.
+
+**Scope of the sweep.** Every `@IsOptional()` field in `backend/src/**/dto/**` was checked against
+its column. **38 fields across seven DTO files** changed — groups (2), blog (10), assessments (12),
+recordings (9), live sessions (4), student profile (1). Query DTOs were deliberately left alone: a
+query-string value is a string or absent, never `null`. Nullable columns keep `@IsOptional()`.
+
+### `D-12` NEW — **every group response carries `memberCount`, the two writes included.**
+
+`API_SPEC.yaml`'s `Group` requires `memberCount` and `POST`/`PATCH /admin/groups` returned a bare
+group without it (`F2A-4`). Reconciled **toward the spec** rather than away from it: `create` answers
+`memberCount: 0` (no query — a new group has no members) and `update` counts once. The alternative —
+a second response schema without the field — buys one saved count per edit at the price of two
+shapes for one resource, and `CLAUDE.md` §6 wants the mirror generated from this contract.
+`frontend/lib/types.ts`'s `GroupWrite` — which named the *PATCH* body while the spec's `GroupWrite`
+is the *POST* body — is now `GroupPatch`, with `GroupWrite` re-added as the create shape (`F2A-5`).

@@ -152,7 +152,7 @@ export class GroupsService {
    * Creates a group. A group now names its course at birth (migration 013), so
    * unlike before there is no "created, then enrolled in something" state.
    */
-  async create(actor: StaffActor, input: GroupWrite): Promise<Group> {
+  async create(actor: StaffActor, input: GroupWrite): Promise<GroupSummary> {
     return this.db.runInTransaction(async () => {
       await this.requireCourse(input.courseId, actor);
       const group = await this.groupRepo.create({
@@ -178,7 +178,11 @@ export class GroupsService {
           assistantId: group.assistantId,
         },
       });
-      return group;
+      // A `GroupSummary`, like every other group response: `API_SPEC.yaml`'s
+      // `Group` requires `memberCount`, and a create that answered a shape
+      // short of it made a generated client wrong (review F2A-4). A new group
+      // has no members, so this costs no query.
+      return { ...group, memberCount: 0 };
     });
   }
 
@@ -200,7 +204,7 @@ export class GroupsService {
     groupId: string,
     patch: GroupPatch,
     actor: StaffActor,
-  ): Promise<Group> {
+  ): Promise<GroupSummary> {
     return this.db.runInTransaction(async () => {
       // Read before the write, so `before` is the old value and not an alias of
       // the new one. Both repositories return copies for exactly this reason
@@ -243,7 +247,8 @@ export class GroupsService {
           room: after.room,
         },
       });
-      return after;
+      const members = await this.groupRepo.findMembers(groupId);
+      return { ...after, memberCount: members.length };
     });
   }
 

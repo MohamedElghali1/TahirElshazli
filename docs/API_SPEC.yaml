@@ -248,6 +248,9 @@ components:
             when scope is all_groups or role is admin.
 
     # --- Groups ------------------------------------------------------------
+    # The one group response shape, and every group response is it - the list,
+    # the single read, and both writes. `memberCount` is required and therefore
+    # emitted by all four; `POST` answers 0 without a query (review F2A-4).
     Group:
       type: object
       required: [id, name, courseId, memberCount]

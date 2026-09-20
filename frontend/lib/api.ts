@@ -16,8 +16,8 @@ import type {
   GradingQueueItem,
   GradingQueueResponse,
   GradingStatus,
-  Group,
   GroupMemberView,
+  GroupPatch,
   GroupSummary,
   GroupWrite,
   LiveSession,
@@ -817,16 +817,8 @@ export const api = {
      * `Enrollment` stays the access gate (§5.16), which is what keeps the
      * payment question out of this surface.
      */
-    createGroup: (
-      token: string,
-      body: {
-        name: string;
-        courseId: string;
-        assistantId?: string | null;
-        meets?: string | null;
-        room?: string | null;
-      },
-    ) => request<Group>('/admin/groups', { method: 'POST', token, body }),
+    createGroup: (token: string, body: GroupWrite) =>
+      request<GroupSummary>('/admin/groups', { method: 'POST', token, body }),
 
     /**
      * Name, course, assistant, meets, room. Replaces the rename-only PATCH and
@@ -837,8 +829,8 @@ export const api = {
      * member would be left enrolled on the old course while being targeted by
      * work set for the new one.
      */
-    updateGroup: (token: string, groupId: string, body: GroupWrite) =>
-      request<Group>(`/admin/groups/${groupId}`, {
+    updateGroup: (token: string, groupId: string, body: GroupPatch) =>
+      request<GroupSummary>(`/admin/groups/${groupId}`, {
         method: 'PATCH',
         token,
         body,
