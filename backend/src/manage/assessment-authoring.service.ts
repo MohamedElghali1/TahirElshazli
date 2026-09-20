@@ -189,9 +189,7 @@ export class AssessmentAuthoringService {
       throw new BadRequestException('A group can be targeted only once');
     }
     const studying = new Set(
-      (await this.groupRepo.findGroupCoursesByCourse(courseId)).map(
-        (pairing) => pairing.groupId,
-      ),
+      (await this.groupRepo.findByCourse(courseId)).map((group) => group.id),
     );
     for (const groupId of groupIds) {
       if (!studying.has(groupId)) {

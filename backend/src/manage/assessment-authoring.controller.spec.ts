@@ -194,11 +194,10 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
       const second = await groups.create({
         name: 'Chemistry — Monday',
         teacherId: 'teacher-1',
-      });
-      await groups.addCourse({
-        groupId: second.id,
         courseId: 'course-1',
-        enrolledBy: 'teacher-1',
+        assistantId: null,
+        meets: null,
+        room: null,
       });
       const created = await authoring.create('course-1', ADMIN, TASK);
 
@@ -230,11 +229,10 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
       const other = await groups.create({
         name: 'Chemistry — Monday',
         teacherId: 'teacher-1',
-      });
-      await groups.addCourse({
-        groupId: other.id,
         courseId: 'course-1',
-        enrolledBy: 'teacher-1',
+        assistantId: null,
+        meets: null,
+        room: null,
       });
       const secret = await authoring.create('course-1', ADMIN, {
         ...TASK,

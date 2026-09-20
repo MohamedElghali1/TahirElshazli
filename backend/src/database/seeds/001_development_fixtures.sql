@@ -77,9 +77,9 @@ INSERT INTO lessons (id, module_id, title, position, duration_seconds) VALUES
   ('lesson-17', 'mod-6', 'Register and Audience',             2, 2220)
 ON CONFLICT (id) DO NOTHING;
 
--- No learning_mode: it moved to `group_courses` in 006 and the column was
--- dropped in 007 (CLAUDE.md 5.2). These students' modes come from the groups
--- seeded in 003_group_fixtures.sql, which is also why that file exists.
+-- No learning_mode: dropped from this table in 007 and retired from the model
+-- entirely in 012 (`D-9`). Every course is taught the same way now. Which
+-- cohort these students sit in comes from 003_group_fixtures.sql.
 INSERT INTO enrollments (student_id, course_id, enrolled_at) VALUES
   ('student-1', 'course-1', '2026-01-20T09:00:00Z'),
   ('student-1', 'course-2', '2026-06-01T09:00:00Z'),

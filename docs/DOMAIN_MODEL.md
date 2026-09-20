@@ -80,14 +80,28 @@ Unchanged. Three categories.
 ### `Group` — the centre of the new model
 "A group is one timetable, one assistant and one set of tasks."
 
-- **Fields.** `id`, `name`, **`courseId`**, **`learningMode`**, `teacherId`, **`assistantId?`**,
-  **`meets?`** (recurring schedule text), **`room?`**, `createdAt`
-- **`courseId` and `learningMode` move onto the group**, collapsing `GroupCourse`. This reverses
-  `CLAUDE.md` §6.1 on the client's instruction, and is the least reversible change in the plan.
+- **Fields.** `id`, `name`, **`courseId`**, `teacherId`, **`assistantId?`**, **`meets?`**
+  (recurring schedule text), **`room?`**, `createdAt`. **Built 2026-09-20, migration 013.**
+- **`courseId` moves onto the group**, collapsing `GroupCourse`. This reverses `CLAUDE.md` §6.1 on
+  the client's instruction, and is the least reversible change in the plan.
+- **No `learningMode`.** `D-9` retired the axis before the collapse landed, so the column this
+  section used to list was never created. Every course is taught the same way.
+- **`assistantId` is a DISPLAY field and is never an authorization input** (binding ruling R-1,
+  2026-09-20). It says who *runs* the group. What an assistant may **reach** is
+  `AssistantGroupAssignment` + `AssistantScope`, decided by `StaffScopeService` and nowhere else.
+  The two are allowed to disagree: an assistant named here without an assignment is refused, and an
+  assistant assigned without being named here is allowed.
+- **Changing a group's course is refused with 409 while it has members.** `Enrollment` is the access
+  gate, so re-pointing a populated group would leave every member enrolled on the old course while
+  being targeted by work set for the new one. Re-cohorting is a real operation and several
+  unanswered decisions; refusing is the reversible half. *Assumption, ratified 2026-09-20.*
 - → belongs to one `Course` · has many `GroupMembership` · has many `Session` · is targeted by many
   `Assessment` · receives `Announcement`
 - **Invariant.** A student may belong to several groups, including two on the same course; the
-  longest-standing placement (`assignedAt`) wins wherever a single answer is needed.
+  longest-standing placement (`assignedAt`) wins wherever a single answer is needed. **That sort key
+  is `GroupMembership.assignedAt`** — it was `GroupCourse.enrolledAt` until the join table
+  collapsed, which is a substitution of the key rather than of the rule, and arguably the better
+  reading of "longest-standing *placement*". A student in no group resolves to `[]`, not an error.
 
 ### `GroupMembership`
 `groupId`, `studentId`, `assignedBy`, `assignedAt`. Placement is a staff act, so `assignedBy` is

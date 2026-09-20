@@ -35,6 +35,7 @@ const AUDIT_ACTION_VALUES: Record<AuditAction, true> = {
   'live_session.cancelled': true,
   'announcement.posted': true,
   'group.created': true,
+  'group.updated': true,
   'group.renamed': true,
   'group.course_added': true,
   'group.course_removed': true,

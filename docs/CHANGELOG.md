@@ -681,3 +681,148 @@ such rather than ticked: no new tables (3), no new request bodies (4), no new au
 screens (9, 12). Point 11's `npx tsc --noEmit` remains at **301 pre-existing errors** in the legacy
 `app/` and `components/{app,site}` that `SHELL-4` deletes — documented in `CLAUDE.md` §4.1, zero in
 `lib/`, and not a Phase 1 regression.
+
+---
+
+## 2026-09-20 — Unit 2 is split into 2a and 2b, at a verified migration gate
+
+**Context.** The unit-2 phase plan measured its own scope rather than estimating it: four
+migrations, three of them destructive and one **one-way**; 46 source files carrying `learning_mode`
+logic; two new tables meaning four new repository implementations; five frontend-visible response
+shapes; 22 `StaffScopeService` call sites. Roughly units 1, 3 and 5 combined, containing the single
+highest-risk change in the project.
+
+**Alternatives.** (a) One pass — the plan's seven steps are already the commit sequence and each is
+independently green; the only cost is one very large review. (b) Split at
+`2a = DOM-0/1/2`, `2b = DOM-3/4/5/AUTH-2/6`. (c) Split at `2a = DOM-0/1/2 + AUTH-2`.
+
+**Chosen.** (b). The boundary **is** a verified migration gate rather than a convenience: `015`'s
+backfill joins `groups.course_id`, and `DATABASE_PLAN.md` requires `013` landed and verified before
+it — a unit boundary is the strongest available form of "verified first". It also puts the two
+irreversible `DROP TABLE`s (`group_courses`, `course_staff_assignments`) in different reviews, and
+they share no code.
+
+(c) was declined. The argument for co-locating `AUTH-2` with `DOM-2` was that `groups.assistant_id`
+and `assistant_group_assignments` record the same fact twice and would end up disagreeing if
+designed apart. That is answered by the binding condition below rather than by the boundary.
+
+**Binding on 2a, and permanently.** `groups.assistant_id` is the **display** field — who runs this
+group. `assistant_group_assignments` + `assistant_scopes` are the **authorization** field.
+**Nothing may read `groups.assistant_id` for an access decision, ever.** An assistant named on a
+group without an assignment row is refused; an assistant assigned without being named is allowed.
+The rule is written on the column in migration 013, on the `Group` interface, in
+`frontend/lib/types.ts`, in `API_SPEC.yaml`, and asserted by an e2e test that names an assistant on
+a group and then proves they still get a 404 on that group's course.
+
+**Affected.** `PHASE_ROADMAP.md` unit 2 (now 2a `[x]`, 2b `[ ]`), `IMPLEMENTATION_PLAN.md` Phase 2.
+2b begins in a new conversation (`CLAUDE.md` §14).
+
+---
+
+## 2026-09-20 — The migration numbering shifts one, because `D-9` created a migration the plan predates
+
+**Context.** `DATABASE_PLAN.md` §7's migration-order list was written before `D-9` created `DOM-0`,
+and assigned `012` to `users.status`. `DOM-0` has to be **first**, so the destructive collapse lands
+on a simplified model rather than beside a half-removed mode axis, and `011` is immutable.
+
+**Chosen.** `012` = retire `learning_mode` (`DOM-0`) · `013` = group collapse + group columns
+(`DOM-1`/`DOM-2`) · `014` = `users.status` + student profile (`DOM-3`/`DOM-4`) · `015` = assistant
+scope (`AUTH-2`), and everything below shifts one to `022`.
+
+**Reason this is recorded rather than done quietly.** `MigrationRunner.sqlFilesIn` sorts
+lexicographically, so a `014` authored while no `013` exists applies **straight after `012` and
+aborts every boot and every integration run**. The renumber was therefore done as step 1 of the
+unit, **before any migration file was written**, and `014`/`015` were deliberately not created in
+2a — not even as empty files.
+
+**Affected.** `DATABASE_PLAN.md` §7, `PHASE_ROADMAP.md` unit 2, `IMPLEMENTATION_PLAN.md`'s `DB`
+column for `DOM-0`…`DOM-6`.
+
+---
+
+## 2026-09-20 — `013` gains a second abort path: a group with no course
+
+**Context.** `DATABASE_PLAN.md` §4.1 named one refusal — a group studying two courses. Writing the
+migration surfaced a second, which the plan did not name and which is **reachable**:
+`GroupRepository.create` made a group with no course at all, because that is exactly the shape
+migration 006 was built to allow. Without an explicit guard, `ALTER COLUMN course_id SET NOT NULL`
+fails with a bare constraint violation that names a column and leaves the operator to find the
+group.
+
+**Chosen.** Two `RAISE EXCEPTION` guards, both before any write, both naming the offending group by
+name via `string_agg`. The whole file is one transaction, so a refusal leaves `group_courses`
+intact, `groups.course_id` absent, and no ledger row.
+
+**Both are tested, and the tests were written before the happy path was validated** — `013` cannot
+be tested by running it twice, so the thing worth proving is the refusal. Each test runs in its own
+Postgres schema, applies 001–012 by hand, offers `013` bad data, and asserts the throw **and** the
+rollback.
+
+**Affected.** `DATABASE_PLAN.md` §4.1 (reconciled with what ran), `013_group_holds_one_course.sql`,
+`postgres-repositories.integration-spec.ts`.
+
+---
+
+## 2026-09-20 — Re-pointing a populated group at another course is refused with 409
+
+**Context.** `DOM-2` widens `PATCH /admin/groups/:id` from a rename to the whole `GroupWrite`, which
+makes changing a group's course a one-field edit. Nothing in `docs/` said what should happen when
+that group already has students in it.
+
+**Alternatives.** (a) Allow it. (b) Refuse with 409 while the group has members. (c) Allow it and
+re-enrol every member on the new course.
+
+**Chosen.** (b) — **an assumption, ratified by the coordinator on 2026-09-20, not a derived
+requirement**, and labelled as such in `groups.service.ts` where it is implemented.
+
+**Reason.** `DOMAIN_MODEL.md:98-100` makes `Enrollment` the access gate. Silently re-pointing a
+populated group would leave every member enrolled on the **old** course while being targeted by work
+set for the **new** one — visible to a student as tasks they cannot open, and to nobody else at all.
+(c) is a real operation but it is several unanswered decisions (who re-enrols, what happens to
+existing submissions, whether the old enrolment is revoked), and inventing them is exactly what a
+blocker is for. Refusing is the reversible half: allowing it later is a one-line change, and the
+409 is what makes the question surface at the moment someone needs the answer.
+
+**Affected.** `groups.service.ts`, `DOMAIN_MODEL.md` §3, `API_SPEC.yaml`'s
+`PATCH /admin/groups/{groupId}`, one unit test and one e2e test.
+
+---
+
+## 2026-09-20 — `StudentGroupsService`'s tie-break keeps its rule and changes its sort key
+
+**Context.** "Longest-standing placement wins" is load-bearing: a student may legally sit in two
+groups on one course, and the assessment window and the classmate list both resolve through a group.
+If the two picked differently the same student would see one cohort's classmates and another
+cohort's due dates. The order came from `group_courses.enrolled_at`, and migration 013 dropped that
+table.
+
+**Chosen.** The sort key becomes `group_memberships.assigned_at`, in both drivers, with the
+membership id breaking a shared millisecond so the order is total. **A substitution of the key, not
+of the rule** — and arguably the better reading of "longest-standing *placement*", which is what the
+rule always said: `enrolled_at` recorded when the *group* joined the course, not when the *student*
+joined the group.
+
+**Affected.** `student-groups.service.ts` (`pairingsFor` → `groupsFor`, returning `Group[]`), both
+`GroupRepository` drivers, `classmates.service.ts`. Covered by an integration test that places one
+student in two groups on one course and asserts the order, and by a named test proving an enrolled
+but unplaced student resolves to `[]` rather than throwing — the replacement for the deleted
+`LearningModeService` fallback-chain test.
+
+---
+
+## 2026-09-20 — `GroupDataModule` stays `@Global()`, and the reason it existed is recorded as expired
+
+**Context.** `CLAUDE.md` §5 rations `@Global()` modules to three, because a global provider is
+invisible in an import list. `GroupDataModule` is one of them, and it exists to break a real cycle:
+`CoursesService` had to read group data to resolve a learning mode, while `GroupsModule` already
+imported `CoursesModule`. `D-9` deleted `LearningModeService`, so `CoursesService` no longer touches
+group data and `GroupDataModule`'s own `CoursesModule` import went with it. **The cycle is gone.**
+
+**Chosen.** Keep it global for the narrower reason that four feature modules read `GROUP_REPOSITORY`
+or `StudentGroupsService`, and **write on the module that its original reason has expired**, so a
+future reader does not cite it as precedent for a fourth global module. De-globalising it is an
+import-graph change with no behavioural payoff and belongs in its own task, not inside a destructive
+migration's slice.
+
+**Affected.** `group-data.module.ts`, `groups.module.ts`, `app.module.ts` — comments only. Recorded
+so `R-6` (a global module kept for a reason nobody re-checked) cannot recur silently.

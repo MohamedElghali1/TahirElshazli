@@ -3302,3 +3302,66 @@ corrupting anything, because the handoff lives in files.
 **Not done:** `SPEC-16` and `SPEC-17` — two `API_SPEC.yaml` reconciliations unit 1 surfaced, both
 awaiting a decision (`D-7`, `D-8`), which is why unit 0 stays `[~]`. Next is unit 2 (`DOM-1` + the
 re-homed `AUTH-2`), in a new conversation.
+
+---
+
+## 2026-09-20 — Unit 2a: the group becomes the centre
+
+Unit 2 arrived oversized and the planner said so with numbers rather than an adjective: four
+migrations, three destructive, one **one-way**; 46 source files carrying `learning_mode` logic; two
+new tables; five frontend-visible response shapes; 22 `StaffScopeService` call sites. The
+coordinator split it at the boundary the planner recommended, and the boundary is not a convenience
+— it is a verified migration gate. `015`'s backfill joins `groups.course_id`, so `013` has to have
+landed and been proven first, and a unit boundary is the strongest form of "verified first"
+available. It also puts the project's two irreversible `DROP TABLE`s in different reviews.
+
+**Slice 2a landed three things.**
+
+`DOM-0` retired the learning mode. Every course is taught the same way now — recordings *and* live
+sessions — so the axis had nothing left to switch on. The visible consequence is not the dropped
+columns but the response shape: course progress was a discriminated union,
+`{type:'recorded'} | {type:'live'}`, and it collapsed into **one** shape carrying completion and
+attendance side by side. A course with no sessions reports `0 of 0` rather than serving a different
+shape. `CLAUDE.md` §11.1 non-negotiable 2 is restated where the type is declared, in the backend and
+in the mirror, and a test asserts the two percentages are never blended into a third.
+
+`DOM-1` is the one-way door. `group_courses` collapsed into `groups.course_id`, reversing an
+argument `CLAUDE.md` §6.1 made at length and lost to the client. The migration **refuses rather than
+guesses** on two conditions, not one: a group holding two courses, and a group holding **zero** —
+the second reachable through `GroupRepository.create`, and not named anywhere in the plan. Both
+messages name the offending group, because the operator who has to fix it by hand will look nowhere
+else. The abort tests were written and run **before** the happy path was validated, each in its own
+Postgres schema, and they assert the rollback as well as the throw: `group_courses` intact,
+`course_id` absent, no ledger row. A `pg_dump` of the dev database was taken first.
+
+`DOM-2` gave the group its `assistant_id`, `meets` and `room`, and widened the rename-only PATCH
+into the whole `GroupWrite` — which retired the two `/groups/:id/courses` routes, since a group's
+course is a field on it now. Moving a populated group to another course is refused with 409, an
+assumption stated as one in the code and ratified rather than invented: `Enrollment` is the access
+gate, so re-pointing silently would leave every member enrolled on the old course while being
+targeted by work set for the new one.
+
+**The rule that outlives this slice:** `groups.assistant_id` is a **display** field and is never an
+authorization input. `assistant_group_assignments` (2b) decides reach. The two look like the same
+fact and are allowed to disagree, which is exactly why the rule is written on the column, on the
+interface, in the mirror, in the spec, and asserted by an e2e test that names an assistant on a
+group and proves they still get a 404.
+
+**Two process points worth keeping.** The migration renumber was done as step 1, with no code:
+`DATABASE_PLAN.md` predated `DOM-0` and assigned `012` to `users.status`, and a `014` authored with
+no `013` applies straight after `012` and aborts every boot. And the seeds were regenerated in
+lock-step with each migration rather than as a tail task — the integration suite calls
+`runner.seed()` in the same `beforeAll` as `runner.migrate()`, so a stale fixture fails the
+migration gate at setup, which is the gate failing silently rather than a test failing loudly.
+
+`GroupDataModule` stays `@Global()`, but the cycle it was built to break is gone with
+`LearningModeService`. That is written on the module, so nobody cites it later as precedent for a
+fourth global module.
+
+**Verified:** 470 unit (from 467) · 217 e2e (from 216) · **87 integration from an empty schema**
+(from 81), 0 skipped, all 13 migrations applied against real PostgreSQL 15. `frontend/lib/` stayed
+at 0 typecheck errors; the legacy `app/` and `components/` count rose 301 → 326, every one of them
+a screen that rendered a Live/Recorded badge or branched on `progress.type`, and deliberately not
+patched — `SHELL-4` deletes that code.
+
+Next is unit 2b — `DOM-3`, `DOM-4`, `AUTH-2`, `DOM-5` — in a new conversation.

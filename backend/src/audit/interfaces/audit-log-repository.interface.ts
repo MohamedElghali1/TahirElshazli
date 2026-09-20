@@ -13,6 +13,13 @@ import { Role } from '../../auth/roles.enum.js';
  * Names are `<subject>.<past-tense verb>` so the admin feed reads as history.
  */
 export type AuditAction =
+  // ---------------------------------------------------------------------
+  // RETAINED, UNUSED. `course_staff_assignments` is retired by `AUTH-2`, but
+  // **retiring a table does not retire its audit history.** The log has no
+  // foreign keys precisely so it outlives what it describes, and
+  // `ListAuditLogQueryDto`'s `AUDIT_ACTION_VALUES` is built from this union -
+  // so deleting a member here makes every historical row of that action
+  // unfilterable with a 400. Do not tidy these away.
   | 'course_staff.assigned'
   | 'course_staff.unassigned'
   // The first TA mutation the log covers. §5.4 names grading explicitly, and
@@ -41,6 +48,15 @@ export type AuditAction =
   // renders. "Which assistant moved this student out of the Saturday group"
   // is exactly the question the log exists to answer.
   | 'group.created'
+  // The widened PATCH (`DOM-2`). One action covering name, course, assistant,
+  // meets and room, rather than five: the `before`/`after` pair already says
+  // which field moved, and five actions would make "what happened to this
+  // group" five filters instead of one.
+  | 'group.updated'
+  // RETAINED, UNUSED, for the reason given at the top of this union. `renamed`
+  // is superseded by `group.updated`; `course_added`/`course_removed` describe
+  // `group_courses`, which migration 013 dropped when a group's course became
+  // a column. Historical rows of all three still exist and must stay readable.
   | 'group.renamed'
   | 'group.course_added'
   | 'group.course_removed'
@@ -84,16 +100,21 @@ export type AuditAction =
 
 /** What the action happened *to*. Grows with `AuditAction`, for the same reason. */
 export type AuditTargetType =
+  // RETAINED, UNUSED - `course_staff_assignments` is retired by `AUTH-2`. Same
+  // reason as the retained `AuditAction` members: historical rows name it.
   | 'course_staff_assignment'
   | 'assessment_submission'
   | 'recording'
   | 'live_session'
   | 'announcement'
   | 'group'
-  // The pairing and the placement are their own targets rather than both being
-  // filed under `group`: "everything that happened to group-1" and "everything
-  // that happened to this student's placement" are different questions, and
+  // The placement is its own target rather than being filed under `group`:
+  // "everything that happened to group-1" and "everything that happened to
+  // this student's placement" are different questions, and
   // `audit_log (target_type, target_id, ...)` is indexed to answer either.
+  //
+  // `group_course` is RETAINED, UNUSED - the table it named was dropped by
+  // migration 013, and its historical rows must stay filterable.
   | 'group_course'
   | 'group_membership'
   // The task itself. Its *audience* is not a separate target type: re-aiming a

@@ -193,7 +193,7 @@ export interface AssessmentRepository {
    *
    * A student in two groups both given the same task sees it **once**, on the
    * longest-standing placement's terms - the same tie-break
-   * `LearningModeService` uses, so a due date and a learning mode cannot
+   * `StudentGroupsService` names, so a due date and a classmate list cannot
    * resolve through different groups.
    */
   findByCourseForGroups(

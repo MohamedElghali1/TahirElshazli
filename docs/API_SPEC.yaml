@@ -256,15 +256,35 @@ components:
         name:         { type: string }
         courseId:     { $ref: '#/components/schemas/Id' }
         courseTitle:  { type: string }
+        # DISPLAY ONLY. Who runs this group. It is NEVER an authorization
+        # input: what an assistant may reach is decided from
+        # `assistant_group_assignments` + `assistant_scopes`, and the two are
+        # allowed to disagree.
         assistantId:  { type: [string, 'null'] }
         assistantName: { type: [string, 'null'] }
         meets:        { type: [string, 'null'], maxLength: 120 }
         room:         { type: [string, 'null'], maxLength: 80 }
         memberCount:  { type: integer }
 
+    # POST body. `name` and `courseId` are both required: a group IS a cohort
+    # studying one named course (migration 013), so neither half can be left out
+    # and have the row still mean anything. `assistantId` is DISPLAY ONLY and
+    # grants nothing - see `Group.assistantId`.
     GroupWrite:
       type: object
       required: [name, courseId]
+      properties:
+        name:         { type: string, minLength: 1, maxLength: 120 }
+        courseId:     { $ref: '#/components/schemas/Id' }
+        assistantId:  { type: [string, 'null'] }
+        meets:        { type: [string, 'null'], maxLength: 120 }
+        room:         { type: [string, 'null'], maxLength: 80 }
+
+    # PATCH body. Every field optional; an explicit null clears a nullable one,
+    # and an omitted field is left alone.
+    GroupPatch:
+      type: object
+      minProperties: 1
       properties:
         name:         { type: string, minLength: 1, maxLength: 120 }
         courseId:     { $ref: '#/components/schemas/Id' }
@@ -659,27 +679,97 @@ paths:
         '429': { $ref: '#/components/responses/TooManyRequests' }
 
   # --- Groups -------------------------------------------------------------
-  /admin/groups/{groupId}:
-    parameters:
-      - { name: groupId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
-    patch:
+  #
+  # `POST /admin/groups/{groupId}/courses` and
+  # `DELETE /admin/groups/{groupId}/courses/{courseId}` were RETIRED by `DOM-1`
+  # (2026-09-20). A group's course is a field on the group, so adding and
+  # removing one is the PATCH below. Both paths now answer 404.
+  /admin/groups:
+    get:
       tags: [groups]
+      summary: The group console list
       x-roles: [teacher, admin]
+      parameters:
+        - { name: limit,  in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Group' }
+    post:
+      tags: [groups]
+      summary: Create a group
+      description: >
+        Enrols no students. `Enrollment` remains the access gate, so naming a
+        course on a group grants nobody anything.
+      x-roles: [teacher, admin]
+      x-audit: group.created
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/GroupWrite' }
       responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Group' }
+        '404':
+          description: >
+            No such course, or a course this staff member may not reach — one
+            message for both, so an assistant cannot enumerate the catalog.
+
+  /admin/groups/{groupId}:
+    parameters:
+      - { name: groupId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    get:
+      tags: [groups]
+      summary: One group, with its member count
+      x-roles: [teacher, admin]
+      responses:
         '200':
           description: OK
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Group' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [groups]
+      summary: Edit a group — name, course, assistant, meets, room
+      description: >
+        Replaces the rename-only PATCH and the two retired
+        `/groups/{groupId}/courses` routes. Changing the course of a group that
+        has members is refused with 409: every member would be left enrolled on
+        the old course while being targeted by work set for the new one.
+      x-roles: [teacher, admin]
+      x-audit: group.updated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GroupPatch' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Group' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The group has members and the course would change.
     delete:
       tags: [groups]
       x-roles: [teacher, admin]
-      description: Refused while the group has members or sessions.
+      description: >
+        Refused while the group has members or sessions. **Target only — not
+        implemented.** There is deliberately no delete on `GroupRepository`: a
+        group carries placement history, and §9's convention is soft-delete
+        where history matters. Removing one has not been asked for.
       responses:
         '204': { description: Deleted }
         '409': { $ref: '#/components/responses/Conflict' }

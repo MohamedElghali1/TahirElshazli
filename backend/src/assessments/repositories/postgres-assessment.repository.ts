@@ -191,8 +191,8 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
    * `DISTINCT ON (a.id)` with the ORDER BY below is what makes a student in two
    * groups see one row rather than two, and see it on the *longest-standing*
    * placement's terms: `array_position` ranks by the caller's group order,
-   * which arrives longest-standing first from `LearningModeService`'s own
-   * ordering. Without it a due date and a learning mode could resolve through
+   * which arrives longest-standing first from `StudentGroupsService`'s own
+   * ordering. Without it a due date and a classmate list could resolve through
    * different groups for the same student, which is a support call nobody could
    * answer.
    *

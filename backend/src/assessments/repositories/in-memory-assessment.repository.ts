@@ -332,9 +332,9 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
     }
     // Order matters: `groupIds` arrives longest-standing placement first, and
     // the first target found wins, so a student in two groups given the same
-    // task sees one row on the same group's terms that `LearningModeService`
-    // picked. A due date and a learning mode resolving through different groups
-    // would be a genuinely baffling support call.
+    // task sees one row on the same group's terms that `StudentGroupsService`
+    // picked. A due date and a classmate list resolving through different
+    // groups would be a genuinely baffling support call.
     const seen = new Map<string, TargetedAssessment>();
     for (const groupId of groupIds) {
       for (const target of this.targets) {

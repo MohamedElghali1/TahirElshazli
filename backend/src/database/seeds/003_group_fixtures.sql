@@ -21,22 +21,22 @@
 -- fail the "two groups on one course must not see each other" test, the same
 -- way 002's unassigned course is what makes the TA scoping test meaningful.
 
-INSERT INTO groups (id, name, teacher_id, created_at) VALUES
-  ('group-1', 'IGCSE Chemistry — Saturday 18:00', 'teacher-1', '2026-01-15T09:00:00Z'),
-  ('group-2', 'IGCSE Chemistry — Tuesday 20:00',  'teacher-1', '2026-05-20T09:00:00Z')
-ON CONFLICT (id) DO NOTHING;
-
 -- group-1 studies course-1; group-2 studies course-2. Two groups on two
 -- different courses is what makes 002's unassigned third course a meaningful
 -- TA-scoping fixture.
 --
--- No `learning_mode`: retired by migration 012 (`D-9`). Every course is now
--- taught one way - recordings *and* live sessions - so the two groups no longer
--- differ in kind, only in which course they study.
-INSERT INTO group_courses (id, group_id, course_id, enrolled_at, enrolled_by) VALUES
-  ('group-course-1', 'group-1', 'course-1', '2026-01-15T09:00:00Z', 'teacher-1'),
-  ('group-course-2', 'group-2', 'course-2', '2026-05-20T09:00:00Z', 'teacher-1')
-ON CONFLICT (group_id, course_id) DO NOTHING;
+-- `course_id` is a column here rather than a `group_courses` row: migration 013
+-- collapsed the join table. `learning_mode` is gone with migration 012 (`D-9`).
+--
+-- **`assistant_id` on group-1 is a DISPLAY fact and grants nothing.** It is set
+-- and `assistant-1` has no group assignment, deliberately - the fixtures are
+-- where a test can prove that naming an assistant on a group does not let them
+-- reach it (`AUTH-2`). If those two ever agree by default, the test that would
+-- have caught them being conflated stops being able to.
+INSERT INTO groups (id, name, teacher_id, course_id, assistant_id, meets, room, created_at) VALUES
+  ('group-1', 'IGCSE Chemistry — Saturday 18:00', 'teacher-1', 'course-1', 'assistant-1', 'Saturday 18:00', NULL, '2026-01-15T09:00:00Z'),
+  ('group-2', 'IGCSE Chemistry — Tuesday 20:00',  'teacher-1', 'course-2', NULL,          'Tuesday 20:00',  NULL, '2026-05-20T09:00:00Z')
+ON CONFLICT (id) DO NOTHING;
 
 -- `assigned_by` differs across these rows on purpose: one placement by the
 -- teacher and one by an assistant is what makes an audit-log read of §5.4's

@@ -8,6 +8,7 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
 import {
   DEFAULT_GROUP_PAGE_SIZE,
@@ -22,6 +23,13 @@ import {
  */
 const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 
+/**
+ * The whole of a group, as a request body. `API_SPEC.yaml`'s `GroupWrite`.
+ *
+ * Both required fields are required for the same reason: a group now *is* a
+ * cohort studying one named course (migration 013), so neither half of that
+ * sentence can be left out and have a row still mean anything.
+ */
 export class CreateGroupDto {
   /**
    * The group's name, and it is the whole identity of the row - "IGCSE
@@ -33,17 +41,83 @@ export class CreateGroupDto {
   @MinLength(1)
   @MaxLength(120)
   name!: string;
-}
 
-export class RenameGroupDto extends CreateGroupDto {}
-
-export class AddGroupCourseDto {
   @IsString()
   @MaxLength(64)
   @Matches(ID_PATTERN, {
     message: 'courseId must contain only letters, digits, hyphens and underscores',
   })
   courseId!: string;
+
+  /**
+   * Who runs this group. **Display only** - it grants nothing. What an
+   * assistant may reach is `assistant_group_assignments` (`AUTH-2`), decided by
+   * `StaffScopeService`. `null` clears the field.
+   */
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @MaxLength(64)
+  @Matches(ID_PATTERN, {
+    message: 'assistantId must contain only letters, digits, hyphens and underscores',
+  })
+  assistantId?: string | null;
+
+  /** When the group meets, as free text - "Saturday 18:00". */
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @MaxLength(120)
+  meets?: string | null;
+
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @MaxLength(80)
+  room?: string | null;
+}
+
+/**
+ * The PATCH body: every field optional, including `name` and `courseId`.
+ *
+ * Not `PartialType(CreateGroupDto)` - `@nestjs/mapped-types` is not a
+ * dependency here, and repeating five decorators is cheaper than adding one.
+ */
+export class UpdateGroupDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  @Matches(ID_PATTERN, {
+    message: 'courseId must contain only letters, digits, hyphens and underscores',
+  })
+  courseId?: string;
+
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @MaxLength(64)
+  @Matches(ID_PATTERN, {
+    message: 'assistantId must contain only letters, digits, hyphens and underscores',
+  })
+  assistantId?: string | null;
+
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @MaxLength(120)
+  meets?: string | null;
+
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @MaxLength(80)
+  room?: string | null;
 }
 
 export class AddGroupMemberDto {

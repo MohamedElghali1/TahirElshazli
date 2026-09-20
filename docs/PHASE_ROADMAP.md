@@ -167,16 +167,40 @@ already handled in `postgres-work.repository.ts`. Real output: `docs/phases/unit
 
 ---
 
-### Chat unit 2 — Domain reshaping `[ ]`
+### Chat unit 2 — Domain reshaping **— SPLIT into 2a and 2b (ruling R-1, 2026-09-20)**
 
-**Scope** **`DOM-0`** (new: retire `learning_mode`, `D-9` — sequence it **first**), `DOM-1` … `DOM-6`, **plus `AUTH-2`** (re-homed from unit 1 on 2026-09-19, to sit
-immediately after `DOM-1` and beside `DOM-2`). Collapse `group_courses` → `groups.course_id`; group
-columns; student profile columns; registration approval; course CRUD; regenerate seeds; course
-scoping → group scoping.
-**Depends on** unit 0. `DOM-4` and `AUTH-2` depend on `AUTH-1` (unit 1, built).
-**Migrations** 012, 013, 014. **Not `011`** — unit 1 shipped `011_full_admin_role.sql` with the two
-role CHECK widenings and nothing else, and a migration file is immutable once the ledger records it
-by filename, so `DOM-4` takes its own number.
+The unit was measured, not estimated, and found too large for one safe pass: four migrations, three
+destructive, one of them one-way; 46 source files carrying `learning_mode` logic; two new tables
+(four repository implementations); five frontend-visible response shapes; 22 `StaffScopeService`
+call sites. Roughly units 1, 3 and 5 combined. **The boundary is itself a verified migration gate** —
+`015`'s backfill joins `groups.course_id`, and `DATABASE_PLAN.md` requires `013` landed and verified
+first — and it puts the two irreversible `DROP TABLE`s in different reviews.
+
+#### Unit 2a — the group becomes the centre `[x]`
+
+**Scope** `DOM-0`, `DOM-1`, `DOM-2`, the migration renumber, and seeds for those.
+**Migrations** `012_retire_learning_mode.sql`, `013_group_holds_one_course.sql`. **Both run against
+real PostgreSQL 15 from an empty schema.**
+**Binding condition on 2a (ruling R-1):** `groups.assistant_id` is the **display** field;
+`assistant_group_assignments` (2b) is the **authorization** field. **Nothing may read
+`groups.assistant_id` for an access decision, ever.** Stated on the column, on the interface field,
+in the frontend mirror, and asserted by an e2e test.
+**Exit, met** 470 unit · 217 e2e · 87 integration from an empty schema, 0 skipped; `frontend/lib/`
+at 0 typecheck errors; `group_courses` referenced nowhere outside migrations 006/007/013.
+**Landed** 2026-09-20. See `docs/phases/unit-2/EXECUTION_NOTES.md`.
+
+#### Unit 2b — scope, people and courses `[ ]`
+
+**Scope** `DOM-3`, `DOM-4`, `AUTH-2`, `DOM-5`, the final `DOM-6` pass. Student profile columns;
+registration approval; course scoping → group scoping; course CRUD.
+**Depends on** unit 2a (verified `013`). `DOM-4` and `AUTH-2` depend on `AUTH-1` (unit 1, built).
+**Migrations** `014_registration_and_student_profile.sql`, `015_assistant_group_scope.sql`.
+**Not authored in 2a, not even as empty files** — a `014` present with no `013` applies straight
+after `012` and aborts every boot.
+**Rulings carried in:** R-2 — `students.mode` is **not built**, `D-4` stands, and `DOM-3` amends the
+five documents that still say otherwise. R-4 — `StaffCourseSummary.assignedAt` becomes
+`MIN(assigned_at)` over the groups that reach the course.
+**Begins in a new conversation** (`CLAUDE.md` §14).
 **Inherited trap for `AUTH-2`:** when `course_staff_assignments` is retired, **do not remove**
 `course_staff.assigned` / `course_staff.unassigned` from the `AuditAction` union or
 `course_staff_assignment` from `AuditTargetType`. The audit log has no foreign keys precisely so it
@@ -187,8 +211,10 @@ that service's attribution is already correct going in.
 **Risk — the highest in the project.** `DOM-1` is **destructive and one-way**. The migration must
 **raise** if any group holds two courses, never guess. It touches `GroupRepository` ×2,
 `LearningModeService`, `StudentGroupsService`, the dashboard, reports and assessments.
-**Tests** integration from an empty schema; a test proving the migration aborts on two-course data;
-`LearningModeService`'s fallback chain still resolves for an unplaced student.
+**Tests** integration from an empty schema; tests proving the migration aborts on two-course data
+**and** on a group with no course; a student in no group resolves to `[]` rather than throwing.
+*(That last case replaces `LearningModeService`'s fallback-chain test — the chain is deleted, the
+case it protected is not.)* **All done in 2a.**
 **Security** `POST /courses/:id/enroll` becomes staff-only. **Keep `CoursesService.enroll`** — only
 the route moves. Accept/reject are audited.
 **Exit** universal, plus: no code path reads `group_courses`; `DATABASE_PLAN.md` §4.1 reconciled with

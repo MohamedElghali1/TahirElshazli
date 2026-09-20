@@ -85,36 +85,80 @@ Every new table needs **two** repository implementations and an entry in
 
 ## 4. Structural changes — the risky ones
 
-### 4.1 `group_courses` → `groups.course_id` **(destructive, one-way)**
+### 4.1 `group_courses` → `groups.course_id` **(destructive, one-way)** — **SHIPPED as `013`**
 
 The client chose one course per group. `CLAUDE.md` §6.1 argued the opposite and called a `course_id`
 column *"the expensive mistake here… a one-way door that a join table is not."* The decision stands;
 this records that it was made knowingly.
 
-```
-ALTER TABLE groups ADD COLUMN course_id TEXT REFERENCES courses(id);
-ALTER TABLE groups ADD COLUMN learning_mode TEXT CHECK (learning_mode IN ('recorded','live'));
+**Reconciled 2026-09-20 with what actually ran** (unit 2 slice 2a,
+`backend/src/database/migrations/013_group_holds_one_course.sql`). Three differences from the DDL
+this section previously held, each deliberate:
 
--- Refuse rather than guess if any group studies two courses.
-DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM group_courses GROUP BY group_id HAVING count(*) > 1) THEN
-    RAISE EXCEPTION 'A group studies more than one course; collapse it by hand first.';
+1. **No `learning_mode`.** `D-9` retired the axis; migration `012` drops the column a day before
+   `013` would have carried it.
+2. **A second `RAISE EXCEPTION`, for a group with ZERO courses.** This section did not name that
+   path, and it is reachable — `GroupRepository.create` made a group with no course at all, which is
+   exactly the shape migration 006 was built to allow. Without the guard, `SET NOT NULL` fails with
+   a bare constraint violation naming a column rather than a group.
+3. **Both messages name the offending group**, via `string_agg(g.name, ', ')`. An operator who has
+   to fix this by hand needs to know which group, and the exception is the only place they will
+   look.
+
+`DOM-2`'s three columns ride along in the same file — same table, same `ALTER`, same unit.
+
+```sql
+ALTER TABLE groups ADD COLUMN course_id    TEXT REFERENCES courses (id);
+ALTER TABLE groups ADD COLUMN assistant_id TEXT REFERENCES users (id);  -- DISPLAY ONLY
+ALTER TABLE groups ADD COLUMN meets        TEXT;
+ALTER TABLE groups ADD COLUMN room         TEXT;                        -- kept, ruling R-3
+
+DO $$
+DECLARE offending TEXT;
+BEGIN
+  SELECT string_agg(g.name, ', ') INTO offending FROM groups g
+   WHERE (SELECT count(*) FROM group_courses gc WHERE gc.group_id = g.id) > 1;
+  IF offending IS NOT NULL THEN
+    RAISE EXCEPTION 'A group studies more than one course; collapse it by hand first: %', offending;
+  END IF;
+
+  SELECT string_agg(g.name, ', ') INTO offending FROM groups g
+   WHERE NOT EXISTS (SELECT 1 FROM group_courses gc WHERE gc.group_id = g.id);
+  IF offending IS NOT NULL THEN
+    RAISE EXCEPTION 'A group studies no course; assign one by hand first: %', offending;
   END IF;
 END $$;
 
-UPDATE groups g SET course_id = gc.course_id, learning_mode = gc.learning_mode
-  FROM group_courses gc WHERE gc.group_id = g.id;
-
+UPDATE groups g SET course_id = gc.course_id FROM group_courses gc WHERE gc.group_id = g.id;
 ALTER TABLE groups ALTER COLUMN course_id SET NOT NULL;
-ALTER TABLE groups ALTER COLUMN learning_mode SET NOT NULL;
 DROP TABLE group_courses;
+
+CREATE INDEX groups_course_id_idx    ON groups (course_id);
+CREATE INDEX groups_assistant_id_idx ON groups (assistant_id);
 ```
 
-**The `RAISE EXCEPTION` guard is the important part.** Silently picking one of two courses would
+**The `RAISE EXCEPTION` guards are the important part.** Silently picking one of two courses would
 corrupt every session, task and report hanging off that group, and nothing downstream would notice.
+**Both abort paths have a named integration test, written before the happy path was validated**
+(`postgres-repositories.integration-spec.ts`, `describe('migration 013 refuses rather than
+guessing')`). Each runs in its own Postgres schema, applies 001–012 by hand, offers `013` the bad
+data, and asserts it throws **and** that `group_courses` survives and `groups.course_id` is absent —
+the transaction rolling back whole, with no ledger row.
 
-**Blast radius:** `GroupRepository` (both drivers), `LearningModeService`, `StudentGroupsService`,
-`GroupsService`, the dashboard, reports, assessments targeting, and the seed fixtures.
+**`groups.assistant_id` is a display field and never an authorization input.** Binding ruling R-1,
+2026-09-20. What an assistant may reach is `assistant_group_assignments` + `assistant_scopes`
+(§4.2), through `StaffScopeService` and nowhere else. The rule is stated on the column, on the
+`Group` interface, and in the frontend mirror, because the two facts look interchangeable and are
+not: the moment a query reads `assistant_id` to decide access there are two disagreeing answers to
+"may this person see this group".
+
+`groups_course_id_idx` is required, not optional — it is the join the rewritten `assertAssigned`
+will run on every assistant request (§4.2).
+
+**Blast radius, as it landed:** `GroupRepository` (both drivers), `StudentGroupsService`,
+`GroupsService`, `ClassmatesService`, `AssessmentAuthoringService`, `AdminGroupsController`, the
+`group.dto.ts` DTOs, `seeds/003`, the frontend mirror, and five e2e/integration blocks.
+`LearningModeService` was already deleted by `012`.
 
 ### 4.2 `course_staff_assignments` → `assistant_group_assignments`
 
@@ -253,8 +297,8 @@ into unit 2 on 2026-09-19 (`CHANGELOG.md`), and why unit 2 was split into 2a (`0
 |---|---|
 | A group studying two courses | Migration raises rather than guessing (§4.1) |
 | A course with two groups, when re-parenting sessions | Same (§4.4) |
-| Seed fixtures break on 013/`users.status` | **Regenerate, don't migrate** — the precedent is `CLAUDE.md` §7.1's call on assessment targeting: fixtures exist to make a dev database useful, and preserving them would add permanent concepts to protect throwaway rows |
-| Migrations 009 and 010 have never run against real Postgres | **Still open as of 2026-09-19.** The mitigation was "run the integration suite before authoring 011"; it was **not** met — `011` was authored unverified on the user's direction, because there is no reachable PostgreSQL on the development machine (Docker daemon down). `011` is the lowest-risk migration in the plan — two CHECK widenings, strictly looser, no data loss possible — which is what makes proceeding defensible where it would not be for `013`. **The exposure that remains:** `011` will be applied for the first time in the same run as 009 and 010, and the runner stops at the first failing file, so a defect in either **masks `011` entirely**. Named candidates in `docs/phases/unit-1/PHASE_PLAN.md` §9 R-2 — the likeliest is `010`'s `NUMERIC(10,2)` columns, which `pg` returns as **strings**, invisible on the memory driver where the fixture is a JS number |
+| Seed fixtures break on 012/013/`users.status` | **Regenerate, don't migrate** — the precedent is `CLAUDE.md` §7.1's call on assessment targeting: fixtures exist to make a dev database useful, and preserving them would add permanent concepts to protect throwaway rows |
+| Migrations 009 and 010 have never run against real Postgres | **CLOSED 2026-09-20.** All of 001–013 now run from an empty schema against PostgreSQL 15 on every integration run, and 009/010 applied cleanly on their first real run — the `NUMERIC(10,2)`-as-string candidate below did not materialise, because nothing reads those columns through a repository yet. The historical note follows. ~~**Still open as of 2026-09-19.** The mitigation was "run the integration suite before authoring 011"; it was **not** met — `011` was authored unverified on the user's direction, because there is no reachable PostgreSQL on the development machine (Docker daemon down). `011` is the lowest-risk migration in the plan — two CHECK widenings, strictly looser, no data loss possible — which is what makes proceeding defensible where it would not be for `013`. **The exposure that remains:** `011` will be applied for the first time in the same run as 009 and 010, and the runner stops at the first failing file, so a defect in either **masks `011` entirely**. Named candidates in `docs/phases/unit-1/PHASE_PLAN.md` §9 R-2 — the likeliest is `010`'s `NUMERIC(10,2)` columns, which `pg` returns as **strings**, invisible on the memory driver where the fixture is a JS number~~ |
 | An audit action added to the union but not the DTO's exhaustive `Record` | Compile error by construction — keep that pattern for all ~17 new actions |
 | In-memory and Postgres drivers drifting | Every new table gets both, and an integration test; the suite already covers all 17 existing pairs |
 
@@ -268,6 +312,14 @@ TEST_DATABASE_URL=postgres://… npm run test:integration --workspace=backend
 
 against an **empty schema**, so every migration runs in order. CI already fails the job if the suite
 reports zero executed tests — a self-skipping suite is otherwise indistinguishable from a passing
-one. After 013 and 018 specifically, assert the post-conditions directly against the database
+one. After 013 and 019 specifically, assert the post-conditions directly against the database
 (column dropped, constraint present, row counts preserved) rather than only through the repository
 layer, which is how 008's first run was verified.
+
+**Done for 013** (2026-09-20): `describe('migration 013 refuses rather than guessing')` asserts, in
+its own schema, that both abort paths throw with the group named, that a refusal leaves
+`group_courses` intact and `groups.course_id` absent, and that a sound collapse preserves the group
+row count exactly, leaves `course_id` `NOT NULL`, drops the join table and creates both indexes.
+`describe('groups')` additionally asserts that a group with no `course_id` is refused by the
+database rather than by the repository — which is what makes "a group studies exactly one course" a
+schema fact rather than a convention.

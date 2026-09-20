@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   NotFoundException,
@@ -17,7 +18,7 @@ import type { StaffActor } from '../staff/staff-scope.service.js';
 import { StaffScopeService } from '../staff/staff-scope.service.js';
 import type {
   Group,
-  GroupCourse,
+  GroupPatch,
   GroupRepository,
 } from './interfaces/group-repository.interface.js';
 import { GROUP_REPOSITORY } from './interfaces/group-repository.interface.js';
@@ -25,10 +26,22 @@ import { GROUP_REPOSITORY } from './interfaces/group-repository.interface.js';
 export const MAX_GROUP_PAGE_SIZE = 100;
 export const DEFAULT_GROUP_PAGE_SIZE = 50;
 
-/** One group as a console row: the group, what it studies, how many sit in it. */
+/** One group as a console row: the group, and how many sit in it. */
 export interface GroupSummary extends Group {
-  courses: GroupCourse[];
   memberCount: number;
+}
+
+/**
+ * The whole of a group, as written. Matches `API_SPEC.yaml`'s `GroupWrite` and
+ * the shape `CreateGroupDto` validates; the service takes the shape rather than
+ * the DTO class so it stays free of the HTTP boundary (`ARCHITECTURE.md` §6).
+ */
+export interface GroupWrite {
+  name: string;
+  courseId: string;
+  assistantId?: string | null;
+  meets?: string | null;
+  room?: string | null;
 }
 
 /** One member of a group. Deliberately not `StoredUser` - see `members`. */
@@ -51,10 +64,14 @@ export interface GroupMemberView {
  * set, which makes "who moved them" a question the log has to be able to
  * answer.
  *
- * **A group is not an access grant.** Adding a course to a group enrolls
- * nobody and placing a student grants them nothing (§5.16, answered
- * 2026-09-10). `Enrollment` stays the only gate on course content, which is
- * what keeps the payment question (§5.12) out of this file entirely.
+ * **A group is not an access grant.** A group naming a course enrols nobody
+ * and placing a student grants them nothing (§5.16, answered 2026-09-10).
+ * `Enrollment` stays the only gate on course content (`DOMAIN_MODEL.md:98`),
+ * which is what keeps the payment question (§5.12) out of this file entirely.
+ *
+ * **`assistantId` is display only.** It says who runs a group; it never decides
+ * who may reach one. See the interface, and migration 013's comment on the
+ * column.
  */
 @Injectable()
 export class GroupsService {
@@ -85,28 +102,18 @@ export class GroupsService {
     const counts = await this.groupRepo.countMembersByGroups(
       groups.map((g) => g.id),
     );
-    // `findCourses` per group is the one N+1 left here, and it is bounded by
-    // the page rather than by the data: a group studies one or two courses and
-    // a page is fifty groups. A `findCoursesByGroups` batch is the fix if the
-    // console ever feels slow; at ten groups (§7.3) it is fifty primary-key
-    // lookups that never happen because there are not fifty groups.
-    const courses = await Promise.all(
-      groups.map((group) => this.groupRepo.findCourses(group.id)),
-    );
-    return groups.map((group, index) => ({
+    // The per-group `findCourses` N+1 this used to carry is gone with the join
+    // table: the course is a column on the row already read.
+    return groups.map((group) => ({
       ...group,
-      courses: courses[index],
       memberCount: counts[group.id] ?? 0,
     }));
   }
 
   async get(groupId: string): Promise<GroupSummary> {
     const group = await this.requireGroup(groupId);
-    const [courses, members] = await Promise.all([
-      this.groupRepo.findCourses(groupId),
-      this.groupRepo.findMembers(groupId),
-    ]);
-    return { ...group, courses, memberCount: members.length };
+    const members = await this.groupRepo.findMembers(groupId);
+    return { ...group, memberCount: members.length };
   }
 
   /**
@@ -141,120 +148,119 @@ export class GroupsService {
     });
   }
 
-  async create(actor: StaffActor, name: string): Promise<Group> {
+  /**
+   * Creates a group. A group now names its course at birth (migration 013), so
+   * unlike before there is no "created, then enrolled in something" state.
+   */
+  async create(actor: StaffActor, input: GroupWrite): Promise<Group> {
     return this.db.runInTransaction(async () => {
-      const group = await this.groupRepo.create({ name, teacherId: actor.id });
+      await this.requireCourse(input.courseId, actor);
+      const group = await this.groupRepo.create({
+        name: input.name,
+        teacherId: actor.id,
+        courseId: input.courseId,
+        assistantId: input.assistantId ?? null,
+        meets: input.meets ?? null,
+        room: input.room ?? null,
+      });
       await this.audit.record({
         actorId: actor.id,
         actorRole: actorRoleOf(actor),
         action: 'group.created',
         targetType: 'group',
         targetId: group.id,
-        // No course: a group is created before it studies anything (§5.16).
-        courseId: null,
+        courseId: group.courseId,
         before: null,
-        after: { name: group.name, teacherId: group.teacherId },
+        after: {
+          name: group.name,
+          teacherId: group.teacherId,
+          courseId: group.courseId,
+          assistantId: group.assistantId,
+        },
       });
       return group;
     });
   }
 
-  async rename(
+  /**
+   * The widened PATCH: name, course, assistant, meets, room. Replaces `rename`,
+   * which was the one-field case of this.
+   *
+   * **Moving a populated group to another course is refused with 409.** That is
+   * an assumption, ratified by the coordinator on 2026-09-20 rather than
+   * derived from a requirement, so it is labelled: `DOMAIN_MODEL.md:98-100`
+   * makes `Enrollment` the access gate, which means silently re-pointing a
+   * group full of students would leave every member enrolled on the *old*
+   * course while being targeted by work set for the *new* one - visible as
+   * tasks they cannot open. Re-cohorting is a real operation, but it is several
+   * decisions (who re-enrols, what happens to existing submissions) and none of
+   * them has been asked. Refusing is the reversible half.
+   */
+  async update(
     groupId: string,
+    patch: GroupPatch,
     actor: StaffActor,
-    name: string,
   ): Promise<Group> {
     return this.db.runInTransaction(async () => {
       // Read before the write, so `before` is the old value and not an alias of
       // the new one. Both repositories return copies for exactly this reason
       // (§7.1: the before/after aliasing defect, found twice).
       const before = await this.requireGroup(groupId);
-      const after = await this.groupRepo.rename(groupId, name);
+
+      if (patch.courseId !== undefined && patch.courseId !== before.courseId) {
+        await this.requireCourse(patch.courseId, actor);
+        const members = await this.groupRepo.findMembers(groupId);
+        if (members.length > 0) {
+          throw new ConflictException(
+            'This group has members; move them out before changing its course.',
+          );
+        }
+      }
+
+      const after = await this.groupRepo.update(groupId, patch);
       if (!after) {
         throw new NotFoundException('Group not found');
       }
       await this.audit.record({
         actorId: actor.id,
         actorRole: actorRoleOf(actor),
-        action: 'group.renamed',
+        action: 'group.updated',
         targetType: 'group',
         targetId: groupId,
-        courseId: null,
-        before: { name: before.name },
-        after: { name: after.name },
+        courseId: after.courseId,
+        before: {
+          name: before.name,
+          courseId: before.courseId,
+          assistantId: before.assistantId,
+          meets: before.meets,
+          room: before.room,
+        },
+        after: {
+          name: after.name,
+          courseId: after.courseId,
+          assistantId: after.assistantId,
+          meets: after.meets,
+          room: after.room,
+        },
       });
       return after;
     });
   }
 
   /**
-   * Enrolls a group in a course - the client's verb.
-   *
-   * Scoped: an admin reaches any course, a TA only one they hold. That is
-   * `StaffScopeService`'s single decision, and under the current posture
-   * (§5.11.1) it is the one place that would change if TAs stop being scoped.
-   *
-   * Enrolls **no students** (§5.16).
+   * The course must exist and the actor must be able to reach it. Scoped: an
+   * admin reaches any course, an assistant only one they hold. That is
+   * `StaffScopeService`'s single decision.
    */
-  async addCourse(
-    groupId: string,
-    courseId: string,
-    actor: StaffActor,
-  ): Promise<GroupCourse> {
-    return this.db.runInTransaction(async () => {
-      await this.requireGroup(groupId);
-      await this.scope.assertAssigned(courseId, actor);
-      const course = await this.courseRepo.findById(courseId);
-      if (!course) {
-        throw new NotFoundException('Course not found');
-      }
-      const pairing = await this.groupRepo.addCourse({
-        groupId,
-        courseId,
-        enrolledBy: actor.id,
-      });
-      await this.audit.record({
-        actorId: actor.id,
-        actorRole: actorRoleOf(actor),
-        action: 'group.course_added',
-        targetType: 'group_course',
-        targetId: pairing.id,
-        courseId,
-        before: null,
-        after: { groupId, courseId },
-      });
-      return pairing;
-    });
-  }
-
-  async removeCourse(
-    groupId: string,
+  private async requireCourse(
     courseId: string,
     actor: StaffActor,
   ): Promise<void> {
-    return this.db.runInTransaction(async () => {
-      await this.requireGroup(groupId);
-      await this.scope.assertAssigned(courseId, actor);
-      // Snapshot first: the row is gone by the time the entry is written, and an
-      // entry that cannot say what was removed is evidence-shaped and empty.
-      const existing = (await this.groupRepo.findCourses(groupId)).find(
-        (gc) => gc.courseId === courseId,
-      );
-      if (!existing) {
-        throw new NotFoundException('That group does not study this course');
-      }
-      await this.groupRepo.removeCourse(groupId, courseId);
-      await this.audit.record({
-        actorId: actor.id,
-        actorRole: actorRoleOf(actor),
-        action: 'group.course_removed',
-        targetType: 'group_course',
-        targetId: existing.id,
-        courseId,
-        before: { groupId, courseId },
-        after: null,
-      });
-    });
+    await this.scope.assertAssigned(courseId, actor);
+    const course = await this.courseRepo.findById(courseId);
+    if (!course) {
+      throw new NotFoundException('Course not found');
+    }
   }
 
   /**
@@ -262,9 +268,9 @@ export class GroupsService {
    *
    * **No enrollment precondition, deliberately.** The client's workflow is
    * *"enrolled then grouped"* (§5.16) and this method does not enforce it as a
-   * constraint, because a group's course list changes after placement - add a
-   * second course to a group next term and every existing member would
-   * retroactively violate a rule checked at placement time. Enrollment stays
+   * constraint, because a group's course can change after placement - and a
+   * rule checked only at placement time would be retroactively violated by
+   * every existing member the moment it did. Enrollment stays
    * the access gate at read time, so a student placed in a group studying a
    * course they do not hold simply reads nothing from it; nothing is granted by
    * being placed.
@@ -358,21 +364,14 @@ export class GroupsService {
     actor: StaffActor,
   ): Promise<GroupSummary[]> {
     await this.scope.assertAssigned(courseId, actor);
-    const pairings = await this.groupRepo.findGroupCoursesByCourse(courseId);
-    const groups = await this.groupRepo.findByIds(
-      pairings.map((p) => p.groupId),
-    );
+    // One indexed read where this used to be two: the course is a column on
+    // the group now, so there is no pairing to resolve back into groups.
+    const groups = await this.groupRepo.findByCourse(courseId);
     const counts = await this.groupRepo.countMembersByGroups(
       groups.map((g) => g.id),
     );
-    const byGroup = new Map(pairings.map((p) => [p.groupId, p]));
     return groups.map((group) => ({
       ...group,
-      // Only this course's pairing, not every course the group studies - the
-      // caller asked about one course and the tab renders one row per group.
-      courses: [byGroup.get(group.id)].filter(
-        (pairing): pairing is GroupCourse => pairing !== undefined,
-      ),
       memberCount: counts[group.id] ?? 0,
     }));
   }

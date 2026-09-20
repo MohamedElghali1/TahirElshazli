@@ -17,9 +17,9 @@ import type {
   GradingQueueResponse,
   GradingStatus,
   Group,
-  GroupCourse,
   GroupMemberView,
   GroupSummary,
+  GroupWrite,
   LiveSession,
   LiveSessionListResponse,
   ManageOverview,
@@ -812,36 +812,36 @@ export const api = {
        same call made for live-session scheduling (CLAUDE.md §11). */
     groups: (token: string) => request<GroupSummary[]>('/admin/groups', { token }),
 
-    createGroup: (token: string, name: string) =>
-      request<Group>('/admin/groups', { method: 'POST', token, body: { name } }),
+    /**
+     * A group names its course at creation. Creating one enrols no students:
+     * `Enrollment` stays the access gate (§5.16), which is what keeps the
+     * payment question out of this surface.
+     */
+    createGroup: (
+      token: string,
+      body: {
+        name: string;
+        courseId: string;
+        assistantId?: string | null;
+        meets?: string | null;
+        room?: string | null;
+      },
+    ) => request<Group>('/admin/groups', { method: 'POST', token, body }),
 
-    renameGroup: (token: string, groupId: string, name: string) =>
+    /**
+     * Name, course, assistant, meets, room. Replaces the rename-only PATCH and
+     * the two retired `/groups/:id/courses` routes at once - a group's course
+     * is a field on it now, so changing it is editing the group.
+     *
+     * Moving a group that has members to another course answers **409**: every
+     * member would be left enrolled on the old course while being targeted by
+     * work set for the new one.
+     */
+    updateGroup: (token: string, groupId: string, body: GroupWrite) =>
       request<Group>(`/admin/groups/${groupId}`, {
         method: 'PATCH',
         token,
-        body: { name },
-      }),
-
-    /**
-     * Enrolls a *group* in a course - the client's verb. It enrolls no
-     * students: `Enrollment` stays the access gate (§5.16), which is what
-     * keeps the payment question out of this surface.
-     */
-    addGroupCourse: (
-      token: string,
-      groupId: string,
-      body: { courseId: string },
-    ) =>
-      request<GroupCourse>(`/admin/groups/${groupId}/courses`, {
-        method: 'POST',
-        token,
         body,
-      }),
-
-    removeGroupCourse: (token: string, groupId: string, courseId: string) =>
-      request<void>(`/admin/groups/${groupId}/courses/${courseId}`, {
-        method: 'DELETE',
-        token,
       }),
 
     students: (token: string, search?: string) =>

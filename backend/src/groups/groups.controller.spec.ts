@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { vi } from 'vitest';
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
@@ -111,35 +112,18 @@ describe('Groups', () => {
   const entries = async () =>
     (await audit.find({ limit: 50 })).entries;
 
-  describe('a group is a class of students, not a subdivision of a course', () => {
-    it('is created with no course and can then study more than one', async () => {
-      const group = await admin.create({ name: 'IELTS — Friday' }, ADMIN);
-      // The shape CLAUDE.md §5.16 insisted on: nothing about a course here.
-      expect(group).not.toHaveProperty('courseId');
-
-      await admin.addCourse(
-        group.id,
-        { courseId: 'course-1' },
+  describe('a group studies exactly one course (DOM-1)', () => {
+    it('names its course at creation', async () => {
+      const group = await admin.create(
+        { name: 'IELTS — Friday', courseId: 'course-2' },
         ADMIN,
       );
-      await admin.addCourse(
-        group.id,
-        { courseId: 'course-2' },
-        ADMIN,
-      );
-
-      const summary = await admin.get(group.id);
-      expect(summary.courses.map((c) => c.courseId).sort()).toEqual([
-        'course-1',
-        'course-2',
-      ]);
+      expect(group.courseId).toBe('course-2');
     });
 
     it('lets more than one group study the same course', async () => {
-      const second = await admin.create({ name: 'Chemistry — Monday' }, ADMIN);
-      await admin.addCourse(
-        second.id,
-        { courseId: 'course-1' },
+      const second = await admin.create(
+        { name: 'Chemistry — Monday', courseId: 'course-1' },
         ADMIN,
       );
 
@@ -148,21 +132,25 @@ describe('Groups', () => {
         ['group-1', second.id].sort(),
       );
     });
+
+    it('404s a course that does not exist', async () => {
+      await expect(
+        admin.create({ name: 'Nowhere', courseId: 'course-nope' }, ADMIN),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
   });
 
-  describe('adding a course to a group enrolls nobody (§5.16)', () => {
+  describe('creating a group enrolls nobody (§5.16)', () => {
     it('leaves the enrollment table untouched', async () => {
       const before = await enrollments.findByCourse('course-2');
 
-      await admin.addCourse(
-        'group-1',
-        { courseId: 'course-2' },
+      await admin.create(
+        { name: 'Chemistry — extra', courseId: 'course-2' },
         ADMIN,
       );
 
-      // group-1 holds student-1 and student-2. If adding a course cascaded -
-      // the convenience the client declined on 2026-09-10 - course-2 would
-      // have gained student-2 here.
+      // If naming a course on a group cascaded - the convenience the client
+      // declined on 2026-09-10 - course-2 would have gained students here.
       const after = await enrollments.findByCourse('course-2');
       expect(after).toHaveLength(before.length);
       expect(after.map((e) => e.studentId)).not.toContain('student-2');
@@ -242,13 +230,82 @@ describe('Groups', () => {
     });
   });
 
-  describe('rename keeps a before/after pair that differs', () => {
-    it('records the old and new name', async () => {
-      await admin.rename('group-1', { name: 'Chemistry — Saturday 19:00' }, ADMIN);
+  describe('the widened PATCH (DOM-2)', () => {
+    it('keeps a before/after pair that differs, never an alias', async () => {
+      await admin.update(
+        'group-1',
+        { name: 'Chemistry — Saturday 19:00', room: 'Room 3' },
+        ADMIN,
+      );
 
-      const entry = (await entries()).find((e) => e.action === 'group.renamed');
-      expect(entry?.before).toEqual({ name: 'IGCSE Chemistry — Saturday 18:00' });
-      expect(entry?.after).toEqual({ name: 'Chemistry — Saturday 19:00' });
+      const entry = (await entries()).find((e) => e.action === 'group.updated');
+      expect(entry?.before).toMatchObject({
+        name: 'IGCSE Chemistry — Saturday 18:00',
+        room: null,
+      });
+      expect(entry?.after).toMatchObject({
+        name: 'Chemistry — Saturday 19:00',
+        room: 'Room 3',
+      });
+      // The defect that shipped twice: a `before` that is the same object as
+      // `after` records a change that appears never to have happened.
+      expect(entry?.before).not.toEqual(entry?.after);
+    });
+
+    it('leaves fields the patch omits alone', async () => {
+      const before = await admin.get('group-1');
+      const after = await admin.update('group-1', { room: 'Room 9' }, ADMIN);
+      expect(after.name).toBe(before.name);
+      expect(after.courseId).toBe(before.courseId);
+      expect(after.meets).toBe(before.meets);
+      expect(after.room).toBe('Room 9');
+    });
+
+    it('clears a nullable field when the patch says null, rather than ignoring it', async () => {
+      // The distinction COALESCE alone cannot make: `undefined` means "leave
+      // alone" and `null` means "clear it", and both arrive as SQL NULL.
+      const after = await admin.update('group-1', { assistantId: null }, ADMIN);
+      expect(after.assistantId).toBeNull();
+    });
+
+    it('sets assistantId without granting the assistant anything', async () => {
+      // `groups.assistant_id` is a DISPLAY field. Naming an assistant on a
+      // group must not widen what they may reach - that is decided by
+      // `StaffScopeService` and nothing else. `unassigned-ta` does not hold
+      // course-2, and naming them on group-2 must not change that.
+      await admin.update('group-2', { assistantId: 'assistant-2' }, ADMIN);
+      await expect(
+        staff.listForCourse('course-2', UNASSIGNED_TA),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('refuses with 409 when the course changes on a group that has members', async () => {
+      // group-1 holds student-1 and student-2. Re-pointing it would leave both
+      // enrolled on the old course while being targeted by work set for the
+      // new one (`DOMAIN_MODEL.md:98-100`). Stated as an assumption in
+      // `groups.service.ts`; ratified by the coordinator 2026-09-20.
+      await expect(
+        admin.update('group-1', { courseId: 'course-2' }, ADMIN),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('allows the course to change on an empty group', async () => {
+      const empty = await admin.create(
+        { name: 'Empty cohort', courseId: 'course-1' },
+        ADMIN,
+      );
+      const moved = await admin.update(
+        empty.id,
+        { courseId: 'course-2' },
+        ADMIN,
+      );
+      expect(moved.courseId).toBe('course-2');
+    });
+
+    it('404s a group that does not exist', async () => {
+      await expect(
+        admin.update('group-nope', { name: 'x' }, ADMIN),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
@@ -296,10 +353,8 @@ describe('Groups', () => {
     it('does not leak the other group studying the same course', async () => {
       // A second group on course-1, with a student in it. student-1 is in
       // group-1 and must not see them.
-      const other = await admin.create({ name: 'Chemistry — Monday' }, ADMIN);
-      await admin.addCourse(
-        other.id,
-        { courseId: 'course-1' },
+      const other = await admin.create(
+        { name: 'Chemistry — Monday', courseId: 'course-1' },
         ADMIN,
       );
       await staff.addMember(other.id, { studentId: 'student-2' }, ADMIN);
@@ -311,10 +366,8 @@ describe('Groups', () => {
     it('returns two lists for a student in two groups, never one merged set', async () => {
       // student-1 already sits in group-1; put them in a second group that also
       // studies course-1.
-      const other = await admin.create({ name: 'Chemistry — Monday' }, ADMIN);
-      await admin.addCourse(
-        other.id,
-        { courseId: 'course-1' },
+      const other = await admin.create(
+        { name: 'Chemistry — Monday', courseId: 'course-1' },
         ADMIN,
       );
       await staff.addMember(other.id, { studentId: 'student-1' }, ADMIN);

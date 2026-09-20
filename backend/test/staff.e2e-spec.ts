@@ -798,7 +798,7 @@ describe('Staff and admin API (e2e)', () => {
       const created = await request(app.getHttpServer())
         .post('/admin/groups')
         .set(bearer(adminToken))
-        .send({ name: 'E2E — Wednesday 17:00' })
+        .send({ name: 'E2E — Wednesday 17:00', courseId: 'course-1' })
         .expect(201);
       groupId = created.body.id;
     });
@@ -809,16 +809,30 @@ describe('Staff and admin API (e2e)', () => {
       await request(app.getHttpServer())
         .post('/admin/groups')
         .set(bearer(assignedTaToken))
-        .send({ name: 'TA should not be able to create this' })
+        .send({ name: 'TA should not be able to create this', courseId: 'course-1' })
         .expect(403);
     });
 
-    it('refuses attaching a course to a group to a TA', async () => {
+    it('refuses editing a group to a TA', async () => {
+      // The two `/groups/:id/courses` routes are retired: a group's course is
+      // a field on the group now, so changing it is the PATCH.
+      await request(app.getHttpServer())
+        .patch(`/admin/groups/${groupId}`)
+        .set(bearer(assignedTaToken))
+        .send({ courseId: 'course-2' })
+        .expect(403);
+    });
+
+    it('no longer exposes the retired group-course routes', async () => {
       await request(app.getHttpServer())
         .post(`/admin/groups/${groupId}/courses`)
-        .set(bearer(assignedTaToken))
+        .set(bearer(adminToken))
         .send({ courseId: 'course-1' })
-        .expect(403);
+        .expect(404);
+      await request(app.getHttpServer())
+        .delete(`/admin/groups/${groupId}/courses/course-1`)
+        .set(bearer(adminToken))
+        .expect(404);
     });
 
     it('lets a TA place a student, and no longer lets them remove one', async () => {
@@ -852,6 +866,59 @@ describe('Staff and admin API (e2e)', () => {
         .expect(204);
     });
 
+    it('refuses with 409 when a populated group is pointed at another course', async () => {
+      // `DOM-2`. The group created in `beforeAll` gains a member below, so do
+      // the move on a group of its own. An empty group moves freely; one with
+      // students does not, because `Enrollment` is the access gate and every
+      // member would be left enrolled on the old course while being targeted
+      // by work set for the new one.
+      const empty = await request(app.getHttpServer())
+        .post('/admin/groups')
+        .set(bearer(adminToken))
+        .send({ name: 'E2E — empty, movable', courseId: 'course-1' })
+        .expect(201);
+      await request(app.getHttpServer())
+        .patch(`/admin/groups/${empty.body.id}`)
+        .set(bearer(adminToken))
+        .send({ courseId: 'course-2' })
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .post(`/staff/groups/${empty.body.id}/members`)
+        .set(bearer(adminToken))
+        .send({ studentId: 'student-1' })
+        .expect(201);
+      await request(app.getHttpServer())
+        .patch(`/admin/groups/${empty.body.id}`)
+        .set(bearer(adminToken))
+        .send({ courseId: 'course-1' })
+        .expect(409);
+    });
+
+    it('naming an assistant on a group grants them nothing', async () => {
+      // **The binding rule.** `groups.assistant_id` is a DISPLAY field; what an
+      // assistant may reach is decided by `StaffScopeService` and, from
+      // `AUTH-2`, by `assistant_group_assignments`. assistant-2 holds no
+      // course. Naming them on a group that studies course-1 must leave them
+      // exactly as unable to read course-1 as they were - and with the same
+      // 404, not a 403, so they cannot tell the difference from a miss.
+      const named = await request(app.getHttpServer())
+        .post('/admin/groups')
+        .set(bearer(adminToken))
+        .send({
+          name: 'E2E — display-only assistant',
+          courseId: 'course-1',
+          assistantId: 'assistant-2',
+        })
+        .expect(201);
+      expect(named.body.assistantId).toBe('assistant-2');
+
+      await request(app.getHttpServer())
+        .get('/staff/courses/course-1/groups')
+        .set(bearer(unassignedTaToken))
+        .expect(404);
+    });
+
     it('refuses the whole group surface to a student token', async () => {
       await request(app.getHttpServer())
         .get(`/staff/groups/${groupId}`)
@@ -883,10 +950,16 @@ describe('Staff and admin API (e2e)', () => {
         .set(bearer(adminToken))
         .send({ name: '' })
         .expect(400);
+      // A group must name a course: `courseId` is required on create.
+      await request(app.getHttpServer())
+        .post('/admin/groups')
+        .set(bearer(adminToken))
+        .send({ name: 'No course' })
+        .expect(400);
       // `whitelist: true` strips an undeclared field rather than rejecting it,
       // so the rejected case has to be a DECLARED field with a bad value.
       await request(app.getHttpServer())
-        .post(`/admin/groups/${groupId}/courses`)
+        .patch(`/admin/groups/${groupId}`)
         .set(bearer(adminToken))
         .send({ courseId: 'course 1; drop table' })
         .expect(400);
@@ -1077,23 +1150,19 @@ describe('Staff and admin API (e2e)', () => {
       },
       // admin-audit (1)
       { method: 'get', path: '/admin/audit-log' },
-      // admin-groups (6)
+      // admin-groups (4) - two retired by `DOM-1`: a group's course is a
+      // field on the group now, so POST/DELETE /groups/:id/courses are gone.
       { method: 'get', path: '/admin/groups' },
       { method: 'get', path: '/admin/groups/group-does-not-exist' },
-      { method: 'post', path: '/admin/groups', body: { name: 'Parity probe' } },
+      {
+        method: 'post',
+        path: '/admin/groups',
+        body: { name: 'Parity probe', courseId: 'course-1' },
+      },
       {
         method: 'patch',
         path: '/admin/groups/group-does-not-exist',
         body: { name: 'Parity probe' },
-      },
-      {
-        method: 'post',
-        path: '/admin/groups/group-does-not-exist/courses',
-        body: { courseId: 'course-1' },
-      },
-      {
-        method: 'delete',
-        path: '/admin/groups/group-does-not-exist/courses/course-1',
       },
       // admin-google-integration (4 role-gated; callback is @Public)
       { method: 'get', path: '/admin/integrations/google' },
@@ -1153,10 +1222,11 @@ describe('Staff and admin API (e2e)', () => {
       },
     ];
 
-    it('covers all 24 role-gated admin routes', () => {
-      // Asserted, because a parity table that quietly covers 12 of 24 routes
+    it('covers all 22 role-gated admin routes', () => {
+      // Asserted, because a parity table that quietly covers 12 of 22 routes
       // proves parity on 12 routes while reading as though it proved it on all.
-      expect(ADMIN_ROUTES).toHaveLength(24);
+      // 24 before `DOM-1` retired the two group-course routes.
+      expect(ADMIN_ROUTES).toHaveLength(22);
     });
 
     it.each(ADMIN_ROUTES)(
@@ -1264,7 +1334,7 @@ describe('Staff and admin API (e2e)', () => {
       const created = await request(app.getHttpServer())
         .post('/admin/groups')
         .set(bearer(fullAdminToken))
-        .send({ name: 'E2E - created by the full admin' })
+        .send({ name: 'E2E - created by the full admin', courseId: 'course-1' })
         .expect(201);
 
       const log = await request(app.getHttpServer())
@@ -1282,7 +1352,7 @@ describe('Staff and admin API (e2e)', () => {
       await request(app.getHttpServer())
         .post('/admin/groups')
         .set(bearer(adminToken))
-        .send({ name: 'E2E - created by the teacher' })
+        .send({ name: 'E2E - created by the teacher', courseId: 'course-1' })
         .expect(201);
       const log = await request(app.getHttpServer())
         .get('/admin/audit-log?action=group.created')
@@ -1307,7 +1377,7 @@ describe('Staff and admin API (e2e)', () => {
       const created = await request(app.getHttpServer())
         .post('/admin/groups')
         .set(bearer(adminToken))
-        .send({ name: 'E2E - AUTH-3 withheld verbs' })
+        .send({ name: 'E2E - AUTH-3 withheld verbs', courseId: 'course-1' })
         .expect(201);
       groupId = created.body.id;
     });

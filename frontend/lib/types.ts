@@ -666,32 +666,46 @@ export interface PublicCourseDetail extends PublicCourseSummary {
 /* ------------------------------------------------------------------------
    Groups (CLAUDE.md §5.16) - the cohort a course is taught to.
 
-   A group is a class of *students*, not a subdivision of a course: it carries
-   no courseId, and several groups can be enrolled in the same course. What a
-   group studies is `GroupCourse`, which is also where the learning mode lives
-   (§5.2) - a group is taught one way, and two students in the same room cannot
-   be in different modes.
+   A group is a class of students studying **one** course. It used to carry no
+   courseId, with a `GroupCourse` join row saying what it studied; migration 013
+   collapsed that into a column, on the client's decision. Several groups can
+   still study the same course.
    ------------------------------------------------------------------------ */
 
 export interface Group {
   id: string;
   name: string;
   teacherId: string;
+  courseId: string;
+
+  /**
+   * Who runs this group. **Display only - never render a permission from it.**
+   * What an assistant may reach is decided server-side by `StaffScopeService`
+   * from `assistant_group_assignments`, and the two are deliberately allowed to
+   * disagree. Showing a control based on this field would be showing a control
+   * the server then refuses - and hiding one is courtesy, never security.
+   */
+  assistantId: string | null;
+
+  /** When the group meets, as free text - "Saturday 18:00". Not a schedule. */
+  meets: string | null;
+  room: string | null;
+
   createdAt: string;
 }
 
-export interface GroupCourse {
-  id: string;
-  groupId: string;
-  courseId: string;
-  enrolledAt: string;
-  enrolledBy: string;
+/** One console row: the group, and how many sit in it. */
+export interface GroupSummary extends Group {
+  memberCount: number;
 }
 
-/** One console row: the group, what it studies, how many sit in it. */
-export interface GroupSummary extends Group {
-  courses: GroupCourse[];
-  memberCount: number;
+/** The PATCH body. Every field optional; `null` clears a nullable one. */
+export interface GroupWrite {
+  name?: string;
+  courseId?: string;
+  assistantId?: string | null;
+  meets?: string | null;
+  room?: string | null;
 }
 
 /**

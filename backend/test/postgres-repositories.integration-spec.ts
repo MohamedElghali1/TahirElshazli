@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Pool } from 'pg';
+import { readdir, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { DatabaseService } from '../src/database/database.service.js';
 import { MigrationRunner } from '../src/database/migration-runner.js';
 import { PostgresUserRepository } from '../src/auth/repositories/postgres-user.repository.js';
@@ -218,9 +221,10 @@ describeIfDb('Postgres repositories', () => {
       expect(await repo.find('course-2', 'student-1')).not.toBeNull();
       // student-2 holds course-1 only.
       expect(await repo.find('course-2', 'student-2')).toBeNull();
-      // The mode moved to `group_courses` on 2026-09-10 (CLAUDE.md §5.2), and
-      // migration 007 dropped the column. Asserting its absence on the shape is
-      // what stops it being quietly re-added as a second source of truth.
+      // Migration 007 dropped the column and 012 retired the concept (`D-9`).
+      // Asserting its absence on the shape is what stops it being quietly
+      // re-added as a second source of truth for something that no longer
+      // exists.
       expect(await repo.find('course-1', 'student-1')).not.toHaveProperty(
         'learningMode',
       );
@@ -922,22 +926,36 @@ describeIfDb('Postgres repositories', () => {
     });
   });
 
-  /* Groups (CLAUDE.md §5.16). The assertions worth making here are the ones an
-     in-memory array cannot fail: that the DDL parses, that the two UNIQUE
-     constraints really make the writes idempotent rather than the JavaScript
-     `find` in front of them doing it, and that `findStudentGroupCourses` - a
-     real SQL join, where the memory driver composes two filters - agrees with
-     the fixture. */
+  /* Groups (CLAUDE.md §5.16, as reshaped by `DOM-1`/`DOM-2`). The assertions
+     worth making here are the ones an in-memory array cannot fail: that the DDL
+     parses, that the UNIQUE constraint really makes `addMember` idempotent
+     rather than the JavaScript `find` in front of it doing it, that
+     `findStudentGroups` - a real SQL join, where the memory driver composes two
+     filters - agrees with the fixture, and that the COALESCE-per-column update
+     tells "leave alone" from "set to NULL". */
   describe('groups', () => {
     const repo = () => new PostgresGroupRepository(db);
 
-    it('reads the seeded groups, their courses and their members', async () => {
-      expect((await repo().findById('group-1'))?.name).toContain('Saturday');
-      // No course_id on the group itself - the shape §5.16 required.
-      expect(await repo().findById('group-1')).not.toHaveProperty('courseId');
+    /** A group as the collapsed model needs one. */
+    const newGroup = (name: string, courseId = 'course-1') => ({
+      name,
+      teacherId: 'teacher-1',
+      courseId,
+      assistantId: null,
+      meets: null,
+      room: null,
+    });
 
-      const courses = await repo().findCourses('group-1');
-      expect(courses.map((c) => c.courseId)).toEqual(['course-1']);
+    it('reads the seeded groups, their course and their members', async () => {
+      const group = await repo().findById('group-1');
+      expect(group?.name).toContain('Saturday');
+      // The course is a column now - migration 013 collapsed `group_courses`.
+      expect(group?.courseId).toBe('course-1');
+      expect(group?.meets).toBe('Saturday 18:00');
+      expect(group?.room).toBeNull();
+      // Display only. `assistant-1` is named here and, deliberately, that is
+      // not what decides whether they may reach the group.
+      expect(group?.assistantId).toBe('assistant-1');
 
       const members = await repo().findMembers('group-1');
       expect(members.map((m) => m.studentId).sort()).toEqual([
@@ -946,19 +964,62 @@ describeIfDb('Postgres repositories', () => {
       ]);
     });
 
-    it('joins membership to pairing for one student and one course', async () => {
-      // student-1 is in both groups; group-1 studies course-1 and group-2
-      // studies course-2, so each query must return exactly its own pairing.
-      const one = await repo().findStudentGroupCourses('student-1', 'course-1');
-      expect(one.map((gc) => gc.groupId)).toEqual(['group-1']);
+    it('lists the groups studying one course off the new index', async () => {
+      expect((await repo().findByCourse('course-1')).map((g) => g.id)).toEqual([
+        'group-1',
+      ]);
+      expect((await repo().findByCourse('course-2')).map((g) => g.id)).toEqual([
+        'group-2',
+      ]);
+      expect(await repo().findByCourse('course-3')).toEqual([]);
+    });
 
-      const two = await repo().findStudentGroupCourses('student-1', 'course-2');
-      expect(two.map((gc) => gc.groupId)).toEqual(['group-2']);
+    it('joins membership to group for one student and one course', async () => {
+      // student-1 is in both groups; group-1 studies course-1 and group-2
+      // studies course-2, so each query must return exactly its own group.
+      expect(
+        (await repo().findStudentGroups('student-1', 'course-1')).map((g) => g.id),
+      ).toEqual(['group-1']);
+      expect(
+        (await repo().findStudentGroups('student-1', 'course-2')).map((g) => g.id),
+      ).toEqual(['group-2']);
 
       // student-2 is only in group-1, so course-2 is empty for them - the
       // "two groups on one course must not see each other" property, at the
       // level the query decides it rather than the service.
-      expect(await repo().findStudentGroupCourses('student-2', 'course-2')).toEqual([]);
+      expect(await repo().findStudentGroups('student-2', 'course-2')).toEqual([]);
+    });
+
+    it('orders two groups on one course by the membership, longest-standing first', async () => {
+      // `StudentGroupsService`'s tie-break, at the level the SQL decides it.
+      // The sort key is `group_memberships.assigned_at` now, not the dropped
+      // `group_courses.enrolled_at` - a substitution of the key, not the rule.
+      const later = await repo().create(newGroup('Chemistry — Monday'));
+      await repo().addMember({
+        groupId: later.id,
+        studentId: 'student-1',
+        assignedBy: 'teacher-1',
+      });
+
+      // student-1 was placed in group-1 in January; the new one is today.
+      const groups = await repo().findStudentGroups('student-1', 'course-1');
+      expect(groups.map((g) => g.id)).toEqual(['group-1', later.id]);
+
+      await db.query('DELETE FROM groups WHERE id = $1', [later.id]);
+    });
+
+    it('resolves to an empty list for an enrolled but unplaced student', async () => {
+      // student-2 holds course-1 and sits in group-1. With the placement gone
+      // the answer is `[]`, not an error - callers render an empty course.
+      // This is the case the deleted `LearningModeService` fallback chain used
+      // to protect; the chain is gone, the case is not.
+      await repo().removeMember('group-1', 'student-2');
+      expect(await repo().findStudentGroups('student-2', 'course-1')).toEqual([]);
+      await repo().addMember({
+        groupId: 'group-1',
+        studentId: 'student-2',
+        assignedBy: 'assistant-1',
+      });
     });
 
     it('makes addMember idempotent through the UNIQUE constraint', async () => {
@@ -988,23 +1049,54 @@ describeIfDb('Postgres repositories', () => {
       expect(await repo().removeMember('group-2', 'student-2')).toBe(false);
     });
 
-    it('makes addCourse idempotent and keeps the original learning mode', async () => {
-      const first = await repo().addCourse({
-        groupId: 'group-1',
-        courseId: 'course-2',
-        enrolledBy: 'teacher-1',
+    it('updates only the columns the patch names, and clears on an explicit null', async () => {
+      // The distinction a plain COALESCE cannot make: `undefined` means "leave
+      // alone" and `null` means "clear it", and both reach the driver as SQL
+      // NULL. This is the assertion that proves the boolean flag beside each
+      // nullable column is doing its job - an array cannot fail it.
+      const group = await repo().create({
+        ...newGroup('Patch me'),
+        assistantId: 'assistant-1',
+        meets: 'Friday 10:00',
+        room: 'Room 1',
       });
-      const second = await repo().addCourse({
-        groupId: 'group-1',
-        courseId: 'course-2',
-        // A re-add must not silently re-mode a group somebody deliberately
-        // moved to live.
-        enrolledBy: 'teacher-1',
-      });
-      expect(second.id).toBe(first.id);
 
-      expect(await repo().removeCourse('group-1', 'course-2')).toBe(true);
-      expect(await repo().removeCourse('group-1', 'course-2')).toBe(false);
+      const renamed = await repo().update(group.id, { name: 'Renamed' });
+      expect(renamed).toMatchObject({
+        name: 'Renamed',
+        courseId: 'course-1',
+        assistantId: 'assistant-1',
+        meets: 'Friday 10:00',
+        room: 'Room 1',
+      });
+
+      const cleared = await repo().update(group.id, {
+        assistantId: null,
+        room: null,
+      });
+      expect(cleared).toMatchObject({
+        name: 'Renamed',
+        assistantId: null,
+        meets: 'Friday 10:00',
+        room: null,
+      });
+
+      const moved = await repo().update(group.id, { courseId: 'course-2' });
+      expect(moved?.courseId).toBe('course-2');
+
+      expect(await repo().update('group-nope', { name: 'x' })).toBeNull();
+      await db.query('DELETE FROM groups WHERE id = $1', [group.id]);
+    });
+
+    it('refuses a group with no course at the database level', async () => {
+      // `groups.course_id` is NOT NULL as of 013. The repository cannot write
+      // one, and neither can anything else - which is what makes "a group
+      // studies exactly one course" a schema fact rather than a convention.
+      await expect(
+        db.query(
+          `INSERT INTO groups (id, name, teacher_id) VALUES ('no-course', 'x', 'teacher-1')`,
+        ),
+      ).rejects.toThrow(/course_id/);
     });
 
     it('counts members per group in one query, agreeing with the row path', async () => {
@@ -1014,26 +1106,14 @@ describeIfDb('Postgres repositories', () => {
         expect(counts[id] ?? 0).toBe((await repo().findMembers(id)).length);
       }
       // A group with no members is absent rather than 0; callers default.
-      const empty = await repo().create({ name: 'Empty', teacherId: 'teacher-1' });
+      const empty = await repo().create(newGroup('Empty'));
       expect((await repo().countMembersByGroups([empty.id]))[empty.id]).toBeUndefined();
       expect(await repo().countMembersByGroups([])).toEqual({});
+      await db.query('DELETE FROM groups WHERE id = $1', [empty.id]);
     });
 
-    it('renames, and returns null for a group that is not there', async () => {
-      const renamed = await repo().rename('group-2', 'Chemistry — Tuesday 21:00');
-      expect(renamed?.name).toBe('Chemistry — Tuesday 21:00');
-      expect(await repo().rename('group-nope', 'x')).toBeNull();
-      // Put it back: the suite shares one database across describes.
-      await repo().rename('group-2', 'IGCSE Chemistry — Tuesday 20:00');
-    });
-
-    it('cascades memberships and pairings when a group goes', async () => {
-      const doomed = await repo().create({ name: 'Doomed', teacherId: 'teacher-1' });
-      await repo().addCourse({
-        groupId: doomed.id,
-        courseId: 'course-1',
-        enrolledBy: 'teacher-1',
-      });
+    it('cascades memberships when a group goes', async () => {
+      const doomed = await repo().create(newGroup('Doomed'));
       await repo().addMember({
         groupId: doomed.id,
         studentId: 'student-1',
@@ -1046,7 +1126,6 @@ describeIfDb('Postgres repositories', () => {
       // leave orphaned rows pointing at nothing.
       await db.query('DELETE FROM groups WHERE id = $1', [doomed.id]);
       expect(await repo().findMembers(doomed.id)).toEqual([]);
-      expect(await repo().findCourses(doomed.id)).toEqual([]);
     });
   });
 
@@ -1067,11 +1146,13 @@ describeIfDb('Postgres repositories', () => {
       expect(targeted).toHaveLength(all.length);
 
       // A group that studies course-1 but has been set nothing.
-      const empty = await groups().create({ name: 'Empty cohort', teacherId: 'teacher-1' });
-      await groups().addCourse({
-        groupId: empty.id,
+      const empty = await groups().create({
+        name: 'Empty cohort',
+        teacherId: 'teacher-1',
         courseId: 'course-1',
-        enrolledBy: 'teacher-1',
+        assistantId: null,
+        meets: null,
+        room: null,
       });
       expect(await repo().findByCourseForGroups('course-1', [empty.id])).toEqual([]);
 
@@ -1082,11 +1163,13 @@ describeIfDb('Postgres repositories', () => {
 
     it('coalesces a per-group override over the assessment window', async () => {
       const base = (await repo().findById('assess-1'))!;
-      const other = await groups().create({ name: 'Override cohort', teacherId: 'teacher-1' });
-      await groups().addCourse({
-        groupId: other.id,
+      const other = await groups().create({
+        name: 'Override cohort',
+        teacherId: 'teacher-1',
         courseId: 'course-1',
-        enrolledBy: 'teacher-1',
+        assistantId: null,
+        meets: null,
+        room: null,
       });
       await repo().setTargets('assess-1', [
         { groupId: 'group-1' },
@@ -1108,11 +1191,13 @@ describeIfDb('Postgres repositories', () => {
     });
 
     it('gives a student in two targeted groups one row, on the first group terms', async () => {
-      const second = await groups().create({ name: 'Second cohort', teacherId: 'teacher-1' });
-      await groups().addCourse({
-        groupId: second.id,
+      const second = await groups().create({
+        name: 'Second cohort',
+        teacherId: 'teacher-1',
         courseId: 'course-1',
-        enrolledBy: 'teacher-1',
+        assistantId: null,
+        meets: null,
+        room: null,
       });
       await repo().setTargets('assess-1', [
         { groupId: 'group-1' },
@@ -1137,11 +1222,13 @@ describeIfDb('Postgres repositories', () => {
     });
 
     it('replaces the audience rather than accumulating it', async () => {
-      const second = await groups().create({ name: 'Replace cohort', teacherId: 'teacher-1' });
-      await groups().addCourse({
-        groupId: second.id,
+      const second = await groups().create({
+        name: 'Replace cohort',
+        teacherId: 'teacher-1',
         courseId: 'course-1',
-        enrolledBy: 'teacher-1',
+        assistantId: null,
+        meets: null,
+        room: null,
       });
       await repo().setTargets('assess-2', [{ groupId: 'group-1' }, { groupId: second.id }]);
       expect(await repo().findTargets('assess-2')).toHaveLength(2);
@@ -1382,7 +1469,14 @@ describeIfDb('Postgres repositories', () => {
 
       await expect(
         db.runInTransaction(async () => {
-          await groups.create({ name: 'Doomed by its own log', teacherId: 'teacher-1' });
+          await groups.create({
+            name: 'Doomed by its own log',
+            teacherId: 'teacher-1',
+            courseId: 'course-1',
+            assistantId: null,
+            meets: null,
+            room: null,
+          });
           // Stand-in for the audit write failing, and it has to be a real
           // constraint rather than a thrown Error - the point is that the
           // *database* rejects the second half after the first half is already
@@ -1414,6 +1508,10 @@ describeIfDb('Postgres repositories', () => {
         const group = await groups.create({
           name: 'Logged properly',
           teacherId: 'teacher-1',
+          courseId: 'course-1',
+          assistantId: null,
+          meets: null,
+          room: null,
         });
         await audit.record({
           actorId: 'teacher-1',
@@ -1455,4 +1553,212 @@ describeIfDb('Postgres repositories', () => {
       );
     });
   });
+});
+
+/**
+ * Migration 013 is the project's one **one-way** migration, and it cannot be
+ * tested by running it twice: once `group_courses` is dropped there is nothing
+ * left to re-collapse. So the thing worth proving is not that it works on good
+ * data - the suite above covers that, since every run applies it from an empty
+ * schema - but that it **refuses** on bad data instead of guessing.
+ *
+ * Both abort paths are exercised, because both are reachable:
+ *
+ *   (a) a group holding two courses  - `GroupRepository.addCourse` twice;
+ *   (b) a group holding zero courses - `GroupRepository.create`, which is the
+ *       shape migration 006 was explicitly built to allow.
+ *
+ * Each runs in its own Postgres **schema** so it cannot disturb the suite
+ * above, which owns `public`. Migrations are applied by hand, 001-012 only,
+ * then 013 is offered the bad data and must throw. The post-conditions matter
+ * as much as the throw: the runner wraps each file in one transaction and
+ * writes the ledger only on success (`migration-runner.ts:89-99`), so a refusal
+ * must leave `group_courses` intact and `groups.course_id` absent.
+ */
+describeIfDb('migration 013 refuses rather than guessing', () => {
+  const migrationsDir = fileURLToPath(
+    new URL('../src/database/migrations', import.meta.url),
+  );
+
+  /** 001-012, in order. 013 is applied separately so its failure is the test. */
+  const upTo012 = async (client: Pool) => {
+    const files = (await readdir(migrationsDir))
+      .filter((n) => n.endsWith('.sql') && n < '013')
+      .sort();
+    for (const name of files) {
+      await client.query(await readFile(join(migrationsDir, name), 'utf8'));
+    }
+  };
+
+  const apply013 = async (client: Pool) =>
+    client.query(
+      await readFile(
+        join(migrationsDir, '013_group_holds_one_course.sql'),
+        'utf8',
+      ),
+    );
+
+  /**
+   * A pool pinned to a fresh schema. `search_path` rather than a second
+   * database because the migrations name every table unqualified, so this is
+   * the whole of the isolation needed.
+   */
+  const inFreshSchema = async (schema: string) => {
+    const admin = new Pool({ connectionString });
+    await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+    await admin.query(`CREATE SCHEMA ${schema}`);
+    await admin.end();
+    const scoped = new Pool({
+      connectionString,
+      options: `-c search_path=${schema}`,
+    });
+    await upTo012(scoped);
+    return scoped;
+  };
+
+  const seedActors = async (client: Pool) => {
+    await client.query(
+      `INSERT INTO users (id, email, password_hash, name, role)
+       VALUES ('t', 't@example.com', 'x', 'Teacher', 'teacher')`,
+    );
+    await client.query(
+      `INSERT INTO courses (id, slug, is_published, title, description, teacher_name)
+       VALUES ('c1', 'c-one', true, 'One', 'One', 'Dr. Tahir'),
+              ('c2', 'c-two', true, 'Two', 'Two', 'Dr. Tahir')`,
+    );
+  };
+
+  const drop = async (client: Pool, schema: string) => {
+    await client.end();
+    const admin = new Pool({ connectionString });
+    await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+    await admin.end();
+  };
+
+  const columnsOfGroups = async (client: Pool, schema: string) => {
+    const res = await client.query<{ column_name: string }>(
+      `SELECT column_name FROM information_schema.columns
+        WHERE table_schema = $1 AND table_name = 'groups'`,
+      [schema],
+    );
+    return res.rows.map((r) => r.column_name);
+  };
+
+  const tablesIn = async (client: Pool, schema: string) => {
+    const res = await client.query<{ table_name: string }>(
+      `SELECT table_name FROM information_schema.tables WHERE table_schema = $1`,
+      [schema],
+    );
+    return res.rows.map((r) => r.table_name);
+  };
+
+  it('aborts on a group holding two courses, naming the group', async () => {
+    const schema = 'migtest_013_two_courses';
+    const client = await inFreshSchema(schema);
+    try {
+      await seedActors(client);
+      await client.query(
+        `INSERT INTO groups (id, name, teacher_id) VALUES ('g1', 'Saturday 18:00', 't')`,
+      );
+      await client.query(
+        `INSERT INTO group_courses (id, group_id, course_id, enrolled_by)
+         VALUES ('gc1', 'g1', 'c1', 't'), ('gc2', 'g1', 'c2', 't')`,
+      );
+
+      await expect(apply013(client)).rejects.toThrow(
+        /A group studies more than one course; collapse it by hand first: Saturday 18:00/,
+      );
+
+      // The transaction rolled back whole: the join table is untouched and the
+      // column was never added. Anything less leaves the operator with a
+      // half-migrated schema and no ledger row saying so.
+      expect(await columnsOfGroups(client, schema)).not.toContain('course_id');
+      const pairings = await client.query<{ n: number }>(
+        'SELECT count(*)::int AS n FROM group_courses',
+      );
+      expect(pairings.rows[0]!.n).toBe(2);
+    } finally {
+      await drop(client, schema);
+    }
+  }, 60_000);
+
+  it('aborts on a group holding no course at all, naming the group', async () => {
+    // The second abort path, which `DATABASE_PLAN.md` §4.1 did not name.
+    // Without the explicit guard this surfaces as a bare NOT NULL violation
+    // that names a column and leaves the operator to find the group.
+    const schema = 'migtest_013_no_course';
+    const client = await inFreshSchema(schema);
+    try {
+      await seedActors(client);
+      await client.query(
+        `INSERT INTO groups (id, name, teacher_id) VALUES ('g1', 'Unassigned cohort', 't')`,
+      );
+
+      await expect(apply013(client)).rejects.toThrow(
+        /A group studies no course; assign one by hand first: Unassigned cohort/,
+      );
+
+      expect(await columnsOfGroups(client, schema)).not.toContain('course_id');
+      expect(await tablesIn(client, schema)).toContain('group_courses');
+    } finally {
+      await drop(client, schema);
+    }
+  }, 60_000);
+
+  it('collapses cleanly, preserving every group, when the data is sound', async () => {
+    // The happy path, asserted only after both refusals. Row counts before and
+    // after: a collapse that loses or duplicates a group is the failure mode
+    // that cannot be undone.
+    const schema = 'migtest_013_happy';
+    const client = await inFreshSchema(schema);
+    try {
+      await seedActors(client);
+      await client.query(
+        `INSERT INTO groups (id, name, teacher_id)
+         VALUES ('g1', 'Saturday', 't'), ('g2', 'Tuesday', 't')`,
+      );
+      await client.query(
+        `INSERT INTO group_courses (id, group_id, course_id, enrolled_by)
+         VALUES ('gc1', 'g1', 'c1', 't'), ('gc2', 'g2', 'c2', 't')`,
+      );
+      const before = await client.query<{ n: number }>(
+        'SELECT count(*)::int AS n FROM groups',
+      );
+
+      await apply013(client);
+
+      const after = await client.query(
+        'SELECT id, course_id FROM groups ORDER BY id',
+      );
+      expect(after.rowCount).toBe(before.rows[0]!.n);
+      expect(after.rows).toEqual([
+        { id: 'g1', course_id: 'c1' },
+        { id: 'g2', course_id: 'c2' },
+      ]);
+
+      // course_id is NOT NULL, the join table is gone, and the index the
+      // rewritten assertAssigned will run on exists.
+      const nullable = await client.query<{ is_nullable: string }>(
+        `SELECT is_nullable FROM information_schema.columns
+          WHERE table_schema = $1 AND table_name = 'groups'
+            AND column_name = 'course_id'`,
+        [schema],
+      );
+      expect(nullable.rows[0]!.is_nullable).toBe('NO');
+      expect(await tablesIn(client, schema)).not.toContain('group_courses');
+      const idx = await client.query<{ indexname: string }>(
+        `SELECT indexname FROM pg_indexes
+          WHERE schemaname = $1 AND tablename = 'groups'`,
+        [schema],
+      );
+      expect(idx.rows.map((r) => r.indexname)).toEqual(
+        expect.arrayContaining([
+          'groups_course_id_idx',
+          'groups_assistant_id_idx',
+        ]),
+      );
+    } finally {
+      await drop(client, schema);
+    }
+  }, 60_000);
 });
