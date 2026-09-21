@@ -1085,3 +1085,43 @@ The blocker the executor recorded rather than guessed at. Its read half (analyti
 `.../students/:studentId/work` for a task targeted at a group the caller does not hold) is `AUTH-6`
 scope. `D-21` stands unchanged: `WorkAnalyticsService` reads `GROUP_REPOSITORY` directly, so the
 denominator stays caller-independent whatever `AUTH-6` does to the gate.
+
+---
+
+## 2026-09-21 — `D-24` — units 3-5 run a custom pipeline; two small mail-driver calls recorded
+
+**Context.** For chat units 3 (Mail), 4 (Shells), 5 (People and groups) the user asked for a
+different process than `CLAUDE.md` §15's standing `redesign-planner → redesign-executor →
+redesign-reviewer` three-subagent sequence: Claude runs as one continuous session playing both
+orchestrator and reviewer, and Antigravity (`agy-delegate`, model `claude-opus-4-6-thinking`) is
+the implementer in place of `redesign-executor`, with a Sonnet Claude subagent as the implementer
+of record when an Antigravity dispatch cannot finish (first exercised on unit 3, see below).
+
+**Chosen.** Per `CLAUDE.md` §0 — an explicit user instruction outranks the standing process. The
+pipeline's *safeguards* are unchanged: a written phase plan precedes implementation, the diff is
+independently re-verified (tests re-run, migration re-applied from empty schema, scope grepped)
+rather than the self-report trusted, and `PHASE_ROADMAP.md`'s nine-point completion protocol still
+gates every unit. Only who authors the diff, and how many separate agent invocations that takes,
+changed.
+
+**First real exercise, unit 3.** A first smoke-test dispatch (no write permission flag) silently
+no-op'd — Antigravity's headless permission system soft-denied its first tool call against a
+permission allowlist left over from an unrelated prior project, and the relay's own status came
+back `"completed"` despite zero files touched. The user explicitly approved
+`--dangerously-skip-permissions` for this project's dispatches after seeing that finding. On the
+real unit-3 dispatch, Antigravity's own account quota was exhausted mid-run (built the module,
+migration, and service correctly; never reached lint, the integration attempt, or its final
+report). Rather than wait out the ~4.5-hour quota reset, the orchestrator (Claude) finished the
+remainder directly per the user's standing instruction to keep working autonomously and use a
+Sonnet subagent as replacement implementer when an Antigravity session ends.
+
+**Two implementation judgment calls, disclosed rather than silently assumed** (full detail in
+`docs/phases/unit-3/PHASE_PLAN.md` §6, carried into `PHASE_ROADMAP.md`'s unit-3 entry):
+- The four non-password-reset mail templates (`invitation`/`sign-in-link`/`report`/`announcement`)
+  were built with provisional `data` shapes, since their real callers (units 5/9/10) don't exist
+  yet — expect refinement when those units land.
+- `MAIL_DRIVER=log` is **not** refused in production the way `STORAGE_DRIVER=local` is; judged not
+  to carry the same data-loss risk (a swallowed email vs. an orphaned upload). Revisit if wrong.
+
+**Affected.** Process only for units 3-5; no product behaviour reversed. `PHASE_ROADMAP.md`'s
+unit-3 entry and `docs/phases/unit-3/PHASE_PLAN.md`/`REVIEW.md` carry the full record.

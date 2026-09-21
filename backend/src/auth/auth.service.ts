@@ -12,8 +12,8 @@ import type { UserRepository } from './interfaces/user-repository.interface.js';
 import { USER_REPOSITORY } from './interfaces/user-repository.interface.js';
 import type { PasswordHasher } from './interfaces/password-hasher.interface.js';
 import { PASSWORD_HASHER } from './interfaces/password-hasher.interface.js';
-import type { PasswordResetNotifier } from './interfaces/password-reset-notifier.interface.js';
-import { PASSWORD_RESET_NOTIFIER } from './interfaces/password-reset-notifier.interface.js';
+import { MailService } from '../mail/mail.service.js';
+import { DatabaseService } from '../database/database.service.js';
 import type { StudentRepository } from '../students/interfaces/student-repository.interface.js';
 import { STUDENT_REPOSITORY } from '../students/interfaces/student-repository.interface.js';
 import type { JwtPayload } from './jwt.strategy.js';
@@ -64,8 +64,8 @@ export class AuthService {
     private readonly userRepo: UserRepository,
     @Inject(PASSWORD_HASHER)
     private readonly hasher: PasswordHasher,
-    @Inject(PASSWORD_RESET_NOTIFIER)
-    private readonly notifier: PasswordResetNotifier,
+    private readonly mail: MailService,
+    private readonly db: DatabaseService,
     @Inject(STUDENT_REPOSITORY)
     private readonly studentRepo: StudentRepository,
   ) {}
@@ -162,8 +162,11 @@ export class AuthService {
 
   /**
    * Returns an identical response whether or not the account exists, so the
-   * endpoint cannot be used to enumerate accounts. The token goes only to the
-   * notifier (out of band) - never back to the caller.
+   * endpoint cannot be used to enumerate accounts. The mail goes only to the
+   * recipient (out of band) - never back to the caller.
+   *
+   * Wrapped in `runInTransaction` so the password-reset token and the mail
+   * delivery row commit together (MAIL-3).
    */
   async requestPasswordReset(email: string): Promise<{ success: true }> {
     const user = await this.userRepo.findByEmail(email);
@@ -172,8 +175,14 @@ export class AuthService {
       const expiresAt = new Date(
         Date.now() + PASSWORD_RESET_TTL_MS,
       ).toISOString();
-      await this.userRepo.createPasswordResetToken(user.id, token, expiresAt);
-      await this.notifier.sendResetToken(user.email, token, expiresAt);
+      await this.db.runInTransaction(async () => {
+        await this.userRepo.createPasswordResetToken(user.id, token, expiresAt);
+        await this.mail.send({
+          to: user.email,
+          template: 'password-reset',
+          data: { token, expiresAt },
+        });
+      });
     }
     return { success: true };
   }

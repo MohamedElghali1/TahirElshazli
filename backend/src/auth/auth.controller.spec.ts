@@ -8,40 +8,35 @@ import { InMemoryStudentRepository } from '../students/repositories/in-memory-st
 import { BcryptPasswordHasher } from './bcrypt-password-hasher.js';
 import { USER_REPOSITORY } from './interfaces/user-repository.interface.js';
 import { PASSWORD_HASHER } from './interfaces/password-hasher.interface.js';
-import { PASSWORD_RESET_NOTIFIER } from './interfaces/password-reset-notifier.interface.js';
-import type { PasswordResetNotifier } from './interfaces/password-reset-notifier.interface.js';
+import { MailService } from '../mail/mail.service.js';
+import { MAIL_SENDER } from '../mail/mail-sender.interface.js';
+import { MAIL_DELIVERY_REPOSITORY } from '../mail/mail-delivery.repository.js';
+import { InMemoryMailDeliveryRepository } from '../mail/in-memory-mail-delivery.repository.js';
 import { InMemoryUserRepository } from './repositories/in-memory-user.repository.js';
+import { DatabaseService } from '../database/database.service.js';
+import { DATABASE_POOL } from '../database/database.tokens.js';
 import { JwtAuthGuard } from './jwt-auth.guard.js';
-
-/** Captures reset tokens so the spec can use them without the API leaking them. */
-class CapturingResetNotifier implements PasswordResetNotifier {
-  readonly sent: { email: string; token: string; expiresAt: string }[] = [];
-
-  async sendResetToken(
-    email: string,
-    token: string,
-    expiresAt: string,
-  ): Promise<void> {
-    this.sent.push({ email, token, expiresAt });
-  }
-}
 
 describe('AuthController', () => {
   let controller: AuthController;
   let denylist: TokenDenylistService;
-  let notifier: CapturingResetNotifier;
+  let mailSend: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
-    notifier = new CapturingResetNotifier();
+    mailSend = vi.fn().mockResolvedValue(undefined);
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AuthController],
       providers: [
         AuthService,
         TokenDenylistService,
+        DatabaseService,
+        MailService,
+        { provide: DATABASE_POOL, useValue: null },
         { provide: USER_REPOSITORY, useClass: InMemoryUserRepository },
         { provide: STUDENT_REPOSITORY, useClass: InMemoryStudentRepository },
         { provide: PASSWORD_HASHER, useClass: BcryptPasswordHasher },
-        { provide: PASSWORD_RESET_NOTIFIER, useValue: notifier },
+        { provide: MAIL_SENDER, useValue: { send: mailSend } },
+        { provide: MAIL_DELIVERY_REPOSITORY, useClass: InMemoryMailDeliveryRepository },
         {
           provide: JwtService,
           useValue: { signAsync: vi.fn().mockResolvedValue('mock-token') },
@@ -139,25 +134,30 @@ describe('AuthController', () => {
     const unknown = await controller.requestPasswordReset({
       email: 'nobody@example.com',
     });
-    // Byte-identical responses - the only way to tell them apart would be the
-    // notifier, which the caller cannot observe.
+    // Byte-identical responses.
     expect(known).toEqual({ success: true });
     expect(unknown).toEqual({ success: true });
     expect(JSON.stringify(known)).toBe(JSON.stringify(unknown));
-    // The token reached the notifier, never the HTTP response.
-    expect(notifier.sent).toHaveLength(1);
-    expect(notifier.sent[0].email).toBe('student@example.com');
-    expect(JSON.stringify(known)).not.toContain(notifier.sent[0].token);
+    // The mail was sent via MailService for the known email only.
+    expect(mailSend).toHaveBeenCalledTimes(1);
+    expect(mailSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        template: 'password-reset',
+        to: 'student@example.com',
+      }),
+    );
   });
 
   it('should reset the password with a valid token and reject reuse', async () => {
     await controller.requestPasswordReset({ email: 'student@example.com' });
-    const resetToken = notifier.sent.at(-1)?.token;
+    // Extract the token from the MailService.send call.
+    const sentData = mailSend.mock.calls.at(-1)?.[0]?.data;
+    const resetToken = sentData?.token as string;
     expect(resetToken).toBeDefined();
 
     await expect(
       controller.confirmPasswordReset({
-        token: resetToken as string,
+        token: resetToken,
         newPassword: 'brandnew123',
       }),
     ).resolves.toEqual({ success: true });
@@ -173,7 +173,7 @@ describe('AuthController', () => {
     // A reset token is single-use.
     await expect(
       controller.confirmPasswordReset({
-        token: resetToken as string,
+        token: resetToken,
         newPassword: 'another123',
       }),
     ).rejects.toThrow();

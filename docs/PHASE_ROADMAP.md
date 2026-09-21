@@ -301,17 +301,32 @@ what ran.
 
 ---
 
-### Chat unit 3 — Mail `[ ]`
+### Chat unit 3 — Mail `[x]` **COMPLETE — `APPROVED` 2026-09-21**
 
 **Scope** `MAIL-1` … `MAIL-3`. The `MailSender` port, `mail_deliveries`, four templates.
 **Depends on** unit 0.
-**Migrations** with unit 2's or its own.
+**Migrations** own migration, `016_mail_deliveries.sql`.
 **Shape** exactly `FileStorage`'s: `MAIL_DRIVER=none|log|smtp`, resolved once in `env.ts`, validated
 at boot, **503 when unconfigured**. `none` is the production default. Fold `PasswordResetNotifier`
 onto it.
 **Security** `mail_deliveries` stores **recipient and template only — never the rendered body**
 (`SECURITY.md` §5). Every send writes its row in the same transaction as the causing action.
 **Exit** universal, plus: no consumer imports an SMTP SDK directly.
+
+**Built as planned**, via a custom pipeline for this and the next two units: Claude as a single
+continuous orchestrator+reviewer session, Antigravity (`agy-delegate`, `claude-opus-4-6-thinking`)
+as implementer — see `docs/phases/unit-3/PHASE_PLAN.md` and `REVIEW.md`. `MailModule` mirrors
+`StorageModule` (port + `null`-when-unconfigured) and `MailService.send` mirrors
+`AuditService.record` (throws outside a transaction) — no new pattern invented. **Not** made
+`@Global()` — the cap stays at three. `PasswordResetNotifier` is gone; `AuthService` now injects
+`MailService` and `requestPasswordReset` is transaction-wrapped for the first time.
+**Verified:** 536 unit / 34 files (from 517) · **112 integration on an empty schema, migration 016
+applied clean, 0 skipped** (from 110) · lint clean (one pre-existing unrelated warning untouched).
+**Open, disclosed rather than guessed:** the `invitation` / `sign-in-link` / `report` /
+`announcement` template `data` shapes are provisional — built ahead of their real callers (units
+5/9/10) per the roadmap's own scope for this unit; expect them to be refined when those callers
+land. `MAIL_DRIVER=log` is not refused in production the way `STORAGE_DRIVER=local` is — judged not
+to carry the same data-loss risk; revisit if that turns out wrong.
 
 ---
 

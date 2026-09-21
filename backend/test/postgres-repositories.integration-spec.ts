@@ -20,6 +20,7 @@ import { PostgresAuditLogRepository } from '../src/audit/repositories/postgres-a
 import { PostgresAnnouncementRepository } from '../src/announcements/repositories/postgres-announcement.repository.js';
 import { PostgresGroupRepository } from '../src/groups/repositories/postgres-group.repository.js';
 import { PostgresBlogRepository } from '../src/blog/repositories/postgres-blog.repository.js';
+import { PostgresMailDeliveryRepository } from '../src/mail/postgres-mail-delivery.repository.js';
 import { Role } from '../src/auth/roles.enum.js';
 
 /**
@@ -1917,6 +1918,38 @@ describeIfDb('Postgres repositories', () => {
       expect(await assessments.findTargets('assess-4')).toHaveLength(
         original.length,
       );
+    });
+  });
+
+  describe('mail_deliveries', () => {
+    const repo = () => new PostgresMailDeliveryRepository(db);
+
+    it('records a delivery and returns the stored row', async () => {
+      const r = repo();
+      const delivery = await db.runInTransaction(() =>
+        r.record({
+          id: 'mail-1',
+          recipient: 'test@example.com',
+          template: 'password-reset',
+          created_at: new Date('2026-09-21T10:00:00Z'),
+        }),
+      );
+      expect(delivery).toMatchObject({
+        id: 'mail-1',
+        recipient: 'test@example.com',
+        template: 'password-reset',
+      });
+      expect(delivery.createdAt).toBeTruthy();
+    });
+
+    it('uses the index on (recipient, created_at DESC)', async () => {
+      const row = await db.queryOne<{ indexdef: string }>(
+        `SELECT indexdef FROM pg_indexes
+          WHERE schemaname = current_schema()
+            AND indexname = 'idx_mail_deliveries_recipient_created'`,
+      );
+      expect(row?.indexdef).toContain('recipient');
+      expect(row?.indexdef).toContain('created_at');
     });
   });
 });

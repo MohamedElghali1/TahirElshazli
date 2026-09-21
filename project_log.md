@@ -3534,3 +3534,42 @@ authored.
 
 *Bookkeeping: the new decision is `D-23`, not `D-11`. `D-11` was taken on 2026-09-20 by the
 `@IsOptional()`-over-`NOT NULL` ruling, and the series had already run to `D-22`.*
+
+---
+
+## 2026-09-21 — Unit 3 (Mail) complete; the pipeline itself changes for units 3-5
+
+Units 3-5 run through a different process than the rest of the redesign: instead of three separate
+`redesign-planner`/`redesign-executor`/`redesign-reviewer` subagents, Claude stays one continuous
+session as orchestrator and reviewer, and **Antigravity** (Google's CLI, via the `agy-delegate`
+skill, model `claude-opus-4-6-thinking`) writes the code — the user's explicit request (`D-24`). The
+safeguards travel unchanged: a written phase plan first, an independent re-verification of the
+actual diff rather than the implementer's self-report, and the same nine-point completion gate.
+
+**Getting Antigravity to actually run took two findings before real work happened.** A first
+smoke-test dispatch reported `"completed"` and touched nothing — its headless permission system had
+soft-denied the first tool call against a stale allowlist from an unrelated project, and the relay's
+own success detection didn't catch that shape of failure. The user approved
+`--dangerously-skip-permissions` after seeing it. On the real unit-3 dispatch, Antigravity's account
+quota ran out mid-build — the mail module, migration, and service were already built correctly, but
+it never reached lint, the integration run, or its own final report. Per the user's instruction to
+keep working alone rather than wait out a ~4.5-hour reset, Claude finished the remainder directly:
+one trivial lint fix, and the actual Postgres integration run (starting the repo's existing, already
+-present but stopped `tahir-test-db` container on port `55432` — deliberately not the live
+`tahirelshazli-db` on `5432`, which the integration suite's `DROP SCHEMA` would have destroyed).
+
+**What landed (`MAIL-1`..`3`):** a `MailSender` port shaped exactly like `FileStorage`
+(`none|log|smtp`, 503 when unconfigured), a `mail_deliveries` table (migration `016`) storing
+recipient and template only — never the body, `SmtpMailSender` is the one file in the codebase that
+imports `nodemailer`, and `MailService.send` mirrors `AuditService.record`'s
+throws-outside-a-transaction contract. `PasswordResetNotifier` is gone; `AuthService` now injects
+`MailService`, and `requestPasswordReset` — previously not transaction-wrapped at all — now commits
+the reset token and its mail delivery row together. `MailModule` is deliberately **not** `@Global()`;
+the cap stays at three.
+
+**Verified:** 536 unit / 34 files (from 517/32) · **112 integration, 0 skipped, migration 016
+applied from an empty schema** (from 110) · lint clean but for one pre-existing, unrelated warning.
+Two things are recorded as open rather than guessed: the four non-password-reset template shapes are
+provisional until their real callers exist (units 5/9/10), and `MAIL_DRIVER=log` is not refused in
+production the way `STORAGE_DRIVER=local` is (judged lower-risk; revisit if wrong). Full detail in
+`docs/phases/unit-3/`. Units 4 (Shells) and 5 (People and groups) follow the same pipeline next.

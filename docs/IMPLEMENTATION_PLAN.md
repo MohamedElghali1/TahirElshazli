@@ -170,9 +170,9 @@ user's to make. **Both are closed, so `AUTH-2` is `[x]`.** Nothing below blocks 
 
 | ID | Task | Deps |
 |---|---|---|
-| `MAIL-1` `[ ]` | `MailSender` port + `MAIL_DRIVER=none\|log\|smtp`, resolved in `env.ts` like `STORAGE_DRIVER`; 503 when unconfigured. Fold `PasswordResetNotifier` onto it. | — |
-| `MAIL-2` `[ ]` | `mail_deliveries` table, written in the same transaction as the causing action. **Recipient and template only — never the rendered body** (`SECURITY.md` §5). | `MAIL-1` |
-| `MAIL-3` `[ ]` | Templates: invitation, sign-in link, report, announcement. | `MAIL-2` |
+| `MAIL-1` `[x]` | `MailSender` port + `MAIL_DRIVER=none\|log\|smtp`, resolved in `env.ts` like `STORAGE_DRIVER`; 503 when unconfigured. Fold `PasswordResetNotifier` onto it. | — |
+| `MAIL-2` `[x]` | `mail_deliveries` table, written in the same transaction as the causing action. **Recipient and template only — never the rendered body** (`SECURITY.md` §5). | `MAIL-1` |
+| `MAIL-3` `[x]` | Templates: invitation, sign-in link, report, announcement. | `MAIL-2` |
 
 ---
 

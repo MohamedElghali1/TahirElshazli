@@ -9,12 +9,11 @@ import { BcryptPasswordHasher } from './bcrypt-password-hasher.js';
 import type { UserRepository } from './interfaces/user-repository.interface.js';
 import { USER_REPOSITORY } from './interfaces/user-repository.interface.js';
 import { PASSWORD_HASHER } from './interfaces/password-hasher.interface.js';
-import { PASSWORD_RESET_NOTIFIER } from './interfaces/password-reset-notifier.interface.js';
-import { LoggingPasswordResetNotifier } from './logging-password-reset-notifier.js';
 import { InMemoryUserRepository } from './repositories/in-memory-user.repository.js';
 import { PostgresUserRepository } from './repositories/postgres-user.repository.js';
 import { repositoryProvider } from '../database/repository.provider.js';
 import { StudentRepositoryModule } from '../students/student-repository.module.js';
+import { MailModule } from '../mail/mail.module.js';
 import { JWT_SECRET, JWT_EXPIRES_IN } from './constants.js';
 
 @Module({
@@ -27,6 +26,7 @@ import { JWT_SECRET, JWT_EXPIRES_IN } from './constants.js';
       signOptions: { expiresIn: JWT_EXPIRES_IN },
     }),
     StudentRepositoryModule,
+    MailModule,
   ],
   controllers: [AuthController],
   providers: [
@@ -39,10 +39,6 @@ import { JWT_SECRET, JWT_EXPIRES_IN } from './constants.js';
     {
       provide: PASSWORD_HASHER,
       useClass: BcryptPasswordHasher,
-    },
-    {
-      provide: PASSWORD_RESET_NOTIFIER,
-      useClass: LoggingPasswordResetNotifier,
     },
   ],
   // PassportModule is re-exported because JwtAuthGuard extends AuthGuard('jwt'),

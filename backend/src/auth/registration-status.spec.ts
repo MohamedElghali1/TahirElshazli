@@ -6,7 +6,8 @@ import { TokenDenylistService } from './token-denylist.service.js';
 import { BcryptPasswordHasher } from './bcrypt-password-hasher.js';
 import { InMemoryUserRepository } from './repositories/in-memory-user.repository.js';
 import { InMemoryStudentRepository } from '../students/repositories/in-memory-student.repository.js';
-import type { PasswordResetNotifier } from './interfaces/password-reset-notifier.interface.js';
+import { MailService } from '../mail/mail.service.js';
+import { DatabaseService } from '../database/database.service.js';
 
 /**
  * The registration queue's two gates (`DOM-4`, ruling R-6).
@@ -18,15 +19,13 @@ import type { PasswordResetNotifier } from './interfaces/password-reset-notifier
  * working until it expires - which is precisely the window in which an account
  * gets rejected.
  */
-const NOOP_NOTIFIER: PasswordResetNotifier = {
-  async sendResetToken() {},
-};
-
 function build() {
   const users = new InMemoryUserRepository();
   const students = new InMemoryStudentRepository();
   const hasher = new BcryptPasswordHasher();
   const denylist = new TokenDenylistService();
+  const db = new DatabaseService(null);
+  const mail = { send: vi.fn().mockResolvedValue(undefined) } as unknown as MailService;
   const jwt = {
     signAsync: vi.fn().mockResolvedValue('mock-token'),
   } as unknown as JwtService;
@@ -35,7 +34,8 @@ function build() {
     denylist,
     users,
     hasher,
-    NOOP_NOTIFIER,
+    mail,
+    db,
     students,
   );
   const strategy = new JwtStrategy(denylist, users);
