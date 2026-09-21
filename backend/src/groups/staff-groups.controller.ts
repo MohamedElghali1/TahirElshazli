@@ -13,7 +13,7 @@ import { Roles } from '../auth/roles.decorator.js';
 import { STAFF_ADMIN, STAFF_ALL } from '../auth/staff-roles.js';
 import type { JwtPayload } from '../auth/jwt.strategy.js';
 import { AddGroupMemberDto } from './dto/group.dto.js';
-import type { GroupMemberView, GroupSummary } from './groups.service.js';
+import type { GroupMemberView, GroupReport, GroupSummary } from './groups.service.js';
 import { GroupsService } from './groups.service.js';
 
 /**
@@ -80,6 +80,15 @@ export class StaffGroupsController {
     @Request() req: { user: JwtPayload },
   ): Promise<GroupMemberView[]> {
     return this.groups.members(groupId, this.actor(req));
+  }
+
+  /** Stats plus a per-student table (`GROUP-4`). Scoped like every other group read. */
+  @Get('groups/:groupId/report')
+  async report(
+    @Param('groupId') groupId: string,
+    @Request() req: { user: JwtPayload },
+  ): Promise<GroupReport> {
+    return this.groups.report(groupId, this.actor(req));
   }
 
   /**

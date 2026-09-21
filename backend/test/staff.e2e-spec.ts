@@ -1102,13 +1102,17 @@ describe('Staff and admin API (e2e)', () => {
       return res.body.message as string;
     };
 
-    it('lets the holding assistant read the group and its roster', async () => {
+    it('lets the holding assistant read the group, its roster and its report', async () => {
       await request(app.getHttpServer())
         .get(`/staff/groups/${HELD}`)
         .set(bearer(assignedTaToken))
         .expect(200);
       await request(app.getHttpServer())
         .get(`/staff/groups/${HELD}/members`)
+        .set(bearer(assignedTaToken))
+        .expect(200);
+      await request(app.getHttpServer())
+        .get(`/staff/groups/${HELD}/report`)
         .set(bearer(assignedTaToken))
         .expect(200);
     });
@@ -1119,6 +1123,11 @@ describe('Staff and admin API (e2e)', () => {
         'the roster',
         `/staff/groups/${NOT_HELD}/members`,
         `/staff/groups/group-nope/members`,
+      ],
+      [
+        'the report',
+        `/staff/groups/${NOT_HELD}/report`,
+        `/staff/groups/group-nope/report`,
       ],
     ])(
       '404s %s of a group the assistant does not hold, identically to a genuine miss',
@@ -1249,7 +1258,7 @@ describe('Staff and admin API (e2e)', () => {
       },
       // admin-audit (1)
       { method: 'get', path: '/admin/audit-log' },
-      // admin-groups (4) - two retired by `DOM-1`: a group's course is a
+      // admin-groups (5) - two retired by `DOM-1`: a group's course is a
       // field on the group now, so POST/DELETE /groups/:id/courses are gone.
       { method: 'get', path: '/admin/groups' },
       { method: 'get', path: '/admin/groups/group-does-not-exist' },
@@ -1262,6 +1271,13 @@ describe('Staff and admin API (e2e)', () => {
         method: 'patch',
         path: '/admin/groups/group-does-not-exist',
         body: { name: 'Parity probe' },
+      },
+      // `GROUP-3`. A nonexistent group is a stable 404 for both - no state
+      // ever changes on either path.
+      {
+        method: 'post',
+        path: '/admin/groups/group-does-not-exist/members/bulk',
+        body: { studentIds: ['student-1'] },
       },
       // admin-google-integration (4 role-gated; callback is @Public)
       { method: 'get', path: '/admin/integrations/google' },
@@ -1377,15 +1393,16 @@ describe('Staff and admin API (e2e)', () => {
       { method: 'delete', path: '/admin/live-sessions/session-does-not-exist' },
     ];
 
-    it('covers all 30 role-gated admin routes', () => {
-      // Asserted, because a parity table that quietly covers 12 of 30 routes
+    it('covers all 31 role-gated admin routes', () => {
+      // Asserted, because a parity table that quietly covers 12 of 31 routes
       // proves parity on 12 routes while reading as though it proved it on all.
       // 24 before `DOM-1` retired the two group-course routes; 22 after; 26
       // once `DOM-4` added accept/reject and `DOM-5` added course create/edit;
       // 23 once `AUTH-2` retired the three course-staff routes; 26 again once
       // `PEOPLE-2`/`PEOPLE-3` added student detail/edit/create; 30 once
-      // `PEOPLE-4`/`AUTH-4` added invite/edit/remove/resend.
-      expect(ADMIN_ROUTES).toHaveLength(30);
+      // `PEOPLE-4`/`AUTH-4` added invite/edit/remove/resend; 31 once `GROUP-3`
+      // added bulk move.
+      expect(ADMIN_ROUTES).toHaveLength(31);
     });
 
     it.each(ADMIN_ROUTES)(

@@ -22,6 +22,7 @@ import type {
   GradingStatus,
   GroupMemberView,
   GroupPatch,
+  GroupReport,
   GroupSummary,
   GroupWrite,
   LiveSession,
@@ -612,6 +613,10 @@ export const api = {
     groupMembers: (token: string, groupId: string) =>
       request<GroupMemberView[]>(`/staff/groups/${groupId}/members`, { token }),
 
+    /** Stats plus a per-student table (`GROUP-4`). No PDF route - the browser's own print-to-PDF renders the file. */
+    groupReport: (token: string, groupId: string) =>
+      request<GroupReport>(`/staff/groups/${groupId}/report`, { token }),
+
     /**
      * Placement - a TA power, granted by the client in as many words (§2.2,
      * §5.16). Deliberately *not* enrollment: a TA still cannot enroll or
@@ -854,6 +859,14 @@ export const api = {
         method: 'PATCH',
         token,
         body,
+      }),
+
+    /** "Move N to group" (`GROUP-3`) - N `addMember` writes in one transaction. */
+    bulkMoveMembers: (token: string, groupId: string, studentIds: string[]) =>
+      request<{ moved: number }>(`/admin/groups/${groupId}/members/bulk`, {
+        method: 'POST',
+        token,
+        body: { studentIds },
       }),
 
     /**

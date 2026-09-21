@@ -3661,3 +3661,52 @@ already carried. Full detail: `docs/phases/unit-5/REVIEW_5A.md`, `REVIEW_5B.md`,
 
 Unit 5 is not yet complete: slice 5d (bulk move, the group report, and closing the three
 `AUTH-2`-broken pages that hold the frontend's remaining 22 `tsc` errors) remains.
+
+## 2026-09-21 — Unit 5 slice 5d: bulk move, the group report, and the frontend hits zero `tsc` errors
+
+The closing slice of unit 5. Two small backend additions - `POST /admin/groups/:id/members/bulk`
+("Move N to group", validated whole-batch-or-nothing before any write, teacher/admin only) and
+`GET /staff/groups/:id/report` (per-student performance scored against what was actually targeted
+at the group, not every assessment the course has ever had) - and then the real work: making the
+three frontend pages this unit's earlier slices had left broken actually compile again.
+
+**The headline finding, and it reverses an assumption this unit's own plan carried:** the group
+report's "PDF" was expected to reuse the rendered-overlay pattern task-marking settled with `D-2`.
+Reading `D-2` in full before building anything found it answers a different question entirely - it
+is about annotating a submission that already exists as a file, never about generating one from
+nothing. A group report has no source PDF to draw on top of, and this stack carries no server-side
+PDF library by design (§1's ~10-group scale does not justify one). The actual answer was simpler
+than the plan assumed: render the report as a page and let the browser's own print-to-PDF produce
+the file - a "Print / save as PDF" button, and two `print:hidden` classes on the console shell's
+nav so the printed output is the report alone. Recorded as `D-27`, since the wrong assumption was
+written into the phase plan and someone re-reading it later would otherwise build the wrong thing.
+
+**The rest was overdue cleanup, not new design.** `manage/groups/page.tsx` was still calling a
+`createGroup(token, name)` signature and reading `group.courses`/`pairing.learningMode` - a
+join-table and a delivery-mode axis two earlier migrations had retired outright (`D-9`: every
+course is taught the same way now, recordings and live sessions both, always - there was nothing
+left for the axis to switch). Rewritten onto the model that has been correct since unit 2.
+`manage/courses/[id]/staff/page.tsx` was calling three routes `AUTH-2` deleted in unit 2 and had
+zero remaining callers anywhere in the app - confirmed by grep before deleting it outright, the
+same discipline unit 4's `SHELL-4` used for the dead quarter of `components/app/*`. One correctness
+fix rode along: the roster's remove-student button is now hidden for anyone who isn't teacher or
+admin, matching what the server already refused with 403 - a control that was offered and then
+always failed is not courtesy, it's a bug users would have reported.
+
+**Result: `npx tsc --noEmit` in `frontend/` is 0.** Not "0 in `lib/`", the actual total - the
+invariant `CLAUDE.md` §4.1 has tracked as a rising, tolerated count since unit 4 is retired along
+with the count it was covering for. A `tsc` error from the next unit on is an ordinary regression.
+
+**Verified:** 573 backend unit tests (7 new), 244 e2e (2 new), backend lint and `tsc` clean,
+frontend `tsc` at 0 and `eslint` clean across the whole tree. Every new/changed route verified live
+against the actually-running dev server with real requests and real fixture data - a genuine
+two-student bulk move, a group report showing a real graded average next to a real "not yet marked"
+null. **Interactive browser verification did not complete**, the same Chrome-automation-tool
+failure reported during slice 5c reproduced again on a freshly created tab; direct API and
+server-rendered-page checks were substituted, as before. Full detail across all four slices:
+`docs/phases/unit-5/REVIEW_5A.md` … `REVIEW_5D.md`.
+
+**Unit 5 is `APPROVED WITH FOLLOW-UP`, not `COMPLETE`.** Every task in scope is built and tested;
+what's missing is entirely environmental - no Docker in this build environment for migration
+`017`'s real-schema run, and the still-unresolved browser tool failure. Both are tracked as open
+follow-ups rather than closing the unit on an unverified claim.

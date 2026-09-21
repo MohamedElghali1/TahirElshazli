@@ -173,7 +173,7 @@ function ConsoleShellInner({ children }: { children: React.ReactNode }) {
       <aside
         className={cx(
           'fixed inset-y-0 start-0 z-40 flex w-[244px] flex-col border-e border-border-light bg-surface-2',
-          'transition-transform duration-[var(--dur-fast)] ease-[var(--ease)] md:translate-x-0',
+          'transition-transform duration-[var(--dur-fast)] ease-[var(--ease)] md:translate-x-0 print:hidden',
           open ? 'translate-x-0' : '-translate-x-full rtl:translate-x-full',
         )}
       >
@@ -237,8 +237,10 @@ function ConsoleShellInner({ children }: { children: React.ReactNode }) {
         />
       )}
 
-      <div className="flex min-w-0 flex-1 flex-col md:ms-[244px]">
-        <ShellHeader open={open} onToggle={() => setOpen((v) => !v)} />
+      <div className="flex min-w-0 flex-1 flex-col md:ms-[244px] print:ms-0">
+        <div className="print:hidden">
+          <ShellHeader open={open} onToggle={() => setOpen((v) => !v)} />
+        </div>
         <main id="main" className="min-w-0 flex-1">
           {children}
         </main>

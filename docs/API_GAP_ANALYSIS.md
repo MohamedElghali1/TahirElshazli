@@ -165,8 +165,8 @@ Task-results screen. It needs a frontend and nothing else.
 |---|---|---|
 | Group detail with roster and metrics | `GET /admin/groups/:id` | `[EXISTS_BUT_INSUFFICIENT]` |
 | Delete a group | `DELETE /admin/groups/:id` | `[MISSING]` |
-| Bulk move students between groups (the roster's "Move N to group") | `POST /admin/groups/:id/members/bulk` | `[MISSING]` |
-| Group report (stats + per-student table, PDF) | `GET /staff/groups/:id/report` | `[MISSING]` |
+| Bulk move students between groups (the roster's "Move N to group") | `POST /admin/groups/:id/members/bulk` | `[BUILT]` unit 5 slice 5d |
+| Group report (stats + per-student table, PDF) | `GET /staff/groups/:id/report` | `[BUILT]` unit 5 slice 5d — no PDF route: the frontend's own print-to-PDF renders the file, no server-side PDF library |
 
 ## B3. Tasks and the draft library
 

@@ -224,10 +224,30 @@ only reads shows nothing (`—`, never `0`). `PEOPLE-4` emits it; `PEOPLE-5` ren
 the filtered activity screen.
 
 ### Phase 6 — Groups
-`GROUP-1` `[ ]` Group CRUD with course/assistant/meets/room (`DOM-2`) ·
-`GROUP-2` `[ ]` Group detail + membership multi-select ·
-`GROUP-3` `[ ]` Bulk move ("Move N to group") ·
-`GROUP-4` `[ ]` Group report (stats + per-student table, PDF)
+`GROUP-1` `[x]` Group CRUD with course/assistant/meets/room (`DOM-2`). Built unit 2
+(`admin-groups.controller.ts`) — `GET/POST/PATCH /admin/groups`, `CreateGroupDto` carries
+`courseId`/`assistantId`/`meets`/`room`. Frontend closed unit 5 slice 5d: `manage/groups/page.tsx`
+was carrying retired `LearningMode`/multi-course fields and did not compile; rewritten onto the
+current one-course-per-group model. ·
+`GROUP-2` `[x]` Group detail + membership multi-select. Built unit 2 (`staff-groups.controller.ts`:
+`GET groups/:id`, `GET/POST/DELETE groups/:id/members`). The add-not-remove asymmetry for assistants
+is enforced in `GroupsService.removeMember` (`assertMay(actor, 'group.member.remove')`) and verified
+both directions in `groups.controller.spec.ts` and `staff.e2e-spec.ts`. ·
+`GROUP-3` `[x]` Bulk move ("Move N to group"). `POST /admin/groups/{groupId}/members/bulk` —
+`GroupsService.bulkMove`: every id validated before any write (a half-valid batch is refused whole),
+then `addMember` called once per id in one transaction, each write audited individually as
+`group.student_assigned` — this endpoint saves the UI N requests, it does not change what happens.
+Teacher/admin only, matching `API_SPEC.yaml`'s `x-roles`. Frontend: a checkbox-select-and-move
+control on `manage/courses/[id]/groups/page.tsx`'s roster cards, admin-only. Unit 5 slice 5d. ·
+`GROUP-4` `[x]` Group report (stats + per-student table). `GET /staff/groups/{groupId}/report` —
+scored against what was actually **targeted** at the group (`findByCourseForGroups`), not every
+assessment on the course; the group-level average is rolled up from every individual graded
+submission's share, not from an average of the per-student averages. **No PDF route**: this stack
+carries no server-side PDF library, and marking's rendered-overlay pattern (`D-2`) does not apply —
+there is no existing PDF to overlay for a report generated from scratch. "PDF" is the frontend page
+(`manage/groups/[id]/report/page.tsx`) plus the browser's own print-to-PDF; the console shell's nav
+and header now carry `print:hidden` so the printed output is just the report. Unit 5 slice 5d, see
+`docs/phases/unit-5/REVIEW_5D.md`.
 
 ### Phase 7 — Tasks
 `TASK-1` `[ ]` `visibility` enum, distinct from the window ·

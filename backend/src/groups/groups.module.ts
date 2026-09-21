@@ -8,6 +8,7 @@ import { AuthModule } from '../auth/auth.module.js';
 import { CoursesModule } from '../courses/courses.module.js';
 import { EnrollmentsModule } from '../enrollments/enrollments.module.js';
 import { StaffModule } from '../staff/staff.module.js';
+import { AssessmentsModule } from '../assessments/assessments.module.js';
 
 /**
  * The group *surface* (CLAUDE.md §5.16) and the student classmate list (§5.17).
@@ -28,10 +29,12 @@ import { StaffModule } from '../staff/staff.module.js';
  *
  * Imports: `AuthModule` for `USER_REPOSITORY`, `CoursesModule` for
  * `COURSE_REPOSITORY`, `EnrollmentsModule` for the classmate list's enrollment
- * gate, `StaffModule` for `StaffScopeService`.
+ * gate, `StaffModule` for `StaffScopeService`, `AssessmentsModule` for
+ * `ASSESSMENT_REPOSITORY` (`GroupsService.report`, `GROUP-4`) - safe to add,
+ * `AssessmentsModule` does not import this module back.
  */
 @Module({
-  imports: [AuthModule, CoursesModule, EnrollmentsModule, StaffModule],
+  imports: [AuthModule, CoursesModule, EnrollmentsModule, StaffModule, AssessmentsModule],
   controllers: [
     AdminGroupsController,
     StaffGroupsController,

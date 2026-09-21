@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { api, ApiError } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
 import { formatDate } from '@/lib/format';
-import type { GroupSummary, LearningMode, StaffCourseSummary } from '@/lib/types';
+import type { Assistant, GroupSummary, StaffCourseSummary } from '@/lib/types';
 import {
   Button,
   EmptyState,
@@ -27,24 +27,42 @@ import { PageTitle } from '@/components/shell/page-chrome';
  * creation shipped teacher-only, the same call made for live-session
  * scheduling (§11). A TA reaches placement through a course's Groups tab.
  *
- * The mental model this screen has to teach, because it is the thing everyone
- * gets wrong first: **a group is a class of students, not a subdivision of a
- * course.** It has no course until one is added, several groups can study the
- * same course, and adding a course to a group **enrolls nobody** — enrollment
- * stays separate, which is what keeps payment out of this surface entirely.
+ * The mental model this screen has to teach: **a group is a class of
+ * students studying one course** (migration 013) — not a subdivision, and
+ * several groups can study the same course. Naming a course on a group
+ * enrols nobody; `Enrollment` stays the access gate, which is what keeps
+ * payment out of this surface entirely.
  */
 export default function GroupsPage() {
   const { data, error, loading, reload } = useApi((t) => api.admin.groups(t), []);
   const courses = useApi((t) => api.staff.courses(t), []);
+  const assistants = useApi((t) => api.admin.assistants(t), []);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const editing = data?.find((g) => g.id === editingId) ?? null;
 
   return (
     <>
       <PageTitle title="Groups" />
       <div className="flex flex-col gap-4 p-6">
         <p className="text-base text-fg-3">
-          A group is a class of students. A course is taught to one or more of them.
+          A group is a class of students, studying one course.
         </p>
-        <CreateGroup onCreated={reload} />
+
+        <CreateGroup courses={courses.data ?? []} onCreated={reload} />
+
+        {editing && (
+          <EditGroup
+            group={editing}
+            courses={courses.data ?? []}
+            assistants={(assistants.data ?? []).filter((a) => a.role === 'assistant')}
+            onClose={() => setEditingId(null)}
+            onSaved={() => {
+              setEditingId(null);
+              reload();
+            }}
+          />
+        )}
 
         {loading && (
           <div className="flex justify-center p-8">
@@ -58,41 +76,84 @@ export default function GroupsPage() {
             action={<Button onClick={reload}>Try again</Button>}
           />
         )}
-
         {data && data.length === 0 && (
           <EmptyState
             icon="Hierarchy2"
             title="No groups yet"
-            description={
-              'Create one above, then add the courses it studies. Students ' +
-              'who enrol but sit in no group are set no work, so a course ' +
-              'with no groups shows its students an empty page.'
-            }
+            description="Create one above. A group with no members has been set no work."
           />
         )}
 
-        {data?.map((group) => (
-          <GroupPanel key={group.id} group={group} courses={courses.data ?? []} onChanged={reload} />
-        ))}
+        {data && data.length > 0 && (
+          <div className="flex flex-col gap-2">
+            {data.map((group) => {
+              const course = (courses.data ?? []).find((c) => c.id === group.courseId);
+              return (
+                <div
+                  key={group.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border-light px-4 py-3"
+                >
+                  <div className="flex flex-col gap-1">
+                    <span className="text-base font-medium text-fg">{group.name}</span>
+                    <span className="text-xs text-fg-3">
+                      <Link
+                        href={`/manage/courses/${group.courseId}/groups`}
+                        className="underline-offset-2 hover:underline"
+                      >
+                        {course?.title ?? group.courseId}
+                      </Link>
+                      {group.meets && <> · {group.meets}</>}
+                      {group.room && <> · {group.room}</>}
+                      {' · created '}
+                      {formatDate(group.createdAt)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Tag tone="gray">
+                      {group.memberCount} {group.memberCount === 1 ? 'student' : 'students'}
+                    </Tag>
+                    <Link
+                      href={`/manage/groups/${group.id}/report`}
+                      className="text-base text-fg-2 underline-offset-2 hover:underline"
+                    >
+                      Report
+                    </Link>
+                    <Button size="small" onClick={() => setEditingId(group.id)}>
+                      Edit
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </>
   );
 }
 
-function CreateGroup({ onCreated }: { onCreated: () => void }) {
+function CreateGroup({
+  courses,
+  onCreated,
+}: {
+  courses: StaffCourseSummary[];
+  onCreated: () => void;
+}) {
   const { token } = useSession();
   const [name, setName] = useState('');
+  const [courseId, setCourseId] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!token || !name.trim()) return;
+    if (!token || !name.trim() || !courseId) return;
     setBusy(true);
     setError(null);
     try {
-      await api.admin.createGroup(token, name.trim());
+      await api.admin.createGroup(token, { name: name.trim(), courseId });
       setName('');
+      setCourseId('');
       onCreated();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not create that group.');
@@ -116,7 +177,18 @@ function CreateGroup({ onCreated }: { onCreated: () => void }) {
             maxLength={120}
             required
           />
-          <Button type="submit" variant="primary" disabled={busy || !name.trim()}>
+          <Select
+            label="Course"
+            id="group-course"
+            className="min-w-[220px]"
+            value={courseId}
+            onChange={(e) => setCourseId(e.target.value)}
+            options={[
+              { value: '', label: 'Choose a course…' },
+              ...courses.map((c) => ({ value: c.id, label: c.title })),
+            ]}
+          />
+          <Button type="submit" variant="primary" disabled={busy || !name.trim() || !courseId}>
             {busy ? <Loader size={3} label="Creating" /> : 'Create group'}
           </Button>
         </div>
@@ -126,140 +198,114 @@ function CreateGroup({ onCreated }: { onCreated: () => void }) {
   );
 }
 
-const MODE_OPTIONS: { value: LearningMode; label: string }[] = [
-  { value: 'recorded', label: 'Recorded' },
-  { value: 'live', label: 'Live' },
-];
-
-function GroupPanel({
+function EditGroup({
   group,
   courses,
-  onChanged,
+  assistants,
+  onClose,
+  onSaved,
 }: {
   group: GroupSummary;
   courses: StaffCourseSummary[];
-  onChanged: () => void;
+  assistants: Assistant[];
+  onClose: () => void;
+  onSaved: () => void;
 }) {
   const { token } = useSession();
-  const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState(group.name);
+  const [courseId, setCourseId] = useState(group.courseId);
+  const [assistantId, setAssistantId] = useState(group.assistantId ?? '');
+  const [meets, setMeets] = useState(group.meets ?? '');
+  const [room, setRoom] = useState(group.room ?? '');
   const [busy, setBusy] = useState(false);
-  const studying = new Set(group.courses.map((c) => c.courseId));
-  const addable = courses.filter((course) => !studying.has(course.id));
+  const [error, setError] = useState<string | null>(null);
 
-  const [courseId, setCourseId] = useState('');
-  const [mode, setMode] = useState<LearningMode>('recorded');
-
-  const addCourse = async (event: React.FormEvent) => {
+  const save = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!token || !courseId) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await api.admin.addGroupCourse(token, group.id, { courseId, learningMode: mode });
-      setCourseId('');
-      onChanged();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not add that course.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const removeCourse = async (id: string) => {
     if (!token) return;
     setBusy(true);
     setError(null);
     try {
-      await api.admin.removeGroupCourse(token, group.id, id);
-      onChanged();
+      await api.admin.updateGroup(token, group.id, {
+        name: name.trim(),
+        courseId,
+        assistantId: assistantId || null,
+        meets: meets.trim() || null,
+        room: room.trim() || null,
+      });
+      onSaved();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not remove that course.');
-    } finally {
+      setError(err instanceof ApiError ? err.message : 'Could not save this group.');
       setBusy(false);
     }
   };
 
   return (
     <Panel
-      title={group.name}
+      title={`Edit ${group.name}`}
       action={
-        <div className="flex items-center gap-2">
-          <Tag tone="gray">
-            {group.memberCount} {group.memberCount === 1 ? 'student' : 'students'}
-          </Tag>
-          <span className="text-xs text-fg-3">created {formatDate(group.createdAt)}</span>
-        </div>
+        <Button size="small" variant="tertiary" onClick={onClose}>
+          Close
+        </Button>
       }
     >
-      {error && <InlineBanner tone="danger" className="mb-4">{error}</InlineBanner>}
-
-      <h3 className="mb-2 text-xs font-medium text-fg-2">Studying</h3>
-      {group.courses.length === 0 ? (
-        <p className="mb-4 text-base text-fg-3">
-          Nothing yet. A group with no course has members but no lessons, no timetable and no work.
-        </p>
-      ) : (
-        <ul className="mb-4 divide-y divide-border-light">
-          {group.courses.map((pairing) => {
-            const course = courses.find((c) => c.id === pairing.courseId);
-            return (
-              <li
-                key={pairing.id}
-                className="flex flex-wrap items-center justify-between gap-3 py-2"
-              >
-                <span className="flex items-center gap-2">
-                  <Link
-                    href={`/manage/courses/${pairing.courseId}/groups`}
-                    className="text-base text-fg underline-offset-2 hover:underline"
-                  >
-                    {course?.title ?? pairing.courseId}
-                  </Link>
-                  {/* §5.2 — the mode belongs to this pairing, not to a student. */}
-                  <Tag tone={pairing.learningMode === 'live' ? 'violet' : 'gray'}>
-                    {pairing.learningMode === 'live' ? 'Live' : 'Recorded'}
-                  </Tag>
-                </span>
-                <Button variant="tertiary" size="small" disabled={busy} onClick={() => removeCourse(pairing.courseId)}>
-                  Remove
-                </Button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      {addable.length > 0 && (
-        <form onSubmit={addCourse} className="flex flex-wrap items-end gap-3">
+      <form onSubmit={save} className="flex flex-col gap-4">
+        {error && <InlineBanner tone="danger">{error}</InlineBanner>}
+        {group.memberCount > 0 && (
+          <p className="text-xs text-fg-3">
+            This group has {group.memberCount} member{group.memberCount === 1 ? '' : 's'} —
+            changing its course is refused while they would be left enrolled on the old one.
+          </p>
+        )}
+        <div className="flex flex-wrap items-end gap-3">
+          <TextInput
+            label="Name"
+            className="min-w-[240px] flex-1"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={120}
+            required
+          />
           <Select
-            label="Add a course"
-            id={`course-${group.id}`}
-            className="min-w-[220px]"
+            label="Course"
+            className="min-w-[200px]"
             value={courseId}
             onChange={(e) => setCourseId(e.target.value)}
-            options={[
-              { value: '', label: 'Choose a course…' },
-              ...addable.map((course) => ({ value: course.id, label: course.title })),
-            ]}
+            options={courses.map((c) => ({ value: c.id, label: c.title }))}
           />
           <Select
-            label="Taught as"
-            id={`mode-${group.id}`}
-            className="min-w-[160px]"
-            hint="Decides which dashboard this group's students see."
-            value={mode}
-            onChange={(e) => setMode(e.target.value as LearningMode)}
-            options={MODE_OPTIONS}
+            label="Assistant"
+            className="min-w-[200px]"
+            hint="Display only — grants no access."
+            value={assistantId}
+            onChange={(e) => setAssistantId(e.target.value)}
+            options={[
+              { value: '', label: 'None' },
+              ...assistants.map((a) => ({ value: a.id, label: a.name })),
+            ]}
           />
-          <Button type="submit" disabled={busy || !courseId}>
-            Add course
+        </div>
+        <div className="flex flex-wrap items-end gap-3">
+          <TextInput
+            label="Meets"
+            className="min-w-[200px]"
+            value={meets}
+            onChange={(e) => setMeets(e.target.value)}
+            placeholder="Saturday 18:00"
+            maxLength={120}
+          />
+          <TextInput
+            label="Room"
+            className="min-w-[160px]"
+            value={room}
+            onChange={(e) => setRoom(e.target.value)}
+            maxLength={80}
+          />
+          <Button type="submit" variant="primary" disabled={busy || !name.trim()}>
+            {busy ? 'Saving…' : 'Save'}
           </Button>
-        </form>
-      )}
-
-      <p className="mt-3 text-xs text-fg-3">
-        Adding a course here enrols nobody. Students enrol separately; placing them in this group
-        decides which cohort they sit in and what work they are set.
-      </p>
+        </div>
+      </form>
     </Panel>
   );
 }

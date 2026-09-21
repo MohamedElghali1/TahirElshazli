@@ -853,6 +853,33 @@ export interface GroupPatch {
 }
 
 /**
+ * `GET /staff/groups/:id/report` (`GROUP-4`). Performance only - no
+ * progress/completion figure sits beside it (CLAUDE.md §11.1). No PDF field:
+ * the browser's own print-to-PDF renders this data, there is no server-side
+ * PDF file to link to.
+ */
+export interface GroupReportEntry {
+  studentId: string;
+  name: string;
+  email: string;
+  submittedCount: number;
+  gradedCount: number;
+  averageScorePercent: number | null;
+}
+
+export interface GroupReport {
+  groupId: string;
+  groupName: string;
+  courseId: string;
+  courseTitle: string;
+  memberCount: number;
+  /** Assessments actually targeted at this group, not every assessment on the course. */
+  assessmentCount: number;
+  averageScorePercent: number | null;
+  entries: GroupReportEntry[];
+}
+
+/**
  * The *staff* roster row. Carries an email; §5.17's student-facing classmate
  * list deliberately does not, and the two come from different endpoints so
  * widening one cannot widen the other.

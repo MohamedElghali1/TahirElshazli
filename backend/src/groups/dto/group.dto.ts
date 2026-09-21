@@ -1,5 +1,8 @@
 import { Transform } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsInt,
   IsOptional,
   IsString,
@@ -128,6 +131,22 @@ export class AddGroupMemberDto {
     message: 'studentId must contain only letters, digits, hyphens and underscores',
   })
   studentId!: string;
+}
+
+/**
+ * `POST /admin/groups/:groupId/members/bulk` (`GROUP-3`) - backs the roster's
+ * "Move N to group". `API_SPEC.yaml`'s bounds: 1-100 at once.
+ */
+export class BulkMoveMembersDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @IsString({ each: true })
+  @Matches(ID_PATTERN, {
+    each: true,
+    message: 'studentIds must contain only letters, digits, hyphens and underscores',
+  })
+  studentIds!: string[];
 }
 
 /** `enableImplicitConversion` is off globally, so query numbers need a transform. */

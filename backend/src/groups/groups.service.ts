@@ -14,6 +14,8 @@ import type { UserRepository } from '../auth/interfaces/user-repository.interfac
 import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js';
 import type { CourseRepository } from '../courses/interfaces/course-repository.interface.js';
 import { COURSE_REPOSITORY } from '../courses/interfaces/course-repository.interface.js';
+import type { AssessmentRepository } from '../assessments/interfaces/assessment-repository.interface.js';
+import { ASSESSMENT_REPOSITORY } from '../assessments/interfaces/assessment-repository.interface.js';
 import type { StaffActor } from '../staff/staff-scope.service.js';
 import { StaffScopeService } from '../staff/staff-scope.service.js';
 import type {
@@ -65,6 +67,34 @@ export interface GroupMemberView {
   assignedAt: string;
 }
 
+/** One student's row on the group report (`GROUP-4`). Performance only - no progress/completion figure (`CLAUDE.md` §11.1). */
+export interface GroupReportEntry {
+  studentId: string;
+  name: string;
+  email: string;
+  submittedCount: number;
+  gradedCount: number;
+  averageScorePercent: number | null;
+}
+
+export interface GroupReport {
+  groupId: string;
+  groupName: string;
+  courseId: string;
+  courseTitle: string;
+  memberCount: number;
+  /** Assessments actually targeted at this group - not every assessment on the course. */
+  assessmentCount: number;
+  /**
+   * The group-level rollup: every graded submission's own share, averaged
+   * once across the whole group - not an average of the per-student
+   * averages, which would weight a student with one graded task the same as
+   * one with ten.
+   */
+  averageScorePercent: number | null;
+  entries: GroupReportEntry[];
+}
+
 /**
  * Groups: the cohort Dr. Tahir teaches (CLAUDE.md §5.16).
  *
@@ -91,6 +121,7 @@ export class GroupsService {
     @Inject(GROUP_REPOSITORY) private readonly groupRepo: GroupRepository,
     @Inject(COURSE_REPOSITORY) private readonly courseRepo: CourseRepository,
     @Inject(USER_REPOSITORY) private readonly userRepo: UserRepository,
+    @Inject(ASSESSMENT_REPOSITORY) private readonly assessmentRepo: AssessmentRepository,
     private readonly scope: StaffScopeService,
     private readonly audit: AuditService,
     /** `DatabaseModule` is `@Global()`; this needs no import edge. */
@@ -397,6 +428,130 @@ export class GroupsService {
         after: null,
       });
     });
+  }
+
+  /**
+   * Places several students in this group at once (`GROUP-3`) - backs the
+   * roster's "Move N to group". Not a new primitive: it is `addMember`
+   * called once per id inside one transaction, so the UI is not forced into
+   * N requests. Each placement is still audited individually, same as a
+   * single `addMember` call - this endpoint changes how many requests the
+   * caller sends, not what happens.
+   *
+   * Every id is validated **before** any write - a batch that is half valid
+   * must not leave the group half-moved. Teacher/admin only
+   * (`API_SPEC.yaml`), matching the blast radius of moving up to a hundred
+   * students in one call.
+   */
+  async bulkMove(
+    groupId: string,
+    studentIds: string[],
+    actor: StaffActor,
+  ): Promise<{ moved: number }> {
+    return this.db.runInTransaction(async () => {
+      await this.requireGroup(groupId, actor);
+      const students = await this.userRepo.findByIds(studentIds);
+      const byId = new Map(students.map((s) => [s.id, s]));
+      for (const studentId of studentIds) {
+        const student = byId.get(studentId);
+        if (!student) {
+          throw new NotFoundException('Student not found');
+        }
+        if (student.role !== Role.Student) {
+          throw new BadRequestException('Only students can be placed in a group');
+        }
+      }
+      for (const studentId of studentIds) {
+        const membership = await this.groupRepo.addMember({
+          groupId,
+          studentId,
+          assignedBy: actor.id,
+        });
+        await this.audit.record({
+          actorId: actor.id,
+          actorRole: actorRoleOf(actor),
+          action: 'group.student_assigned',
+          targetType: 'group_membership',
+          targetId: membership.id,
+          courseId: null,
+          before: null,
+          after: { groupId, studentId },
+        });
+      }
+      return { moved: studentIds.length };
+    });
+  }
+
+  /**
+   * The group report (`GROUP-4`): stats plus a per-student table. Scoped
+   * through the same `requireGroup` chokepoint as every other group read.
+   *
+   * Scored against what was actually **targeted** at this group
+   * (`findByCourseForGroups`), not every assessment on the course - a group
+   * report showing work another cohort was set would be wrong on its face.
+   * No PDF here: this is the data the frontend renders and the browser's
+   * own print-to-PDF turns into one, since this stack carries no
+   * server-side PDF library (`CLAUDE.md` §5) and there is no existing PDF to
+   * overlay the way marking's `D-2` pattern assumes - that pattern answers a
+   * different question (annotating a submitted file) and does not apply
+   * here.
+   */
+  async report(groupId: string, actor: StaffActor): Promise<GroupReport> {
+    const group = await this.requireGroup(groupId, actor);
+    const course = await this.courseRepo.findById(group.courseId);
+    if (!course) {
+      throw new NotFoundException('Course not found');
+    }
+    const [members, assessments] = await Promise.all([
+      this.groupRepo.findMembers(groupId),
+      this.assessmentRepo.findByCourseForGroups(group.courseId, [groupId]),
+    ]);
+    const [users, submissions] = await Promise.all([
+      this.userRepo.findByIds(members.map((m) => m.studentId)),
+      this.assessmentRepo.findSubmissionsForAssessments(assessments.map((a) => a.id)),
+    ]);
+    const byId = new Map(users.map((u) => [u.id, u]));
+    const maxScoreById = new Map(assessments.map((a) => [a.id, a.maxScore]));
+
+    const groupShares: number[] = [];
+    const entries: GroupReportEntry[] = [];
+    for (const member of members) {
+      const user = byId.get(member.studentId);
+      // A membership whose account is gone is dropped, same as `members`.
+      if (!user) continue;
+      const mine = submissions.filter((s) => s.studentId === member.studentId);
+      const graded = mine.filter((s) => s.score !== null && s.correctedAt !== null);
+      const shares = graded.flatMap((s) => {
+        const max = maxScoreById.get(s.assessmentId);
+        return max && max > 0 ? [(s.score as number) / max] : [];
+      });
+      groupShares.push(...shares);
+      entries.push({
+        studentId: member.studentId,
+        name: user.name,
+        email: user.email,
+        submittedCount: mine.length,
+        gradedCount: graded.length,
+        averageScorePercent:
+          shares.length > 0
+            ? Math.round((shares.reduce((a, b) => a + b, 0) / shares.length) * 100)
+            : null,
+      });
+    }
+
+    return {
+      groupId: group.id,
+      groupName: group.name,
+      courseId: group.courseId,
+      courseTitle: course.title,
+      memberCount: entries.length,
+      assessmentCount: assessments.length,
+      averageScorePercent:
+        groupShares.length > 0
+          ? Math.round((groupShares.reduce((a, b) => a + b, 0) / groupShares.length) * 100)
+          : null,
+      entries,
+    };
   }
 
   /** Every group studying one course - the course console's tab. Scoped. */

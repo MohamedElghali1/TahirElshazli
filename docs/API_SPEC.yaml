@@ -358,6 +358,38 @@ components:
         meets:        { type: [string, 'null'], maxLength: 120 }
         room:         { type: [string, 'null'], maxLength: 80 }
 
+    # `GET /staff/groups/{groupId}/report` (`GROUP-4`). Performance only - no
+    # progress/completion figure sits beside it (CLAUDE.md §11.1).
+    GroupReportEntry:
+      type: object
+      required: [studentId, name, email, submittedCount, gradedCount, averageScorePercent]
+      properties:
+        studentId: { $ref: '#/components/schemas/Id' }
+        name:      { type: string }
+        email:     { type: string, format: email }
+        submittedCount: { type: integer }
+        gradedCount:    { type: integer }
+        averageScorePercent: { type: [integer, 'null'] }
+
+    GroupReport:
+      type: object
+      required: [groupId, groupName, courseId, courseTitle, memberCount, assessmentCount, averageScorePercent, entries]
+      properties:
+        groupId:     { $ref: '#/components/schemas/Id' }
+        groupName:   { type: string }
+        courseId:    { $ref: '#/components/schemas/Id' }
+        courseTitle: { type: string }
+        memberCount: { type: integer }
+        # Assessments actually targeted at this group, not every assessment
+        # on the course.
+        assessmentCount: { type: integer }
+        # Every graded submission's own share, averaged once across the whole
+        # group - not an average of the per-student averages.
+        averageScorePercent: { type: [integer, 'null'] }
+        entries:
+          type: array
+          items: { $ref: '#/components/schemas/GroupReportEntry' }
+
     # --- Tasks -------------------------------------------------------------
     TaskDraft:
       type: object
@@ -876,6 +908,30 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Group' }
+        '404':
+          description: >
+            No such group, or a group this assistant may not reach — one
+            message for both (D-10).
+
+  /staff/groups/{groupId}/report:
+    get:
+      tags: [groups]
+      summary: Group report — stats plus a per-student table (`GROUP-4`)
+      description: >
+        Scored against what was actually targeted at this group, not every
+        assessment on the course. No PDF route: the frontend renders this
+        data and the browser's own print-to-PDF produces the file — there is
+        no server-side PDF library in this stack, and no existing PDF to
+        overlay the way marking's rendered-overlay pattern (`D-2`) assumes.
+      x-roles: [assistant, teacher, admin]
+      parameters:
+        - { name: groupId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GroupReport' }
         '404':
           description: >
             No such group, or a group this assistant may not reach — one

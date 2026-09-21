@@ -1,12 +1,15 @@
 'use client';
 
 import { use, useCallback, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { api, ApiError } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
+import { isAdminRole } from '@/lib/roles';
 import { formatDate } from '@/lib/format';
 import type { GroupMemberView, GroupSummary } from '@/lib/types';
 import {
   Button,
+  Checkbox,
   EmptyState,
   InlineBanner,
   Loader,
@@ -33,7 +36,7 @@ import {
  */
 export default function CourseGroupsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: courseId } = use(params);
-  const { token } = useSession();
+  const { token, user } = useSession();
 
   const groupsCall = useApi((t) => api.staff.courseGroups(t, courseId), [courseId]);
   const rosterCall = useApi((t) => api.staff.roster(t, courseId), [courseId]);
@@ -58,6 +61,7 @@ export default function CourseGroupsPage({ params }: { params: Promise<{ id: str
       {groupsCall.data && rosterCall.data && (
         <CourseGroups
           token={token}
+          admin={isAdminRole(user?.role)}
           groups={groupsCall.data}
           enrolled={rosterCall.data.entries.map((entry) => ({
             studentId: entry.studentId,
@@ -77,11 +81,13 @@ interface EnrolledStudent {
 
 function CourseGroups({
   token,
+  admin,
   groups,
   enrolled,
   onChanged,
 }: {
   token: string | null;
+  admin: boolean;
   groups: GroupSummary[];
   enrolled: EnrolledStudent[];
   onChanged: () => void;
@@ -162,6 +168,8 @@ function CourseGroups({
             key={group.id}
             group={group}
             token={token}
+            admin={admin}
+            otherGroups={groups.filter((g) => g.id !== group.id)}
             members={rosters[group.id] ?? []}
             loading={rostersCall.loading}
             onChanged={refresh}
@@ -287,20 +295,26 @@ function PlaceStudent({
 function GroupCard({
   group,
   token,
+  admin,
+  otherGroups,
   members,
   loading,
   onChanged,
 }: {
   group: GroupSummary;
   token: string | null;
+  /** Removing a member and bulk-moving are both teacher/admin only (§5.16). */
+  admin: boolean;
+  otherGroups: GroupSummary[];
   members: GroupMemberView[];
   loading: boolean;
   onChanged: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
-  // The pairing for *this* course - `courseGroups` returns exactly one.
-  const pairing = group.courses[0];
+  const [selected, setSelected] = useState<string[]>([]);
+  const [moveTo, setMoveTo] = useState('');
+  const [moving, setMoving] = useState(false);
 
   const remove = async (studentId: string) => {
     if (!token) return;
@@ -316,17 +330,33 @@ function GroupCard({
     }
   };
 
+  const moveSelected = async () => {
+    if (!token || !moveTo || selected.length === 0) return;
+    setMoving(true);
+    setError(null);
+    try {
+      await api.admin.bulkMoveMembers(token, moveTo, selected);
+      setSelected([]);
+      setMoveTo('');
+      onChanged();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not move those students.');
+    } finally {
+      setMoving(false);
+    }
+  };
+
   return (
     <Panel
       title={group.name}
       action={
         <div className="flex items-center gap-2">
-          {pairing && (
-            /* §5.2 - the mode belongs to this pairing, not to the student. */
-            <Tag tone={pairing.learningMode === 'live' ? 'violet' : 'gray'}>
-              {pairing.learningMode === 'live' ? 'Live' : 'Recorded'}
-            </Tag>
-          )}
+          <Link
+            href={`/manage/groups/${group.id}/report`}
+            className="text-base text-fg-2 underline-offset-2 hover:underline"
+          >
+            Report
+          </Link>
           <Tag tone="gray">
             {group.memberCount} {group.memberCount === 1 ? 'student' : 'students'}
           </Tag>
@@ -347,23 +377,64 @@ function GroupCard({
               key={member.studentId}
               className="flex flex-wrap items-center justify-between gap-3 rounded-md px-3 py-2 hover:bg-wash-hover"
             >
-              <span className="flex flex-col">
-                <span className="text-base text-fg">{member.name}</span>
-                <span className="text-xs text-fg-3">
-                  {member.email} · placed {formatDate(member.assignedAt)}
+              <span className="flex items-center gap-3">
+                {admin && otherGroups.length > 0 && (
+                  <Checkbox
+                    label={`Select ${member.name} to move`}
+                    checked={selected.includes(member.studentId)}
+                    onChange={(checked) =>
+                      setSelected((ids) =>
+                        checked
+                          ? [...ids, member.studentId]
+                          : ids.filter((id) => id !== member.studentId),
+                      )
+                    }
+                  />
+                )}
+                <span className="flex flex-col">
+                  <span className="text-base text-fg">{member.name}</span>
+                  <span className="text-xs text-fg-3">
+                    {member.email} · placed {formatDate(member.assignedAt)}
+                  </span>
                 </span>
               </span>
-              <Button
-                variant="tertiary"
-                size="small"
-                onClick={() => remove(member.studentId)}
-                disabled={removing === member.studentId}
-              >
-                {removing === member.studentId ? <Loader size={3} label="Removing" /> : 'Remove'}
-              </Button>
+              {/* Removing is teacher/admin only (§5.16) - hidden for a TA
+                  rather than offered and then refused server-side. */}
+              {admin && (
+                <Button
+                  variant="tertiary"
+                  size="small"
+                  onClick={() => remove(member.studentId)}
+                  disabled={removing === member.studentId}
+                >
+                  {removing === member.studentId ? <Loader size={3} label="Removing" /> : 'Remove'}
+                </Button>
+              )}
             </li>
           ))}
         </ul>
+      )}
+
+      {/* "Move N to group" (GROUP-3) - admin only, same as the removal above. */}
+      {admin && otherGroups.length > 0 && selected.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-3 rounded-md border border-border-light px-3 py-2">
+          <span className="text-base text-fg-2">
+            Move {selected.length} selected to
+          </span>
+          <Select
+            aria-label="Destination group"
+            className="min-w-[200px]"
+            value={moveTo}
+            onChange={(e) => setMoveTo(e.target.value)}
+            options={[
+              { value: '', label: 'Choose a group…' },
+              ...otherGroups.map((g) => ({ value: g.id, label: g.name })),
+            ]}
+          />
+          <Button size="small" disabled={moving || !moveTo} onClick={() => void moveSelected()}>
+            {moving ? <Loader size={3} label="Moving" /> : 'Move'}
+          </Button>
+        </div>
       )}
     </Panel>
   );

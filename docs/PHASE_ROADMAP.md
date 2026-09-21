@@ -375,12 +375,12 @@ via `CourseProvider`), `/marks`'s Performance/Progress separation holding in a l
 waiting-for-approval screen.
 
 **Verified:** `npx tsc --noEmit` → **22 errors**, all pre-existing `AUTH-2` domain drift in
-`manage/groups`/`manage/courses/[id]/{groups,staff}` (unit 5's, `PEOPLE-4`, to close) — **0
-elsewhere**, `0` in `lib/`. `npx eslint .` clean.
+`manage/groups`/`manage/courses/[id]/{groups,staff}` (unit 5's, `GROUP-3`/`GROUP-4`'s frontend
+slice, to close — see below) — **0 elsewhere**, `0` in `lib/`. `npx eslint .` clean.
 
 ---
 
-### Chat unit 5 — People and groups `[ ]`
+### Chat unit 5 — People and groups `[~]` **`APPROVED WITH FOLLOW-UP` — all scope built, two environment follow-ups open**
 
 **Scope** `PEOPLE-1` … `PEOPLE-6`, `GROUP-1` … `GROUP-4`, **plus `AUTH-4`** (assistant invitations,
 re-homed from unit 1 on 2026-09-19 — it needs `AUTH-2` for `scope`/`groupIds` *and* `MAIL-1` from
@@ -396,13 +396,17 @@ teacher/admin only and audited. **Assistants may add to a group but not remove f
 **Exit** universal, plus new audit actions declared in the union **and** the DTO's exhaustive
 `Record`, each with a spec asserting the entry written.
 
-**Status 2026-09-21**: slices 5a (`PEOPLE-1`), 5b (`PEOPLE-2`/`PEOPLE-3`) and 5c (`PEOPLE-4`/`5`/`6`,
-`AUTH-4`) landed — `a8e6d57`, `d6e749f`, and 5c pending commit
-(`docs/phases/unit-5/REVIEW_5C.md`, `APPROVED WITH FOLLOW-UP`: no Docker in this environment for
-migration `017`'s real-schema run, and interactive browser verification was blocked by a Chrome
-automation tool failure — curl-based live verification substituted). **Not yet COMPLETE**: slice 5d
-(`GROUP-3`, `GROUP-4`, and closing the `AUTH-2`-broken `manage/groups`/`manage/courses/[id]/{groups,staff}`
-pages — the `tsc` count is still 22, unchanged by 5c) remains.
+**Status 2026-09-21**: all four slices landed — 5a (`PEOPLE-1`, `a8e6d57`), 5b (`PEOPLE-2`/`PEOPLE-3`,
+`d6e749f`), 5c (`PEOPLE-4`/`5`/`6`, `AUTH-4`), 5d (`GROUP-3`, `GROUP-4`, and closing the `tsc` count).
+Every task in scope is built and tested; `npx tsc --noEmit` in `frontend/` is **0**, down from the
+22 `AUTH-2`-drift errors `SHELL-4` left for this unit. **Verdict: `APPROVED WITH FOLLOW-UP`, not
+`COMPLETE`** — `PHASE_ROADMAP.md` §2 condition 4 (integration against real Postgres) is unmet: no
+Docker in this build environment, so migration `017` (5c) has never run against a real empty schema.
+Interactive browser verification was also blocked throughout 5c and 5d by a Chrome automation tool
+failure (reproduced on fresh tabs each time — reported as product feedback); curl/direct-API live
+verification was substituted and is recorded in each slice's review. Both are environment
+limitations external to the code, not open questions about what was built. See
+`docs/phases/unit-5/REVIEW_5A.md` … `REVIEW_5D.md`.
 
 ---
 

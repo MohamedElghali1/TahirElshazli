@@ -14,6 +14,7 @@ import { Roles } from '../auth/roles.decorator.js';
 import { STAFF_ADMIN } from '../auth/staff-roles.js';
 import type { JwtPayload } from '../auth/jwt.strategy.js';
 import {
+  BulkMoveMembersDto,
   CreateGroupDto,
   ListGroupsQueryDto,
   UpdateGroupDto,
@@ -92,5 +93,16 @@ export class AdminGroupsController {
     @Request() req: { user: JwtPayload },
   ): Promise<GroupSummary> {
     return this.groups.update(groupId, body, this.actor(req));
+  }
+
+  /** "Move N to group" (`GROUP-3`) - N `addMember` writes in one transaction. */
+  @Post('groups/:groupId/members/bulk')
+  @HttpCode(HttpStatus.OK)
+  async bulkMoveMembers(
+    @Param('groupId') groupId: string,
+    @Body() body: BulkMoveMembersDto,
+    @Request() req: { user: JwtPayload },
+  ): Promise<{ moved: number }> {
+    return this.groups.bulkMove(groupId, body.studentIds, this.actor(req));
   }
 }

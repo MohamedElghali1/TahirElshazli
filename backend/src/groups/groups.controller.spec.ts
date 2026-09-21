@@ -24,6 +24,8 @@ import { InMemoryEnrollmentRepository } from '../enrollments/repositories/in-mem
 import { EnrollmentsService } from '../enrollments/enrollments.service.js';
 import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js';
 import { InMemoryUserRepository } from '../auth/repositories/in-memory-user.repository.js';
+import { ASSESSMENT_REPOSITORY } from '../assessments/interfaces/assessment-repository.interface.js';
+import { InMemoryAssessmentRepository } from '../assessments/repositories/in-memory-assessment.repository.js';
 import { AUDIT_LOG_REPOSITORY } from '../audit/interfaces/audit-log-repository.interface.js';
 import { InMemoryAuditLogRepository } from '../audit/repositories/in-memory-audit-log.repository.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -92,6 +94,7 @@ describe('Groups', () => {
         { provide: ENROLLMENT_REPOSITORY, useClass: InMemoryEnrollmentRepository },
         { provide: USER_REPOSITORY, useClass: InMemoryUserRepository },
         { provide: AUDIT_LOG_REPOSITORY, useClass: InMemoryAuditLogRepository },
+        { provide: ASSESSMENT_REPOSITORY, useClass: InMemoryAssessmentRepository },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -585,6 +588,82 @@ describe('Groups', () => {
         actorId: 'admin-1',
         actorRole: Role.Admin,
       });
+    });
+  });
+
+  describe('bulk move (GROUP-3)', () => {
+    it('moves several students at once, one write and one audit entry per student', async () => {
+      const result = await admin.bulkMoveMembers(
+        'group-2',
+        { studentIds: ['student-1', 'student-2'] },
+        ADMIN,
+      );
+      expect(result).toEqual({ moved: 2 });
+
+      const members = await staff.members('group-2', ADMIN);
+      expect(members.map((m) => m.studentId).sort()).toEqual(['student-1', 'student-2']);
+
+      const assigned = (await entries()).filter(
+        (e) => e.action === 'group.student_assigned' && e.after?.groupId === 'group-2',
+      );
+      expect(assigned.map((e) => e.after?.studentId).sort()).toEqual([
+        'student-1',
+        'student-2',
+      ]);
+    });
+
+    it('404s a group that does not exist', async () => {
+      await expect(
+        admin.bulkMoveMembers('group-nope', { studentIds: ['student-1'] }, ADMIN),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('validates every id before writing any - a batch half valid is refused whole', async () => {
+      const before = await staff.members('group-2', ADMIN);
+      await expect(
+        admin.bulkMoveMembers(
+          'group-2',
+          { studentIds: ['student-1', 'nobody-at-all'] },
+          ADMIN,
+        ),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      const after = await staff.members('group-2', ADMIN);
+      expect(after.length).toBe(before.length);
+    });
+
+    it('400s a non-student id', async () => {
+      await expect(
+        admin.bulkMoveMembers('group-2', { studentIds: ['teacher-1'] }, ADMIN),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('group report (GROUP-4)', () => {
+    it('returns the group, its course, and a row per member', async () => {
+      const report = await staff.report('group-1', ADMIN);
+      expect(report.groupId).toBe('group-1');
+      expect(report.courseId).toBe('course-1');
+      expect(report.entries.map((e) => e.studentId).sort()).toEqual([
+        'student-1',
+        'student-2',
+      ]);
+      expect(report.memberCount).toBe(report.entries.length);
+    });
+
+    it('lets the assistant read the group they hold', async () => {
+      const report = await staff.report('group-1', ASSIGNED_TA);
+      expect(report.groupId).toBe('group-1');
+    });
+
+    it('404s a group the assistant does not hold, same message as unknown', async () => {
+      const heldMiss = await staff
+        .report('group-2', ASSIGNED_TA)
+        .catch((e: Error) => e.message);
+      const unknownMiss = await staff
+        .report('group-nope', ASSIGNED_TA)
+        .catch((e: Error) => e.message);
+      expect(heldMiss).toBe(GROUP_NOT_FOUND);
+      expect(heldMiss).toBe(unknownMiss);
     });
   });
 });

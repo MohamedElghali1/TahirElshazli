@@ -198,24 +198,30 @@ database/          Scaffold-era schema.sql / seed.sql — NOT APPLIED, disagrees
 project_log.md     The narrative
 ```
 
-### 4.1 The frontend typechecks again, as of `SHELL-4` (unit 4, 2026-09-21)
+### 4.1 The frontend typechecks clean, as of unit 5 slice 5d (2026-09-21)
 
 **Historical note, kept for the invariant it taught:** before unit 4, `npx tsc --noEmit` in
 `frontend/` ran as high as ~401 errors, `0 in lib/`, while `app/` and `components/{app,site}` still
 called the retired system's API. The total was expected to rise with each unit until `SHELL-4`
-landed and is not what to gate on mid-redesign — `frontend/lib/` is the hand-written mirror of the
+landed and was not what to gate on mid-redesign — `frontend/lib/` is the hand-written mirror of the
 API, and a unit that changes a response shape updates the mirror in the same commit (§6), which
-adds errors to legacy screens already scheduled for deletion. **The invariant that mattered was**
-`npx tsc --noEmit 2>&1 | grep -cE "^lib/"` = `0`, not the total. Beware the unanchored
-`grep -c "lib/"`: it matches the error *message* text `Module '"@/lib/types"'` on files under `app/`
-and reads non-zero when `lib/` is clean.
+temporarily added errors to legacy screens already scheduled for deletion. **The invariant that
+mattered during the redesign was** `npx tsc --noEmit 2>&1 | grep -cE "^lib/"` = `0`, not the total.
+Beware the unanchored `grep -c "lib/"`: it matches the error *message* text `Module '"@/lib/types"'`
+on files under `app/` and reads non-zero when `lib/` is clean.
 
-**Current state:** `npx tsc --noEmit` reports **22 errors, all in three files**
-(`manage/groups/page.tsx`, `manage/courses/[id]/{groups,staff}/page.tsx`) — pre-existing `AUTH-2`
-domain-model drift (`CourseStaffMember`, `LearningMode` and related types/methods retired by that
-migration), explicitly **unit 5's (`PEOPLE-4`) to close**, not a defect in any landed unit. `lib/`
-is 0. `components/app/*` kept only `page-chrome.tsx` (relocated to `components/shell/` — it is
-live, shared shell infrastructure, not legacy) and deleted the rest
+**Current state: `npx tsc --noEmit` reports 0 errors.** `SHELL-4` (unit 4) got the frontend building
+again at 22, all three pre-existing `AUTH-2` domain-model drift (`CourseStaffMember`, `LearningMode`
+and related types/methods retired by migration 012/013 but still referenced by three unported
+pages). Unit 5 slice 5d closed the count to zero: `manage/groups/page.tsx` and
+`manage/courses/[id]/groups/page.tsx` were rewritten onto the current `Group` model (`courseId` a
+column, no `learningMode` anywhere — the axis was retired outright by `D-9`, not moved), and
+`manage/courses/[id]/staff/page.tsx` was deleted outright — confirmed orphaned (no nav item, no
+other page linked to it) before deletion, the same consumer-count discipline `SHELL-4` used. **The
+0 is now the thing to gate on going forward** — the mid-redesign exemption above no longer applies;
+a PR that adds a `tsc` error should fail review the ordinary way.
+`components/app/*` kept only `page-chrome.tsx` (relocated to `components/shell/` — it is live,
+shared shell infrastructure, not legacy) and deleted the rest
 (`page-parts.tsx`/`table.tsx`/`app-shell.tsx`, all confirmed dead by consumer count before
 deletion). **`components/site/*` was not deleted** — unlike `components/app/*`, every file in it
 was ported onto the current `components/ui` API *in place* during unit 4 rather than replaced, so
@@ -224,8 +230,8 @@ destroyed live code (`docs/phases/unit-4/REVIEW_4D.md`). Do not read `SHELL-4`'s
 ("delete `components/app/*`, `components/site/*`") as still describing the directory's contents —
 verify against the actual consumer graph before treating either directory as legacy again.
 
-The backend **is** green and must stay green: **536 unit / 34 files, 112 integration** as of unit 3
-(`docs/phases/unit-3/REVIEW.md`).
+The backend **is** green and must stay green: **573 unit / 36 files, 244 e2e** as of unit 5 slice 5d
+(`docs/phases/unit-5/REVIEW_5D.md`).
 
 ---
 

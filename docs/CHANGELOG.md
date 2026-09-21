@@ -1210,3 +1210,42 @@ read differently.
 
 **Affected.** `docs/IMPLEMENTATION_PLAN.md`'s `PEOPLE-4`/`PEOPLE-5` rows and `PHASE_ROADMAP.md`'s
 unit-5 entry now reflect both. Full detail: `docs/phases/unit-5/REVIEW_5C.md`.
+
+---
+
+## 2026-09-21 — `D-27` — `GROUP-4`'s "PDF" is the browser's print-to-PDF; `D-2` doesn't apply here
+
+**Context.** `PHASE_PLAN.md`'s open item `B-9` flagged that whether `GROUP-4`'s PDF report needed
+anything beyond marking's rendered-overlay pattern (`D-2`) was unconfirmed until the slice actually
+built it. It has now been built, and the answer is that `D-2` is the wrong pattern entirely — it was
+never actually about PDF generation.
+
+**What `D-2` actually settled.** Re-read in full before this slice started: it is about *annotating
+an existing submitted PDF* — the teacher draws marker/eraser strokes over a file that already
+exists, and the strokes are stored as overlay data beside the original, which stays immutable. That
+answers "how does marking work", not "how do we produce a PDF".
+
+**A group report has no source PDF to overlay.** It is generated from a live query - stats and a
+per-student table - with nothing existing beforehand to draw on top of. `CLAUDE.md` §3/§5 name no
+server-side PDF library in this stack, and adding one for a single report screen at this scale (§1:
+~10 groups) would be exactly the kind of dependency the ladder in `.claude/agents/*` and the
+project's own YAGNI discipline exist to catch.
+
+**Chosen.** No PDF route. `GET /staff/groups/{groupId}/report` returns the data;
+`manage/groups/{id}/report/page.tsx` renders it as an ordinary page with a "Print / save as PDF"
+button that calls `window.print()`. The browser produces the file. The one piece of real
+infrastructure this needed: the console shell's nav rail and header (`console-shell.tsx`) gained
+`print:hidden`, so the printed/saved output is the report alone and not the whole app chrome around
+it - a two-class change, not a new dependency.
+
+**Reasoning.** Print-to-PDF is a platform feature every modern browser already has; reaching for a
+server-side library to reproduce it would be paying a real dependency cost (bundle size, a new
+failure mode, `CLAUDE.md` §5's "no speculative architecture") for something the user's own browser
+already does. If a future requirement needs a PDF the *server* can produce unattended (e.g. emailed
+as an attachment, the way the weekly-report unit will), that is a different, real requirement and
+gets its own decision then - this one is scoped to what `GROUP-4` actually asked for: a report a
+teacher can look at and print.
+
+**Affected.** `docs/API_GAP_ANALYSIS.md`'s "Group report ... PDF" row and
+`docs/IMPLEMENTATION_PLAN.md`'s `GROUP-4` row both now say so explicitly, rather than reading as an
+unfinished PDF feature. Full detail: `docs/phases/unit-5/REVIEW_5D.md`.
