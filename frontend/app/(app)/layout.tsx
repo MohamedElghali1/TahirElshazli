@@ -4,7 +4,8 @@ import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSession } from '@/lib/session';
 import { isStaffRole } from '@/lib/roles';
-import { AppShell } from '@/components/app/app-shell';
+import { ConsoleShell } from '@/components/shell/console-shell';
+import { StudentShell } from '@/components/shell/student-shell';
 
 /**
  * Client-side routing guard. Two jobs, and neither of them is access control -
@@ -57,5 +58,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     );
   }
 
-  return <AppShell>{children}</AppShell>;
+  return staff ? (
+    <ConsoleShell>{children}</ConsoleShell>
+  ) : (
+    <StudentShell>{children}</StudentShell>
+  );
 }
