@@ -2,12 +2,12 @@
 
 import * as React from 'react';
 import { usePathname } from 'next/navigation';
-import { api } from '@/lib/api';
-import { useApi, useSession } from '@/lib/session';
+import { useSession } from '@/lib/session';
 import { cx, Avatar, IconButton, NavItem, NavSection, type IconName } from '@/components/ui';
 import { PageChromeProvider } from '@/components/app/page-chrome';
 import { ShellHeader } from './shell-header';
 import { CourseSwitcher } from './course-switcher';
+import { CourseProvider, useSelectedCourse } from './course-context';
 import { activeHrefFor } from './nav-active';
 
 /**
@@ -15,13 +15,9 @@ import { activeHrefFor } from './nav-active';
  * `--surface-3` rail, no right border, white-pill active item, the course
  * switcher, 1080px content cap, 96px reserved for a future WhatsApp FAB.
  *
- * `docs/phases/unit-4/PHASE_PLAN.md` §2 gives the *flat* IA (Overview / My
- * lessons / Quizzes / Homework / Marks / Timetable / Attendance) to `SHELL-3`
- * specifically, which is slice 4b, not this one — `/learn/[id]/*` has not
- * been collapsed yet, and this rail links to today's working routes instead
- * of a set of pages that don't exist until 4b lands. What's here is the
- * legacy shell's own nav array (`STUDENT_NAV`), unchanged in substance, one
- * NavItem row per link rather than a hand-rolled anchor.
+ * `SHELL-3` (`docs/phases/unit-4/PHASE_PLAN.md`): the flat IA this rail now
+ * carries — `/learn/[id]/*` is gone, and every course-scoped item reads its
+ * course from `CourseProvider`, the same selection the switcher writes.
  */
 
 interface NavLeaf {
@@ -30,18 +26,39 @@ interface NavLeaf {
   icon: IconName;
 }
 
-const STUDENT_NAV: NavLeaf[] = [
-  { href: '/dashboard', label: 'My courses', icon: 'Home' },
-  { href: '/catalog', label: 'Browse courses', icon: 'Book' },
-  { href: '/achievements', label: 'Achievements', icon: 'Star' },
-  { href: '/notifications', label: 'Notifications', icon: 'Bell' },
-  { href: '/profile', label: 'Profile', icon: 'UserCircle' },
+interface NavGroup {
+  title?: string;
+  items: NavLeaf[];
+}
+
+const NAV: NavGroup[] = [
+  {
+    items: [
+      { href: '/dashboard', label: 'Overview', icon: 'Home' },
+      { href: '/lessons', label: 'My lessons', icon: 'Video' },
+      { href: '/quizzes', label: 'Quizzes', icon: 'ListNumbers' },
+      { href: '/homework', label: 'Homework', icon: 'Clipboard' },
+      { href: '/marks', label: 'Marks', icon: 'ChartPie' },
+      { href: '/timetable', label: 'Timetable', icon: 'CalendarEvent' },
+      { href: '/attendance', label: 'Attendance', icon: 'CircleCheck' },
+    ],
+  },
+  {
+    title: 'More',
+    items: [
+      { href: '/classmates', label: 'Classmates', icon: 'Users' },
+      { href: '/profile', label: 'Settings', icon: 'Settings' },
+      { href: '/help', label: 'Help', icon: 'MessageCircle' },
+    ],
+  },
 ];
 
 export function StudentShell({ children }: { children: React.ReactNode }) {
   return (
     <PageChromeProvider>
-      <StudentShellInner>{children}</StudentShellInner>
+      <CourseProvider>
+        <StudentShellInner>{children}</StudentShellInner>
+      </CourseProvider>
     </PageChromeProvider>
   );
 }
@@ -57,29 +74,12 @@ function StudentShellInner({ children }: { children: React.ReactNode }) {
     setOpen(false);
   }
 
-  const { data: courseList } = useApi((token) => api.courses.list(token), []);
-  const courses = React.useMemo(
-    () => courseList?.map((c) => ({ id: c.id, title: c.title })) ?? null,
-    [courseList],
+  const { courses, selectedId, selectCourse, loading } = useSelectedCourse();
+
+  const activeHref = activeHrefFor(
+    pathname,
+    NAV.flatMap((g) => g.items.map((i) => i.href)),
   );
-  // Local UI state only — the flat, course-scoped routes that would read
-  // this selection are SHELL-3's job (slice 4b), not this one.
-  const [selectedCourseId, setSelectedCourseId] = React.useState<string | null>(null);
-  const effectiveSelected = selectedCourseId ?? courses?.[0]?.id ?? null;
-
-  // Preserved from the legacy shell verbatim: a student-only read (this
-  // route is `@Roles(Role.Student)`), so a badge, not a page.
-  const { data: notifications } = useApi((token) => api.notifications.list(token), []);
-  const unread = notifications?.unreadCount ?? 0;
-
-  // `/dashboard` owns every `/learn/*` route, same as the legacy shell —
-  // `/learn/[id]/*` is where a course's content lives and there is no
-  // top-level nav item that names it directly yet.
-  const activeHref =
-    activeHrefFor(
-      pathname,
-      STUDENT_NAV.map((i) => i.href),
-    ) ?? (pathname.startsWith('/learn') ? '/dashboard' : null);
 
   return (
     <div className="flex min-h-[100dvh] bg-surface">
@@ -93,27 +93,28 @@ function StudentShellInner({ children }: { children: React.ReactNode }) {
         <div className="flex h-[52px] shrink-0 items-center px-2">
           <CourseSwitcher
             courses={courses}
-            selectedId={effectiveSelected}
-            onSelect={setSelectedCourseId}
-            loading={!courseList}
+            selectedId={selectedId}
+            onSelect={selectCourse}
+            loading={loading}
             className="flex-1"
           />
         </div>
 
-        <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-2">
-          <NavSection>
-            {STUDENT_NAV.map((item) => (
-              <NavItem
-                key={item.href}
-                href={item.href}
-                icon={item.icon}
-                label={item.label}
-                count={item.href === '/notifications' && unread > 0 ? unread : null}
-                appearance="pill"
-                active={item.href === activeHref}
-              />
-            ))}
-          </NavSection>
+        <nav className="flex flex-1 flex-col gap-3 overflow-y-auto px-2 py-2">
+          {NAV.map((group, i) => (
+            <NavSection key={group.title ?? i} title={group.title}>
+              {group.items.map((item) => (
+                <NavItem
+                  key={item.href}
+                  href={item.href}
+                  icon={item.icon}
+                  label={item.label}
+                  appearance="pill"
+                  active={item.href === activeHref}
+                />
+              ))}
+            </NavSection>
+          ))}
         </nav>
 
         <div className="flex items-center justify-between gap-2 p-2">

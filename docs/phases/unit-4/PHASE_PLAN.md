@@ -121,11 +121,22 @@ and `components/site/*` still exist, untouched, for pages not yet ported (market
 pages still import the old components) but must not *increase* it, and must render a working,
 navigable shell for both a student and a staff session.
 
-**4b — Flatten student IA (`SHELL-3`) + port every `app/(app)/*` page.** Collapse `/learn/[id]/*`
-into the new top-level routes. Port all 32 files currently importing `components/app/*` (per the
-grep in §0) onto `components/ui/*` and the new shell's chrome contract. Expect the `app/` error
-count to fall sharply; `components/app` errors should reach 0 once every consumer is ported (do not
-delete the directory yet — that is 4d, after confirming nothing still imports it).
+**4b — Flatten student IA (`SHELL-3`) + port every `app/(app)/*` page.** Split further, along the
+same student/console boundary the rest of this plan uses — 32 files in one dispatch risks losing
+the file-by-file rigor a real port needs:
+- **4b-i (student surface):** collapse `/learn/[id]/*` into the new top-level routes per §2, and
+  port `dashboard`, `catalog`, `achievements` (×2), `notifications`, `profile` off
+  `components/app/*`.
+- **4b-ii (console surface):** port every `manage/*` page (overview, courses ×5, students, groups,
+  recordings, blog ×2, activity) off `components/app/*`.
+
+Port all 32 files currently importing `components/app/*` (per the grep in §0) onto `components/ui/*`
+and the new shell's chrome contract, split as above. Expect the `app/` error count to fall sharply
+across both; `components/app` errors should reach 0 once every consumer is ported (do not delete
+the directory yet — that is 4d, after confirming nothing still imports it). **First real live
+browser check happens at the end of 4b-i**, once at least the student surface can compile and
+render (per `REVIEW_4A.md`'s finding that a global Turbopack build failure blocks any live check
+until enough pages are fixed).
 
 **4c — Port every `app/(site)/*` + `app/(auth)/*` page, and build `SHELL-5`.** 10 files import
 `components/site/*` today (`app/(site)/{page,about,blog,blog/[slug],contact,courses,courses/[slug]}.tsx`,

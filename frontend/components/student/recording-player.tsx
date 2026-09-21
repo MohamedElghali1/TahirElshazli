@@ -1,10 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { ArrowSquareOutIcon, CheckCircleIcon } from '@phosphor-icons/react';
 import { formatDuration } from '@/lib/format';
 import type { RecordingWithProgress } from '@/lib/types';
-import { Button, Chip } from '@/components/ui';
+import { Button, Tag, Loader, Icon } from '@/components/ui';
 
 /**
  * What a recording's `videoUrl` actually is has never been decided (CLAUDE.md
@@ -86,12 +85,7 @@ export function RecordingPlayer({
 
   if (kind === 'youtube' || kind === 'vimeo' || kind === 'bunny') {
     return (
-      <EmbedPlayer
-        key={recording.id}
-        recording={recording}
-        embedUrl={embedUrl!}
-        onProgress={onProgress}
-      />
+      <EmbedPlayer key={recording.id} recording={recording} embedUrl={embedUrl!} onProgress={onProgress} />
     );
   }
 
@@ -140,13 +134,13 @@ function FilePlayer({
   }, [recording.id]);
 
   return (
-    <div className="flex flex-col gap-[var(--sp-3)]">
+    <div className="flex flex-col gap-3">
       <video
         ref={videoRef}
         key={recording.id}
         src={recording.videoUrl}
         controls
-        className="aspect-video w-full rounded-[var(--r-md)] bg-black"
+        className="aspect-video w-full rounded-md bg-black"
         onLoadedMetadata={() => {
           const video = videoRef.current;
           if (!video || resumedRef.current) return;
@@ -171,9 +165,7 @@ function FilePlayer({
         }}
       />
       {initialWatchedSeconds > 0 && !recording.completed && (
-        <p className="text-[var(--fs-xs)] text-fg-3">
-          Resumed from {formatDuration(initialWatchedSeconds)}.
-        </p>
+        <p className="text-xs text-fg-3">Resumed from {formatDuration(initialWatchedSeconds)}.</p>
       )}
     </div>
   );
@@ -196,26 +188,26 @@ function EmbedPlayer({
   const [marking, setMarking] = useState(false);
 
   return (
-    <div className="flex flex-col gap-[var(--sp-3)]">
+    <div className="flex flex-col gap-3">
       <iframe
         key={recording.id}
         src={embedUrl}
         title={recording.title}
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
         allowFullScreen
-        className="aspect-video w-full rounded-[var(--r-md)] border-0 bg-black"
+        className="aspect-video w-full rounded-md border-0 bg-black"
       />
-      <div className="flex flex-wrap items-center justify-between gap-[var(--sp-3)] rounded-[var(--r-md)] border border-[var(--border-light)] bg-[var(--bg-tertiary)] px-[var(--sp-4)] py-[var(--sp-3)]">
-        <p className="text-[var(--fs-xs)] text-fg-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border-light bg-surface-3 px-4 py-3">
+        <p className="text-xs text-fg-3">
           {recording.completed
             ? 'Marked as watched.'
             : "This player runs outside the platform, so we cannot see how far you've watched. Mark it once you're done."}
         </p>
         {!recording.completed && (
           <Button
-            size="sm"
+            size="small"
             variant="secondary"
-            loading={marking}
+            disabled={marking}
             onClick={async () => {
               setMarking(true);
               try {
@@ -225,7 +217,7 @@ function EmbedPlayer({
               }
             }}
           >
-            <CheckCircleIcon size={14} weight="fill" />
+            {marking ? <Loader size={3} label="Marking as watched" /> : <Icon name="CircleCheck" size={14} />}
             Mark as watched
           </Button>
         )}
@@ -246,28 +238,24 @@ function LinkOutPlayer({
   const [marking, setMarking] = useState(false);
 
   return (
-    <div className="flex aspect-video w-full flex-col items-center justify-center gap-[var(--sp-4)] rounded-[var(--r-md)] border border-[var(--border-medium)] bg-[var(--bg-tertiary)] px-[var(--sp-6)] text-center">
-      <p className="text-[var(--fs-md)] font-medium text-fg">
-        {recording.title}
+    <div className="flex aspect-video w-full flex-col items-center justify-center gap-4 rounded-md border border-border-medium bg-surface-3 px-6 text-center">
+      <p className="text-md font-medium text-fg">{recording.title}</p>
+      <p className="max-w-[42ch] text-xs text-fg-3">
+        This recording opens in its own tab rather than playing here, so watch progress cannot be
+        tracked automatically.
       </p>
-      <p className="max-w-[42ch] text-[var(--fs-xs)] text-fg-3">
-        This recording opens in its own tab rather than playing here, so
-        watch progress cannot be tracked automatically.
-      </p>
-      <div className="flex flex-wrap items-center justify-center gap-[var(--sp-3)]">
+      <div className="flex flex-wrap items-center justify-center gap-3">
         <Button
           variant="primary"
-          onClick={() =>
-            window.open(recording.videoUrl, '_blank', 'noopener,noreferrer')
-          }
+          icon="ArrowUpRight"
+          onClick={() => window.open(recording.videoUrl, '_blank', 'noopener,noreferrer')}
         >
-          <ArrowSquareOutIcon size={14} weight="bold" />
           Open recording
         </Button>
         {!recording.completed && (
           <Button
             variant="secondary"
-            loading={marking}
+            disabled={marking}
             onClick={async () => {
               setMarking(true);
               try {
@@ -277,11 +265,11 @@ function LinkOutPlayer({
               }
             }}
           >
-            <CheckCircleIcon size={14} weight="fill" />
+            {marking ? <Loader size={3} label="Marking as watched" /> : <Icon name="CircleCheck" size={14} />}
             Mark as watched
           </Button>
         )}
-        {recording.completed && <Chip tone="green">Watched</Chip>}
+        {recording.completed && <Tag tone="green">Watched</Tag>}
       </div>
     </div>
   );
