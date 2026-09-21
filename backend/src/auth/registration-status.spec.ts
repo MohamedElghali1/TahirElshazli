@@ -8,6 +8,10 @@ import { InMemoryUserRepository } from './repositories/in-memory-user.repository
 import { InMemoryStudentRepository } from '../students/repositories/in-memory-student.repository.js';
 import { MailService } from '../mail/mail.service.js';
 import { DatabaseService } from '../database/database.service.js';
+import { InMemoryAssistantScopeRepository } from '../staff/repositories/in-memory-assistant-scope.repository.js';
+import { InMemoryAssistantInvitationRepository } from '../manage/repositories/in-memory-assistant-invitation.repository.js';
+import { AuditService } from '../audit/audit.service.js';
+import { InMemoryAuditLogRepository } from '../audit/repositories/in-memory-audit-log.repository.js';
 
 /**
  * The registration queue's two gates (`DOM-4`, ruling R-6).
@@ -29,6 +33,9 @@ function build() {
   const jwt = {
     signAsync: vi.fn().mockResolvedValue('mock-token'),
   } as unknown as JwtService;
+  const scopeRepo = new InMemoryAssistantScopeRepository();
+  const invitationRepo = new InMemoryAssistantInvitationRepository();
+  const audit = new AuditService(new InMemoryAuditLogRepository(), db);
   const auth = new AuthService(
     jwt,
     denylist,
@@ -37,6 +44,9 @@ function build() {
     mail,
     db,
     students,
+    scopeRepo,
+    invitationRepo,
+    audit,
   );
   const strategy = new JwtStrategy(denylist, users);
   return { auth, users, hasher, denylist, strategy };

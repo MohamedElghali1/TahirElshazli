@@ -275,28 +275,19 @@ components:
 
     Assistant:
       type: object
-      # `required` carries what GET /admin/assistants returns TODAY (AUTH-1).
-      # `scope` and `groupIds` have a data source as of AUTH-2 but no reader;
-      # `status` waits on AUTH-4's assistant_invitations. All three are
-      # declared-but-optional rather than required-and-absent. Move each into
-      # `required` in the same change that populates it - a contract that
-      # requires a field nothing emits is drift, not ambition.
-      required: [id, name, email, role, createdAt]
+      # Built and populated by `PEOPLE-4`/`PEOPLE-6`/`AUTH-4` (unit 5,
+      # `AdminAssistantsService`). One shape for a real account and a
+      # still-pending invitation - the two backing tables differ, the
+      # response does not.
+      required: [id, name, email, role, createdAt, scope, groupIds, status, lastSeenAt]
       properties:
         id:     { $ref: '#/components/schemas/Id' }
         name:   { type: string }
         email:  { type: string, format: email }
         role:   { type: string, enum: [assistant, admin] }
         createdAt: { type: string, format: date-time }
-        # --- The STORAGE arrived with AUTH-2 (unit 2 slice 2b-ii):
-        # `assistant_scopes` + `assistant_group_assignments` exist and decide
-        # every assistant's reach. Nothing EMITS these two fields yet -
-        # `GET /admin/assistants` does not read them - so they stay optional
-        # until `PATCH /admin/assistants/{userId}` (PEOPLE-4, unit 5) populates
-        # them. Move them into `required` in that same change.
         scope:  { $ref: '#/components/schemas/AssistantScope' }
         groupIds: { type: array, items: { $ref: '#/components/schemas/Id' } }
-        # --- Arrives with AUTH-4 (unit 5) ---
         status: { type: string, enum: [invited, active] }
         # Derived from the audit log, not stored (D-9 / PEOPLE-6): MAX(created_at)
         # for that actor. It is *last acted*, not *last seen* - an assistant who

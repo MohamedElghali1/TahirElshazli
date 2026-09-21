@@ -3615,3 +3615,49 @@ course/student data in the console shell, the flat student IA with real homework
 `/marks`'s Performance and Progress genuinely kept apart in a live render (not just in the code),
 and `/register` submitting for real to the exact waiting-for-approval screen `SHELL-5` specified.
 Full detail in `docs/phases/unit-4/`. Unit 5 (People and groups) follows the same pipeline next.
+
+## 2026-09-21 — Unit 5 (People and groups), slices 5a-5c: the student and assistant surfaces
+
+Continued the custom units-3-5 pipeline (`D-24`: Claude as orchestrator and reviewer in one
+session, Antigravity as primary implementer while its quota holds, Claude finishing directly with
+no further subagents once it doesn't — the user's standing instruction). A first planning pass
+wrongly claimed `PEOPLE-1` and `GET /admin/assistants` were entirely unbuilt; caught and corrected
+before any code was written by reading the actual current controllers rather than trusting a stale
+comment about a different, already-retired controller.
+
+**5a** put a status column, filter and accept/reject panel on `manage/students/page.tsx` — the
+backend and `lib/` mirror for the registration queue already existed from `DOM-4`; this was purely
+the frontend catching up to what unit 4's mechanical port had left behind. **5b** added the
+staff-facing student detail/edit screen and direct-create, the latter reusing the existing
+password-reset-token mechanism rather than inventing a new auth path — an account gets a real bcrypt
+hash of a value nobody holds, not a null or empty one, and sets its actual password through the same
+flow a self-service reset already uses.
+
+**5c**, the largest slice, built the assistant-invitation flow end to end (`PEOPLE-4`/`5`/`6`,
+`AUTH-4`): a new `assistant_invitations` table, an invitation repository with both drivers, and
+`AuthService.acceptInvitation` — one transaction that creates the account already `active` (an
+invitation *is* the admin decision; there is no queue the way registration has one), sets its scope,
+assigns every listed group, and self-attributes its own activation audit entry, since there is no
+staff caller on that route to attribute it to. `AdminAssistantsService` merges real accounts and
+still-pending invitations into one response shape, so the frontend never has to know which table a
+row came from. Two decisions surfaced and were recorded rather than guessed past (`D-26`): removing
+an assistant only ever cancels a pending invitation — this codebase has no precedent anywhere for
+hard-deleting or deactivating an already-active account, and building one wasn't asked for; and the
+"assistant activity" screen (`PEOPLE-5`) needed no new route at all, because `GET /admin/audit-log`
+already accepted an `actorId` filter with no frontend caller — the general activity feed built
+ahead of schedule in unit 4 slice 4d just needed a query-param filter added.
+
+**Verified:** 548 backend unit tests (17 new), 242 e2e (8 new — parity-table and refusal
+coverage), backend lint and `tsc` clean, frontend `tsc` steady at the same 22 pre-existing `AUTH-2`
+errors (`lib/` still 0), frontend lint clean. Every new backend route live-verified against the
+actually-running dev server with real requests, including the two negative cases that matter most:
+the cross-field scope/groupIds validation, and confirming `DELETE` genuinely 404s on a real account
+rather than silently accepting the request. **Interactive browser verification did not complete** -
+the Chrome automation tool's tab became unresponsive to clicks and typing (confirmed via zero
+network requests firing after repeated attempts on two fresh tabs); reported as a product bug and
+substituted with the direct-request verification above. Migration `017` has not been run against a
+real empty schema - no Docker in this build environment, the same disclosed gap `REVIEW_5B.md`
+already carried. Full detail: `docs/phases/unit-5/REVIEW_5A.md`, `REVIEW_5B.md`, `REVIEW_5C.md`.
+
+Unit 5 is not yet complete: slice 5d (bulk move, the group report, and closing the three
+`AUTH-2`-broken pages that hold the frontend's remaining 22 `tsc` errors) remains.

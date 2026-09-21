@@ -1,11 +1,13 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import { useApi } from '@/lib/session';
 import { formatDateTime } from '@/lib/format';
 import type { AuditAction, AuditLogEntry } from '@/lib/types';
-import { Button, EmptyState, Loader, Table, Tag, type Column, type TagTone } from '@/components/ui';
+import { Button, EmptyState, InlineBanner, Loader, Table, Tag, type Column, type TagTone } from '@/components/ui';
 import { PageTitle } from '@/components/shell/page-chrome';
 
 /**
@@ -46,6 +48,17 @@ const ACTION_LABEL: Record<AuditAction, string> = {
   'blog_post.updated': 'edited an achievement post',
   'blog_post.media_set': 'changed a post gallery',
   'blog_post.deleted': 'deleted an achievement post',
+  'student.accepted': 'accepted a registration',
+  'student.rejected': 'rejected a registration',
+  'student.updated': 'edited a student',
+  'student.created': 'created a student',
+  'assistant.invited': 'invited an assistant',
+  'assistant.invitation_accepted': 'accepted an invitation',
+  'assistant.invitation_resent': 'resent an invitation',
+  'assistant.scope_changed': "changed an assistant's reach",
+  'assistant.removed': 'cancelled an invitation',
+  'course.created': 'created a course',
+  'course.updated': 'edited a course',
 };
 
 /**
@@ -85,6 +98,17 @@ const ACTION_TONE: Record<AuditAction, TagTone> = {
   'blog_post.updated': 'amber',
   'blog_post.media_set': 'amber',
   'blog_post.deleted': 'red',
+  'student.accepted': 'green',
+  'student.rejected': 'red',
+  'student.updated': 'amber',
+  'student.created': 'green',
+  'assistant.invited': 'green',
+  'assistant.invitation_accepted': 'green',
+  'assistant.invitation_resent': 'blue',
+  'assistant.scope_changed': 'amber',
+  'assistant.removed': 'red',
+  'course.created': 'green',
+  'course.updated': 'amber',
 };
 
 export default function ActivityLogPage() {
@@ -99,9 +123,14 @@ export default function ActivityLogPage() {
   const [stack, setStack] = useState<(string | undefined)[]>([undefined]);
   const cursor = stack[stack.length - 1];
 
+  // Scoped to one actor when linked from the assistants screen (`PEOPLE-5`) -
+  // "which assistant did what", CLAUDE.md §5.4's actual ask. Absent, this is
+  // just the full feed.
+  const actorId = useSearchParams().get('actorId') ?? undefined;
+
   const { data, error, loading, reload } = useApi(
-    (token) => api.admin.auditLog(token, { cursor }),
-    [cursor],
+    (token) => api.admin.auditLog(token, { actorId, cursor }),
+    [actorId, cursor],
   );
 
   const entries = data?.entries ?? [];
@@ -140,6 +169,15 @@ export default function ActivityLogPage() {
           <span className="text-base font-medium text-fg-2">Every recorded action</span>
           <span className="text-base text-fg-3">Who did it, and when</span>
         </div>
+
+        {actorId && (
+          <InlineBanner tone="blue">
+            Showing activity for one assistant.{' '}
+            <Link href="/manage/activity" className="underline-offset-4 hover:underline">
+              Clear filter
+            </Link>
+          </InlineBanner>
+        )}
 
         {loading && entries.length === 0 && (
           <div className="flex justify-center p-8">

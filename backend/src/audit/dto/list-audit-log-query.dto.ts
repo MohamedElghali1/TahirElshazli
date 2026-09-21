@@ -45,6 +45,11 @@ const AUDIT_ACTION_VALUES: Record<AuditAction, true> = {
   'student.rejected': true,
   'student.updated': true,
   'student.created': true,
+  'assistant.invited': true,
+  'assistant.invitation_accepted': true,
+  'assistant.invitation_resent': true,
+  'assistant.scope_changed': true,
+  'assistant.removed': true,
   'course.created': true,
   'course.updated': true,
   'assessment.created': true,
@@ -75,6 +80,7 @@ const AUDIT_TARGET_TYPE_VALUES: Record<AuditTargetType, true> = {
   external_result: true,
   student: true,
   course: true,
+  assistant: true,
 };
 
 export const AUDIT_ACTIONS = Object.keys(

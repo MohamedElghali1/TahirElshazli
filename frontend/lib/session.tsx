@@ -39,6 +39,14 @@ interface SessionValue {
    */
   signIn: (email: string, password: string) => Promise<AuthenticatedUser>;
   /**
+   * Accepts an assistant invitation and starts the session in one step
+   * (`AUTH-4`) - unlike `register`, this account is `active` immediately.
+   */
+  acceptInvitation: (
+    invitationToken: string,
+    password: string,
+  ) => Promise<AuthenticatedUser>;
+  /**
    * Creates an account and **starts no session** (`DOM-4`, ruling R-6). The
    * account is `waiting` and cannot authenticate until staff accept it, so
    * there is no token to adopt and no user to route on - the caller shows a
@@ -126,6 +134,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     [adopt],
   );
 
+  const acceptInvitation = useCallback(
+    async (invitationToken: string, password: string) =>
+      adopt(await api.auth.acceptInvitation(invitationToken, password)),
+    [adopt],
+  );
+
   const register = useCallback(
     async (name: string, email: string, password: string) =>
       api.auth.register({ name, email, password }),
@@ -150,8 +164,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, [token, router]);
 
   const value = useMemo<SessionValue>(
-    () => ({ user, token, loading, signIn, register, signOut }),
-    [user, token, loading, signIn, register, signOut],
+    () => ({ user, token, loading, signIn, acceptInvitation, register, signOut }),
+    [user, token, loading, signIn, acceptInvitation, register, signOut],
   );
 
   return (

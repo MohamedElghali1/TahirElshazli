@@ -17,7 +17,6 @@ import type { JwtPayload } from '../auth/jwt.strategy.js';
 import {
   DirectoryService,
   DEFAULT_DIRECTORY_PAGE_SIZE,
-  type StaffDirectoryEntry,
   type StudentDirectoryEntry,
 } from './directory.service.js';
 import { ManageRecordingsService } from './manage-recordings.service.js';
@@ -39,6 +38,8 @@ import {
   AdminUpdateStudentDto,
   CreateStudentDto,
 } from './dto/student-admin.dto.js';
+import { AdminAssistantsService, type Assistant } from './admin-assistants.service.js';
+import { AssistantWriteDto } from './dto/assistant-admin.dto.js';
 
 /**
  * `/admin/*` - teacher only and unscoped (CLAUDE.md §5.11). Nothing in this
@@ -68,6 +69,7 @@ export class AdminManageController {
     private readonly liveSessions: ManageLiveSessionsService,
     private readonly registrations: RegistrationApprovalService,
     private readonly adminStudents: AdminStudentsService,
+    private readonly adminAssistants: AdminAssistantsService,
   ) {}
 
   private actor(req: { user: JwtPayload }) {
@@ -151,16 +153,49 @@ export class AdminManageController {
     return this.adminStudents.create(body, this.actor(req));
   }
 
-  /** The picker behind "assign a TA to this course". */
+  /** The assistants/admins list - real accounts and pending invitations, merged (`PEOPLE-4`). */
   @Get('assistants')
-  async assistants(
-    @Query() query: ListDirectoryQueryDto,
-  ): Promise<StaffDirectoryEntry[]> {
-    return this.directory.assistants({
-      search: query.search,
-      limit: query.limit ?? DEFAULT_DIRECTORY_PAGE_SIZE,
-      offset: query.offset ?? 0,
-    });
+  async assistants(): Promise<Assistant[]> {
+    return this.adminAssistants.list();
+  }
+
+  /** Invites an assistant or admin (`AUTH-4`). No account exists until they accept. */
+  @Post('assistants')
+  @HttpCode(HttpStatus.CREATED)
+  async inviteAssistant(
+    @Body() body: AssistantWriteDto,
+    @Request() req: { user: JwtPayload },
+  ): Promise<Assistant> {
+    return this.adminAssistants.invite(body, this.actor(req));
+  }
+
+  /** Changes role/scope/groupIds - on a real account, or a still-pending invitation. */
+  @Patch('assistants/:userId')
+  async updateAssistant(
+    @Param('userId') userId: string,
+    @Body() body: AssistantWriteDto,
+    @Request() req: { user: JwtPayload },
+  ): Promise<Assistant> {
+    return this.adminAssistants.update(userId, body, this.actor(req));
+  }
+
+  /** Cancels a still-pending invitation. Never a real account - see `AdminAssistantsService`. */
+  @Delete('assistants/:userId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async removeAssistant(
+    @Param('userId') userId: string,
+    @Request() req: { user: JwtPayload },
+  ): Promise<void> {
+    return this.adminAssistants.remove(userId, this.actor(req));
+  }
+
+  @Post('assistants/:userId/resend')
+  @HttpCode(HttpStatus.OK)
+  async resendAssistantInvitation(
+    @Param('userId') userId: string,
+    @Request() req: { user: JwtPayload },
+  ): Promise<{ ok: true }> {
+    return this.adminAssistants.resend(userId, this.actor(req));
   }
 
   @Post('courses/:courseId/recordings')

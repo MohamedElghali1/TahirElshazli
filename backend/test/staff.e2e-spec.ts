@@ -1275,6 +1275,27 @@ describe('Staff and admin API (e2e)', () => {
       // admin-manage (11)
       { method: 'get', path: '/admin/students' },
       { method: 'get', path: '/admin/assistants' },
+      // The invitation flow (`AUTH-4`, `PEOPLE-4`). The invite probe reuses an
+      // already-registered email - stable 409 for both, same no-mutation
+      // shape as the student/course create probes below. The edit/remove/
+      // resend probes name a nonexistent id - stable 404/409, no state change.
+      {
+        method: 'post',
+        path: '/admin/assistants',
+        body: {
+          name: 'Parity probe',
+          email: 'assistant@example.com',
+          role: 'assistant',
+          scope: 'all_groups',
+        },
+      },
+      {
+        method: 'patch',
+        path: '/admin/assistants/assistant-does-not-exist',
+        body: { name: 'Parity probe', email: 'x@example.com', role: 'assistant', scope: 'all_groups' },
+      },
+      { method: 'delete', path: '/admin/assistants/assistant-does-not-exist' },
+      { method: 'post', path: '/admin/assistants/assistant-does-not-exist/resend' },
       // The registration queue (`DOM-4`). Both probes name an *active*
       // student, so both roles get the same 409 and neither call changes any
       // state - a parity probe that mutated would make the second role's
@@ -1356,14 +1377,15 @@ describe('Staff and admin API (e2e)', () => {
       { method: 'delete', path: '/admin/live-sessions/session-does-not-exist' },
     ];
 
-    it('covers all 26 role-gated admin routes', () => {
-      // Asserted, because a parity table that quietly covers 12 of 26 routes
+    it('covers all 30 role-gated admin routes', () => {
+      // Asserted, because a parity table that quietly covers 12 of 30 routes
       // proves parity on 12 routes while reading as though it proved it on all.
       // 24 before `DOM-1` retired the two group-course routes; 22 after; 26
       // once `DOM-4` added accept/reject and `DOM-5` added course create/edit;
       // 23 once `AUTH-2` retired the three course-staff routes; 26 again once
-      // `PEOPLE-2`/`PEOPLE-3` added student detail/edit/create.
-      expect(ADMIN_ROUTES).toHaveLength(26);
+      // `PEOPLE-2`/`PEOPLE-3` added student detail/edit/create; 30 once
+      // `PEOPLE-4`/`AUTH-4` added invite/edit/remove/resend.
+      expect(ADMIN_ROUTES).toHaveLength(30);
     });
 
     it.each(ADMIN_ROUTES)(

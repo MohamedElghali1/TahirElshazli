@@ -75,6 +75,16 @@ export type AuditAction =
   // `before`/`after` pair is built from the update, not the whole row.
   | 'student.updated'
   | 'student.created'
+  // The assistant invitation flow (`AUTH-4`, `PEOPLE-4`). `invited` and
+  // `invitation_resent` are staff actions; `invitation_accepted` is
+  // self-attributed - there is no staff caller on the accept route
+  // (`security: []`), so the new account is the actor of its own activation,
+  // the same way a login is.
+  | 'assistant.invited'
+  | 'assistant.invitation_accepted'
+  | 'assistant.invitation_resent'
+  | 'assistant.scope_changed'
+  | 'assistant.removed'
   // Course lifecycle (`DOM-5`). A course is what every enrollment, group,
   // task and report hangs off, and un-publishing one removes it from the
   // public site - a change to the platform's shape rather than to one
@@ -171,6 +181,20 @@ export type AuditTargetType =
   // staff placement route, which is a different decision by a different
   // actor.
   | 'student'
+  // The assistant/admin account, for the invitation flow. Its own target type
+  // rather than filed under nothing: an invitation names no account until it
+  // is accepted, so `assistant.invited`/`invitation_resent` target the
+  // invitation's own id, and `invitation_accepted` targets the real user id
+  // once one exists.
+  //
+  // `scope_changed` targets whichever id the assistant currently has -
+  // an invitation's id before acceptance (`AssistantInvitationRepository.
+  // updateDetails`), the real user id after. `removed` is scoped to pending
+  // invitations only in this slice (`AdminAssistantsService.remove`): this
+  // codebase has no precedent for hard-deleting or deactivating an already-
+  // active account, and inventing one was out of scope here - disclosed as
+  // an open item in `docs/phases/unit-5/REVIEW_5C.md` rather than guessed.
+  | 'assistant'
   // The course itself, for create and update.
   | 'course';
 

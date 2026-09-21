@@ -16,11 +16,22 @@ import { InMemoryUserRepository } from './repositories/in-memory-user.repository
 import { DatabaseService } from '../database/database.service.js';
 import { DATABASE_POOL } from '../database/database.tokens.js';
 import { JwtAuthGuard } from './jwt-auth.guard.js';
+import { ASSISTANT_SCOPE_REPOSITORY } from '../staff/interfaces/assistant-scope-repository.interface.js';
+import { InMemoryAssistantScopeRepository } from '../staff/repositories/in-memory-assistant-scope.repository.js';
+import { ASSISTANT_INVITATION_REPOSITORY } from '../manage/interfaces/assistant-invitation-repository.interface.js';
+import { InMemoryAssistantInvitationRepository } from '../manage/repositories/in-memory-assistant-invitation.repository.js';
+import { AuditService } from '../audit/audit.service.js';
+import { AUDIT_LOG_REPOSITORY } from '../audit/interfaces/audit-log-repository.interface.js';
+import { InMemoryAuditLogRepository } from '../audit/repositories/in-memory-audit-log.repository.js';
 
 describe('AuthController', () => {
   let controller: AuthController;
   let denylist: TokenDenylistService;
   let mailSend: ReturnType<typeof vi.fn>;
+  let invitations: InMemoryAssistantInvitationRepository;
+  let scopeRepo: InMemoryAssistantScopeRepository;
+  let audit: AuditService;
+  let users: InMemoryUserRepository;
 
   beforeEach(async () => {
     mailSend = vi.fn().mockResolvedValue(undefined);
@@ -37,6 +48,10 @@ describe('AuthController', () => {
         { provide: PASSWORD_HASHER, useClass: BcryptPasswordHasher },
         { provide: MAIL_SENDER, useValue: { send: mailSend } },
         { provide: MAIL_DELIVERY_REPOSITORY, useClass: InMemoryMailDeliveryRepository },
+        { provide: ASSISTANT_SCOPE_REPOSITORY, useClass: InMemoryAssistantScopeRepository },
+        { provide: ASSISTANT_INVITATION_REPOSITORY, useClass: InMemoryAssistantInvitationRepository },
+        AuditService,
+        { provide: AUDIT_LOG_REPOSITORY, useClass: InMemoryAuditLogRepository },
         {
           provide: JwtService,
           useValue: { signAsync: vi.fn().mockResolvedValue('mock-token') },
@@ -49,6 +64,10 @@ describe('AuthController', () => {
 
     controller = module.get<AuthController>(AuthController);
     denylist = module.get<TokenDenylistService>(TokenDenylistService);
+    invitations = module.get(ASSISTANT_INVITATION_REPOSITORY);
+    scopeRepo = module.get(ASSISTANT_SCOPE_REPOSITORY);
+    audit = module.get(AuditService);
+    users = module.get(USER_REPOSITORY);
   });
 
   it('should be defined', () => {
@@ -186,5 +205,75 @@ describe('AuthController', () => {
         newPassword: 'whatever123',
       }),
     ).rejects.toThrow();
+  });
+
+  describe('acceptInvitation', () => {
+    it('creates an active account, sets scope, and signs them in', async () => {
+      await invitations.create({
+        name: 'New TA',
+        email: 'invited@example.com',
+        role: 'assistant' as never,
+        scope: 'assigned_groups',
+        groupIds: ['group-1'],
+        token: 'invite-token-1',
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        invitedBy: 'teacher-1',
+      });
+
+      const result = await controller.acceptInvitation('invite-token-1', {
+        password: 'brandnew123',
+      });
+      expect(result.accessToken).toBe('mock-token');
+      expect(result.user).toMatchObject({ email: 'invited@example.com', role: 'assistant' });
+
+      const stored = await users.findByEmail('invited@example.com');
+      expect(stored?.status).toBe('active');
+      expect(await scopeRepo.findScope(stored!.id)).toBe('assigned_groups');
+      expect((await scopeRepo.findAssignments(stored!.id)).map((a) => a.groupId)).toEqual([
+        'group-1',
+      ]);
+
+      const { entries } = await audit.find({ limit: 10 });
+      const entry = entries.find((e) => e.action === 'assistant.invitation_accepted');
+      expect(entry?.actorId).toBe(stored!.id);
+      expect(entry?.targetId).toBe(stored!.id);
+    });
+
+    it('rejects an unknown token, an expired one and an already-used one with the same message', async () => {
+      await invitations.create({
+        name: 'Expired TA',
+        email: 'expired@example.com',
+        role: 'assistant' as never,
+        scope: 'all_groups',
+        groupIds: [],
+        token: 'invite-token-expired',
+        expiresAt: new Date(Date.now() - 1000).toISOString(),
+        invitedBy: 'teacher-1',
+      });
+      await invitations.create({
+        name: 'Used TA',
+        email: 'used@example.com',
+        role: 'assistant' as never,
+        scope: 'all_groups',
+        groupIds: [],
+        token: 'invite-token-used',
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        invitedBy: 'teacher-1',
+      });
+      await controller.acceptInvitation('invite-token-used', { password: 'firstpass123' });
+
+      const unknown = await controller
+        .acceptInvitation('not-a-real-token', { password: 'whatever123' })
+        .catch((e: Error) => e.message);
+      const expired = await controller
+        .acceptInvitation('invite-token-expired', { password: 'whatever123' })
+        .catch((e: Error) => e.message);
+      const reused = await controller
+        .acceptInvitation('invite-token-used', { password: 'whatever123' })
+        .catch((e: Error) => e.message);
+
+      expect(unknown).toBe(expired);
+      expect(expired).toBe(reused);
+    });
   });
 });

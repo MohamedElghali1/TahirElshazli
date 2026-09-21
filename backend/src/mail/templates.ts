@@ -23,12 +23,16 @@ export function renderTemplate(
           `<p>Expires at: ${String(data.expiresAt ?? '')}</p>`,
       };
     case 'invitation':
+      // The assistant-invitation flow (`AUTH-4`, unit 5). Not the group
+      // student-invite this case's name once suggested - no such route
+      // exists in this codebase, only the admin-invites-a-TA/admin path.
       return {
-        subject: `You've been invited to ${String(data.groupName ?? '')}`,
+        subject: `You've been invited to join Dr. Tahir's team`,
         html:
-          `<p>${String(data.inviterName ?? '')} has invited you to join ` +
-          `<strong>${String(data.groupName ?? '')}</strong>.</p>` +
-          `<p><a href="${String(data.link ?? '')}">Accept invitation</a></p>`,
+          `<p>${String(data.inviterName ?? '')} has invited you to join as ` +
+          `${String(data.role ?? 'assistant')}.</p>` +
+          `<p><a href="${String(data.link ?? '')}">Accept invitation</a></p>` +
+          `<p>Expires at: ${String(data.expiresAt ?? '')}</p>`,
       };
     case 'sign-in-link':
       return {

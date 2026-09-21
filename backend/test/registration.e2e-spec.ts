@@ -147,6 +147,41 @@ describe('Registration queue and course lifecycle (e2e)', () => {
         .expect(403);
     });
 
+    it('an assistant is refused with 403 on POST /admin/assistants (invite)', async () => {
+      await request(app.getHttpServer())
+        .post('/admin/assistants')
+        .set(bearer(assignedTaToken))
+        .send({
+          name: 'Smuggled TA',
+          email: 'smuggled-ta@example.com',
+          role: 'assistant',
+          scope: 'all_groups',
+        })
+        .expect(403);
+    });
+
+    it('an assistant is refused with 403 on PATCH /admin/assistants/:userId', async () => {
+      await request(app.getHttpServer())
+        .patch('/admin/assistants/assistant-2')
+        .set(bearer(assignedTaToken))
+        .send({ name: 'x', email: 'x@example.com', role: 'assistant', scope: 'all_groups' })
+        .expect(403);
+    });
+
+    it('an assistant is refused with 403 on DELETE /admin/assistants/:userId', async () => {
+      await request(app.getHttpServer())
+        .delete('/admin/assistants/assistant-2')
+        .set(bearer(assignedTaToken))
+        .expect(403);
+    });
+
+    it('an assistant is refused with 403 on POST /admin/assistants/:userId/resend', async () => {
+      await request(app.getHttpServer())
+        .post('/admin/assistants/assistant-2/resend')
+        .set(bearer(assignedTaToken))
+        .expect(403);
+    });
+
     it('a student is refused on all four as well', async () => {
       for (const send of [
         () =>

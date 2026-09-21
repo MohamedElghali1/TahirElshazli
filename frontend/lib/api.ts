@@ -38,8 +38,9 @@ import type {
   ReportDocument,
   ReportSummary,
   StaffCourseSummary,
-  StaffDirectoryEntry,
   StaffRecording,
+  Assistant,
+  AssistantWrite,
   AdminStudentUpdate,
   CreateStudentInput,
   StudentDetail,
@@ -394,6 +395,17 @@ export const api = {
       request<{ success: true }>('/auth/password-reset/confirm', {
         method: 'POST',
         body,
+      }),
+
+    /**
+     * Accepts an assistant invitation (`AUTH-4`): creates the account and
+     * signs them in, same shape as `login`. `token` is a path segment, not a
+     * body field (`API_SPEC.yaml:789`).
+     */
+    acceptInvitation: (token: string, password: string) =>
+      request<AuthResult>(`/auth/invitations/${token}/accept`, {
+        method: 'POST',
+        body: { password },
       }),
   },
 
@@ -911,9 +923,6 @@ export const api = {
         body,
       }),
 
-    assistants: (token: string, search?: string) =>
-      request<StaffDirectoryEntry[]>(`/admin/assistants${qs({ search })}`, { token }),
-
     // `courseStaff`/`assignStaff`/`unassignStaff` are gone with
     // `/admin/courses/:courseId/staff` (`AUTH-2`): an assistant's reach is held
     // at the group grain now, and the route that edits it is unit 5's
@@ -963,11 +972,40 @@ export const api = {
         token,
       }),
 
-    auditLog: (token: string, filter?: { courseId?: string; cursor?: string }) =>
+    auditLog: (
+      token: string,
+      filter?: { actorId?: string; courseId?: string; cursor?: string },
+    ) =>
       request<AuditLogPage>(
-        `/admin/audit-log${qs({ courseId: filter?.courseId, cursor: filter?.cursor })}`,
+        `/admin/audit-log${qs({
+          actorId: filter?.actorId,
+          courseId: filter?.courseId,
+          cursor: filter?.cursor,
+        })}`,
         { token },
       ),
+
+    /** The assistants/admins list - real accounts and pending invitations, merged (`PEOPLE-4`). */
+    assistants: (token: string) => request<Assistant[]>('/admin/assistants', { token }),
+
+    inviteAssistant: (token: string, body: AssistantWrite) =>
+      request<Assistant>('/admin/assistants', { method: 'POST', token, body }),
+
+    updateAssistant: (token: string, userId: string, body: AssistantWrite) =>
+      request<Assistant>(`/admin/assistants/${userId}`, {
+        method: 'PATCH',
+        token,
+        body,
+      }),
+
+    removeAssistant: (token: string, userId: string) =>
+      request<void>(`/admin/assistants/${userId}`, { method: 'DELETE', token }),
+
+    resendAssistantInvitation: (token: string, userId: string) =>
+      request<{ ok: true }>(`/admin/assistants/${userId}/resend`, {
+        method: 'POST',
+        token,
+      }),
   },
 
   students: {

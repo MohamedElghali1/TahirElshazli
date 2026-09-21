@@ -290,6 +290,10 @@ describe('the authorization boundary', () => {
           'AuthController.login',
           'AuthController.requestPasswordReset',
           'AuthController.confirmPasswordReset',
+          // The assistant-invitation accept (`AUTH-4`). Unauthenticated for
+          // the same reason password-reset confirm is: the token IS the
+          // credential proving the invite was theirs.
+          'AuthController.acceptInvitation',
           // Google's top-level browser redirect back, which carries no
           // Authorization header. Its own signed-state check is the gate.
           'AdminGoogleIntegrationController.callback',

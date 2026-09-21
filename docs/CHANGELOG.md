@@ -1174,3 +1174,39 @@ depending on the individual `useCallback`-stabilized setter functions instead of
 value — a one-file fix, verified by reloading the live session and confirming zero console errors
 across `/manage`, `/manage/students`, `/dashboard`, `/lessons`, `/marks`. Full trace:
 `docs/phases/unit-4/REVIEW_4C.md`.
+
+---
+
+## 2026-09-21 — `D-26` — unit 5 slice 5c: `remove` is invitation-only; `PEOPLE-5` needed no new route
+
+**Context.** Two real decisions surfaced while building `AdminAssistantsService` (`PEOPLE-4`/`5`/`6`,
+`AUTH-4`) that no document had settled.
+
+**Decision 1 — `DELETE /admin/assistants/{userId}` removes a pending invitation, never a real
+account.** `API_SPEC.yaml`'s route documents only a `204`, with no stated behaviour for a `userId`
+that already names an active account. This codebase has no precedent for hard-deleting or
+deactivating an existing account anywhere — the money/soft-delete conventions in `CLAUDE.md` §9 all
+point toward keeping history, not erasing an account outright — and building one was not asked for
+by any document in `docs/`. **Chosen**: `remove` resolves only a still-pending `assistant_invitations`
+row; a `userId` that names a real user 404s exactly like an unknown id. Verified live against the
+real dev server: `DELETE /admin/assistants/assistant-1` (a real, active seed account) answers 404,
+and the account still lists afterward. The frontend never offers a remove control on an active row
+at all, which is what keeps this from reading as a broken button rather than an unsupported action.
+If an account-removal or -deactivation feature is wanted later, it should arrive as its own named,
+itself-audited operation — not a silent extension of this one.
+
+**Decision 2 — `PEOPLE-5` needed no new backend route.** The phase plan's slice-5c description
+assumed a dedicated endpoint ("a read over `AuditService.find` scoped to one actor"). Reading
+`admin-audit.controller.ts` before writing anything found `GET /admin/audit-log` already accepts
+`?actorId=`, unused by any frontend caller. **Chosen**: extend the existing `manage/activity/page.tsx`
+(built in unit 4 slice 4d, ahead of this unit, as the general feed) to read an optional `?actorId=`
+query param, rather than building a second, narrower activity screen and a second route that would
+duplicate it. The assistants list links into it.
+
+**Reasoning.** Both follow `CLAUDE.md` §0/§13: check the actual current code before building, and
+do not invent business behaviour a document doesn't authorize. Recorded here rather than left buried
+in a review because both are the kind of quiet default someone six months from now could reasonably
+read differently.
+
+**Affected.** `docs/IMPLEMENTATION_PLAN.md`'s `PEOPLE-4`/`PEOPLE-5` rows and `PHASE_ROADMAP.md`'s
+unit-5 entry now reflect both. Full detail: `docs/phases/unit-5/REVIEW_5C.md`.

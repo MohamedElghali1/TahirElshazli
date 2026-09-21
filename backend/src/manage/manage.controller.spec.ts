@@ -9,6 +9,9 @@ import { ManageLiveSessionsService } from './manage-live-sessions.service.js';
 import { DirectoryService } from './directory.service.js';
 import { RegistrationApprovalService } from './registration-approval.service.js';
 import { AdminStudentsService } from './admin-students.service.js';
+import { AdminAssistantsService } from './admin-assistants.service.js';
+import { ASSISTANT_INVITATION_REPOSITORY } from './interfaces/assistant-invitation-repository.interface.js';
+import { InMemoryAssistantInvitationRepository } from './repositories/in-memory-assistant-invitation.repository.js';
 import { STUDENT_REPOSITORY } from '../students/interfaces/student-repository.interface.js';
 import { InMemoryStudentRepository } from '../students/repositories/in-memory-student.repository.js';
 import { BcryptPasswordHasher } from '../auth/bcrypt-password-hasher.js';
@@ -88,6 +91,11 @@ describe('Manage surface', () => {
         // transaction test is that a failing enrol really does roll back.
         RegistrationApprovalService,
         AdminStudentsService,
+        AdminAssistantsService,
+        {
+          provide: ASSISTANT_INVITATION_REPOSITORY,
+          useClass: InMemoryAssistantInvitationRepository,
+        },
         MailService,
         { provide: STUDENT_REPOSITORY, useClass: InMemoryStudentRepository },
         { provide: PASSWORD_HASHER, useClass: BcryptPasswordHasher },
@@ -685,13 +693,12 @@ describe('Manage surface', () => {
       expect(none).toEqual([]);
     });
 
-    it('lists assistants for the assignment picker', async () => {
-      const assistants = await admin.assistants({});
+    it('lists assistants and admins, and nothing else', async () => {
+      const assistants = await admin.assistants();
       expect(assistants.length).toBeGreaterThan(0);
-      // Assistants and the Full admin, and nothing else. The list used to be
-      // assistants alone; an `admin` account that appeared in no directory
-      // would be a person with the teacher's access whom nobody can see
-      // (AUTH-1, `API_SPEC.yaml:217`).
+      // An `admin` account that appeared in no directory would be a person
+      // with the teacher's access whom nobody can see (AUTH-1,
+      // `API_SPEC.yaml:217`).
       expect(
         assistants.every(
           (a) => a.role === Role.Assistant || a.role === Role.Admin,
@@ -704,6 +711,8 @@ describe('Manage surface', () => {
       // `role` is emitted so the console can tell the tiers apart - the picker
       // must not offer to assign an admin, whom `StaffService.assign` refuses.
       expect(assistants.find((a) => a.id === 'admin-1')?.role).toBe(Role.Admin);
+      // `PEOPLE-4`: every real account is `active`, with its scope/groupIds.
+      expect(assistants.every((a) => a.status === 'active')).toBe(true);
     });
 
     it('refuses a role filter that would return every account', async () => {

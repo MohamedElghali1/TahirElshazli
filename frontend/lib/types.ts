@@ -635,23 +635,40 @@ export interface CreateStudentInput {
 }
 
 /**
- * A staff directory row, from `GET /admin/assistants`. Mirrors
- * `manage/directory.service.ts` `StaffDirectoryEntry`.
- *
- * `role` is on the wire because the list holds two tiers - assistants and the
- * Full admin - and the course-staff picker must not offer to assign an admin,
- * whom `StaffService.assign` refuses. `scope`, `groupIds`, `status` and
- * `lastSeenAt` are absent from the response today: they are `PEOPLE-4`.
+ * How wide an assistant's reach is (`assistant_scopes`). A missing scope row
+ * means "never configured", not a default - see the backend interface of the
+ * same name.
  */
-export interface StaffDirectoryEntry extends DirectoryEntry {
+export type AssistantScope = 'all_groups' | 'assigned_groups';
+
+/**
+ * A row from `GET /admin/assistants` (`PEOPLE-4`) - a real account or a
+ * still-pending invitation, one shape either way. Mirrors
+ * `manage/admin-assistants.service.ts`'s `Assistant`.
+ */
+export interface Assistant extends DirectoryEntry {
   role: Role;
+  scope: AssistantScope;
+  groupIds: string[];
+  status: 'invited' | 'active';
+  /** `MAX(created_at)` from the audit log for this actor - last *acted*, not last seen (`PEOPLE-6`). */
+  lastSeenAt: string | null;
+}
+
+/** The body of `POST /admin/assistants` and `PATCH /admin/assistants/:userId`. */
+export interface AssistantWrite {
+  name: string;
+  email: string;
+  role: Role;
+  scope: AssistantScope;
+  groupIds?: string[];
 }
 
 /* --- staff assignment ----------------------------------------------------
  * `CourseStaffMember` is gone with `course_staff_assignments` and
  * `/admin/courses/:courseId/staff` (`AUTH-2`). An assistant's scope is
  * `assistant_scopes` + `assistant_group_assignments`; the shape the admin
- * screen will read is unit 5's, on `PATCH /admin/assistants/{userId}`.
+ * screen reads is `Assistant`, above.
  * ----------------------------------------------------------------------- */
 
 /* --- audit log (audit/interfaces/audit-log-repository) ------------------- */
@@ -689,6 +706,17 @@ export type AuditAction =
   | 'group.course_removed'
   | 'group.student_assigned'
   | 'group.student_removed'
+  | 'student.accepted'
+  | 'student.rejected'
+  | 'student.updated'
+  | 'student.created'
+  | 'assistant.invited'
+  | 'assistant.invitation_accepted'
+  | 'assistant.invitation_resent'
+  | 'assistant.scope_changed'
+  | 'assistant.removed'
+  | 'course.created'
+  | 'course.updated'
   | 'assessment.created'
   | 'assessment.updated'
   | 'assessment.targeted'

@@ -14,6 +14,8 @@ import { PostgresUserRepository } from './repositories/postgres-user.repository.
 import { repositoryProvider } from '../database/repository.provider.js';
 import { StudentRepositoryModule } from '../students/student-repository.module.js';
 import { MailModule } from '../mail/mail.module.js';
+import { AssistantScopeRepositoryModule } from '../staff/assistant-scope-repository.module.js';
+import { AssistantInvitationRepositoryModule } from '../manage/assistant-invitation-repository.module.js';
 import { JWT_SECRET, JWT_EXPIRES_IN } from './constants.js';
 
 @Module({
@@ -27,6 +29,10 @@ import { JWT_SECRET, JWT_EXPIRES_IN } from './constants.js';
     }),
     StudentRepositoryModule,
     MailModule,
+    // `acceptInvitation` (`PEOPLE-4`/`AUTH-4`): creates the account and writes
+    // the scope the invitation specified, in one transaction.
+    AssistantScopeRepositoryModule,
+    AssistantInvitationRepositoryModule,
   ],
   controllers: [AuthController],
   providers: [

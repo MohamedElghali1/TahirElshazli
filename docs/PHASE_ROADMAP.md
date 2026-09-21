@@ -396,6 +396,14 @@ teacher/admin only and audited. **Assistants may add to a group but not remove f
 **Exit** universal, plus new audit actions declared in the union **and** the DTO's exhaustive
 `Record`, each with a spec asserting the entry written.
 
+**Status 2026-09-21**: slices 5a (`PEOPLE-1`), 5b (`PEOPLE-2`/`PEOPLE-3`) and 5c (`PEOPLE-4`/`5`/`6`,
+`AUTH-4`) landed — `a8e6d57`, `d6e749f`, and 5c pending commit
+(`docs/phases/unit-5/REVIEW_5C.md`, `APPROVED WITH FOLLOW-UP`: no Docker in this environment for
+migration `017`'s real-schema run, and interactive browser verification was blocked by a Chrome
+automation tool failure — curl-based live verification substituted). **Not yet COMPLETE**: slice 5d
+(`GROUP-3`, `GROUP-4`, and closing the `AUTH-2`-broken `manage/groups`/`manage/courses/[id]/{groups,staff}`
+pages — the `tsc` count is still 22, unchanged by 5c) remains.
+
 ---
 
 ### Chat unit 6 — Tasks and the draft library `[ ]`

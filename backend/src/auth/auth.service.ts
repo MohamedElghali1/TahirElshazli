@@ -16,6 +16,12 @@ import { MailService } from '../mail/mail.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { StudentRepository } from '../students/interfaces/student-repository.interface.js';
 import { STUDENT_REPOSITORY } from '../students/interfaces/student-repository.interface.js';
+import type { AssistantScopeRepository } from '../staff/interfaces/assistant-scope-repository.interface.js';
+import { ASSISTANT_SCOPE_REPOSITORY } from '../staff/interfaces/assistant-scope-repository.interface.js';
+import type { AssistantInvitationRepository } from '../manage/interfaces/assistant-invitation-repository.interface.js';
+import { ASSISTANT_INVITATION_REPOSITORY } from '../manage/interfaces/assistant-invitation-repository.interface.js';
+import { AuditService } from '../audit/audit.service.js';
+import { actorRoleOf } from './actor-role.js';
 import type { JwtPayload } from './jwt.strategy.js';
 
 export interface AuthenticatedUser {
@@ -68,6 +74,11 @@ export class AuthService {
     private readonly db: DatabaseService,
     @Inject(STUDENT_REPOSITORY)
     private readonly studentRepo: StudentRepository,
+    @Inject(ASSISTANT_SCOPE_REPOSITORY)
+    private readonly scopeRepo: AssistantScopeRepository,
+    @Inject(ASSISTANT_INVITATION_REPOSITORY)
+    private readonly invitationRepo: AssistantInvitationRepository,
+    private readonly audit: AuditService,
   ) {}
 
   private async issueToken(user: {
@@ -202,5 +213,62 @@ export class AuthService {
     // them is the point of resetting.
     this.denylist.revokeAllForUser(stored.userId);
     return { success: true };
+  }
+
+  /**
+   * Accepting an assistant invitation (`AUTH-4`, `PEOPLE-4`): creates the
+   * account, sets the scope the invitation specified, and signs them in - one
+   * transaction, same shape as `RegistrationApprovalService.accept`. Unlike a
+   * student's registration, there is no queue: an assistant invitation is
+   * already the admin decision, so the account is `active` immediately.
+   *
+   * The account is the actor of its own `assistant.invitation_accepted` entry
+   * - there is no staff caller on this route (`security: []`,
+   * `API_SPEC.yaml`), so "who activated this account" can only be answered by
+   * the account itself, the same way a login is self-attributed.
+   */
+  async acceptInvitation(token: string, password: string): Promise<AuthResult> {
+    const invitation = await this.invitationRepo.findByToken(token);
+    if (
+      !invitation ||
+      invitation.acceptedAt ||
+      new Date(invitation.expiresAt) <= new Date()
+    ) {
+      // One message for unknown, already-used and expired - the same
+      // anti-enumeration shape `confirmPasswordReset` already uses.
+      throw new UnauthorizedException('Invitation is invalid or has expired');
+    }
+    return this.db.runInTransaction(async () => {
+      const passwordHash = await this.hasher.hash(password);
+      const user = await this.userRepo.create({
+        email: invitation.email,
+        passwordHash,
+        name: invitation.name,
+        role: invitation.role,
+        status: 'active',
+      });
+      await this.scopeRepo.setScope(user.id, invitation.scope);
+      if (invitation.scope === 'assigned_groups') {
+        for (const groupId of invitation.groupIds) {
+          await this.scopeRepo.assignGroup(user.id, groupId, invitation.invitedBy);
+        }
+      }
+      await this.invitationRepo.markAccepted(invitation.id);
+      await this.audit.record({
+        actorId: user.id,
+        actorRole: actorRoleOf({ role: user.role }),
+        action: 'assistant.invitation_accepted',
+        targetType: 'assistant',
+        targetId: user.id,
+        courseId: null,
+        before: null,
+        after: { email: user.email, role: user.role, scope: invitation.scope },
+      });
+      const accessToken = await this.issueToken(user);
+      return {
+        accessToken,
+        user: { id: user.id, email: user.email, name: user.name, role: user.role },
+      };
+    });
   }
 }

@@ -96,7 +96,7 @@ and is **already handled**: `postgres-work.repository.ts:37-38` declares the row
 | | **DoD point 10 closed 2026-09-20.** The reviewer's lower finding 4 was a real spec/code disagreement on `GET /admin/assistants`: the schema required `scope` and `status` (no data source until `AUTH-2`/`AUTH-4`) and omitted `createdAt`, which the route actually returns. `API_SPEC.yaml`'s `Assistant` now requires `[id, name, email, role, createdAt]` with `scope`/`groupIds`/`status` declared-but-optional and annotated with the task that populates each. **Code, spec and `lib/types.ts` now carry the same five fields** — verified field-by-field. A contract that requires a field nothing emits is drift, not ambition. | | | | | |
 | `AUTH-2` `[x]` **unit 2, slice 2b-ii, `APPROVED WITH FOLLOW-UP` 2026-09-21** | **Course scoping → group scoping.** `assistant_scopes` + `assistant_group_assignments` (migration **`015`**, run against real PostgreSQL from an empty schema and against the dev database); `StaffScopeService`'s internals rewritten and `mayReachGroup` added; `course_staff_assignments` dropped with `AdminStaffController`, `CourseStaffRepository` and the three `/admin/courses/:courseId/staff` routes. **`D-10` built with it**: every staff group route is scoped, reads and the placement write alike. **The seven contract cases in `staff-scope.service.spec.ts` pass unmodified** — only the `beforeEach` provider changed; the four `assign`/`unassign` cases were deleted with their methods under ruling R-8. `[x]` 2026-09-21 on the reviewer's `APPROVED WITH FOLLOW-UP` (`docs/phases/unit-2/REVIEW_2B_II.md`): no finding was attributable to the change itself. The two that gate the slice — the overstated `AUTHORIZATION_MODEL.md` row (F2) and the user's ruling on the course door (F1/F3/F4, now `D-23`) — are closed; the rest are `F2B2-*` below, none blocking. **Re-homed to unit 2, beside `DOM-1`/`DOM-2`,** by the 2026-09-19 ruling: its migration `014` joins `groups.course_id`, which does not exist until `DOM-1`'s `013`, and `MigrationRunner.sqlFilesIn` sorts lexicographically — so a `014` with no `013` applies straight after `012` and aborts every boot and every integration run. See `docs/CHANGELOG.md`. | `AUTH-1`, `DOM-1` | **015 `[x]` ran** | `[REPLACE]` ×3 | The chokepoint itself | **404-not-403 and the identical message survived**, asserted `===` against the genuine-miss path in the same test for the course *and* the group; both scope values tested, plus the never-configured third state failing closed |
 | `AUTH-3` `[x]` | `AssistantCapabilities` preset gating the four withheld verbs (`backend/src/auth/capabilities.ts`). `DELETE /staff/groups/:id/members/:studentId` → teacher/admin with a **403**. **Dep corrected: `AUTH-1`, not `AUTH-2`** — the preset is a pure module and the one routed verb needs no scope table, which is what let it ship in unit 1 while `AUTH-2` deferred. | `AUTH-1` | — | 1 route | The four verbs | One refusal test per verb (`capabilities.spec.ts`), plus a service-layer refusal proving the repository is never read. **Strengthened 2026-09-19:** `WITHHELD` is now derived from an exhaustive `Record<Capability, true>` in the spec and asserted against the module's exported `ALL_CAPABILITIES`, so a fifth capability fails the spec (proved by adding one and watching it go red) rather than shipping with no refusal test. The module's preset already gave the compile error; it was the spec's mirror that did not. |
-| `AUTH-4` `[ ]` **→ unit 5** | Assistant invitations: table, 4 admin routes, public accept. **Re-homed to unit 5** (beside `PEOPLE-4`): doubly blocked — on `AUTH-2` for `scope`/`groupIds`, and on `MAIL-1` (unit 3), because an invitation that cannot be emailed is not an invitation. Its planner should cost `assistant.invitation_accepted` and `assistant.invitation_resent` as audited actions (unit-1 `PHASE_PLAN.md` §8 D-d) rather than discover them. | `AUTH-2`, `MAIL-1` | 015 (own number) | 5 new | Teacher/admin only | Token reuse, expiry, and unknown all give one message |
+| `AUTH-4` `[x]` **unit 5, slice 5c** | Assistant invitations: `assistant_invitations` table (**017**, not yet run against a real empty schema — no Docker in the build environment, disclosed in `REVIEW_5C.md`), 4 admin routes (`POST/PATCH/DELETE /admin/assistants/{userId}`, `POST .../resend`) plus `POST /auth/invitations/{token}/accept` (`@Public()`). `AuthService.acceptInvitation`: one transaction — create the user `active`, set scope, assign every listed group, mark the invitation accepted, self-attributed `assistant.invitation_accepted` audit entry, issue a token. Five audited actions landed (`invited`/`invitation_accepted`/`invitation_resent`/`scope_changed`/`removed`), all costed in advance per the note this row used to carry. | `AUTH-2`, `MAIL-1` | 017 (own number) | 5 new | Teacher/admin only for the four admin routes; `@Public()` for accept, rate-limited like login | Token reuse, expiry, and unknown all give the identical `'Invitation is invalid or has expired'` message — asserted `===` across all three in `auth.controller.spec.ts` |
 | ~~`AUTH-5`~~ `[REMOVED]` | ~~Device/session list.~~ **Dropped from scope 2026-09-20 (`D-1`): no Redis, no Security tab.** Not deferred — dropped. The per-process rate limiter and token denylist therefore stay as they are, and `SECURITY.md` §3.1 is a **permanent** known weakness until a second replica is configured. | — | — | — | — | — |
 | `AUTH-6` `[ ]` | **Narrow the course-named staff routes to held groups** (`D-23`). `AUTH-2` moved assistant scope to the group grain and `D-10` enforced it on group-named routes; the routes that name a **course** were left course-grained and still hand an assistant every cohort on that course. In scope: `GET /staff/courses/:id/roster`, `GET /staff/courses/:id/submissions`, `GET /staff/courses/:id/groups`, the work-analytics pair, and `assessment-authoring.service.ts:170` (an assistant may currently **target work at a group they do not hold** — an assistant-facing *write* naming a group that skips `mayReachGroup`). **The hard part is not the filter, it is one ruling per screen on whether a number may depend on who is looking** — `B-4`'s trap: `StaffScopeService` already exposes the held-group set, so the filter itself is small. Completion rates and averages must stay caller-independent or be labelled as scoped; `CLAUDE.md` §11.1 forbids merging progress and performance, and a denominator that silently narrows is the same class of error. Refusal test in both directions per route, 404 byte-identical to a genuine miss. | `AUTH-2` | — | Medium |
 
@@ -193,27 +193,35 @@ user's to make. **Both are closed, so `AUTH-2` is `[x]`.** Nothing below blocks 
 Each slice: migration → repositories (both) → service → authz → API → tests → frontend → check.
 
 ### Phase 5 — People
-`PEOPLE-1` `[ ]` Student directory + waiting queue (`DOM-4`) ·
-`PEOPLE-2` `[ ]` Student detail + edit ·
-`PEOPLE-3` `[ ]` Create student directly (emails a sign-in link; needs `MAIL-3`) ·
-`PEOPLE-4` `[ ]` Assistants list + invite + scope editing (`AUTH-4`). **Inherits a known response-schema
-gap on `GET /admin/assistants`:** `API_SPEC.yaml:563` responds `Assistant[]`, whose
-`required` set is `[id, name, email, role, scope, status]`, and the implementation returns
-`{ id, name, email, createdAt, role }` — `scope` and `status` **absent** (deferred by unit-1 ruling 2,
-because both need `AUTH-2`'s scope tables), `createdAt` **undeclared in the schema**. Closing the row
-means adding `scope`/`status` to the response *and* declaring `createdAt` in the contract, or dropping
-it from the response. Costed here so it is not rediscovered. The frontend mirror's missing `role` was
-closed in unit 1's remediation pass (`StaffDirectoryEntry` in `lib/types.ts`); `scope` and `status`
-will need the same treatment. ·
-`PEOPLE-5` `[ ]` Assistant activity screen over the existing audit log ·
-`PEOPLE-6` `[ ]` **`Assistant.lastSeenAt` — derived from the audit log.** Closed 2026-09-20: match
-the redesign, where the teacher sees assistant *activity*. That activity **is** the audit log
-(`PRODUCT_SPEC.md` §3.3), which already timestamps every staff action — so the field is
-`MAX(created_at)` for that actor. **No `users.last_seen_at` column and no write on the hot path.**
+`PEOPLE-1` `[x]` Student directory + waiting queue (`DOM-4`). Backend already existed
+(`registration-approval.service.ts`, `directory.service.ts`) — frontend-only slice: `manage/students/page.tsx`
+gained the status column, filter, and a `DecisionPanel` for accept/reject. Unit 5 slice 5a,
+`a8e6d57`. ·
+`PEOPLE-2` `[x]` Student detail + edit. `GET/PATCH /admin/students/:id`, `admin-students.service.ts`,
+`manage/students/[id]/page.tsx`. Unit 5 slice 5b, `d6e749f`. ·
+`PEOPLE-3` `[x]` Create student directly (emails a sign-in link; needs `MAIL-3`). Reuses the existing
+password-reset-token mechanism rather than inventing new auth — see `REVIEW_5B.md`. `POST /admin/students`.
+Unit 5 slice 5b, `d6e749f`. ·
+`PEOPLE-4` `[x]` Assistants list + invite + scope editing (`AUTH-4`). The response-schema gap this
+row used to describe is closed: `Assistant` now carries `scope`/`groupIds`/`status`/`lastSeenAt`, all
+moved into `API_SPEC.yaml`'s `required` set in the same change. `manage/admin-assistants.service.ts`
+merges real accounts and pending `assistant_invitations` rows into one shape.
+`POST/PATCH/DELETE /admin/assistants/{userId}`, `POST .../resend`, `POST /auth/invitations/{token}/accept`.
+`manage/assistants/page.tsx`, `(auth)/accept-invitation/page.tsx`. Unit 5 slice 5c,
+see `docs/phases/unit-5/REVIEW_5C.md`. **`remove` is scoped to pending invitations only** — no
+precedent in this codebase for hard-deleting or deactivating an already-active account; disclosed
+rather than invented. ·
+`PEOPLE-5` `[x]` Assistant activity screen over the existing audit log. No new route: `GET
+/admin/audit-log` already accepted `actorId` server-side with no frontend caller — the existing
+`manage/activity/page.tsx` (built ahead of schedule in unit 4 slice 4d as the general feed) now
+reads an optional `?actorId=` query param and filters through it. Unit 5 slice 5c. ·
+`PEOPLE-6` `[x]` **`Assistant.lastSeenAt` — derived from the audit log.** `MAX(created_at)` for that
+actor, read via `AuditService.find({actorId, limit: 1})`. No `users.last_seen_at` column, no write on
+the hot path. Unit 5 slice 5c.
 
-One caveat to carry into the UI: this is *last acted*, not *last seen*. An assistant who signs in and
-only reads shows nothing. That is the right figure for the screen the redesign draws, but the label
-must not imply a login time. `PEOPLE-4` emits it; `PEOPLE-5` renders it.
+One caveat carried into the UI: this is *last acted*, not *last seen*. An assistant who signs in and
+only reads shows nothing (`—`, never `0`). `PEOPLE-4` emits it; `PEOPLE-5` renders it, as a link into
+the filtered activity screen.
 
 ### Phase 6 — Groups
 `GROUP-1` `[ ]` Group CRUD with course/assistant/meets/room (`DOM-2`) ·
