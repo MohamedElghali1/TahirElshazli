@@ -23,7 +23,7 @@ import {
   TextArea,
   TextInput,
 } from '@/components/ui';
-import { PageTitle } from '@/components/app/page-chrome';
+import { PageTitle } from '@/components/shell/page-chrome';
 
 const CATEGORIES: { value: BlogCategory; label: string }[] = [
   { value: 'achievement', label: 'Achievement' },

@@ -6,7 +6,7 @@ import { api } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
 import { isAdminRole } from '@/lib/roles';
 import { TabList, type TabItem } from '@/components/ui';
-import { PageTitle } from '@/components/app/page-chrome';
+import { PageTitle } from '@/components/shell/page-chrome';
 
 /**
  * The course workspace: one header and one set of tabs for every section a TA

@@ -7,7 +7,7 @@ import { useApi, useSession } from '@/lib/session';
 import { isAdminRole } from '@/lib/roles';
 import type { ManageCourseCard } from '@/lib/types';
 import { Button, EmptyState, Loader, StatNumber, Table, Tag, type Column } from '@/components/ui';
-import { PageTitle } from '@/components/app/page-chrome';
+import { PageTitle } from '@/components/shell/page-chrome';
 
 /**
  * The management console's landing screen, shared by Dr. Tahir and his

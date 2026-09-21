@@ -7,7 +7,7 @@ import { useApi } from '@/lib/session';
 import { formatDate, formatFileSize, MATERIAL_CATEGORY_LABEL } from '@/lib/format';
 import type { Material, MaterialCategory } from '@/lib/types';
 import { Panel, Tag, EmptyState, Loader, Button, Icon } from '@/components/ui';
-import { PageTitle } from '@/components/app/page-chrome';
+import { PageTitle } from '@/components/shell/page-chrome';
 import { CourseGate } from '@/components/student/course-gate';
 import { useSelectedCourse } from '@/components/shell/course-context';
 

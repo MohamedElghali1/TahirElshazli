@@ -17,7 +17,7 @@ import {
   type IconName,
   type TagTone,
 } from '@/components/ui';
-import { PageChromeProvider } from '@/components/app/page-chrome';
+import { PageChromeProvider } from '@/components/shell/page-chrome';
 import { ShellHeader } from './shell-header';
 import { CourseSwitcher } from './course-switcher';
 import { activeHrefFor } from './nav-active';

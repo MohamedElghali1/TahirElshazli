@@ -7,7 +7,7 @@ import { useApi, useSession } from '@/lib/session';
 import { formatRelative } from '@/lib/format';
 import type { AppNotification, NotificationType } from '@/lib/types';
 import { Panel, EmptyState, Loader, Button, Icon, cx, type IconName } from '@/components/ui';
-import { PageTitle, PageActions } from '@/components/app/page-chrome';
+import { PageTitle, PageActions } from '@/components/shell/page-chrome';
 
 const ICON: Record<NotificationType, IconName> = {
   grade_posted: 'CircleCheck',

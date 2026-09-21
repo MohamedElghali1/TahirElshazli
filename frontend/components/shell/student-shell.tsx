@@ -4,7 +4,7 @@ import * as React from 'react';
 import { usePathname } from 'next/navigation';
 import { useSession } from '@/lib/session';
 import { cx, Avatar, IconButton, NavItem, NavSection, type IconName } from '@/components/ui';
-import { PageChromeProvider } from '@/components/app/page-chrome';
+import { PageChromeProvider } from '@/components/shell/page-chrome';
 import { ShellHeader } from './shell-header';
 import { CourseSwitcher } from './course-switcher';
 import { CourseProvider, useSelectedCourse } from './course-context';

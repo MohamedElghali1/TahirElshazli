@@ -6,7 +6,7 @@ import { useApi } from '@/lib/session';
 import { formatDateTime } from '@/lib/format';
 import type { AuditAction, AuditLogEntry } from '@/lib/types';
 import { Button, EmptyState, Loader, Table, Tag, type Column, type TagTone } from '@/components/ui';
-import { PageTitle } from '@/components/app/page-chrome';
+import { PageTitle } from '@/components/shell/page-chrome';
 
 /**
  * The activity log - CLAUDE.md §5.4's actual ask: the teacher must be able to

@@ -330,7 +330,7 @@ to carry the same data-loss risk; revisit if that turns out wrong.
 
 ---
 
-### Chat unit 4 — Shells `[ ]`  *(frontend; no backend dependency but `AUTH-1`)*
+### Chat unit 4 — Shells `[x]` **COMPLETE — `APPROVED` 2026-09-21**
 
 **Scope** `SHELL-1` … `SHELL-4`. Console shell, student shell, flat student IA, **and the deletion of
 `components/app/*`, `components/site/*` and the legacy pages.**
@@ -342,6 +342,41 @@ becomes an enforceable gate.
 **Design checks** the eight questions in `IMPLEMENTATION_PLAN.md` §Verification, on every screen.
 **Exit** universal, plus: frontend typecheck clean; no import of a deleted module remains; role-based
 hiding is documented as courtesy, with the server-side guard named.
+
+**Built via the same custom units-3-5 pipeline as unit 3** (`D-24`), across four sequential slices
+(4a shells, 4b-i student surface + flat IA, 4b-ii console surface, 4c marketing/auth + `SHELL-5`,
+4d deletion) — see `docs/phases/unit-4/PHASE_PLAN.md` and `REVIEW_{4A,4BI,4BII,4C,4D}.md`.
+Antigravity implemented what its quota allowed (slices 4a, 4b-i, 4b-ii in full; part of 4c); the
+orchestrator finished the remainder directly per the user's instruction to keep working as a single
+agent rather than spawn further subagents once Antigravity is unavailable.
+
+**A correction to this entry's own scope line, disclosed rather than silently applied:**
+`components/site/*` was **not** deleted. Every file in it was ported onto the current
+`components/ui` API *in place* during the 4b-i/4c slices rather than replaced, so by the time
+`SHELL-4` ran it held no legacy code — deleting it would have destroyed live, needed
+implementations. `components/app/*` kept its one live file (`page-chrome.tsx`, relocated to
+`components/shell/`) and lost the three confirmed-dead ones. Full reasoning and the consumer-count
+verification behind it: `REVIEW_4D.md`.
+
+**A real bug, not just a port artifact, was found and fixed**: `components/app/page-chrome.tsx`
+(pre-existing, untouched by any slice until the fix) had an infinite render loop — `PageTitle`/
+`PageActions`'s effects depended on the whole chrome-context value object, which their own state
+updates rebuild every time, and `PageActions` in particular receives a fresh JSX `children` element
+on every caller render. It could not have surfaced before this unit, because no route in the app
+had ever rendered live in a browser until slice 4c cleared the last whole-app Turbopack compile
+blocker. Fixed by depending on the individual `useCallback`-stabilized setters instead of the whole
+context object. `REVIEW_4C.md` has the full trace.
+
+**Verified live, not just compiled**: signed in as both the seeded teacher and student against the
+real backend, confirmed the console shell (real course/student/recording counts, all six nav
+sections), the student shell (flat IA, real homework/marks data, `/lessons` course-scoped rendering
+via `CourseProvider`), `/marks`'s Performance/Progress separation holding in a live render
+(`CLAUDE.md` §11.1 rule 2), and `/register` submitting for real to the exact `SHELL-5`
+waiting-for-approval screen.
+
+**Verified:** `npx tsc --noEmit` → **22 errors**, all pre-existing `AUTH-2` domain drift in
+`manage/groups`/`manage/courses/[id]/{groups,staff}` (unit 5's, `PEOPLE-4`, to close) — **0
+elsewhere**, `0` in `lib/`. `npx eslint .` clean.
 
 ---
 

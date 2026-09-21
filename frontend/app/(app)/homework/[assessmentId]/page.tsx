@@ -25,7 +25,7 @@ import {
   Icon,
   type TagTone,
 } from '@/components/ui';
-import { PageTitle } from '@/components/app/page-chrome';
+import { PageTitle } from '@/components/shell/page-chrome';
 
 // `ASSESSMENT_STATUS_CHIP` (`lib/format.ts`, untouched by the redesign) still
 // speaks the legacy tone name `'neutral'` — the new `Tag` scale calls it `'gray'`.

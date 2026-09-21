@@ -7,7 +7,7 @@ import { isAdminRole } from '@/lib/roles';
 import { formatDate } from '@/lib/format';
 import type { ManageCourseCard } from '@/lib/types';
 import { Button, EmptyState, Loader, Table, Tag, type Column } from '@/components/ui';
-import { PageTitle } from '@/components/app/page-chrome';
+import { PageTitle } from '@/components/shell/page-chrome';
 
 /**
  * Every course the caller may work on.

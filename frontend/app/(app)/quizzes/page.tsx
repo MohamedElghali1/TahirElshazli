@@ -1,7 +1,7 @@
 'use client';
 
 import { EmptyState } from '@/components/ui';
-import { PageTitle } from '@/components/app/page-chrome';
+import { PageTitle } from '@/components/shell/page-chrome';
 
 /**
  * Quizzes — designed, but no backend yet (`docs/redesign-mapping.md` "Designed,

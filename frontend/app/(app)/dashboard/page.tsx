@@ -31,7 +31,7 @@ import {
   Icon,
   type IconName,
 } from '@/components/ui';
-import { PageActions, PageTitle } from '@/components/app/page-chrome';
+import { PageActions, PageTitle } from '@/components/shell/page-chrome';
 import { TeacherPortrait } from '@/components/student/teacher-portrait';
 import { JoinSessionAction, SessionStamp } from '@/components/student/join-session';
 import { PageTransition, StaggerList, StaggerItem, motion } from '@/components/student/motion';

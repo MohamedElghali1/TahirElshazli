@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { usePageChrome } from '@/components/app/page-chrome';
+import { usePageChrome } from '@/components/shell/page-chrome';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { IconButton } from '@/components/ui';
 

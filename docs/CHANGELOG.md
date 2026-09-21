@@ -1125,3 +1125,52 @@ Sonnet subagent as replacement implementer when an Antigravity session ends.
 
 **Affected.** Process only for units 3-5; no product behaviour reversed. `PHASE_ROADMAP.md`'s
 unit-3 entry and `docs/phases/unit-3/PHASE_PLAN.md`/`REVIEW.md` carry the full record.
+
+---
+
+## 2026-09-21 — `D-25` — `SHELL-4` deletes the dead 3/4 of `components/app/*`, not `components/site/*`
+
+**Context.** `IMPLEMENTATION_PLAN.md` and `PHASE_ROADMAP.md` both wrote `SHELL-4`'s scope as
+"Delete `components/app/*`, `components/site/*`" before any of unit 4's four slices existed. By the
+time the deletion slice (4d) actually ran, that instruction no longer matched the tree: slice 4b-i
+ported `components/site/{catalog-states,contact-form,course-filters,course-card,site-header}.tsx`
+onto the current `components/ui` API *in place*, and slice 4c finished the remaining `(site)`/
+`(auth)` port — so every one of `components/site/*`'s 8 files had a real, live consumer by the time
+`SHELL-4` was reached, confirmed by grepping each file's consumer count rather than assumed.
+`components/app/*`, by contrast, genuinely was left with three dead files (`page-parts.tsx`,
+`table.tsx`, `app-shell.tsx` — zero consumers each) and one live one (`page-chrome.tsx`, the shared
+chrome contract 25 files import).
+
+**Chosen.** Delete only what is actually dead. `components/app/*`'s three dead files are deleted;
+`page-chrome.tsx` is relocated to `components/shell/page-chrome.tsx` (its real home, next to the
+shells that depend on it) with its 25 import sites updated. `components/site/*` is left in place in
+full — nothing in it is legacy anymore, and deleting live, correct code because an earlier plan
+said to would be following an instruction past the point it stopped describing reality.
+
+**Reasoning.** `CLAUDE.md` §12's change-management rules ask uncommitted destructive actions to be
+checked against current state, not executed on the strength of a plan written before the state that
+plan describes existed. A grep-verified live/dead split costs one command per file; a wrong
+deletion here would have taken down the marketing site and the auth screens the same slice had just
+finished making work.
+
+**Affected.** `docs/IMPLEMENTATION_PLAN.md`'s `SHELL-4` row and `PHASE_ROADMAP.md`'s unit-4 entry
+both now carry this correction rather than the original wording alone. `CLAUDE.md` §4.1 rewritten to
+match current reality (22 disclosed `AUTH-2` errors, not the historical ~326). Full verification in
+`docs/phases/unit-4/REVIEW_4D.md`.
+
+### A genuine bug, found only because this unit did the live check it kept deferring
+
+`components/app/page-chrome.tsx` — pre-existing, untouched by slices 4a/4b-i/4b-ii, never
+suspected — had a real infinite render loop: `PageTitle`/`PageActions` depended on the entire
+chrome-context value object in their effects, and that object is rebuilt every time their own
+`setChrome`/`setActions` calls fire, so every state update re-triggered the effect that caused it.
+`PageActions` specifically receives a fresh JSX `children` element on every render of its three real
+callers (`ManageLayout`, `dashboard/page.tsx`, `notifications/page.tsx`), which React never
+memoizes automatically. It produced hundreds of "Maximum update depth exceeded" console errors the
+instant `/manage` first rendered with real data — confirmed live, not inferred. It could not have
+been caught earlier: no route in the whole app had ever rendered successfully in a browser before
+slice 4c cleared the last whole-app Turbopack compile blocker, three slices into this unit. Fixed by
+depending on the individual `useCallback`-stabilized setter functions instead of the whole context
+value — a one-file fix, verified by reloading the live session and confirming zero console errors
+across `/manage`, `/manage/students`, `/dashboard`, `/lessons`, `/marks`. Full trace:
+`docs/phases/unit-4/REVIEW_4C.md`.

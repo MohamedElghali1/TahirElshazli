@@ -16,7 +16,7 @@ import {
   Tag,
   TextInput,
 } from '@/components/ui';
-import { PageTitle } from '@/components/app/page-chrome';
+import { PageTitle } from '@/components/shell/page-chrome';
 
 /**
  * Groups: create one, name it, and decide what it studies (CLAUDE.md §5.16).

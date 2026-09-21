@@ -3,7 +3,7 @@
 import { useSession } from '@/lib/session';
 import { isAdminRole } from '@/lib/roles';
 import { ButtonLink } from '@/components/ui';
-import { PageActions } from '@/components/app/page-chrome';
+import { PageActions } from '@/components/shell/page-chrome';
 
 /**
  * The one header action every `/manage/*` screen shares (TASK 2 of the

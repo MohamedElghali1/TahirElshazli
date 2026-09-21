@@ -5,7 +5,7 @@ import { useApi } from '@/lib/session';
 import { formatDate } from '@/lib/format';
 import type { LiveSessionWithAttendance } from '@/lib/types';
 import { Panel, EmptyState, Loader, Tag, Button, Icon } from '@/components/ui';
-import { PageTitle } from '@/components/app/page-chrome';
+import { PageTitle } from '@/components/shell/page-chrome';
 import { CourseGate } from '@/components/student/course-gate';
 import { useSelectedCourse } from '@/components/shell/course-context';
 

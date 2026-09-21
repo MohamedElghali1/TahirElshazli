@@ -6,7 +6,7 @@ import { useApi, useSession } from '@/lib/session';
 import { formatDate, formatDuration } from '@/lib/format';
 import type { RecordingWithProgress } from '@/lib/types';
 import { Panel, EmptyState, Loader, Tag, Meter, Button, Select, Icon, cx } from '@/components/ui';
-import { PageTitle } from '@/components/app/page-chrome';
+import { PageTitle } from '@/components/shell/page-chrome';
 import { CourseGate } from '@/components/student/course-gate';
 import { useSelectedCourse } from '@/components/shell/course-context';
 import { RecordingPlayer } from '@/components/student/recording-player';

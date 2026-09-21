@@ -6,7 +6,7 @@ import { useApi } from '@/lib/session';
 import { formatDate } from '@/lib/format';
 import type { StudentDirectoryEntry } from '@/lib/types';
 import { Button, EmptyState, Loader, SearchInput, Table, type Column } from '@/components/ui';
-import { PageTitle } from '@/components/app/page-chrome';
+import { PageTitle } from '@/components/shell/page-chrome';
 
 /**
  * The student directory. Admin only - CLAUDE.md §2.2 puts the full directory

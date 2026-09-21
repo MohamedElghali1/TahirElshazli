@@ -3573,3 +3573,45 @@ Two things are recorded as open rather than guessed: the four non-password-reset
 provisional until their real callers exist (units 5/9/10), and `MAIL_DRIVER=log` is not refused in
 production the way `STORAGE_DRIVER=local` is (judged lower-risk; revisit if wrong). Full detail in
 `docs/phases/unit-3/`. Units 4 (Shells) and 5 (People and groups) follow the same pipeline next.
+
+---
+
+## 2026-09-21 — Unit 4 (Shells) complete: the frontend renders live for the first time this redesign
+
+Unit 4 built the new console and student shells, flattened the student IA, ported every existing
+page off the retired component system, and deleted the dead half of it — split into four sequential
+slices (4a shells, 4b-i student surface, 4b-ii console surface, 4c marketing/auth, 4d deletion) for
+the same reason unit 2 was split: too large and too varied for one safe pass. Antigravity
+implemented what its account quota allowed across the run (all of 4a/4b-i/4b-ii, part of 4c); the
+orchestrator finished the rest directly rather than spawn another subagent, per the user's
+instruction to keep this down to a single implementing agent.
+
+**The headline isn't the port, it's that this is the first time in the whole redesign a signed-in
+screen has actually rendered in a browser.** Every prior review (unit 3, and slices 4a/4b-i/4b-ii of
+this unit) recorded the same structural finding: Turbopack's dev server serves the whole app's
+global error page the instant *any* route fails to compile, and with hundreds of pre-existing
+errors scattered across nearly every page, nothing could render live until the count came down far
+enough. Slice 4c's port of `(auth)/login` was what finally cleared that — and the very first live
+session immediately surfaced a real bug nobody could have caught by reading code or by `tsc`: an
+infinite render loop in the shared page-chrome contract, hundreds of "Maximum update depth exceeded"
+errors the moment `/manage` rendered with real data. Two effects were depending on a context value
+object that their own state updates rebuild every time they fire - a one-file fix once found, but
+invisible to every static check this whole redesign had been running on. Fixed and verified by
+reloading the live session and watching the error count go to, and stay at, zero.
+
+**What else landed:** the actual deletion pass caught its own near-miss. `SHELL-4`'s scope line
+said "delete `components/app/*`, `components/site/*`" — written before any of this unit's four
+slices existed. By the time the deletion slice ran, `components/site/*` had been fully ported in
+place during the marketing/auth slice and held no legacy code left to delete; deleting it anyway
+would have taken the marketing site and sign-in back out from under the app that slice had just
+finished fixing. Verified per-file by consumer count before deleting anything, not assumed from the
+plan's original wording — `D-25` records the correction.
+
+**Verified:** `npx tsc --noEmit` → 401 baseline down to **22 errors**, every one of them
+pre-existing `AUTH-2` domain-model drift in three `manage/*` files that unit 5 (`PEOPLE-4`) already
+owns, explicitly disclosed rather than left to look like an unfinished unit 4. `0` in `lib/`.
+`eslint` clean. Live-verified as both the seeded teacher and student against the real backend: real
+course/student data in the console shell, the flat student IA with real homework and marks,
+`/marks`'s Performance and Progress genuinely kept apart in a live render (not just in the code),
+and `/register` submitting for real to the exact waiting-for-approval screen `SHELL-5` specified.
+Full detail in `docs/phases/unit-4/`. Unit 5 (People and groups) follows the same pipeline next.

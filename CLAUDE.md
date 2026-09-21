@@ -198,29 +198,34 @@ database/          Scaffold-era schema.sql / seed.sql — NOT APPLIED, disagrees
 project_log.md     The narrative
 ```
 
-### 4.1 The frontend does not currently typecheck, and that is expected
+### 4.1 The frontend typechecks again, as of `SHELL-4` (unit 4, 2026-09-21)
 
-`npx tsc --noEmit` in `frontend/` reports **~326 errors** (300 in `app/`, 26 in
-`components/{app,site}`, **0 in `lib/`**). The new `components/ui/` is clean; the legacy components
-and pages still call the retired system's API (`Tabs`, `Chip`, `Field`, `Input`, `Textarea`,
-`uiSize`, sizes `"sm"/"md"/"lg"`).
+**Historical note, kept for the invariant it taught:** before unit 4, `npx tsc --noEmit` in
+`frontend/` ran as high as ~401 errors, `0 in lib/`, while `app/` and `components/{app,site}` still
+called the retired system's API. The total was expected to rise with each unit until `SHELL-4`
+landed and is not what to gate on mid-redesign — `frontend/lib/` is the hand-written mirror of the
+API, and a unit that changes a response shape updates the mirror in the same commit (§6), which
+adds errors to legacy screens already scheduled for deletion. **The invariant that mattered was**
+`npx tsc --noEmit 2>&1 | grep -cE "^lib/"` = `0`, not the total. Beware the unanchored
+`grep -c "lib/"`: it matches the error *message* text `Module '"@/lib/types"'` on files under `app/`
+and reads non-zero when `lib/` is clean.
 
-**The total rises with each unit, by design, and is not the thing to gate on.** `frontend/lib/` is
-the hand-written mirror of the API, and a unit that changes a response shape updates the mirror in
-the same commit (§6) — which adds errors to the legacy screens that read the old shape and are
-already scheduled for deletion. Unit 2a took it 301 → 326 that way. **The invariant is
-`npx tsc --noEmit 2>&1 | grep -cE "^lib/"` = `0`**, not the total; a stale mirror is a worse failure
-than a rising count in doomed code. Beware the unanchored `grep -c "lib/"`: it matches the error
-*message* text `Module '"@/lib/types"'` on files under `app/` and reads non-zero when `lib/` is
-clean.
+**Current state:** `npx tsc --noEmit` reports **22 errors, all in three files**
+(`manage/groups/page.tsx`, `manage/courses/[id]/{groups,staff}/page.tsx`) — pre-existing `AUTH-2`
+domain-model drift (`CourseStaffMember`, `LearningMode` and related types/methods retired by that
+migration), explicitly **unit 5's (`PEOPLE-4`) to close**, not a defect in any landed unit. `lib/`
+is 0. `components/app/*` kept only `page-chrome.tsx` (relocated to `components/shell/` — it is
+live, shared shell infrastructure, not legacy) and deleted the rest
+(`page-parts.tsx`/`table.tsx`/`app-shell.tsx`, all confirmed dead by consumer count before
+deletion). **`components/site/*` was not deleted** — unlike `components/app/*`, every file in it
+was ported onto the current `components/ui` API *in place* during unit 4 rather than replaced, so
+by the time `SHELL-4` ran nothing in that directory was legacy anymore; deleting it would have
+destroyed live code (`docs/phases/unit-4/REVIEW_4D.md`). Do not read `SHELL-4`'s original wording
+("delete `components/app/*`, `components/site/*`") as still describing the directory's contents —
+verify against the actual consumer graph before treating either directory as legacy again.
 
-**Do not fix these by patching the legacy components.** They are deleted by `SHELL-4` in
-`docs/IMPLEMENTATION_PLAN.md`, after which the frontend builds again. Patching them is work thrown
-away, and it re-entrenches the visual system being retired. If you need a green typecheck before
-`SHELL-4`, say so and scope it as its own task.
-
-The backend, by contrast, **is** green and must stay green: **471 tests, 28 files** (and **217 e2e**,
-**87 integration**) as of unit 2a.
+The backend **is** green and must stay green: **536 unit / 34 files, 112 integration** as of unit 3
+(`docs/phases/unit-3/REVIEW.md`).
 
 ---
 

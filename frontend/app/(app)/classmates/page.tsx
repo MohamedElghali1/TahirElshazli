@@ -4,7 +4,7 @@ import { api } from '@/lib/api';
 import { useApi } from '@/lib/session';
 import type { ClassmateGroup } from '@/lib/types';
 import { Panel, EmptyState, Loader, Tag, Button } from '@/components/ui';
-import { PageTitle } from '@/components/app/page-chrome';
+import { PageTitle } from '@/components/shell/page-chrome';
 import { CourseGate } from '@/components/student/course-gate';
 import { useSelectedCourse } from '@/components/shell/course-context';
 

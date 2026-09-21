@@ -5,7 +5,7 @@ import { api } from '@/lib/api';
 import { useApi } from '@/lib/session';
 import type { ManageCourseCard } from '@/lib/types';
 import { Button, EmptyState, Loader, StatNumber, Table, type Column } from '@/components/ui';
-import { PageTitle } from '@/components/app/page-chrome';
+import { PageTitle } from '@/components/shell/page-chrome';
 
 /**
  * The recording library, by course.

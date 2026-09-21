@@ -6,7 +6,7 @@ import { useApi, useSession } from '@/lib/session';
 import { formatDate } from '@/lib/format';
 import type { StudentProfile } from '@/lib/types';
 import { Panel, EmptyState, Loader, Button, TextInput, InlineBanner } from '@/components/ui';
-import { PageTitle } from '@/components/app/page-chrome';
+import { PageTitle } from '@/components/shell/page-chrome';
 
 const PASSWORD_RULE = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
 

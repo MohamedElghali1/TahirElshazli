@@ -2,7 +2,7 @@
 
 import { CONTACT } from '@/lib/site-content';
 import { Panel, Button, Icon } from '@/components/ui';
-import { PageTitle } from '@/components/app/page-chrome';
+import { PageTitle } from '@/components/shell/page-chrome';
 
 /**
  * Help (`docs/PRODUCT_SPEC.md` §6: "WhatsApp card. Frontend + config only.").
