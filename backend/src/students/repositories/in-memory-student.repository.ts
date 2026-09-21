@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type {
+  AdminStudentProfileUpdate,
   StudentProfile,
   StudentProfileUpdate,
   StudentRepository,
@@ -88,6 +89,24 @@ export class InMemoryStudentRepository implements StudentRepository {
     if (update.avatarUrl !== undefined) {
       profile.avatarUrl = update.avatarUrl;
     }
+    profile.updatedAt = new Date().toISOString();
+    return profile;
+  }
+
+  async updateByUserIdAsStaff(
+    userId: string,
+    update: AdminStudentProfileUpdate,
+  ): Promise<StudentProfile | null> {
+    const profile = this.profiles.find((p) => p.userId === userId);
+    if (!profile) {
+      return null;
+    }
+    if (update.name !== undefined) profile.name = update.name;
+    if (update.phone !== undefined) profile.phone = update.phone;
+    if (update.avatarUrl !== undefined) profile.avatarUrl = update.avatarUrl;
+    if (update.schoolName !== undefined) profile.schoolName = update.schoolName;
+    if (update.parentEmail !== undefined) profile.parentEmail = update.parentEmail;
+    if (update.staffNotes !== undefined) profile.staffNotes = update.staffNotes;
     profile.updatedAt = new Date().toISOString();
     return profile;
   }

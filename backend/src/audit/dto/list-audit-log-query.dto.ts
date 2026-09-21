@@ -43,6 +43,8 @@ const AUDIT_ACTION_VALUES: Record<AuditAction, true> = {
   'group.student_removed': true,
   'student.accepted': true,
   'student.rejected': true,
+  'student.updated': true,
+  'student.created': true,
   'course.created': true,
   'course.updated': true,
   'assessment.created': true,

@@ -103,6 +103,29 @@ describe('Registration queue and course lifecycle (e2e)', () => {
         .expect(403);
     });
 
+    it('an assistant is refused with 403 on GET /admin/students/:id', async () => {
+      await request(app.getHttpServer())
+        .get('/admin/students/student-1')
+        .set(bearer(assignedTaToken))
+        .expect(403);
+    });
+
+    it('an assistant is refused with 403 on PATCH /admin/students/:id', async () => {
+      await request(app.getHttpServer())
+        .patch('/admin/students/student-1')
+        .set(bearer(assignedTaToken))
+        .send({ staffNotes: 'Smuggled note' })
+        .expect(403);
+    });
+
+    it('an assistant is refused with 403 on POST /admin/students (direct create)', async () => {
+      await request(app.getHttpServer())
+        .post('/admin/students')
+        .set(bearer(assignedTaToken))
+        .send({ name: 'Smuggled Student', email: 'smuggled@example.com' })
+        .expect(403);
+    });
+
     it('an assistant is refused with 403 on POST /admin/courses', async () => {
       await request(app.getHttpServer())
         .post('/admin/courses')

@@ -70,6 +70,11 @@ export type AuditAction =
   // §5.4 exists to answer.
   | 'student.accepted'
   | 'student.rejected'
+  // The staff-facing detail edit and direct-create (`PEOPLE-2`, `PEOPLE-3`).
+  // `updated` covers only the fields a given call actually changed - the
+  // `before`/`after` pair is built from the update, not the whole row.
+  | 'student.updated'
+  | 'student.created'
   // Course lifecycle (`DOM-5`). A course is what every enrollment, group,
   // task and report hangs off, and un-publishing one removes it from the
   // public site - a change to the platform's shape rather than to one

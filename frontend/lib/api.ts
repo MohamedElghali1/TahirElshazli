@@ -40,6 +40,9 @@ import type {
   StaffCourseSummary,
   StaffDirectoryEntry,
   StaffRecording,
+  AdminStudentUpdate,
+  CreateStudentInput,
+  StudentDetail,
   StudentDirectoryEntry,
   StudentHomeResponse,
   StudentProfile,
@@ -879,6 +882,22 @@ export const api = {
         token,
         body: reason === undefined ? {} : { reason },
       }),
+
+    /** The staff detail view - every profile field (`PEOPLE-2`). */
+    studentDetail: (token: string, studentId: string) =>
+      request<StudentDetail>(`/admin/students/${studentId}`, { token }),
+
+    /** Edits any field, including the three staff-owned ones (`PEOPLE-2`). */
+    updateStudent: (token: string, studentId: string, body: AdminStudentUpdate) =>
+      request<StudentDetail>(`/admin/students/${studentId}`, {
+        method: 'PATCH',
+        token,
+        body,
+      }),
+
+    /** Creates a student directly, already active, and emails a sign-in link (`PEOPLE-3`). */
+    createStudent: (token: string, body: CreateStudentInput) =>
+      request<StudentDetail>('/admin/students', { method: 'POST', token, body }),
 
     /** Creates a course. It is a **draft** unless `isPublished` says otherwise. */
     createCourse: (token: string, body: AdminCourseWrite) =>

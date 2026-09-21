@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { api, ApiError } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
 import { formatDate } from '@/lib/format';
@@ -15,6 +16,7 @@ import {
   Table,
   Tag,
   TextArea,
+  TextInput,
   type Column,
   type TagTone,
 } from '@/components/ui';
@@ -52,6 +54,7 @@ export default function StudentDirectoryPage() {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<UserStatus | ''>('');
   const [decidingId, setDecidingId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const { data, error, loading, reload } = useApi(
     (token) => api.admin.students(token, search.trim() || undefined, status || undefined),
@@ -61,7 +64,17 @@ export default function StudentDirectoryPage() {
   const { data: groups } = useApi((token) => api.admin.groups(token), []);
 
   const columns: Column<StudentDirectoryEntry>[] = [
-    { label: 'Name', render: (student) => student.name },
+    {
+      label: 'Name',
+      render: (student) => (
+        <Link
+          href={`/manage/students/${student.id}`}
+          className="text-fg underline-offset-4 hover:underline"
+        >
+          {student.name}
+        </Link>
+      ),
+    },
     { label: 'Email', render: (student) => student.email },
     {
       label: 'Status',
@@ -97,21 +110,36 @@ export default function StudentDirectoryPage() {
     <>
       <PageTitle title="Students" />
       <div className="flex flex-col gap-4 p-6">
-        <div className="flex flex-wrap items-center gap-3">
-          <SearchInput
-            label="Search students"
-            className="max-w-[360px]"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <Select
-            label="Status"
-            className="w-[160px]"
-            value={status}
-            onChange={(e) => setStatus(e.target.value as UserStatus | '')}
-            options={STATUS_FILTER_OPTIONS}
-          />
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="flex flex-wrap items-end gap-3">
+            <SearchInput
+              label="Search students"
+              className="max-w-[360px]"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <Select
+              label="Status"
+              className="w-[160px]"
+              value={status}
+              onChange={(e) => setStatus(e.target.value as UserStatus | '')}
+              options={STATUS_FILTER_OPTIONS}
+            />
+          </div>
+          <Button variant="primary" onClick={() => setCreating((v) => !v)}>
+            {creating ? 'Cancel' : 'Create student'}
+          </Button>
         </div>
+
+        {creating && (
+          <CreatePanel
+            onClose={() => setCreating(false)}
+            onCreated={() => {
+              setCreating(false);
+              reload();
+            }}
+          />
+        )}
 
         {decidingStudent && groups && (
           <DecisionPanel
@@ -245,5 +273,78 @@ function DecisionPanel({
         </Button>
       </div>
     </div>
+  );
+}
+
+/**
+ * Creates a student directly, already active - no password, a sign-in link
+ * is emailed instead (`PEOPLE-3`). Same inline-panel shape as `DecisionPanel`,
+ * for the same reason: no `Modal` primitive exists yet.
+ */
+function CreatePanel({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const { token } = useSession();
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.admin.createStudent(token, { name: name.trim(), email: email.trim() });
+      onCreated();
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : 'Could not create this student.');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={submit}
+      className="flex flex-col gap-4 rounded-lg border border-border-light bg-surface-2 p-4"
+    >
+      <div className="flex items-center justify-between">
+        <p className="text-base font-medium text-fg">Create a student</p>
+        <Button size="small" variant="tertiary" onClick={onClose}>
+          Close
+        </Button>
+      </div>
+
+      {error && <InlineBanner tone="danger">{error}</InlineBanner>}
+      <p className="text-base text-fg-3">
+        Creates an active account immediately and emails a sign-in link - no approval queue.
+      </p>
+
+      <div className="flex flex-wrap items-end gap-3">
+        <TextInput
+          label="Full name"
+          className="min-w-[220px]"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+        />
+        <TextInput
+          label="Email"
+          type="email"
+          className="min-w-[220px]"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
+        <Button type="submit" variant="primary" disabled={busy || !name.trim() || !email.trim()}>
+          {busy ? 'Creating…' : 'Create'}
+        </Button>
+      </div>
+    </form>
   );
 }

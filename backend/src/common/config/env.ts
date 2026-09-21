@@ -394,6 +394,32 @@ export function resolveUploadDir(raw = process.env.UPLOAD_DIR): string {
 }
 
 /**
+ * The base URL a mail template builds a clickable link against (a sign-in
+ * link, `PEOPLE-3`; a password-reset link).
+ *
+ * No safe default exists in production - an unset value would silently mail
+ * out a `localhost` link, which is a broken email, not a missing feature, so
+ * it fails the same way `CORS_ORIGIN` does. `http://localhost:3000` is
+ * standing in for the real dev server address, which is what every other
+ * local default in this file already assumes.
+ */
+export function resolveFrontendUrl(
+  nodeEnv: NodeEnv,
+  raw = process.env.FRONTEND_URL,
+): string {
+  const value = raw?.trim();
+  if (value) {
+    return value.replace(/\/+$/, '');
+  }
+  if (nodeEnv === 'production') {
+    throw new Error(
+      'FRONTEND_URL must be set in production - mail templates build links against it.',
+    );
+  }
+  return 'http://localhost:3000';
+}
+
+/**
  * Which mail transport the app wires up.
  *
  * Mirrors `StorageDriver` / `resolveStorageDriver` exactly:

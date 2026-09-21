@@ -599,6 +599,42 @@ export interface StudentDirectoryEntry extends DirectoryEntry {
 }
 
 /**
+ * The staff detail view, from `GET /admin/students/:id` (`PEOPLE-2`). Every
+ * profile field, including the three staff-owned ones the directory list
+ * never carries - a detail screen affords the extra read the list doesn't.
+ * Mirrors `manage/admin-students.service.ts`'s `StudentDetail`.
+ */
+export interface StudentDetail {
+  id: string;
+  name: string;
+  email: string;
+  status: UserStatus;
+  createdAt: string;
+  enrolledCourseCount: number;
+  phone: string | null;
+  avatarUrl: string | null;
+  schoolName: string | null;
+  parentEmail: string | null;
+  staffNotes: string | null;
+}
+
+/** `PATCH /admin/students/:id` body - every field optional, `null` clears a nullable one. */
+export interface AdminStudentUpdate {
+  name?: string;
+  phone?: string | null;
+  avatarUrl?: string | null;
+  schoolName?: string | null;
+  parentEmail?: string | null;
+  staffNotes?: string | null;
+}
+
+/** `POST /admin/students` body (`PEOPLE-3`) - no password; a sign-in link is emailed. */
+export interface CreateStudentInput {
+  name: string;
+  email: string;
+}
+
+/**
  * A staff directory row, from `GET /admin/assistants`. Mirrors
  * `manage/directory.service.ts` `StaffDirectoryEntry`.
  *

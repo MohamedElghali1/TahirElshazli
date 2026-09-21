@@ -8,6 +8,15 @@ import { ManageRecordingsService } from './manage-recordings.service.js';
 import { ManageLiveSessionsService } from './manage-live-sessions.service.js';
 import { DirectoryService } from './directory.service.js';
 import { RegistrationApprovalService } from './registration-approval.service.js';
+import { AdminStudentsService } from './admin-students.service.js';
+import { STUDENT_REPOSITORY } from '../students/interfaces/student-repository.interface.js';
+import { InMemoryStudentRepository } from '../students/repositories/in-memory-student.repository.js';
+import { BcryptPasswordHasher } from '../auth/bcrypt-password-hasher.js';
+import { PASSWORD_HASHER } from '../auth/interfaces/password-hasher.interface.js';
+import { MailService } from '../mail/mail.service.js';
+import { MAIL_SENDER } from '../mail/mail-sender.interface.js';
+import { MAIL_DELIVERY_REPOSITORY } from '../mail/mail-delivery.repository.js';
+import { InMemoryMailDeliveryRepository } from '../mail/in-memory-mail-delivery.repository.js';
 import { AssessmentAuthoringService } from './assessment-authoring.service.js';
 import { StaffScopeService } from '../staff/staff-scope.service.js';
 import { ASSISTANT_SCOPE_REPOSITORY } from '../staff/interfaces/assistant-scope-repository.interface.js';
@@ -78,6 +87,12 @@ describe('Manage surface', () => {
         // `CoursesService` is wired rather than a stub - the point of the
         // transaction test is that a failing enrol really does roll back.
         RegistrationApprovalService,
+        AdminStudentsService,
+        MailService,
+        { provide: STUDENT_REPOSITORY, useClass: InMemoryStudentRepository },
+        { provide: PASSWORD_HASHER, useClass: BcryptPasswordHasher },
+        { provide: MAIL_SENDER, useValue: { send: vi.fn().mockResolvedValue(undefined) } },
+        { provide: MAIL_DELIVERY_REPOSITORY, useClass: InMemoryMailDeliveryRepository },
         CoursesService,
         EnrollmentsService,
         RecordingsService,

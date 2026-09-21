@@ -1272,7 +1272,7 @@ describe('Staff and admin API (e2e)', () => {
         path: '/admin/integrations/google/inspect',
         body: { formUrl: 'https://docs.google.com/forms/d/e/x/viewform' },
       },
-      // admin-manage (8)
+      // admin-manage (11)
       { method: 'get', path: '/admin/students' },
       { method: 'get', path: '/admin/assistants' },
       // The registration queue (`DOM-4`). Both probes name an *active*
@@ -1288,6 +1288,21 @@ describe('Staff and admin API (e2e)', () => {
         method: 'post',
         path: '/admin/students/student-1/reject',
         body: { reason: 'Parity probe' },
+      },
+      // The staff detail/edit/create surface (`PEOPLE-2`, `PEOPLE-3`). The
+      // detail and edit probes name a nonexistent id (stable 404); the create
+      // probe reuses an already-registered email (stable 409) - same
+      // no-mutation shape as the course-create probe above.
+      { method: 'get', path: '/admin/students/student-does-not-exist' },
+      {
+        method: 'patch',
+        path: '/admin/students/student-does-not-exist',
+        body: { staffNotes: 'Parity probe' },
+      },
+      {
+        method: 'post',
+        path: '/admin/students',
+        body: { name: 'Parity probe', email: 'student@example.com' },
       },
       // Course lifecycle (`DOM-5`). A slug that is already taken, so both get
       // 409 and nothing is created twice.
@@ -1341,13 +1356,14 @@ describe('Staff and admin API (e2e)', () => {
       { method: 'delete', path: '/admin/live-sessions/session-does-not-exist' },
     ];
 
-    it('covers all 23 role-gated admin routes', () => {
-      // Asserted, because a parity table that quietly covers 12 of 23 routes
+    it('covers all 26 role-gated admin routes', () => {
+      // Asserted, because a parity table that quietly covers 12 of 26 routes
       // proves parity on 12 routes while reading as though it proved it on all.
       // 24 before `DOM-1` retired the two group-course routes; 22 after; 26
       // once `DOM-4` added accept/reject and `DOM-5` added course create/edit;
-      // 23 now that `AUTH-2` retired the three course-staff routes.
-      expect(ADMIN_ROUTES).toHaveLength(23);
+      // 23 once `AUTH-2` retired the three course-staff routes; 26 again once
+      // `PEOPLE-2`/`PEOPLE-3` added student detail/edit/create.
+      expect(ADMIN_ROUTES).toHaveLength(26);
     });
 
     it.each(ADMIN_ROUTES)(

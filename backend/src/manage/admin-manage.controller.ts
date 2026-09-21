@@ -34,6 +34,11 @@ import {
   AcceptRegistrationDto,
   RejectRegistrationDto,
 } from './dto/registration.dto.js';
+import { AdminStudentsService, type StudentDetail } from './admin-students.service.js';
+import {
+  AdminUpdateStudentDto,
+  CreateStudentDto,
+} from './dto/student-admin.dto.js';
 
 /**
  * `/admin/*` - teacher only and unscoped (CLAUDE.md §5.11). Nothing in this
@@ -62,6 +67,7 @@ export class AdminManageController {
     private readonly recordings: ManageRecordingsService,
     private readonly liveSessions: ManageLiveSessionsService,
     private readonly registrations: RegistrationApprovalService,
+    private readonly adminStudents: AdminStudentsService,
   ) {}
 
   private actor(req: { user: JwtPayload }) {
@@ -112,6 +118,37 @@ export class AdminManageController {
     @Request() req: { user: JwtPayload },
   ): Promise<{ ok: true }> {
     return this.registrations.reject(studentId, body.reason, this.actor(req));
+  }
+
+  /** The staff detail view - every profile field, not the list row's subset (`PEOPLE-2`). */
+  @Get('students/:studentId')
+  async studentDetail(
+    @Param('studentId') studentId: string,
+  ): Promise<StudentDetail> {
+    return this.adminStudents.detail(studentId);
+  }
+
+  /** Edits any field, including the three staff-owned ones (`PEOPLE-2`). */
+  @Patch('students/:studentId')
+  async updateStudent(
+    @Param('studentId') studentId: string,
+    @Body() body: AdminUpdateStudentDto,
+    @Request() req: { user: JwtPayload },
+  ): Promise<StudentDetail> {
+    return this.adminStudents.update(studentId, body, this.actor(req));
+  }
+
+  /**
+   * Creates a student directly, already `active`, and emails a sign-in link
+   * (`PEOPLE-3`). 201: this one does create something the caller had no id for.
+   */
+  @Post('students')
+  @HttpCode(HttpStatus.CREATED)
+  async createStudent(
+    @Body() body: CreateStudentDto,
+    @Request() req: { user: JwtPayload },
+  ): Promise<StudentDetail> {
+    return this.adminStudents.create(body, this.actor(req));
   }
 
   /** The picker behind "assign a TA to this course". */

@@ -43,6 +43,24 @@ export interface StudentProfileUpdate {
   avatarUrl?: string | null;
 }
 
+/**
+ * What `PATCH /admin/students/:id` may change (`PEOPLE-2`) - every field on
+ * `StudentProfile`, including the three staff-owned ones `StudentProfileUpdate`
+ * deliberately excludes. A separate type and a separate repository method
+ * rather than widening `StudentProfileUpdate` itself: the narrower type is
+ * what makes "self-service cannot even express a write to `staffNotes`" a
+ * property the compiler checks, and widening it to serve one more caller
+ * would trade that guarantee away for both.
+ */
+export interface AdminStudentProfileUpdate {
+  name?: string;
+  phone?: string | null;
+  avatarUrl?: string | null;
+  schoolName?: string | null;
+  parentEmail?: string | null;
+  staffNotes?: string | null;
+}
+
 export interface StudentRepository {
   findByUserId(userId: string): Promise<StudentProfile | null>;
   /** Called on registration - every student user needs a profile from the start. */
@@ -54,6 +72,11 @@ export interface StudentRepository {
   updateByUserId(
     userId: string,
     update: StudentProfileUpdate,
+  ): Promise<StudentProfile | null>;
+  /** The staff-facing edit (`PEOPLE-2`) - every field, not just the student's three. */
+  updateByUserIdAsStaff(
+    userId: string,
+    update: AdminStudentProfileUpdate,
   ): Promise<StudentProfile | null>;
 }
 
