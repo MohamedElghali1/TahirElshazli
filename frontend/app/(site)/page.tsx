@@ -55,10 +55,10 @@ function Hero({ courses }: { courses: PublicCourseSummary[] | null }) {
           annotated with a mark you can trace.
         </p>
         <div className="mt-[var(--sp-8)] flex flex-wrap gap-[var(--sp-3)]">
-          <ButtonLink href="/courses" variant="primary" size="lg">
+          <ButtonLink href="/courses" variant="primary" size="medium">
             Browse courses
           </ButtonLink>
-          <ButtonLink href="/about" variant="secondary" size="lg">
+          <ButtonLink href="/about" variant="secondary" size="medium">
             Meet Dr. Tahir
           </ButtonLink>
         </div>
@@ -116,7 +116,7 @@ function Courses({ courses }: { courses: PublicCourseSummary[] | null }) {
               Courses running now.
             </h2>
             {courses && courses.length > 3 && (
-              <ButtonLink href="/courses" variant="secondary" size="lg">
+              <ButtonLink href="/courses" variant="secondary" size="medium">
                 See all {courses.length}
               </ButtonLink>
             )}
@@ -331,7 +331,7 @@ function ClosingCta() {
               See the timetable, the papers covered and the fee for each course.
             </p>
           </div>
-          <ButtonLink href="/courses" variant="primary" size="lg" className="shrink-0">
+          <ButtonLink href="/courses" variant="primary" size="medium" className="shrink-0">
             Browse courses
           </ButtonLink>
         </div>

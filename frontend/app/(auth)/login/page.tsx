@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { ApiError } from '@/lib/api';
 import { useSession } from '@/lib/session';
 import { resolvePostAuthPath } from '@/lib/roles';
-import { Button, Field, FormError, Input } from '@/components/ui';
+import { Button, TextInput, InlineBanner } from '@/components/ui';
 
 export default function LoginPage() {
   const { signIn } = useSession();
@@ -54,31 +54,29 @@ export default function LoginPage() {
       </p>
 
       <form onSubmit={submit} noValidate className="mt-[var(--sp-8)] flex flex-col gap-[var(--sp-6)]">
-        <Field label="Email" htmlFor="email">
-          <Input
-            id="email"
-            name="email"
-            type="email"
-            autoComplete="email"
-            required
-            autoFocus
-          />
-        </Field>
+        <TextInput
+          label="Email"
+          id="email"
+          name="email"
+          type="email"
+          autoComplete="email"
+          required
+          autoFocus
+        />
 
-        <Field label="Password" htmlFor="password">
-          <Input
-            id="password"
-            name="password"
-            type="password"
-            autoComplete="current-password"
-            required
-          />
-        </Field>
+        <TextInput
+          label="Password"
+          id="password"
+          name="password"
+          type="password"
+          autoComplete="current-password"
+          required
+        />
 
-        {error && <FormError>{error}</FormError>}
+        {error && <InlineBanner tone="danger">{error}</InlineBanner>}
 
-        <Button type="submit" variant="primary" size="md" loading={busy}>
-          Sign in
+        <Button type="submit" variant="primary" size="medium" disabled={busy}>
+          {busy ? 'Signing in…' : 'Sign in'}
         </Button>
       </form>
 

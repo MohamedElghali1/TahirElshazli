@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Button, Field, FormError, Input, Select, Textarea } from '@/components/ui';
+import { Button, TextInput, TextArea, Select, InlineBanner } from '@/components/ui';
 
 type Status = 'idle' | 'sending' | 'sent' | 'failed';
 
@@ -60,7 +60,7 @@ export function ContactForm() {
         </p>
         <Button
           className="mt-[var(--sp-6)]"
-          size="lg"
+          size="medium"
           onClick={() => setStatus('idle')}
         >
           Send another
@@ -76,62 +76,59 @@ export function ContactForm() {
       className="flex flex-col gap-[var(--sp-6)] rounded-[var(--r-lg)] border border-[var(--border-medium)] bg-[var(--bg-secondary)] p-[var(--sp-8)]"
     >
       <div className="grid gap-[var(--sp-6)] sm:grid-cols-2">
-        <Field label="Your name" htmlFor="name" error={errors.name}>
-          <Input
-            uiSize="lg"
-            id="name"
-            name="name"
-            autoComplete="name"
-            aria-invalid={Boolean(errors.name)}
-          />
-        </Field>
-        <Field label="Email" htmlFor="email" error={errors.email}>
-          <Input
-            uiSize="lg"
-            id="email"
-            name="email"
-            type="email"
-            autoComplete="email"
-            aria-invalid={Boolean(errors.email)}
-          />
-        </Field>
+        <TextInput
+          label="Your name"
+          id="name"
+          name="name"
+          autoComplete="name"
+          error={errors.name}
+          aria-invalid={Boolean(errors.name)}
+        />
+        <TextInput
+          label="Email"
+          id="email"
+          name="email"
+          type="email"
+          autoComplete="email"
+          error={errors.email}
+          aria-invalid={Boolean(errors.email)}
+        />
       </div>
 
       <div className="grid gap-[var(--sp-6)] sm:grid-cols-2">
-        <Field label="Course of interest" htmlFor="track">
-          <Select id="track" name="track" defaultValue="igcse" uiSize="lg">
-            <option value="igcse">IGCSE English</option>
-            <option value="ielts">IELTS Preparation</option>
-            <option value="unsure">Not sure yet</option>
-          </Select>
-        </Field>
-        <Field
+        <Select
+          label="Course of interest"
+          id="track"
+          name="track"
+          defaultValue="igcse"
+          options={[
+            { value: 'igcse', label: 'IGCSE English' },
+            { value: 'ielts', label: 'IELTS Preparation' },
+            { value: 'unsure', label: 'Not sure yet' },
+          ]}
+        />
+        <TextInput
           label="Year group or target band"
-          htmlFor="level"
+          id="level"
+          name="level"
+          placeholder="Year 11, or band 7"
           hint="Optional"
-        >
-          <Input id="level" name="level" placeholder="Year 11, or band 7" uiSize="lg" />
-        </Field>
+        />
       </div>
 
-      <Field
+      <TextArea
         label="What would you like to know?"
-        htmlFor="message"
+        id="message"
+        name="message"
+        rows={5}
         error={errors.message}
-      >
-        <Textarea
-            uiSize="lg"
-          id="message"
-          name="message"
-          rows={5}
-          aria-invalid={Boolean(errors.message)}
-        />
-      </Field>
+        aria-invalid={Boolean(errors.message)}
+      />
 
       {status === 'failed' && (
-        <FormError>
+        <InlineBanner tone="danger">
           That did not send. Please try again, or message us on WhatsApp.
-        </FormError>
+        </InlineBanner>
       )}
 
       <div className="flex items-center justify-between gap-[var(--sp-4)]">
@@ -141,11 +138,11 @@ export function ContactForm() {
         <Button
           type="submit"
           variant="primary"
-          size="lg"
-          loading={status === 'sending'}
+          size="medium"
+          disabled={status === 'sending'}
           className="shrink-0"
         >
-          Send enquiry
+          {status === 'sending' ? 'Sending…' : 'Send enquiry'}
         </Button>
       </div>
     </form>

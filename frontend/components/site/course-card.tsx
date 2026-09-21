@@ -2,7 +2,6 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { ArrowRightIcon } from '@phosphor-icons/react/dist/ssr';
 import type { PublicCourseSummary } from '@/lib/types';
-import { cx } from '@/components/ui';
 
 /**
  * The public course card - the unit the landing page and the course index are
@@ -20,30 +19,6 @@ function courseLength(totalSeconds: number): string {
   const hours = totalSeconds / 3600;
   if (hours < 1) return `${Math.round(totalSeconds / 60)} min of video`;
   return `${hours < 10 ? hours.toFixed(1).replace(/\.0$/, '') : Math.round(hours)} hours of video`;
-}
-
-export function ModeBadge({ mode }: { mode: PublicCourseSummary['learningMode'] }) {
-  const live = mode === 'live';
-  return (
-    <span
-      className={cx(
-        'inline-flex items-center gap-[var(--sp-2)] rounded-[var(--r-full)] px-[var(--sp-3)] py-[2px]',
-        'text-[var(--fs-xs)] font-medium tracking-[0.02em]',
-      )}
-      style={{
-        background: `var(--chip-${live ? 'red' : 'blue'}-bg)`,
-        color: `var(--chip-${live ? 'red' : 'blue'}-fg)`,
-      }}
-    >
-      {live && (
-        <span
-          aria-hidden
-          className="h-[6px] w-[6px] rounded-[var(--r-full)] bg-current"
-        />
-      )}
-      {live ? 'Live' : 'Recorded'}
-    </span>
-  );
 }
 
 /**
@@ -85,9 +60,6 @@ export function CourseCard({ course }: { course: PublicCourseSummary }) {
         ) : (
           <Fallback title={course.title} />
         )}
-        <div className="absolute left-[var(--sp-4)] top-[var(--sp-4)]">
-          <ModeBadge mode={course.learningMode} />
-        </div>
       </div>
 
       <div className="flex flex-1 flex-col p-[var(--sp-6)]">

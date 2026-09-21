@@ -4,7 +4,7 @@ import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
-import { Button, Field, FormError, Input } from '@/components/ui';
+import { Button, TextInput, InlineBanner } from '@/components/ui';
 
 const PASSWORD_RULE = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
 
@@ -79,27 +79,23 @@ function ResetPasswordForm() {
       </p>
 
       <form onSubmit={submit} noValidate className="mt-[var(--sp-8)] flex flex-col gap-[var(--sp-6)]">
-        <Field
+        <TextInput
           label="New password"
-          htmlFor="newPassword"
+          id="newPassword"
+          name="newPassword"
+          type="password"
+          autoComplete="new-password"
+          required
+          autoFocus
           hint="At least 8 characters, including one letter and one number."
           error={fieldError}
-        >
-          <Input
-            id="newPassword"
-            name="newPassword"
-            type="password"
-            autoComplete="new-password"
-            required
-            autoFocus
-            aria-invalid={Boolean(fieldError)}
-          />
-        </Field>
+          aria-invalid={Boolean(fieldError)}
+        />
 
-        {error && <FormError>{error}</FormError>}
+        {error && <InlineBanner tone="danger">{error}</InlineBanner>}
 
-        <Button type="submit" variant="primary" size="md" loading={busy}>
-          Save password
+        <Button type="submit" variant="primary" size="medium" disabled={busy}>
+          {busy ? 'Saving…' : 'Save password'}
         </Button>
       </form>
     </>

@@ -100,13 +100,18 @@ export function usePageChrome(): { chrome: Chrome | null; actions: React.ReactNo
  * the header untouched never inherits the previous page's title.
  */
 export function PageTitle({ icon, title, backHref }: Chrome) {
-  const ctx = useContext(ChromeContext);
+  const setChrome = useContext(ChromeContext)?.setChrome;
   useEffect(() => {
-    ctx?.setChrome({ icon, title, backHref });
-    return () => ctx?.setChrome(null);
+    setChrome?.({ icon, title, backHref });
+    return () => setChrome?.(null);
     // `icon` is always a module-level Phosphor component reference, so it is
-    // stable across renders and safe to depend on directly.
-  }, [ctx, icon, title, backHref]);
+    // stable across renders and safe to depend on directly. Depending on
+    // `setChrome` itself (a `useCallback` with `[]` deps in the provider)
+    // rather than the whole context value: the value object is rebuilt
+    // whenever `chrome`/`actions` state changes, which would otherwise
+    // re-fire this effect on every chrome update from *any* consumer, not
+    // just when this page's own title actually changes.
+  }, [setChrome, icon, title, backHref]);
   return null;
 }
 
@@ -117,10 +122,15 @@ export function PageTitle({ icon, title, backHref }: Chrome) {
  * open.
  */
 export function PageActions({ children }: { children: React.ReactNode }) {
-  const ctx = useContext(ChromeContext);
+  const setActions = useContext(ChromeContext)?.setActions;
   useEffect(() => {
-    ctx?.setActions(children);
-    return () => ctx?.setActions(null);
-  }, [ctx, children]);
+    setActions?.(children);
+    return () => setActions?.(null);
+    // Same reasoning as `PageTitle`: depend on the stable `setActions`
+    // function, not the whole context value. `children` is a fresh JSX
+    // element every render (React never memoizes that for you) - without
+    // this, a state update here rebuilds the context value, which re-fires
+    // this same effect with an equally-fresh `children`, forever.
+  }, [setActions, children]);
   return null;
 }

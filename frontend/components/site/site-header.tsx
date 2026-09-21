@@ -72,7 +72,7 @@ export function SiteHeader() {
           >
             Sign in
           </Link>
-          <ButtonLink href="/courses" variant="primary" size="md" className="hidden sm:inline-flex">
+          <ButtonLink href="/courses" variant="primary" size="medium" className="hidden sm:inline-flex">
             Browse courses
           </ButtonLink>
           <button
@@ -105,7 +105,7 @@ export function SiteHeader() {
             >
               Sign in
             </Link>
-            <ButtonLink href="/courses" variant="primary" size="lg" className="mt-[var(--sp-3)]">
+            <ButtonLink href="/courses" variant="primary" size="medium" className="mt-[var(--sp-3)]">
               Browse courses
             </ButtonLink>
           </nav>

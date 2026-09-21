@@ -23,7 +23,7 @@ function Notice({
       <p className="mt-[var(--sp-3)] max-w-[52ch] text-[var(--fs-body)] leading-[var(--lh-loose)] text-fg-2">
         {body}
       </p>
-      <ButtonLink href="/contact" variant="primary" size="lg" className="mt-[var(--sp-8)]">
+      <ButtonLink href="/contact" variant="primary" size="medium" className="mt-[var(--sp-8)]">
         Contact us
       </ButtonLink>
     </div>

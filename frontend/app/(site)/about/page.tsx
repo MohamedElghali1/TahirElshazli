@@ -89,7 +89,7 @@ export default function AboutPage() {
           <h2 className="max-w-[24ch] text-[clamp(1.5rem,3vw,var(--fs-h2))] font-semibold leading-[1.15] tracking-[-0.02em] text-fg">
             See which course fits the year group you are in.
           </h2>
-          <ButtonLink href="/courses" variant="primary" size="lg" className="shrink-0">
+          <ButtonLink href="/courses" variant="primary" size="medium" className="shrink-0">
             Browse courses
           </ButtonLink>
         </div>

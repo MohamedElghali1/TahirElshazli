@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowLeftIcon } from '@phosphor-icons/react/dist/ssr';
-import { ButtonLink, Chip } from '@/components/ui';
+import { ButtonLink, Tag } from '@/components/ui';
 import { MediaGallery, PostBody } from '@/components/blog/media-gallery';
 import { ApiError, api } from '@/lib/api';
 import { formatDate } from '@/lib/format';
@@ -84,9 +84,9 @@ export default async function BlogPostPage({
 
       <header className="mt-[var(--sp-8)] max-w-[var(--maxw-prose)]">
         <div className="flex items-center gap-[var(--sp-3)]">
-          <Chip tone={post.category === 'achievement' ? 'amber' : 'neutral'}>
+          <Tag tone={post.category === 'achievement' ? 'amber' : 'gray'}>
             {CATEGORY_LABEL[post.category]}
-          </Chip>
+          </Tag>
           <time
             dateTime={post.publishAt}
             className="text-[var(--fs-base)] text-fg-3"
@@ -135,7 +135,7 @@ export default async function BlogPostPage({
               {/* Not links. There is no tag archive route, and a chip that
                   looks clickable and is not is worse than one that plainly
                   is not. */}
-              <Chip tone="neutral">{tag}</Chip>
+              <Tag tone="gray">{tag}</Tag>
             </li>
           ))}
         </ul>
@@ -152,7 +152,7 @@ export default async function BlogPostPage({
         <ButtonLink
           href="/courses"
           variant="primary"
-          size="lg"
+          size="medium"
           className="mt-[var(--sp-6)]"
         >
           Browse courses

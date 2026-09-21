@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { api, ApiError } from '@/lib/api';
-import { Button, Field, FormError, Input } from '@/components/ui';
+import { Button, TextInput, InlineBanner } from '@/components/ui';
 
 export default function ForgotPasswordPage() {
   const [sent, setSent] = useState(false);
@@ -62,21 +62,20 @@ export default function ForgotPasswordPage() {
       </p>
 
       <form onSubmit={submit} noValidate className="mt-[var(--sp-8)] flex flex-col gap-[var(--sp-6)]">
-        <Field label="Email" htmlFor="email">
-          <Input
-            id="email"
-            name="email"
-            type="email"
-            autoComplete="email"
-            required
-            autoFocus
-          />
-        </Field>
+        <TextInput
+          label="Email"
+          id="email"
+          name="email"
+          type="email"
+          autoComplete="email"
+          required
+          autoFocus
+        />
 
-        {error && <FormError>{error}</FormError>}
+        {error && <InlineBanner tone="danger">{error}</InlineBanner>}
 
-        <Button type="submit" variant="primary" size="md" loading={busy}>
-          Send reset link
+        <Button type="submit" variant="primary" size="medium" disabled={busy}>
+          {busy ? 'Sending…' : 'Send reset link'}
         </Button>
       </form>
 
