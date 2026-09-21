@@ -7,21 +7,17 @@ import { formatDate } from '@/lib/format';
 import type { AuthoredAssessment, GroupSummary } from '@/lib/types';
 import {
   Button,
-  Chip,
+  Checkbox,
   EmptyState,
-  ErrorState,
-  Field,
-  FormError,
-  Input,
+  InlineBanner,
+  Loader,
   Panel,
-  RowsSkeleton,
+  SectionTitle,
   Select,
-  Textarea,
+  Tag,
+  TextArea,
+  TextInput,
 } from '@/components/ui';
-import {
-  PageBody,
-  SectionIntro,
-} from '@/components/app/page-parts';
 
 /**
  * Setting work (CLAUDE.md §5.18) and choosing who it is for (§5.16).
@@ -37,75 +33,78 @@ import {
  * nobody is invisible to everybody, and the right time to find that out is now
  * rather than on the due date.
  */
-export default function CourseAssessmentsPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default function CourseAssessmentsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: courseId } = use(params);
 
   const list = useApi((t) => api.staff.assessments(t, courseId), [courseId]);
   const groups = useApi((t) => api.staff.courseGroups(t, courseId), [courseId]);
 
   return (
-    <>
-      <PageBody className="flex flex-col gap-[var(--sp-5)]">
-        <SectionIntro title="Work" subtitle="Homework, assignments and quizzes — written once, set for the groups you choose." />
-        {groups.data && groups.data.length === 0 ? (
-          <Panel bodyClassName="">
-            <EmptyState
-              title="No groups on this course"
-              body={
-                'Work is set for a group, so a course with no groups has nobody ' +
-                'to set it for. Add a group to this course first.'
-              }
-            />
-          </Panel>
-        ) : (
-          groups.data && (
-            <NewAssessment
-              courseId={courseId}
-              groups={groups.data}
-              onCreated={list.reload}
-            />
-          )
-        )}
+    <div className="flex flex-col gap-5 p-6">
+      <SectionTitle
+        title="Work"
+        description="Homework, assignments and quizzes — written once, set for the groups you choose."
+      />
+      {groups.data && groups.data.length === 0 ? (
+        <EmptyState
+          icon="Hierarchy2"
+          title="No groups on this course"
+          description={
+            'Work is set for a group, so a course with no groups has nobody ' +
+            'to set it for. Add a group to this course first.'
+          }
+        />
+      ) : (
+        groups.data && <NewAssessment courseId={courseId} groups={groups.data} onCreated={list.reload} />
+      )}
 
-        {(list.loading || groups.loading) && <RowsSkeleton rows={4} />}
-        {list.error && (
-          <ErrorState message={list.error.message} onRetry={list.reload} />
-        )}
+      {(list.loading || groups.loading) && (
+        <div className="flex justify-center p-8">
+          <Loader label="Loading work" />
+        </div>
+      )}
+      {list.error && (
+        <EmptyState
+          icon="AlertTriangle"
+          title={list.error.message}
+          action={<Button onClick={list.reload}>Try again</Button>}
+        />
+      )}
 
-        {list.data && list.data.length === 0 && !list.loading && (
-          <Panel bodyClassName="">
-            <EmptyState
-              title="Nothing set yet"
-              body="Tasks you create appear here, with the groups each one was set for."
-            />
-          </Panel>
-        )}
+      {list.data && list.data.length === 0 && !list.loading && (
+        <EmptyState
+          icon="ListDetails"
+          title="Nothing set yet"
+          description="Tasks you create appear here, with the groups each one was set for."
+        />
+      )}
 
-        {list.data && list.data.length > 0 && (
-          <Panel title="Set so far">
-            <ul className="flex flex-col gap-[var(--sp-3)]">
-              {list.data.map((assessment) => (
-                <AssessmentRow
-                  key={assessment.id}
-                  assessment={assessment}
-                  groups={groups.data ?? []}
-                  onChanged={list.reload}
-                />
-              ))}
-            </ul>
-          </Panel>
-        )}
-      </PageBody>
-    </>
+      {list.data && list.data.length > 0 && (
+        <Panel title="Set so far">
+          <ul className="flex flex-col gap-3">
+            {list.data.map((assessment) => (
+              <AssessmentRow
+                key={assessment.id}
+                assessment={assessment}
+                groups={groups.data ?? []}
+                onChanged={list.reload}
+              />
+            ))}
+          </ul>
+        </Panel>
+      )}
+    </div>
   );
 }
 
 /** `datetime-local` gives `2026-09-01T18:00`; the API wants a real instant. */
 const toIso = (local: string) => new Date(local).toISOString();
+
+const TYPE_OPTIONS = [
+  { value: 'homework', label: 'Homework' },
+  { value: 'assignment', label: 'Assignment' },
+  { value: 'quiz', label: 'Quiz' },
+] as const;
 
 function NewAssessment({
   courseId,
@@ -137,9 +136,7 @@ function NewAssessment({
 
   const toggle = (groupId: string) =>
     setTargets((current) =>
-      current.includes(groupId)
-        ? current.filter((id) => id !== groupId)
-        : [...current, groupId],
+      current.includes(groupId) ? current.filter((id) => id !== groupId) : [...current, groupId],
     );
 
   const submit = async (event: React.FormEvent) => {
@@ -168,9 +165,7 @@ function NewAssessment({
       onCreated();
     } catch (err) {
       setError(
-        err instanceof ApiError
-          ? err.message
-          : 'Could not set that work. Check the dates and try again.',
+        err instanceof ApiError ? err.message : 'Could not set that work. Check the dates and try again.',
       );
     } finally {
       setBusy(false);
@@ -191,160 +186,111 @@ function NewAssessment({
     <Panel
       title="Set new work"
       action={
-        <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>
+        <Button variant="tertiary" size="small" onClick={() => setOpen(false)}>
           Cancel
         </Button>
       }
     >
-      <form onSubmit={submit} className="flex flex-col gap-[var(--sp-4)]">
-        <Field label="Title" htmlFor="a-title">
-          <Input
-            id="a-title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            maxLength={200}
+      <form onSubmit={submit} className="flex flex-col gap-4">
+        <TextInput label="Title" id="a-title" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} required />
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Select
+            label="Type"
+            id="a-type"
+            hint="A quiz is a submission with a mark today; the question engine is not built yet."
+            value={type}
+            onChange={(e) => setType(e.target.value as 'homework' | 'assignment' | 'quiz')}
+            options={TYPE_OPTIONS}
+          />
+          <TextInput
+            label="Marks available"
+            id="a-score"
+            type="number"
+            min={1}
+            max={1000}
+            value={maxScore}
+            onChange={(e) => setMaxScore(Number(e.target.value))}
             required
           />
-        </Field>
-
-        <div className="grid gap-[var(--sp-4)] sm:grid-cols-2">
-          <Field
-            label="Type"
-            htmlFor="a-type"
-            hint="A quiz is a submission with a mark today; the question engine is not built yet."
-          >
-            <Select
-              id="a-type"
-              value={type}
-              onChange={(e) =>
-                setType(e.target.value as 'homework' | 'assignment' | 'quiz')
-              }
-            >
-              <option value="homework">Homework</option>
-              <option value="assignment">Assignment</option>
-              <option value="quiz">Quiz</option>
-            </Select>
-          </Field>
-          <Field label="Marks available" htmlFor="a-score">
-            <Input
-              id="a-score"
-              type="number"
-              min={1}
-              max={1000}
-              value={maxScore}
-              onChange={(e) => setMaxScore(Number(e.target.value))}
-              required
-            />
-          </Field>
         </div>
 
-        <Field label="Short description" htmlFor="a-desc">
-          <Input
-            id="a-desc"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            maxLength={1000}
-          />
-        </Field>
+        <TextInput
+          label="Short description"
+          id="a-desc"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          maxLength={1000}
+        />
 
-        <Field label="Instructions" htmlFor="a-instructions">
-          <Textarea
-            id="a-instructions"
-            value={instructions}
-            onChange={(e) => setInstructions(e.target.value)}
-            maxLength={5000}
-          />
-        </Field>
+        <TextArea
+          label="Instructions"
+          id="a-instructions"
+          value={instructions}
+          onChange={(e) => setInstructions(e.target.value)}
+          maxLength={5000}
+        />
 
-        <div className="grid gap-[var(--sp-4)] sm:grid-cols-3">
-          <Field label="Opens" htmlFor="a-from">
-            <Input
-              id="a-from"
-              type="datetime-local"
-              value={availableFrom}
-              onChange={(e) => setAvailableFrom(e.target.value)}
-              required
-            />
-          </Field>
-          <Field
+        <div className="grid gap-4 sm:grid-cols-3">
+          <TextInput
+            label="Opens"
+            id="a-from"
+            type="datetime-local"
+            value={availableFrom}
+            onChange={(e) => setAvailableFrom(e.target.value)}
+            required
+          />
+          <TextInput
             label="Due"
-            htmlFor="a-due"
+            id="a-due"
+            type="datetime-local"
             hint="Must fall inside the open window."
-          >
-            <Input
-              id="a-due"
-              type="datetime-local"
-              value={dueAt}
-              onChange={(e) => setDueAt(e.target.value)}
-              required
-            />
-          </Field>
-          <Field
+            value={dueAt}
+            onChange={(e) => setDueAt(e.target.value)}
+            required
+          />
+          <TextInput
             label="Closes"
-            htmlFor="a-to"
+            id="a-to"
+            type="datetime-local"
             hint="After this, students can no longer submit."
-          >
-            <Input
-              id="a-to"
-              type="datetime-local"
-              value={availableTo}
-              onChange={(e) => setAvailableTo(e.target.value)}
-              required
-            />
-          </Field>
+            value={availableTo}
+            onChange={(e) => setAvailableTo(e.target.value)}
+            required
+          />
         </div>
 
-        <fieldset className="flex flex-col gap-[var(--sp-2)]">
-          <legend className="text-[var(--fs-xs)] font-medium text-fg-2">
-            Set for
-          </legend>
-          <p className="text-[var(--fs-xs)] text-fg-3">
-            One task, aimed at the groups you pick. Students in no selected
-            group will not see it at all.
+        <fieldset className="flex flex-col gap-2">
+          <legend className="text-xs font-medium text-fg-2">Set for</legend>
+          <p className="text-xs text-fg-3">
+            One task, aimed at the groups you pick. Students in no selected group will not see it at all.
           </p>
-          <div className="flex flex-wrap gap-[var(--sp-2)]">
-            {groups.map((group) => {
-              const selected = targets.includes(group.id);
-              return (
-                <label
-                  key={group.id}
-                  className={
-                    'flex cursor-pointer items-center gap-[var(--sp-2)] rounded-[var(--r-md)] ' +
-                    'border px-[var(--sp-3)] py-[var(--sp-2)] text-[var(--fs-base)] ' +
-                    (selected
-                      ? 'border-[var(--accent)] text-fg'
-                      : 'border-[var(--border-light)] text-fg-2')
-                  }
+          <div className="flex flex-wrap gap-3">
+            {groups.map((group) => (
+              <div
+                key={group.id}
+                className="flex items-center gap-2 rounded-md border border-border-light px-3 py-2 text-base text-fg-2"
+              >
+                <Checkbox checked={targets.includes(group.id)} onChange={() => toggle(group.id)} label={group.name} />
+                <button
+                  type="button"
+                  onClick={() => toggle(group.id)}
+                  className="cursor-pointer border-0 bg-transparent p-0 text-inherit"
                 >
-                  <input
-                    type="checkbox"
-                    checked={selected}
-                    onChange={() => toggle(group.id)}
-                    className="accent-[var(--accent)]"
-                  />
                   {group.name}
-                </label>
-              );
-            })}
+                </button>
+              </div>
+            ))}
           </div>
         </fieldset>
 
-        {error && <FormError>{error}</FormError>}
+        {error && <InlineBanner tone="danger">{error}</InlineBanner>}
 
-        <div className="flex items-center gap-[var(--sp-3)]">
-          <Button
-            type="submit"
-            variant="primary"
-            loading={busy}
-            disabled={targets.length === 0 || !title.trim()}
-          >
-            Set work
+        <div className="flex items-center gap-3">
+          <Button type="submit" variant="primary" disabled={targets.length === 0 || !title.trim() || busy}>
+            {busy ? <Loader size={3} label="Setting work" /> : 'Set work'}
           </Button>
-          {targets.length === 0 && (
-            <span className="text-[var(--fs-xs)] text-fg-3">
-              Pick at least one group.
-            </span>
-          )}
+          {targets.length === 0 && <span className="text-xs text-fg-3">Pick at least one group.</span>}
         </div>
       </form>
     </Panel>
@@ -363,8 +309,7 @@ function AssessmentRow({
   const { token } = useSession();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const nameOf = (groupId: string) =>
-    groups.find((group) => group.id === groupId)?.name ?? groupId;
+  const nameOf = (groupId: string) => groups.find((group) => group.id === groupId)?.name ?? groupId;
 
   const remove = async () => {
     if (!token) return;
@@ -376,50 +321,42 @@ function AssessmentRow({
     } catch (err) {
       // The API refuses once anything has been submitted, and its message says
       // why. Surfacing that verbatim is better than inventing a softer one.
-      setError(
-        err instanceof ApiError ? err.message : 'Could not delete that task.',
-      );
+      setError(err instanceof ApiError ? err.message : 'Could not delete that task.');
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <li className="flex flex-col gap-[var(--sp-2)] rounded-[var(--r-md)] border border-[var(--border-light)] px-[var(--sp-3)] py-[var(--sp-3)]">
-      <div className="flex flex-wrap items-center justify-between gap-[var(--sp-3)]">
-        <span className="flex flex-wrap items-center gap-[var(--sp-2)]">
-          <span className="text-[var(--fs-base)] text-fg">
-            {assessment.title}
-          </span>
-          <Chip tone={assessment.type === 'quiz' ? 'teal' : 'neutral'}>
-            {assessment.type}
-          </Chip>
-          <span className="text-[var(--fs-xs)] text-fg-3">
+    <li className="flex flex-col gap-2 rounded-md border border-border-light px-3 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="flex flex-wrap items-center gap-2">
+          <span className="text-base text-fg">{assessment.title}</span>
+          <Tag tone={assessment.type === 'quiz' ? 'blue' : 'gray'}>{assessment.type}</Tag>
+          <span className="text-xs text-fg-3">
             due {formatDate(assessment.dueAt)} · {assessment.maxScore} marks
           </span>
         </span>
-        <Button variant="ghost" size="sm" onClick={remove} disabled={busy}>
-          Delete
+        <Button variant="tertiary" size="small" onClick={remove} disabled={busy}>
+          {busy ? <Loader size={3} label="Deleting" /> : 'Delete'}
         </Button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-[var(--sp-2)]">
-        <span className="text-[var(--fs-xs)] text-fg-3">
-          Set for
-        </span>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-fg-3">Set for</span>
         {assessment.targets.length === 0 ? (
-          <Chip tone="amber">nobody — invisible to students</Chip>
+          <Tag tone="amber">nobody — invisible to students</Tag>
         ) : (
           assessment.targets.map((target) => (
-            <Chip key={target.id} tone="blue">
+            <Tag key={target.id} tone="blue">
               {nameOf(target.groupId)}
               {target.dueAt ? ` · due ${formatDate(target.dueAt)}` : ''}
-            </Chip>
+            </Tag>
           ))
         )}
       </div>
 
-      {error && <FormError>{error}</FormError>}
+      {error && <InlineBanner tone="danger">{error}</InlineBanner>}
     </li>
   );
 }

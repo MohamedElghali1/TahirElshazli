@@ -1,6 +1,5 @@
 'use client';
 
-import { PlusIcon } from '@phosphor-icons/react';
 import { useSession } from '@/lib/session';
 import { isAdminRole } from '@/lib/roles';
 import { ButtonLink } from '@/components/ui';
@@ -26,7 +25,7 @@ import { PageActions } from '@/components/app/page-chrome';
  *
  * Gated to the teacher: a TA who followed this link would only find every
  * course refusing them a "Schedule" control that isn't there in the first
- * place, since `ManageCourseTabs` has no such tab and the write is
+ * place, since the course tabs have no such tab and the write is
  * teacher-only. Showing the action to a role it cannot exercise would be a
  * broken affordance dressed as a feature.
  */
@@ -34,8 +33,7 @@ function ManageActions() {
   const { user } = useSession();
   if (!isAdminRole(user?.role)) return null;
   return (
-    <ButtonLink href="/manage/courses" variant="primary" size="sm">
-      <PlusIcon size={14} weight="bold" aria-hidden />
+    <ButtonLink href="/manage/courses" variant="primary" size="small" icon="Plus">
       Live Session
     </ButtonLink>
   );

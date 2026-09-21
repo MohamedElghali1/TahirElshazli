@@ -8,18 +8,14 @@ import { formatDate } from '@/lib/format';
 import type { GroupSummary, LearningMode, StaffCourseSummary } from '@/lib/types';
 import {
   Button,
-  Chip,
   EmptyState,
-  ErrorState,
-  Field,
-  FormError,
-  Input,
+  InlineBanner,
+  Loader,
   Panel,
-  RowsSkeleton,
   Select,
+  Tag,
+  TextInput,
 } from '@/components/ui';
-import { UsersFourIcon } from '@phosphor-icons/react';
-import { PageBody } from '@/components/app/page-parts';
 import { PageTitle } from '@/components/app/page-chrome';
 
 /**
@@ -43,47 +39,42 @@ export default function GroupsPage() {
 
   return (
     <>
-      <PageTitle icon={UsersFourIcon} title="Groups" />
-      {/* Density, but not the object-table idiom the other console screens
-          took (TASK 4). A group here is not a uniform record in a list: each
-          one carries an editable set of course pairings with a per-row action
-          and an add form, which a flat 32px row cannot hold. Turning this into
-          Twenty's shape properly means splitting it into a table at
-          `/manage/groups` and a record page at `/manage/groups/[id]` - a
-          routing change, not a styling one, so it is not smuggled in here. */}
-      <PageBody dense className="flex flex-col gap-[var(--sp-2)]">
-        <div className="flex h-[var(--topbar-h)] items-center px-[var(--sp-2)]">
-          <span className="text-[var(--fs-base)] text-fg-3">
-            A group is a class of students. A course is taught to one or more of them.
-          </span>
-        </div>
+      <PageTitle title="Groups" />
+      <div className="flex flex-col gap-4 p-6">
+        <p className="text-base text-fg-3">
+          A group is a class of students. A course is taught to one or more of them.
+        </p>
         <CreateGroup onCreated={reload} />
 
-        {loading && <RowsSkeleton rows={4} />}
-        {error && <ErrorState message={error.message} onRetry={reload} />}
+        {loading && (
+          <div className="flex justify-center p-8">
+            <Loader label="Loading groups" />
+          </div>
+        )}
+        {error && (
+          <EmptyState
+            icon="AlertTriangle"
+            title={error.message}
+            action={<Button onClick={reload}>Try again</Button>}
+          />
+        )}
 
         {data && data.length === 0 && (
-          <Panel bodyClassName="">
-            <EmptyState
-              title="No groups yet"
-              body={
-                'Create one above, then add the courses it studies. Students ' +
-                'who enrol but sit in no group are set no work, so a course ' +
-                'with no groups shows its students an empty page.'
-              }
-            />
-          </Panel>
+          <EmptyState
+            icon="Hierarchy2"
+            title="No groups yet"
+            description={
+              'Create one above, then add the courses it studies. Students ' +
+              'who enrol but sit in no group are set no work, so a course ' +
+              'with no groups shows its students an empty page.'
+            }
+          />
         )}
 
         {data?.map((group) => (
-          <GroupPanel
-            key={group.id}
-            group={group}
-            courses={courses.data ?? []}
-            onChanged={reload}
-          />
+          <GroupPanel key={group.id} group={group} courses={courses.data ?? []} onChanged={reload} />
         ))}
-      </PageBody>
+      </div>
     </>
   );
 }
@@ -104,9 +95,7 @@ function CreateGroup({ onCreated }: { onCreated: () => void }) {
       setName('');
       onCreated();
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : 'Could not create that group.',
-      );
+      setError(err instanceof ApiError ? err.message : 'Could not create that group.');
     } finally {
       setBusy(false);
     }
@@ -114,31 +103,33 @@ function CreateGroup({ onCreated }: { onCreated: () => void }) {
 
   return (
     <Panel title="New group">
-      <form onSubmit={submit} className="flex flex-wrap items-end gap-[var(--sp-3)]">
-        <div className="min-w-[260px] flex-1">
-          <Field
+      <form onSubmit={submit} className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <TextInput
             label="Name"
-            htmlFor="group-name"
+            id="group-name"
+            className="min-w-[260px] flex-1"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="IGCSE Chemistry — Saturday 18:00"
             hint="How Dr. Tahir tells one cohort from another — a subject, a day and a time."
-          >
-            <Input
-              id="group-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="IGCSE Chemistry — Saturday 18:00"
-              maxLength={120}
-              required
-            />
-          </Field>
+            maxLength={120}
+            required
+          />
+          <Button type="submit" variant="primary" disabled={busy || !name.trim()}>
+            {busy ? <Loader size={3} label="Creating" /> : 'Create group'}
+          </Button>
         </div>
-        <Button type="submit" variant="primary" loading={busy} disabled={!name.trim()}>
-          Create group
-        </Button>
+        {error && <InlineBanner tone="danger">{error}</InlineBanner>}
       </form>
-      {error && <FormError>{error}</FormError>}
     </Panel>
   );
 }
+
+const MODE_OPTIONS: { value: LearningMode; label: string }[] = [
+  { value: 'recorded', label: 'Recorded' },
+  { value: 'live', label: 'Live' },
+];
 
 function GroupPanel({
   group,
@@ -164,16 +155,11 @@ function GroupPanel({
     setBusy(true);
     setError(null);
     try {
-      await api.admin.addGroupCourse(token, group.id, {
-        courseId,
-        learningMode: mode,
-      });
+      await api.admin.addGroupCourse(token, group.id, { courseId, learningMode: mode });
       setCourseId('');
       onChanged();
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : 'Could not add that course.',
-      );
+      setError(err instanceof ApiError ? err.message : 'Could not add that course.');
     } finally {
       setBusy(false);
     }
@@ -187,9 +173,7 @@ function GroupPanel({
       await api.admin.removeGroupCourse(token, group.id, id);
       onChanged();
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : 'Could not remove that course.',
-      );
+      setError(err instanceof ApiError ? err.message : 'Could not remove that course.');
     } finally {
       setBusy(false);
     }
@@ -199,53 +183,43 @@ function GroupPanel({
     <Panel
       title={group.name}
       action={
-        <div className="flex items-center gap-[var(--sp-2)]">
-          <Chip>
+        <div className="flex items-center gap-2">
+          <Tag tone="gray">
             {group.memberCount} {group.memberCount === 1 ? 'student' : 'students'}
-          </Chip>
-          <span className="text-[var(--fs-xs)] text-fg-3">
-            created {formatDate(group.createdAt)}
-          </span>
+          </Tag>
+          <span className="text-xs text-fg-3">created {formatDate(group.createdAt)}</span>
         </div>
       }
     >
-      {error && <FormError>{error}</FormError>}
+      {error && <InlineBanner tone="danger" className="mb-4">{error}</InlineBanner>}
 
-      <h3 className="mb-[var(--sp-2)] text-[var(--fs-xs)] font-medium text-fg-2">
-        Studying
-      </h3>
+      <h3 className="mb-2 text-xs font-medium text-fg-2">Studying</h3>
       {group.courses.length === 0 ? (
-        <p className="mb-[var(--sp-4)] text-[var(--fs-base)] text-fg-3">
-          Nothing yet. A group with no course has members but no lessons, no
-          timetable and no work.
+        <p className="mb-4 text-base text-fg-3">
+          Nothing yet. A group with no course has members but no lessons, no timetable and no work.
         </p>
       ) : (
-        <ul className="mb-[var(--sp-4)] rows">
+        <ul className="mb-4 divide-y divide-border-light">
           {group.courses.map((pairing) => {
             const course = courses.find((c) => c.id === pairing.courseId);
             return (
               <li
                 key={pairing.id}
-                className="flex min-h-[var(--h-md)] flex-wrap items-center justify-between gap-[var(--sp-3)] px-[var(--sp-2)]"
+                className="flex flex-wrap items-center justify-between gap-3 py-2"
               >
-                <span className="flex items-center gap-[var(--sp-2)]">
+                <span className="flex items-center gap-2">
                   <Link
                     href={`/manage/courses/${pairing.courseId}/groups`}
-                    className="text-[var(--fs-base)] text-fg underline-offset-2 hover:underline"
+                    className="text-base text-fg underline-offset-2 hover:underline"
                   >
                     {course?.title ?? pairing.courseId}
                   </Link>
                   {/* §5.2 — the mode belongs to this pairing, not to a student. */}
-                  <Chip tone={pairing.learningMode === 'live' ? 'violet' : 'neutral'}>
+                  <Tag tone={pairing.learningMode === 'live' ? 'violet' : 'gray'}>
                     {pairing.learningMode === 'live' ? 'Live' : 'Recorded'}
-                  </Chip>
+                  </Tag>
                 </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => removeCourse(pairing.courseId)}
-                >
+                <Button variant="tertiary" size="small" disabled={busy} onClick={() => removeCourse(pairing.courseId)}>
                   Remove
                 </Button>
               </li>
@@ -255,49 +229,36 @@ function GroupPanel({
       )}
 
       {addable.length > 0 && (
-        <form onSubmit={addCourse} className="flex flex-wrap items-end gap-[var(--sp-3)]">
-          <div className="min-w-[220px]">
-            <Field label="Add a course" htmlFor={`course-${group.id}`}>
-              <Select
-                id={`course-${group.id}`}
-                value={courseId}
-                onChange={(e) => setCourseId(e.target.value)}
-              >
-                <option value="">Choose a course…</option>
-                {addable.map((course) => (
-                  <option key={course.id} value={course.id}>
-                    {course.title}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          </div>
-          <div className="min-w-[160px]">
-            <Field
-              label="Taught as"
-              htmlFor={`mode-${group.id}`}
-              hint="Decides which dashboard this group's students see."
-            >
-              <Select
-                id={`mode-${group.id}`}
-                value={mode}
-                onChange={(e) => setMode(e.target.value as LearningMode)}
-              >
-                <option value="recorded">Recorded</option>
-                <option value="live">Live</option>
-              </Select>
-            </Field>
-          </div>
+        <form onSubmit={addCourse} className="flex flex-wrap items-end gap-3">
+          <Select
+            label="Add a course"
+            id={`course-${group.id}`}
+            className="min-w-[220px]"
+            value={courseId}
+            onChange={(e) => setCourseId(e.target.value)}
+            options={[
+              { value: '', label: 'Choose a course…' },
+              ...addable.map((course) => ({ value: course.id, label: course.title })),
+            ]}
+          />
+          <Select
+            label="Taught as"
+            id={`mode-${group.id}`}
+            className="min-w-[160px]"
+            hint="Decides which dashboard this group's students see."
+            value={mode}
+            onChange={(e) => setMode(e.target.value as LearningMode)}
+            options={MODE_OPTIONS}
+          />
           <Button type="submit" disabled={busy || !courseId}>
             Add course
           </Button>
         </form>
       )}
 
-      <p className="mt-[var(--sp-3)] text-[var(--fs-xs)] text-fg-3">
-        Adding a course here enrols nobody. Students enrol separately; placing
-        them in this group decides which cohort they sit in and what work they
-        are set.
+      <p className="mt-3 text-xs text-fg-3">
+        Adding a course here enrols nobody. Students enrol separately; placing them in this group
+        decides which cohort they sit in and what work they are set.
       </p>
     </Panel>
   );

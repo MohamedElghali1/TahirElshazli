@@ -1,14 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { UsersThreeIcon } from '@phosphor-icons/react';
 import { api } from '@/lib/api';
 import { useApi } from '@/lib/session';
 import { formatDate } from '@/lib/format';
-import { EmptyState, ErrorState, Input, RowsSkeleton } from '@/components/ui';
-import { PageBody } from '@/components/app/page-parts';
+import type { StudentDirectoryEntry } from '@/lib/types';
+import { Button, EmptyState, Loader, SearchInput, Table, type Column } from '@/components/ui';
 import { PageTitle } from '@/components/app/page-chrome';
-import { TableScroll, Td, Th, Tr } from '@/components/app/table';
 
 /**
  * The student directory. Admin only - CLAUDE.md §2.2 puts the full directory
@@ -27,29 +25,49 @@ export default function StudentDirectoryPage() {
     [search],
   );
 
+  const columns: Column<StudentDirectoryEntry>[] = [
+    { label: 'Name', render: (student) => student.name },
+    { label: 'Email', render: (student) => student.email },
+    {
+      label: 'Courses',
+      align: 'end',
+      render: (student) => <span className="num">{student.enrolledCourseCount}</span>,
+    },
+    {
+      label: 'Joined',
+      align: 'end',
+      render: (student) => formatDate(student.createdAt),
+    },
+  ];
+
   return (
     <>
-      <PageTitle icon={UsersThreeIcon} title="Students" />
-      <PageBody dense className="flex flex-col gap-[var(--sp-4)]">
-        <div className="max-w-[360px]">
-          <label htmlFor="student-search" className="sr-only">
-            Search students
-          </label>
-          <Input
-            id="student-search"
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name or email"
-          />
-        </div>
+      <PageTitle title="Students" />
+      <div className="flex flex-col gap-4 p-6">
+        <SearchInput
+          label="Search students"
+          className="max-w-[360px]"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
 
-        {loading && <RowsSkeleton rows={6} />}
-        {error && <ErrorState message={error.message} onRetry={reload} />}
+        {loading && (
+          <div className="flex justify-center p-8">
+            <Loader label="Loading students" />
+          </div>
+        )}
+        {error && (
+          <EmptyState
+            icon="AlertTriangle"
+            title={error.message}
+            action={<Button onClick={reload}>Try again</Button>}
+          />
+        )}
         {data && data.length === 0 && (
           <EmptyState
+            icon="Users"
             title={search ? 'No matches' : 'No students yet'}
-            body={
+            description={
               search
                 ? 'No student account matches that name or email.'
                 : 'Students who register will be listed here.'
@@ -57,34 +75,9 @@ export default function StudentDirectoryPage() {
           />
         )}
         {data && data.length > 0 && (
-          <TableScroll minWidth={520}>
-            <thead>
-              <tr className="border-b border-[var(--border-medium)]">
-                <Th>Name</Th>
-                <Th>Email</Th>
-                <Th align="end">Courses</Th>
-                <Th align="end">Joined</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.map((student) => (
-                <Tr key={student.id}>
-                  <Td className="text-fg">{student.name}</Td>
-                  <Td>{student.email}</Td>
-                  <Td align="end">
-                    <span className="num">{student.enrolledCourseCount}</span>
-                  </Td>
-                  <Td align="end">
-                    <span className="text-fg-3">
-                      {formatDate(student.createdAt)}
-                    </span>
-                  </Td>
-                </Tr>
-              ))}
-            </tbody>
-          </TableScroll>
+          <Table columns={columns} rows={data} rowKey={(student) => student.id} />
         )}
-      </PageBody>
+      </div>
     </>
   );
 }

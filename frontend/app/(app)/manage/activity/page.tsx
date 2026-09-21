@@ -5,17 +5,7 @@ import { api } from '@/lib/api';
 import { useApi } from '@/lib/session';
 import { formatDateTime } from '@/lib/format';
 import type { AuditAction, AuditLogEntry } from '@/lib/types';
-import {
-  Button,
-  Chip,
-  EmptyState,
-  ErrorState,
-  RowsSkeleton,
-} from '@/components/ui';
-import type { ChipTone } from '@/components/ui';
-import { ClockCounterClockwiseIcon } from '@phosphor-icons/react';
-import { PageBody } from '@/components/app/page-parts';
-import { TableScroll, Td, Th, Tr } from '@/components/app/table';
+import { Button, EmptyState, Loader, Table, Tag, type Column, type TagTone } from '@/components/ui';
 import { PageTitle } from '@/components/app/page-chrome';
 
 /**
@@ -64,7 +54,7 @@ const ACTION_LABEL: Record<AuditAction, string> = {
  * record of work done. Reading a column of these should let Dr. Tahir find the
  * destructive entries without reading a single label.
  */
-const ACTION_TONE: Record<AuditAction, ChipTone> = {
+const ACTION_TONE: Record<AuditAction, TagTone> = {
   'course_staff.assigned': 'green',
   'course_staff.unassigned': 'red',
   'submission.graded': 'blue',
@@ -116,92 +106,85 @@ export default function ActivityLogPage() {
 
   const entries = data?.entries ?? [];
 
+  const columns: Column<AuditLogEntry>[] = [
+    {
+      label: 'Who',
+      render: (entry) => (
+        <Tag tone={ACTION_TONE[entry.action] ?? 'gray'}>
+          {entry.actorRole === 'teacher' ? 'Teacher' : 'Assistant'}
+        </Tag>
+      ),
+    },
+    { label: 'Action', render: (entry) => ACTION_LABEL[entry.action] ?? entry.action },
+    {
+      label: 'Target',
+      render: (entry) => (
+        <span className="block max-w-[32ch] truncate text-fg-4">
+          {entry.targetType} {entry.targetId}
+        </span>
+      ),
+    },
+    { label: 'Change', align: 'end', render: (entry) => <ScoreChange entry={entry} /> },
+    {
+      label: 'When',
+      align: 'end',
+      render: (entry) => <span className="whitespace-nowrap text-fg-3">{formatDateTime(entry.createdAt)}</span>,
+    },
+  ];
+
   return (
     <>
-      <PageTitle icon={ClockCounterClockwiseIcon} title="Activity log" />
-      <PageBody dense className="flex flex-col gap-[var(--sp-2)]">
-        <div className="flex h-[var(--topbar-h)] items-center justify-between px-[var(--sp-2)]">
-          <span className="inline-flex h-[var(--h-sm)] items-center gap-[var(--sp-1)] rounded-[var(--r-lg)] bg-[var(--bg-primary)] py-[var(--sp-1)] ps-[var(--sp-1)] pe-[var(--sp-2)] text-[var(--fs-base)] font-medium text-fg-2">
-            Every recorded action
-          </span>
-          <span className="text-[var(--fs-base)] text-fg-3">
-            Who did it, and when
-          </span>
+      <PageTitle title="Activity log" />
+      <div className="flex flex-col gap-4 p-6">
+        <div className="flex items-center justify-between">
+          <span className="text-base font-medium text-fg-2">Every recorded action</span>
+          <span className="text-base text-fg-3">Who did it, and when</span>
         </div>
 
-        {loading && entries.length === 0 && <RowsSkeleton rows={6} />}
-        {error && <ErrorState message={error.message} onRetry={reload} />}
+        {loading && entries.length === 0 && (
+          <div className="flex justify-center p-8">
+            <Loader label="Loading the activity log" />
+          </div>
+        )}
+        {error && (
+          <EmptyState
+            icon="AlertTriangle"
+            title={error.message}
+            action={<Button onClick={reload}>Try again</Button>}
+          />
+        )}
         {!loading && !error && entries.length === 0 && (
           <EmptyState
+            icon="History"
             title="Nothing recorded yet"
-            body="Assigning an assistant, grading work or publishing a recording all leave an entry here."
+            description="Assigning an assistant, grading work or publishing a recording all leave an entry here."
           />
         )}
         {entries.length > 0 && (
           <>
-            <TableScroll minWidth={720}>
-              <thead>
-                <tr className="border-b border-[var(--border-medium)]">
-                  <Th>Who</Th>
-                  <Th>Action</Th>
-                  <Th>Target</Th>
-                  <Th align="end">Change</Th>
-                  <Th align="end">When</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {entries.map((entry) => (
-                  <Tr key={entry.id}>
-                    <Td>
-                      <Chip tone={ACTION_TONE[entry.action] ?? 'neutral'}>
-                        {entry.actorRole === 'teacher' ? 'Teacher' : 'Assistant'}
-                      </Chip>
-                    </Td>
-                    <Td className="text-fg">
-                      {ACTION_LABEL[entry.action] ?? entry.action}
-                    </Td>
-                    <Td>
-                      <span className="block max-w-[32ch] truncate text-fg-4">
-                        {entry.targetType} {entry.targetId}
-                      </span>
-                    </Td>
-                    <Td align="end">
-                      <ScoreChange entry={entry} />
-                    </Td>
-                    <Td align="end">
-                      <span className="whitespace-nowrap text-fg-3">
-                        {formatDateTime(entry.createdAt)}
-                      </span>
-                    </Td>
-                  </Tr>
-                ))}
-              </tbody>
-            </TableScroll>
+            <Table columns={columns} rows={entries} rowKey={(entry) => entry.id} />
 
             {(stack.length > 1 || data?.nextCursor) && (
-              <div className="flex items-center justify-between gap-[var(--sp-3)] px-[var(--sp-2)] py-[var(--sp-2)]">
+              <div className="flex items-center justify-between gap-3">
                 <Button
-                  size="sm"
+                  size="small"
                   disabled={stack.length === 1}
                   onClick={() => setStack((s) => s.slice(0, -1))}
                 >
                   Newer
                 </Button>
                 <Button
-                  size="sm"
+                  size="small"
                   disabled={!data?.nextCursor}
-                  loading={loading}
-                  onClick={() =>
-                    setStack((s) => [...s, data?.nextCursor ?? undefined])
-                  }
+                  onClick={() => setStack((s) => [...s, data?.nextCursor ?? undefined])}
                 >
-                  Older
+                  {loading ? <Loader size={3} label="Loading" /> : 'Older'}
                 </Button>
               </div>
             )}
           </>
         )}
-      </PageBody>
+      </div>
     </>
   );
 }
@@ -216,8 +199,8 @@ function ScoreChange({ entry }: { entry: AuditLogEntry }) {
   const after = entry.after?.score;
   if (after === undefined || after === null) return null;
   return (
-    <span className="num shrink-0 text-[var(--fs-xs)] text-fg-2">
-      {before === null || before === undefined ? '--' : String(before)} → {String(after)}
+    <span className="num shrink-0 text-xs text-fg-2">
+      {before === null || before === undefined ? '—' : String(before)} → {String(after)}
     </span>
   );
 }
