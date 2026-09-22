@@ -4,6 +4,38 @@ export type AssessmentType = 'homework' | 'assignment' | 'quiz';
 
 export type AssessmentStatus = 'locked' | 'available' | 'submitted' | 'corrected';
 
+/**
+ * Whether students can see a task at all (`D-28`). Two stored values only.
+ *
+ * `scheduled` is deliberately **not** a member: it is the derived label for
+ * `published` with `now < availableFrom`, which the student read already
+ * renders as locked-with-a-date. Storing it would give two sources for one
+ * fact. `hidden` removes the task from every student read.
+ */
+export type TaskVisibility = 'published' | 'hidden';
+
+/**
+ * How a student may hand the work in (`D-31`). Recorded per task; the
+ * multi-file model behind `photo_upload` (up to five photos) is unit 7's.
+ */
+export type SubmissionMode = 'pdf_upload' | 'doc_link' | 'photo_upload';
+
+/**
+ * A file or link that travels with a task or a draft - a passage, an audio
+ * file, a mark scheme (`PRODUCT_SPEC.md` §2.1). A value object stored as a
+ * JSONB array element, never a row of its own.
+ *
+ * `mimeType` and `sizeBytes` are display-only. Nothing decides anything on
+ * them: they come from the client, and a client-declared MIME type is a label,
+ * not a fact.
+ */
+export interface Attachment {
+  url: string;
+  name: string;
+  mimeType: string | null;
+  sizeBytes: number | null;
+}
+
 export interface StoredAssessment {
   id: string;
   courseId: string;
@@ -36,6 +68,25 @@ export interface StoredAssessment {
   /** Per-assessment upload rules - never a global hardcoded whitelist. */
   allowedFileTypes: string[];
   maxFileSizeBytes: number;
+  /** `D-28`. Defaults to `published` in both drivers and the migration. */
+  visibility: TaskVisibility;
+  /**
+   * Who marks this (`D-32`). Null is "whoever opens it first"; the
+   * claim-on-open is unit 7's. Never cleared when targets or scope later
+   * drift - drift is displayed, not silently repaired.
+   */
+  markerId: string | null;
+  /** `true` (the default) is today's rule: resubmission until window end. */
+  allowResubmission: boolean;
+  /** `D-31`. Empty is "not stated" - every row that predates the column. */
+  submissionModes: SubmissionMode[];
+  /**
+   * The draft this task was authored from. Provenance only: the task's
+   * content was **copied**, never linked live (`DOMAIN_MODEL.md` §4), and the
+   * FK goes to NULL when the draft is deleted. Set once, at creation.
+   */
+  draftId: string | null;
+  attachments: Attachment[];
   createdAt: string;
 }
 
@@ -113,7 +164,30 @@ export interface AssessmentUpdate {
    */
   workType?: WorkType;
   externalUrl?: string | null;
+  visibility?: TaskVisibility;
+  /** Nullable and clearing it is meaningful, so it takes `lesson_id`'s sentinel. */
+  markerId?: string | null;
+  allowResubmission?: boolean;
+  submissionModes?: SubmissionMode[];
+  /** Replaced as a whole, like `allowedFileTypes`. */
+  attachments?: Attachment[];
+  // `draftId` is absent on purpose: provenance is set once, at creation.
 }
+
+/**
+ * The staff task list's filter (`TASK-6`). `groupIds` is the caller's reach,
+ * resolved by `StaffScopeService.reachableGroupIds`: `null` is unrestricted
+ * and `[]` is nothing. The restriction is applied **in the query**, never as a
+ * filter over a wider read.
+ */
+export interface StaffTaskFilter {
+  groupIds: readonly string[] | null;
+  courseId?: string;
+  groupId?: string;
+  /** A case-insensitive title substring. Matched literally - `%` is a `%`. */
+  search?: string;
+}
+
 
 /**
  * "This task was set for this group" (CLAUDE.md §5.16, answered 2026-09-10:
@@ -243,6 +317,27 @@ export interface AssessmentRepository {
   ): Promise<AssessmentTarget[]>;
   /** The staff read: who this task was set for. */
   findTargets(assessmentId: string): Promise<AssessmentTarget[]>;
+  /**
+   * Every task visible to a staff caller, across courses (`TASK-6`).
+   *
+   * A task is visible through a **target** the caller reaches - the group
+   * grain from birth, not the course grain `AUTH-6` is narrowing. Ordered
+   * `due_at DESC, id`. Not paged: two courses of ~20 tasks (CLAUDE.md §1).
+   */
+  findForStaff(filter: StaffTaskFilter): Promise<StoredAssessment[]>;
+  /**
+   * The targets of many tasks in one read, restricted to `groupIds` (`null` is
+   * unrestricted) **in the query** - so a scoped caller never receives an
+   * unheld group's id. Replaces a per-task `findTargets` fan-out.
+   *
+   * Group *names* are not joined here: the in-memory driver would have to reach
+   * into another aggregate's repository to match, and a repository never calls
+   * another (CLAUDE.md §5). The service resolves names in one batch read.
+   */
+  findTargetsForAssessments(
+    assessmentIds: readonly string[],
+    groupIds: readonly string[] | null,
+  ): Promise<AssessmentTarget[]>;
   findSubmission(
     assessmentId: string,
     studentId: string,

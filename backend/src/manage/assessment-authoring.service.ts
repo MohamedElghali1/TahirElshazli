@@ -274,6 +274,14 @@ export class AssessmentAuthoringService {
         // Only a `link` task stores a URL here. A Google Form's address is
         // resolved against Google and written as a binding instead - see below.
         externalUrl: workType === 'link' ? (input.externalUrl ?? null) : null,
+        // The unit-6 settings at their migration defaults (018). Later slices
+        // thread the request's values through here.
+        visibility: 'published',
+        markerId: null,
+        allowResubmission: true,
+        submissionModes: [],
+        draftId: null,
+        attachments: [],
       });
 
       // Binding talks to Google, so it happens *inside* the transaction on

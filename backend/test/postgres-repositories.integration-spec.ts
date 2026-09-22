@@ -22,6 +22,8 @@ import { PostgresGroupRepository } from '../src/groups/repositories/postgres-gro
 import { PostgresBlogRepository } from '../src/blog/repositories/postgres-blog.repository.js';
 import { PostgresMailDeliveryRepository } from '../src/mail/postgres-mail-delivery.repository.js';
 import { PostgresAssistantInvitationRepository } from '../src/manage/repositories/postgres-assistant-invitation.repository.js';
+import { PostgresTaskDraftRepository } from '../src/manage/repositories/postgres-task-draft.repository.js';
+import type { NewAssessment } from '../src/assessments/interfaces/assessment-repository.interface.js';
 import { Role } from '../src/auth/roles.enum.js';
 
 /**
@@ -41,6 +43,31 @@ import { Role } from '../src/auth/roles.enum.js';
  * commit as one unit, and that markRead scoped by user_id refuses another
  * student's row.
  */
+/** A task with every unit-6 setting at its default; tests override what they assert. */
+const NEW_TASK: NewAssessment = {
+  courseId: 'course-1',
+  lessonId: null,
+  title: 'Unit 6 integration task',
+  description: '',
+  instructions: '',
+  type: 'homework',
+  topics: [],
+  availableFrom: '2026-09-01T00:00:00.000Z',
+  availableTo: '2026-12-01T00:00:00.000Z',
+  dueAt: '2026-11-01T00:00:00.000Z',
+  maxScore: 20,
+  allowedFileTypes: ['application/pdf'],
+  maxFileSizeBytes: 10485760,
+  workType: 'file_upload',
+  externalUrl: null,
+  visibility: 'published',
+  markerId: null,
+  allowResubmission: true,
+  submissionModes: [],
+  draftId: null,
+  attachments: [],
+};
+
 const connectionString = process.env.TEST_DATABASE_URL;
 const describeIfDb = connectionString ? describe : describe.skip;
 
@@ -1625,6 +1652,12 @@ describeIfDb('Postgres repositories', () => {
         maxFileSizeBytes: 10485760,
         workType: 'file_upload',
         externalUrl: null,
+        visibility: 'published',
+        markerId: null,
+        allowResubmission: true,
+        submissionModes: [],
+        draftId: null,
+        attachments: [],
       });
       await repo().setTargets(created.id, [{ groupId: 'group-1' }]);
 
@@ -1830,6 +1863,395 @@ describeIfDb('Postgres repositories', () => {
     });
   });
 
+  /**
+   * Migration 018's post-conditions (unit 6), asserted against the catalog and
+   * by the database refusing bad rows - not inferred from a repository read.
+   * `D-28` narrowed `visibility` to two values before this file first ran.
+   */
+  describe('migration 018', () => {
+    it('creates task_drafts with the planned columns', async () => {
+      const rows = await db.query<{ column_name: string; is_nullable: string; data_type: string }>(
+        `SELECT column_name, is_nullable, data_type FROM information_schema.columns
+          WHERE table_schema = current_schema() AND table_name = 'task_drafts'
+          ORDER BY column_name`,
+      );
+      expect(rows.map((r) => r.column_name)).toEqual([
+        'attachments',
+        'course_id',
+        'created_at',
+        'created_by',
+        'description',
+        'id',
+        'instructions',
+        'title',
+        'type',
+        'updated_at',
+        'used_count',
+        'work_type',
+      ]);
+      expect(rows.every((r) => r.is_nullable === 'NO')).toBe(true);
+      expect(rows.find((r) => r.column_name === 'attachments')?.data_type).toBe('jsonb');
+    });
+
+    it('stores created_at/updated_at at millisecond precision (TIMESTAMPTZ(3))', async () => {
+      const rows = await db.query<{ column_name: string; datetime_precision: number }>(
+        `SELECT column_name, datetime_precision FROM information_schema.columns
+          WHERE table_schema = current_schema() AND table_name = 'task_drafts'
+            AND column_name IN ('created_at', 'updated_at')`,
+      );
+      expect(rows.map((r) => r.datetime_precision)).toEqual([3, 3]);
+    });
+
+    it('indexes task_drafts on (course_id, type)', async () => {
+      const row = await db.queryOne<{ indexdef: string }>(
+        `SELECT indexdef FROM pg_indexes
+          WHERE schemaname = current_schema() AND indexname = 'task_drafts_course_id_type_idx'`,
+      );
+      expect(row?.indexdef).toMatch(/\(course_id, type\)/);
+    });
+
+    it('refuses a misspelt visibility, and refuses scheduled because D-28 does not store it', async () => {
+      await expect(
+        db.query(`UPDATE assessments SET visibility = 'hiden' WHERE id = 'assess-1'`),
+      ).rejects.toThrow(/assessments_visibility_check/);
+      await expect(
+        db.query(`UPDATE assessments SET visibility = 'scheduled' WHERE id = 'assess-1'`),
+      ).rejects.toThrow(/assessments_visibility_check/);
+    });
+
+    it('refuses an attachments object where an array belongs, on both tables', async () => {
+      await expect(
+        db.query(`UPDATE assessments SET attachments = '{}'::jsonb WHERE id = 'assess-1'`),
+      ).rejects.toThrow(/assessments_attachments_check/);
+      await expect(
+        db.query(
+          `INSERT INTO task_drafts (id, course_id, type, title, attachments, created_by)
+           VALUES ('bad-att', 'course-1', 'homework', 'x', '{}'::jsonb, 'teacher-1')`,
+        ),
+      ).rejects.toThrow(/task_drafts_attachments_check/);
+    });
+
+    it('refuses a negative used_count, a blank title and an unknown submission mode', async () => {
+      await expect(
+        db.query(
+          `INSERT INTO task_drafts (id, course_id, type, title, used_count, created_by)
+           VALUES ('bad-count', 'course-1', 'homework', 'x', -1, 'teacher-1')`,
+        ),
+      ).rejects.toThrow(/task_drafts_used_count_check/);
+      await expect(
+        db.query(
+          `INSERT INTO task_drafts (id, course_id, type, title, created_by)
+           VALUES ('bad-title', 'course-1', 'homework', '   ', 'teacher-1')`,
+        ),
+      ).rejects.toThrow(/task_drafts_title_check/);
+      await expect(
+        db.query(
+          `UPDATE assessments SET submission_modes = ARRAY['fax']::text[] WHERE id = 'assess-1'`,
+        ),
+      ).rejects.toThrow(/assessments_submission_modes_check/);
+    });
+
+    it('gives every existing task today’s meaning: published, resubmittable, nothing attached', async () => {
+      const row = await db.queryOne<{
+        visibility: string;
+        allow_resubmission: boolean;
+        attachments: unknown;
+        submission_modes: string[];
+        marker_id: string | null;
+        draft_id: string | null;
+      }>(
+        `SELECT visibility, allow_resubmission, attachments, submission_modes,
+                marker_id, draft_id
+           FROM assessments WHERE id = 'assess-8'`,
+      );
+      expect(row).toEqual({
+        visibility: 'published',
+        allow_resubmission: true,
+        attachments: [],
+        submission_modes: [],
+        marker_id: null,
+        draft_id: null,
+      });
+    });
+  });
+
+  describe('task drafts', () => {
+    const drafts = () => new PostgresTaskDraftRepository(db);
+    const base = {
+      courseId: 'course-1',
+      type: 'homework' as const,
+      workType: 'file_upload' as const,
+      title: 'Integration draft',
+      description: 'd',
+      instructions: 'i',
+      attachments: [],
+      createdBy: 'teacher-1',
+    };
+
+    it('creates a draft and round-trips attachments JSONB', async () => {
+      const attachments = [
+        { url: '/uploads/passage.pdf', name: 'Passage', mimeType: 'application/pdf', sizeBytes: 1234 },
+        { url: 'https://example.com/a.mp3', name: 'Listening', mimeType: null, sizeBytes: null },
+      ];
+      const created = await drafts().create({ ...base, attachments });
+      expect(created.usedCount).toBe(0);
+      expect(created.createdBy).toBe('teacher-1');
+      const read = await drafts().findById(created.id);
+      expect(read?.attachments).toEqual(attachments);
+      await drafts().remove(created.id);
+    });
+
+    it('lists by course ids and type, most recently edited first; null courseIds is every course; [] is none', async () => {
+      const a = await drafts().create({ ...base, title: 'List A' });
+      const b = await drafts().create({ ...base, title: 'List B', type: 'quiz' });
+      const c = await drafts().create({ ...base, title: 'List C', courseId: 'course-2' });
+      // Touch A so it is the most recently edited.
+      await drafts().update(a.id, { description: 'touched' });
+
+      const course1 = await drafts().findMany({ courseIds: ['course-1'] });
+      expect(course1.map((d) => d.id)).toEqual([a.id, b.id]);
+      expect((await drafts().findMany({ courseIds: ['course-1'], type: 'quiz' })).map((d) => d.id)).toEqual([b.id]);
+      const all = await drafts().findMany({ courseIds: null });
+      expect(all.map((d) => d.id)).toEqual(expect.arrayContaining([a.id, b.id, c.id]));
+      expect(await drafts().findMany({ courseIds: [] })).toEqual([]);
+      // A courseId filter intersects the reach rather than widening it.
+      expect(await drafts().findMany({ courseIds: ['course-1'], courseId: 'course-2' })).toEqual([]);
+
+      for (const d of [a, b, c]) await drafts().remove(d.id);
+    });
+
+    it('a partial update leaves omitted fields alone and advances updated_at', async () => {
+      const created = await drafts().create({ ...base, title: 'Partial' });
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      const updated = await drafts().update(created.id, { title: 'Partial, renamed' });
+      expect(updated?.title).toBe('Partial, renamed');
+      expect(updated?.instructions).toBe('i');
+      expect(updated?.type).toBe('homework');
+      expect(new Date(updated!.updatedAt).getTime()).toBeGreaterThan(
+        new Date(created.updatedAt).getTime(),
+      );
+      expect(updated?.createdAt).toBe(created.createdAt);
+      expect(await drafts().update('nope', { title: 'x' })).toBeNull();
+      await drafts().remove(created.id);
+    });
+
+    it('incrementUsedCount adds exactly one and returns null for a draft on another course', async () => {
+      const created = await drafts().create({ ...base, title: 'Counted' });
+      expect((await drafts().incrementUsedCount(created.id, 'course-1'))?.usedCount).toBe(1);
+      expect((await drafts().incrementUsedCount(created.id, 'course-1'))?.usedCount).toBe(2);
+      expect(await drafts().incrementUsedCount(created.id, 'course-2')).toBeNull();
+      expect(await drafts().incrementUsedCount('nope', 'course-1')).toBeNull();
+      expect((await drafts().findById(created.id))?.usedCount).toBe(2);
+      await drafts().remove(created.id);
+    });
+
+    it('remove returns false for a missing draft', async () => {
+      expect(await drafts().remove('nope')).toBe(false);
+    });
+
+    it('deleting a draft sets assessments.draft_id to NULL and leaves the task intact', async () => {
+      const draft = await drafts().create({ ...base, title: 'Provenance' });
+      const assessments = new PostgresAssessmentRepository(db);
+      const task = await assessments.create({ ...NEW_TASK, draftId: draft.id, title: 'From a draft' });
+      expect(task.draftId).toBe(draft.id);
+
+      expect(await drafts().remove(draft.id)).toBe(true);
+      const after = await assessments.findById(task.id);
+      expect(after?.draftId).toBeNull();
+      expect(after?.title).toBe('From a draft');
+      await assessments.remove(task.id);
+    });
+  });
+
+  describe('assessments: unit-6 columns', () => {
+    const repo = () => new PostgresAssessmentRepository(db);
+
+    it('create and update round-trip visibility, allow_resubmission, submission_modes, draft_id, attachments and marker_id', async () => {
+      const attachments = [
+        { url: '/uploads/scheme.pdf', name: 'Mark scheme', mimeType: 'application/pdf', sizeBytes: 99 },
+      ];
+      const created = await repo().create({
+        ...NEW_TASK,
+        visibility: 'hidden',
+        markerId: 'assistant-1',
+        allowResubmission: false,
+        submissionModes: ['pdf_upload', 'photo_upload'],
+        attachments,
+      });
+      expect(created).toMatchObject({
+        visibility: 'hidden',
+        markerId: 'assistant-1',
+        allowResubmission: false,
+        submissionModes: ['pdf_upload', 'photo_upload'],
+        draftId: null,
+        attachments,
+      });
+
+      const updated = await repo().update(created.id, {
+        visibility: 'published',
+        markerId: 'teacher-1',
+        allowResubmission: true,
+        submissionModes: ['doc_link'],
+        attachments: [],
+      });
+      expect(updated).toMatchObject({
+        visibility: 'published',
+        markerId: 'teacher-1',
+        allowResubmission: true,
+        submissionModes: ['doc_link'],
+        attachments: [],
+      });
+      // Omitted fields are left alone.
+      const untouched = await repo().update(created.id, { title: 'Renamed only' });
+      expect(untouched).toMatchObject({
+        visibility: 'published',
+        markerId: 'teacher-1',
+        submissionModes: ['doc_link'],
+      });
+      await repo().remove(created.id);
+    });
+
+    it('update clears marker_id with the null sentinel and leaves draft_id immutable', async () => {
+      const draft = await new PostgresTaskDraftRepository(db).create({
+        courseId: 'course-1',
+        type: 'homework',
+        workType: 'file_upload',
+        title: 'Immutable provenance',
+        description: '',
+        instructions: '',
+        attachments: [],
+        createdBy: 'teacher-1',
+      });
+      const created = await repo().create({ ...NEW_TASK, markerId: 'teacher-1', draftId: draft.id });
+      const cleared = await repo().update(created.id, { markerId: null });
+      expect(cleared?.markerId).toBeNull();
+      expect(cleared?.draftId).toBe(draft.id);
+      // `draftId` is not on AssessmentUpdate; an untyped caller sending one
+      // is ignored by the SQL, which has no draft_id in its SET list.
+      const sneaky = await repo().update(created.id, { draftId: null } as never);
+      expect(sneaky?.draftId).toBe(draft.id);
+      await repo().remove(created.id);
+      await new PostgresTaskDraftRepository(db).remove(draft.id);
+    });
+
+    it('findByCourseForGroups and findByIdForGroups return the new columns', async () => {
+      // Risk 2: these two reads select through their own column list.
+      const created = await repo().create({
+        ...NEW_TASK,
+        visibility: 'hidden',
+        markerId: 'teacher-1',
+        allowResubmission: false,
+        submissionModes: ['photo_upload'],
+        attachments: [{ url: '/uploads/a.pdf', name: 'A', mimeType: null, sizeBytes: null }],
+      });
+      await repo().setTargets(created.id, [{ groupId: 'group-1' }]);
+      const expected = {
+        visibility: 'hidden',
+        markerId: 'teacher-1',
+        allowResubmission: false,
+        submissionModes: ['photo_upload'],
+        draftId: null,
+        attachments: [{ url: '/uploads/a.pdf', name: 'A', mimeType: null, sizeBytes: null }],
+      };
+      const listed = (await repo().findByCourseForGroups('course-1', ['group-1'])).find(
+        (a) => a.id === created.id,
+      );
+      expect(listed).toMatchObject(expected);
+      expect(await repo().findByIdForGroups(created.id, ['group-1'])).toMatchObject(expected);
+      // And the seeded rows carry the defaults, not undefined.
+      const seeded = await repo().findByIdForGroups('assess-1', ['group-1']);
+      expect(seeded).toMatchObject({
+        visibility: 'published',
+        markerId: null,
+        allowResubmission: true,
+        submissionModes: [],
+        draftId: null,
+        attachments: [],
+      });
+      await repo().remove(created.id);
+    });
+
+    it('findForStaff: null is every task; held groups restrict; [] is none; courseId, groupId and search filter; a literal % in search matches only a literal %', async () => {
+      const groups = new PostgresGroupRepository(db);
+      const third = await groups.create({
+        name: 'findForStaff cohort',
+        teacherId: 'teacher-1',
+        courseId: 'course-1',
+        assistantId: null,
+        meets: null,
+        room: null,
+      });
+      const shared = await repo().create({ ...NEW_TASK, title: 'Shared 100% task' });
+      await repo().setTargets(shared.id, [{ groupId: 'group-1' }, { groupId: third.id }]);
+      const onlyThird = await repo().create({ ...NEW_TASK, title: 'Only the third 100 task' });
+      await repo().setTargets(onlyThird.id, [{ groupId: third.id }]);
+
+      const all = await repo().findForStaff({ groupIds: null });
+      expect(all.map((a) => a.id)).toEqual(expect.arrayContaining([shared.id, onlyThird.id, 'assess-1']));
+      // Ordered due_at DESC, id - asserted, not assumed.
+      const keys = all.map((a) => [new Date(a.dueAt).getTime(), a.id] as const);
+      for (let i = 1; i < keys.length; i++) {
+        const [pd, pid] = keys[i - 1];
+        const [d, id] = keys[i];
+        expect(pd > d || (pd === d && pid < id)).toBe(true);
+      }
+
+      const held = await repo().findForStaff({ groupIds: ['group-1'] });
+      expect(held.map((a) => a.id)).toContain(shared.id);
+      expect(held.map((a) => a.id)).not.toContain(onlyThird.id);
+      expect(await repo().findForStaff({ groupIds: [] })).toEqual([]);
+
+      expect(await repo().findForStaff({ groupIds: null, courseId: 'course-2' })).toEqual(
+        (await repo().findForStaff({ groupIds: null })).filter((a) => a.courseId === 'course-2'),
+      );
+      expect(
+        (await repo().findForStaff({ groupIds: null, groupId: third.id })).map((a) => a.id).sort(),
+      ).toEqual([shared.id, onlyThird.id].sort());
+
+      // `%` is a literal: "100%" matches the shared task and not "100 task".
+      expect(
+        (await repo().findForStaff({ groupIds: null, search: '100%' })).map((a) => a.id),
+      ).toEqual([shared.id]);
+      // And `_` is a literal, not "any one character".
+      expect(await repo().findForStaff({ groupIds: null, search: '100_' })).toEqual([]);
+      // Case-insensitive.
+      expect(
+        (await repo().findForStaff({ groupIds: null, search: 'shared 100' })).map((a) => a.id),
+      ).toEqual([shared.id]);
+
+      await repo().remove(shared.id);
+      await repo().remove(onlyThird.id);
+    });
+
+    it('findTargetsForAssessments restricts to the given groups', async () => {
+      const groups = new PostgresGroupRepository(db);
+      const third = await groups.create({
+        name: 'findTargets cohort',
+        teacherId: 'teacher-1',
+        courseId: 'course-1',
+        assistantId: null,
+        meets: null,
+        room: null,
+      });
+      const shared = await repo().create({ ...NEW_TASK, title: 'Batch targets' });
+      await repo().setTargets(shared.id, [{ groupId: 'group-1' }, { groupId: third.id, dueAt: '2026-10-01T00:00:00.000Z' }]);
+
+      const every = await repo().findTargetsForAssessments([shared.id, 'assess-1'], null);
+      expect(every.filter((t) => t.assessmentId === shared.id).map((t) => t.groupId).sort()).toEqual(
+        ['group-1', third.id].sort(),
+      );
+      expect(every.some((t) => t.assessmentId === 'assess-1')).toBe(true);
+      expect(every.find((t) => t.groupId === third.id)?.dueAt).toBe('2026-10-01T00:00:00.000Z');
+
+      const held = await repo().findTargetsForAssessments([shared.id], ['group-1']);
+      expect(held.map((t) => t.groupId)).toEqual(['group-1']);
+      expect(await repo().findTargetsForAssessments([shared.id], [])).toEqual([]);
+      expect(await repo().findTargetsForAssessments([], null)).toEqual([]);
+
+      await repo().remove(shared.id);
+    });
+  });
+
   describe('runInTransaction', () => {
     it('rolls the action back when the audit write fails', async () => {
       const groups = new PostgresGroupRepository(db);
@@ -1919,6 +2341,37 @@ describeIfDb('Postgres repositories', () => {
       expect(await assessments.findTargets('assess-4')).toHaveLength(
         original.length,
       );
+    });
+  });
+
+  describe('runInTransaction: authoring from a draft', () => {
+    it('a create-from-draft that throws after incrementing leaves used_count unchanged', async () => {
+      // Only provable here: the memory driver's runInTransaction has no
+      // rollback (CLAUDE.md §9), so the count would creep there.
+      const drafts = new PostgresTaskDraftRepository(db);
+      const draft = await drafts.create({
+        courseId: 'course-1',
+        type: 'homework',
+        workType: 'file_upload',
+        title: 'Rolled back use',
+        description: '',
+        instructions: '',
+        attachments: [],
+        createdBy: 'teacher-1',
+      });
+      await expect(
+        db.runInTransaction(async () => {
+          await drafts.incrementUsedCount(draft.id, 'course-1');
+          // The task insert that follows fails on a real constraint.
+          await new PostgresAssessmentRepository(db).create({
+            ...NEW_TASK,
+            draftId: draft.id,
+            visibility: 'scheduled' as never,
+          });
+        }),
+      ).rejects.toThrow(/assessments_visibility_check/);
+      expect((await drafts.findById(draft.id))?.usedCount).toBe(0);
+      await drafts.remove(draft.id);
     });
   });
 

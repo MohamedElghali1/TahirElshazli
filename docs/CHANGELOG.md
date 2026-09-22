@@ -1313,3 +1313,84 @@ teacher or admin, who could grant that anyway, and the widening was audited. It 
 `StaffScopeService` never reads an admin's scope, so the admin half is a response correction only.
 `API_SPEC.yaml`'s `Assistant.scope` states the rule. Specs cover the active-admin, pending-admin,
 edit, unconfigured-assistant and mismatched-role cases.
+
+---
+
+## 2026-09-22 — Unit 6: the user rules on the planner's six blockers (`D-28` … `D-33`)
+
+**Context.** `docs/phases/unit-6/PHASE_PLAN.md` §8 scoped six questions out of unit 6 (`B-1` …
+`B-6`), each with a recommended reading marked as an *assumption*. On 2026-09-22 the coordinator and
+the user approved slices 6a–6e and ruled on all six, each as the planner's recommendation. The rulings
+below are therefore **decisions**, not assumptions, and slices 6f–6k are built on them. Because `B-1`
+and `B-4` add or narrow columns, both were folded into migration `018` before it first ran — no `019`.
+
+### `D-28` — `B-1`: `visibility` stores `published | hidden`; `scheduled` is derived, not stored (reading C + iii)
+
+- **Stored:** `published | hidden` only (migration `018`'s CHECK). No `publish_at`.
+- **`scheduled`** is the derived *label* for `published ∧ now < availableFrom`. A published task with
+  a future window already reads to a student as `locked` with its opening date
+  (`assessments.service.ts` `computeStatus`), so storing `scheduled` would add a second source for a
+  fact the window already holds (planner finding 1).
+- **`hidden`:** no row in the student list, and a 404 on the student detail and submit routes whose
+  body is identical to a genuine miss.
+- **Hiding a task that has any submission is refused with 409** (reading iii), mirroring
+  delete-refused-once-submitted. It loses no student-visible history and is relaxable later.
+- **Narrows** `PRODUCT_SPEC.md` §2.1, `DOMAIN_MODEL.md` §4 and `DATABASE_PLAN.md` §2, which each
+  described a three-value stored enum. All three are amended.
+- **Rejected:** A (published tasks vanish until they open — a behaviour change for every existing
+  future task); B (a `publish_at` column and a second timestamp nobody asked for).
+
+### `D-29` — `B-2`: a per-attachment `audience`; audio joins the staff upload whitelist (reading B)
+
+- Every attachment carries `audience: 'students' | 'staff'`. The student `GET /assessments/:id`
+  returns only `students` attachments. A mark scheme is `staff`.
+- `audio/mpeg` and `audio/mp4` join the staff upload whitelist. Both are non-executable.
+  `UploadType.kind` is decoupled from `BlogMediaKind` so the whitelist no longer speaks the blog's
+  vocabulary.
+- **Security note kept, not solved:** `/uploads/*` is served without authentication (`SECURITY.md`
+  §4), so a `staff` attachment uploaded to local storage is reachable by anyone holding its UUID URL.
+  `audience` governs what the API *returns*; it is not access control on the file itself. That lands
+  with signed URLs on R2. Production is `STORAGE_DRIVER=none` meanwhile, so attachments there are
+  pasted URLs.
+
+### `D-30` — `B-3`: the staff task status is derived from the window; no per-row counts (reading a)
+
+- `open` = `now ≤ dueAt`; `marking` = past due with any ungraded submission; `marked` = all graded.
+- No per-row submission counts in unit 6. They are unit 7's queue (`MARK-3`).
+- **Edges nobody ruled on are recorded, not invented** — see `docs/phases/unit-6/EXECUTION_NOTES.md`
+  §Blockers. A task in an unruled state carries `status: null` and matches no `status` filter.
+
+### `D-31` — `B-4`: a `submission_modes TEXT[]` column; multi-file is unit 7's (reading B)
+
+- `assessments.submission_modes` stores any of `pdf_upload | doc_link | photo_upload`. Empty is "not
+  stated", which is every row that predates it.
+- The multi-file (≤ 5 photos) submission model is deferred to unit 7.
+- `allowResubmission = true` keeps today's cut-off: the window end (`availableTo`), not `dueAt`.
+
+### `D-32` — `B-5`: only the teacher and admins name a marker (as recommended)
+
+- Only the teacher and an admin may set or change `markerId`. An assistant sending a non-null
+  `markerId` gets **403** — the task is on their screen, so the anti-enumeration 404 does not apply.
+- A named marker must be the teacher, an admin, or an **active** assistant who reaches **every**
+  targeted group. Anyone else is a **400**.
+- Later drift (targets or the assistant's scope change) is **displayed**, never silently cleared.
+- `markerId: null` means "whoever opens it first". The claim-on-open is unit 7's.
+
+### `D-33` — `B-6`: unit 6 closes the targeting-write half of `AUTH-6` (reading A+)
+
+- An assistant may not **add** an unheld group on `create` or `setTargets`. Each id goes through
+  `StaffScopeService.mayReachGroup`, and the refusal is a **404 whose message is byte-identical** to
+  `Group <id> is not enrolled in this course` for the same input.
+- `setTargets` by a scoped caller on a task whose current audience includes a group they cannot
+  reach is a **403**: it refuses rather than silently dropping targets the caller cannot see, and the
+  task is on their screen.
+- `GET /staff/courses/:id/groups` narrows to the groups the caller holds, so the authoring picker is
+  honest.
+- **Narrows `AUTH-6`** (`IMPLEMENTATION_PLAN.md`) to its remainder: the roster,
+  `GET /staff/courses/:id/submissions`, the analytics pair, the per-course assessment list, and
+  `PATCH`/`DELETE` of a task shared with an unheld group.
+
+**Affected.** Migration `018`; `assessment-authoring.service.ts`, `assessments.service.ts`,
+`groups.service.ts`, `upload-types.ts`; `API_SPEC.yaml`, `DATABASE_PLAN.md`, `DOMAIN_MODEL.md`,
+`PRODUCT_SPEC.md`, `AUTHORIZATION_MODEL.md`, `IMPLEMENTATION_PLAN.md`. Slice detail:
+`docs/phases/unit-6/EXECUTION_NOTES.md`.

@@ -7,6 +7,7 @@ import type {
   AssessmentUpdate,
   NewAssessment,
   NewAssessmentTarget,
+  StaffTaskFilter,
   StoredAssessment,
   StoredSubmission,
   SubmissionRevision,
@@ -16,7 +17,46 @@ import type {
 const PDF_ONLY = ['application/pdf'];
 const TEN_MB = 10 * 1024 * 1024;
 
-const STUB_ASSESSMENTS: StoredAssessment[] = [
+/**
+ * The unit-6 columns at their migration defaults (018), so every seeded task
+ * means exactly what it meant before them: published, resubmission until
+ * window end, no stated modes, no marker, no draft, no attachments.
+ */
+const TASK_SETTING_DEFAULTS = {
+  visibility: 'published',
+  markerId: null,
+  allowResubmission: true,
+  submissionModes: [],
+  draftId: null,
+  attachments: [],
+} as const satisfies Pick<
+  StoredAssessment,
+  | 'visibility'
+  | 'markerId'
+  | 'allowResubmission'
+  | 'submissionModes'
+  | 'draftId'
+  | 'attachments'
+>;
+
+type SeedAssessment = Omit<StoredAssessment, keyof typeof TASK_SETTING_DEFAULTS>;
+
+/**
+ * A copy that shares no array with its source. `attachments` holds objects, so
+ * a spread alone would alias them - and an in-memory read feeding an audit
+ * `before` must never alias its `after` (CLAUDE.md §9; shipped twice).
+ */
+function copyAssessment<T extends StoredAssessment>(a: T): T {
+  return {
+    ...a,
+    topics: [...a.topics],
+    allowedFileTypes: [...a.allowedFileTypes],
+    submissionModes: [...a.submissionModes],
+    attachments: a.attachments.map((x) => ({ ...x })),
+  };
+}
+
+const SEED_ASSESSMENTS: SeedAssessment[] = [
   {
     id: 'assess-1',
     courseId: 'course-1',
@@ -173,6 +213,20 @@ const STUB_ASSESSMENTS: StoredAssessment[] = [
   },
 ];
 
+const STUB_ASSESSMENTS: StoredAssessment[] = SEED_ASSESSMENTS.map((a) => ({
+  ...a,
+  ...TASK_SETTING_DEFAULTS,
+  submissionModes: [],
+  attachments: [],
+}));
+
+/** The fields of a partial update that were actually supplied. */
+function definedOnly<T extends object>(update: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(update).filter(([, value]) => value !== undefined),
+  ) as Partial<T>;
+}
+
 @Injectable()
 export class InMemoryAssessmentRepository implements AssessmentRepository {
   private submissions: StoredSubmission[] = [
@@ -274,7 +328,7 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
    * failure would have surfaced somewhere else entirely. Same reasoning as
    * `InMemoryEnrollmentRepository`.
    */
-  private assessments: StoredAssessment[] = STUB_ASSESSMENTS.map((a) => ({ ...a }));
+  private assessments: StoredAssessment[] = STUB_ASSESSMENTS.map(copyAssessment);
 
   /**
    * Who each task was set for (CLAUDE.md §5.16). Seeded so the eight stub
@@ -302,7 +356,7 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       target.availableTo !== null ||
       target.dueAt !== null;
     return {
-      ...assessment,
+      ...copyAssessment(assessment),
       availableFrom: target.availableFrom ?? assessment.availableFrom,
       availableTo: target.availableTo ?? assessment.availableTo,
       dueAt: target.dueAt ?? assessment.dueAt,
@@ -319,7 +373,7 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       .filter((a) => a.courseId === courseId)
       .filter((a) => !filter?.type || a.type === filter.type)
       .sort((a, b) => new Date(b.dueAt).getTime() - new Date(a.dueAt).getTime())
-      .map((a) => ({ ...a }));
+      .map(copyAssessment);
   }
 
   async findByCourseForGroups(
@@ -374,17 +428,17 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
     // A copy: this feeds the `before` snapshot of an audited edit, and handing
     // out the stored object would make before and after the same object - the
     // defect CLAUDE.md §7.1 records finding twice.
-    return found ? { ...found } : null;
+    return found ? copyAssessment(found) : null;
   }
 
   async create(input: NewAssessment): Promise<StoredAssessment> {
-    const stored: StoredAssessment = {
+    const stored: StoredAssessment = copyAssessment({
       ...input,
       id: randomUUID(),
       createdAt: new Date().toISOString(),
-    };
+    });
     this.assessments.push(stored);
-    return { ...stored };
+    return copyAssessment(stored);
   }
 
   async update(
@@ -395,12 +449,15 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
     if (!found) {
       return null;
     }
+    // Copied in, so the caller's arrays never become the stored ones.
+    const incoming = copyAssessment({ ...found, ...definedOnly(update) });
     for (const [key, value] of Object.entries(update)) {
       if (value !== undefined) {
-        (found as unknown as Record<string, unknown>)[key] = value;
+        (found as unknown as Record<string, unknown>)[key] =
+          (incoming as unknown as Record<string, unknown>)[key];
       }
     }
-    return { ...found };
+    return copyAssessment(found);
   }
 
   async remove(assessmentId: string): Promise<boolean> {
@@ -439,6 +496,46 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
     return this.targets
       .filter((x) => x.assessmentId === assessmentId)
       .map((x) => ({ ...x }));
+  }
+
+  async findForStaff(filter: StaffTaskFilter): Promise<StoredAssessment[]> {
+    if (filter.groupIds !== null && filter.groupIds.length === 0) {
+      return [];
+    }
+    const reach = filter.groupIds === null ? null : new Set(filter.groupIds);
+    const term = filter.search?.toLocaleLowerCase();
+    const targetedAt = (assessmentId: string, test: (groupId: string) => boolean) =>
+      this.targets.some((t) => t.assessmentId === assessmentId && test(t.groupId));
+    return this.assessments
+      .filter((a) => reach === null || targetedAt(a.id, (g) => reach.has(g)))
+      .filter((a) => !filter.courseId || a.courseId === filter.courseId)
+      .filter((a) => !filter.groupId || targetedAt(a.id, (g) => g === filter.groupId))
+      // A literal substring, so `%` is a percent sign here exactly as the
+      // escaped ILIKE makes it one in Postgres.
+      .filter((a) => !term || a.title.toLocaleLowerCase().includes(term))
+      .sort(
+        (a, b) =>
+          new Date(b.dueAt).getTime() - new Date(a.dueAt).getTime() ||
+          (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+      )
+      .map(copyAssessment);
+  }
+
+  async findTargetsForAssessments(
+    assessmentIds: readonly string[],
+    groupIds: readonly string[] | null,
+  ): Promise<AssessmentTarget[]> {
+    const wanted = new Set(assessmentIds);
+    const reach = groupIds === null ? null : new Set(groupIds);
+    return this.targets
+      .filter((t) => wanted.has(t.assessmentId))
+      .filter((t) => reach === null || reach.has(t.groupId))
+      .sort(
+        (a, b) =>
+          a.assessmentId.localeCompare(b.assessmentId) ||
+          a.groupId.localeCompare(b.groupId),
+      )
+      .map((t) => ({ ...t }));
   }
 
   async findSubmission(

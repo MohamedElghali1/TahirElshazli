@@ -8,14 +8,18 @@ import type {
   AssessmentTarget,
   AssessmentType,
   AssessmentUpdate,
+  Attachment,
   NewAssessment,
   NewAssessmentTarget,
+  StaffTaskFilter,
   StoredAssessment,
+  SubmissionMode,
   StoredSubmission,
   SubmissionRevision,
   TargetedAssessment,
 } from '../interfaces/assessment-repository.interface.js';
 import type { WorkType } from '../interfaces/work-repository.interface.js';
+import type { TaskVisibility } from '../interfaces/assessment-repository.interface.js';
 
 interface AssessmentRow {
   id: string;
@@ -34,6 +38,13 @@ interface AssessmentRow {
   max_file_size_bytes: string;
   work_type: WorkType;
   external_url: string | null;
+  visibility: TaskVisibility;
+  marker_id: string | null;
+  allow_resubmission: boolean;
+  submission_modes: SubmissionMode[];
+  draft_id: string | null;
+  /** JSONB arrives parsed; `pg` hands back the array, not a string. */
+  attachments: Attachment[];
   created_at: Date;
 }
 
@@ -83,8 +94,33 @@ interface RevisionRow {
 const ASSESSMENT_COLUMNS = `
   id, course_id, lesson_id, title, description, instructions, type, topics,
   available_from, available_to, due_at, max_score, allowed_file_types,
-  max_file_size_bytes, work_type, external_url, created_at
+  max_file_size_bytes, work_type, external_url, visibility, marker_id,
+  allow_resubmission, submission_modes, draft_id, attachments, created_at
 `;
+
+/**
+ * The same columns, table-qualified, **minus the window**. The student reads
+ * below select the window through COALESCE against the target, so they cannot
+ * use `ASSESSMENT_COLUMNS`; they used to spell out their own lists instead, and
+ * a column added only to `ASSESSMENT_COLUMNS` was then silently `undefined` on
+ * every student read (unit 6 plan, Risk 2). One constant for both removes the
+ * second place to forget.
+ */
+const TARGETED_NON_WINDOW_COLUMNS = `
+  a.id, a.course_id, a.lesson_id, a.title, a.description, a.instructions,
+  a.type, a.topics, a.max_score, a.allowed_file_types, a.max_file_size_bytes,
+  a.work_type, a.external_url, a.visibility, a.marker_id, a.allow_resubmission,
+  a.submission_modes, a.draft_id, a.attachments, a.created_at
+`;
+
+/**
+ * `ILIKE` treats `%` and `_` as wildcards and `\\` as the escape. A title search
+ * for "100%" must match a literal percent sign, so the three are escaped here
+ * and the pattern travels as a parameter (CLAUDE.md §8: no string-built SQL).
+ */
+function likeContains(term: string): string {
+  return `%${term.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+}
 
 const SUBMISSION_COLUMNS = `
   id, assessment_id, student_id, file_url, answer_text, submitted_at,
@@ -109,6 +145,12 @@ function toAssessment(row: AssessmentRow): StoredAssessment {
     maxFileSizeBytes: num(row.max_file_size_bytes),
     workType: row.work_type,
     externalUrl: row.external_url,
+    visibility: row.visibility,
+    markerId: row.marker_id,
+    allowResubmission: row.allow_resubmission,
+    submissionModes: row.submission_modes,
+    draftId: row.draft_id,
+    attachments: row.attachments,
     createdAt: iso(row.created_at),
   };
 }
@@ -211,15 +253,10 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
     const rows = await this.db.query<TargetedAssessmentRow>(
       `SELECT * FROM (
          SELECT DISTINCT ON (a.id)
-                a.id, a.course_id, a.lesson_id, a.title, a.description,
-                a.instructions, a.type, a.topics,
+                ${TARGETED_NON_WINDOW_COLUMNS},
                 COALESCE(t.available_from, a.available_from) AS available_from,
                 COALESCE(t.available_to,   a.available_to)   AS available_to,
                 COALESCE(t.due_at,         a.due_at)         AS due_at,
-                a.max_score, a.allowed_file_types, a.max_file_size_bytes,
-              a.work_type, a.external_url,
-                a.work_type, a.external_url,
-                a.created_at,
                 t.group_id AS target_group_id,
                 (t.available_from IS NOT NULL
                   OR t.available_to IS NOT NULL
@@ -245,14 +282,10 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
       return null;
     }
     const row = await this.db.queryOne<TargetedAssessmentRow>(
-      `SELECT a.id, a.course_id, a.lesson_id, a.title, a.description,
-              a.instructions, a.type, a.topics,
+      `SELECT ${TARGETED_NON_WINDOW_COLUMNS},
               COALESCE(t.available_from, a.available_from) AS available_from,
               COALESCE(t.available_to,   a.available_to)   AS available_to,
               COALESCE(t.due_at,         a.due_at)         AS due_at,
-              a.max_score, a.allowed_file_types, a.max_file_size_bytes,
-              a.work_type, a.external_url,
-              a.created_at,
               t.group_id AS target_group_id,
               (t.available_from IS NOT NULL
                 OR t.available_to IS NOT NULL
@@ -280,9 +313,11 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
       `INSERT INTO assessments
          (id, course_id, lesson_id, title, description, instructions, type,
           topics, available_from, available_to, due_at, max_score,
-          allowed_file_types, max_file_size_bytes, work_type, external_url)
+          allowed_file_types, max_file_size_bytes, work_type, external_url,
+          visibility, marker_id, allow_resubmission, submission_modes,
+          draft_id, attachments)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-               $15, $16)
+               $15, $16, $17, $18, $19, $20, $21, $22::jsonb)
        RETURNING ${ASSESSMENT_COLUMNS}`,
       [
         randomUUID(),
@@ -301,6 +336,14 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
         input.maxFileSizeBytes,
         input.workType,
         input.externalUrl,
+        input.visibility,
+        input.markerId,
+        input.allowResubmission,
+        input.submissionModes,
+        input.draftId,
+        // Serialised explicitly: `pg` would send a JS array as a Postgres
+        // array literal, which is not JSON.
+        JSON.stringify(input.attachments),
       ],
     );
     return toAssessment(row as AssessmentRow);
@@ -340,7 +383,17 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
          -- takes the same sentinel treatment as lesson_id rather than COALESCE.
          external_url        = CASE WHEN $14::text IS NULL THEN external_url
                                     WHEN $14 = 'null' THEN NULL
-                                    ELSE $14 END
+                                    ELSE $14 END,
+         visibility          = COALESCE($15, visibility),
+         -- Nullable and meaningful to clear ("whoever opens it first"), so the
+         -- same sentinel as lesson_id.
+         marker_id           = CASE WHEN $16::text IS NULL THEN marker_id
+                                    WHEN $16 = 'null' THEN NULL
+                                    ELSE $16 END,
+         allow_resubmission  = COALESCE($17, allow_resubmission),
+         submission_modes    = COALESCE($18, submission_modes),
+         -- draft_id is absent on purpose: provenance is set once, at creation.
+         attachments         = COALESCE($19::jsonb, attachments)
        WHERE id = $1
        RETURNING ${ASSESSMENT_COLUMNS}`,
       [
@@ -362,6 +415,13 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
         update.externalUrl === undefined
           ? null
           : (update.externalUrl ?? 'null'),
+        update.visibility ?? null,
+        update.markerId === undefined ? null : (update.markerId ?? 'null'),
+        update.allowResubmission ?? null,
+        update.submissionModes ?? null,
+        update.attachments === undefined
+          ? null
+          : JSON.stringify(update.attachments),
       ],
     );
     return row ? toAssessment(row) : null;
@@ -419,6 +479,59 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
         WHERE assessment_id = $1
         ORDER BY group_id`,
       [assessmentId],
+    );
+    return rows.map(toTarget);
+  }
+
+  /**
+   * The staff task list (`TASK-6`). The reach restriction is an `EXISTS` over
+   * the targets **in the query**, never a filter applied after a wider read -
+   * `StaffScopeService.scopeFor`'s own rule.
+   */
+  async findForStaff(filter: StaffTaskFilter): Promise<StoredAssessment[]> {
+    if (filter.groupIds !== null && filter.groupIds.length === 0) {
+      // No reach is no rows, without a round trip.
+      return [];
+    }
+    const rows = await this.db.query<AssessmentRow>(
+      `SELECT ${ASSESSMENT_COLUMNS}
+         FROM assessments a
+        WHERE ($1::text[] IS NULL OR EXISTS (
+                SELECT 1 FROM assessment_targets t
+                 WHERE t.assessment_id = a.id AND t.group_id = ANY($1::text[])))
+          AND ($2::text IS NULL OR a.course_id = $2)
+          AND ($3::text IS NULL OR EXISTS (
+                SELECT 1 FROM assessment_targets t
+                 WHERE t.assessment_id = a.id AND t.group_id = $3))
+          AND ($4::text IS NULL OR a.title ILIKE $4 ESCAPE '\\')
+        ORDER BY a.due_at DESC, a.id`,
+      [
+        filter.groupIds === null ? null : [...filter.groupIds],
+        filter.courseId ?? null,
+        filter.groupId ?? null,
+        filter.search ? likeContains(filter.search) : null,
+      ],
+    );
+    return rows.map(toAssessment);
+  }
+
+  async findTargetsForAssessments(
+    assessmentIds: readonly string[],
+    groupIds: readonly string[] | null,
+  ): Promise<AssessmentTarget[]> {
+    if (
+      assessmentIds.length === 0 ||
+      (groupIds !== null && groupIds.length === 0)
+    ) {
+      return [];
+    }
+    const rows = await this.db.query<AssessmentTargetRow>(
+      `SELECT id, assessment_id, group_id, available_from, available_to, due_at
+         FROM assessment_targets
+        WHERE assessment_id = ANY($1::text[])
+          AND ($2::text[] IS NULL OR group_id = ANY($2::text[]))
+        ORDER BY assessment_id, group_id`,
+      [[...assessmentIds], groupIds === null ? null : [...groupIds]],
     );
     return rows.map(toTarget);
   }
