@@ -76,6 +76,17 @@ const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
  * `AssistantWriteDto`'s own comment. An admin who mistyped an invitation's
  * email cancels it and re-invites.
  */
+/**
+ * The scope a write stores. An admin is unscoped by role, so whatever `scope`
+ * the body carried for one (the invite panel hides the Reach picker for an
+ * admin but still sends its last value) is stored as `all_groups` - otherwise
+ * a pending admin invitation listed as reaching "0 groups" (unit-5 closure
+ * re-check, R-1). Validation still runs on the body as sent.
+ */
+function scopeFor(input: AssistantWriteDto): AssistantScope {
+  return input.role === Role.Admin ? 'all_groups' : input.scope;
+}
+
 @Injectable()
 export class AdminAssistantsService {
   constructor(
@@ -118,7 +129,7 @@ export class AdminAssistantsService {
         name: input.name,
         email: input.email,
         role: input.role,
-        scope: input.scope,
+        scope: scopeFor(input),
         groupIds,
         token,
         expiresAt,
@@ -147,7 +158,7 @@ export class AdminAssistantsService {
     const groupIds = await this.validateWrite(input);
     const user = await this.userRepo.findById(id);
     if (user && (user.role === Role.Assistant || user.role === Role.Admin)) {
-      return this.updateAccount(user.id, input.scope, groupIds, actor);
+      return this.updateAccount(user.id, scopeFor(input), groupIds, actor);
     }
     return this.updateInvitation(id, input, groupIds, actor);
   }
@@ -248,7 +259,7 @@ export class AdminAssistantsService {
     return this.db.runInTransaction(async () => {
       const updated = await this.invitationRepo.updateDetails(id, {
         role: input.role,
-        scope: input.scope,
+        scope: scopeFor(input),
         groupIds,
       });
       await this.audit.record({

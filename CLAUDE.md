@@ -152,7 +152,7 @@ Backend TypeScript is `strict: true`, `module: nodenext`, `target: ES2023`, with
 
 ```
 npm run dev                  # both services, no database needed
-npm test                     # backend unit — 574 tests, 36 files
+npm test                     # backend unit — 575 tests, 36 files
 npm run test:e2e             # backend e2e
 npm run test:integration     # backend integration; SKIPS ITSELF without TEST_DATABASE_URL
 npm run lint                 # frontend eslint + backend oxlint
@@ -230,7 +230,7 @@ destroyed live code (`docs/phases/unit-4/REVIEW_4D.md`). Do not read `SHELL-4`'s
 ("delete `components/app/*`, `components/site/*`") as still describing the directory's contents —
 verify against the actual consumer graph before treating either directory as legacy again.
 
-The backend **is** green and must stay green: **574 unit / 36 files, 244 e2e, 125 integration**
+The backend **is** green and must stay green: **575 unit / 36 files, 244 e2e, 125 integration**
 (against real PostgreSQL, 001–017 from an empty schema) as of the unit-5 closure, 2026-09-22
 (`docs/phases/unit-5/FOLLOW_UP_CLOSURE.md`).
 

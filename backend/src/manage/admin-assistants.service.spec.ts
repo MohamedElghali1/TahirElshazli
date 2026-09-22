@@ -92,6 +92,34 @@ describe('AdminAssistantsService', () => {
         groupIds: [],
       });
     });
+
+    it('stores all_groups for an admin whatever scope the body carried', async () => {
+      // The invite panel hides Reach for an admin but still sends its last
+      // value - a pending admin invitation must not list as "0 groups".
+      const invited = await service.invite(
+        { name: 'New Admin', email: 'newadmin@example.com', role: Role.Admin, scope: 'assigned_groups' },
+        TEACHER,
+      );
+      expect(invited).toMatchObject({ status: 'invited', role: Role.Admin, scope: 'all_groups' });
+      expect((await service.list()).find((a) => a.id === invited.id)).toMatchObject({
+        scope: 'all_groups',
+        groupIds: [],
+      });
+
+      // The same rule on the edit path, for the invitation and for a real account.
+      const edited = await service.update(
+        invited.id,
+        { name: 'New Admin', email: 'newadmin@example.com', role: Role.Admin, scope: 'assigned_groups' },
+        TEACHER,
+      );
+      expect(edited.scope).toBe('all_groups');
+      await service.update(
+        'admin-1',
+        { name: 'Mona Saleh', email: 'admin@example.com', role: Role.Admin, scope: 'assigned_groups' },
+        TEACHER,
+      );
+      expect(await scopeRepo.findScope('admin-1')).toBe('all_groups');
+    });
   });
 
   describe('invite', () => {

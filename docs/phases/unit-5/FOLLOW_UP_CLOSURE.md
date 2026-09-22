@@ -127,8 +127,8 @@ renders inside that shell, and none of those screens can pass a visual check whi
 
 - "0 console errors" covered the console screens and the auth pages this pass drove. The
   reviewer's wider run also loaded the marketing pages, which logged three 403s and one failed
-  image load. All four were external `picsum` images blocked by this sandbox's egress proxy, not
-  application errors.
+  image load: three `picsum` images and one `cdn.example.com` fixture URL, all external and blocked by
+  this sandbox's egress proxy, not application errors.
 - When the reviewer began, the dev stack was **not fully stopped**: an API process from the first
   browser run was still holding :3001. The reviewer killed it.
 
@@ -148,6 +148,16 @@ renders inside that shell, and none of those screens can pass a visual check whi
 - **C-3.** The phase-end documents are updated in the same change.
 - After: `npm test` **574 / 36** (+1), `npm run test:e2e` **244**, integration **125 / 125**,
   backend `tsc` clean, lint unchanged.
+
+## Second remediation (after the re-check, finding R-1)
+
+The first C-1 fix covered active accounts only. A **pending** admin invitation stored whatever
+`scope` the body sent, because the invite panel hides Reach for an admin but still submits its last
+value, so a pending admin could still list as "0 groups". `invite`, `update` (account) and `update`
+(invitation) now store `all_groups` for an admin through one helper, `scopeFor`. A new spec covers a
+pending admin sent with `assigned_groups`, an edit of that invitation, and an edit of an existing admin
+account. It fails without the change and passes with it. After this pass: `npm test` **575 / 36**, e2e
+**244**, integration **125 / 125**, backend and frontend `tsc` **0**, lint unchanged.
 
 ## Security areas considered
 

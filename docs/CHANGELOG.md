@@ -1288,6 +1288,14 @@ for every account, which is correct and fail-closed for an assistant. Admins are
 (`STAFF_ADMIN` never reaches `StaffScopeService`) and have no row, so the list told the teacher
 their admin reached "0 groups". Unit-5 closure review, finding C-1.
 
-**Chosen.** `scope: 'all_groups'` for `role = admin`; an unconfigured assistant is unchanged. It is
-a response correction, with no authorization change. `API_SPEC.yaml`'s `Assistant.scope` states both
-cases, and one spec asserts both, so the two absent rows cannot read alike again.
+**Chosen.** `scope: 'all_groups'` for `role = admin`, on both halves of the merged list:
+- **Active admin accounts** have no scope row; `fromUser` reads them as `all_groups`.
+- **Pending admin invitations** carry whatever `scope` the body sent. The invite panel hides Reach for
+  an admin but still sends its last value, so a pending admin could store `assigned_groups` and list as
+  "0 groups" (re-check finding R-1). `invite` and `update` now store `all_groups` for an admin,
+  whatever the body sent.
+
+An unconfigured assistant is unchanged: it still reads as reaching nothing. This is a response and
+storage correction with no authorization change, because `StaffScopeService` never reads an admin's
+scope. `API_SPEC.yaml`'s `Assistant.scope` states the rule, and specs cover the active-admin,
+pending-admin, edit and unconfigured-assistant cases.
