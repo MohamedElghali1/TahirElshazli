@@ -342,3 +342,102 @@ same defect. It is a one-line fix plus a spec. Everything else is ready.
 When those hold, and `PHASE_ROADMAP.md` and `project_log.md` are written from the final verdict,
 nothing else stands between unit 5 and `COMPLETE`. `F5-1`, `F5-2` and `F5-4` are correctly
 recorded as non-blocking unit-4 debt or design questions.
+
+---
+
+## Re-check 2 — 2026-09-22, after the R-1 remediation
+
+**FINAL VERDICT: REJECTED**
+
+**Unit 5 may not be marked `COMPLETE`.** The R-1 fix closes the pending-admin-invitation path. It
+also introduces a new defect on the assistant-account edit path: a request can widen an assistant's
+scope to every group. This is an authorization-state finding, so this document's rubric requires
+`REJECTED`, even though the fix is a few lines.
+
+### Scope
+
+- **Commit reviewed:** `456b374` (`fix(people): store all_groups for an admin on invite and edit`).
+  Its `admin-assistants.service.ts`, spec, `CHANGELOG.md`, `IMPLEMENTATION_PLAN.md`, `CLAUDE.md` and
+  `FOLLOW_UP_CLOSURE.md` changes are identical to the uncommitted diff the coordinator described.
+- **Suites I re-ran:**
+
+| Suite | Result |
+|---|---|
+| `npm test` | **575 / 36** |
+| `npm run test:e2e` | **244** |
+| `TEST_DATABASE_URL=…/lms_test npm run test:integration` | **125 / 125** |
+| backend `tsc` | 0 errors |
+| frontend `tsc` | 0 errors |
+| lint | the one pre-existing warning |
+
+### R-1: closed
+
+`invite` and `updateInvitation` store `all_groups` for an admin. The new spec proves:
+
+- a pending admin invitation sent with `assigned_groups` lists as `all_groups`;
+- editing that invitation keeps it at `all_groups`;
+- editing `admin-1`'s account writes an `all_groups` scope row.
+
+### New finding R-2: an assistant account can be widened to every group
+
+- **Severity:** medium. **Confidence:** confirmed by execution. **Introduced by:** `456b374`.
+- **Where:** `backend/src/manage/admin-assistants.service.ts`, in `update` →
+  `this.updateAccount(user.id, scopeFor(input), groupIds, actor)`, with
+  `scopeFor(input) = input.role === Role.Admin ? 'all_groups' : input.scope`.
+- **Cause:** `scopeFor` keys on the request body's `role`, not on the account's real role.
+  `updateAccount` never changes an account's role; the body's `role` is otherwise ignored for
+  accounts. `validateWrite` accepts `role: admin` with `scope: assigned_groups` and no groups.
+- **Scenario:** a teacher or admin sends
+  `PATCH /admin/assistants/assistant-1 {name, email, role: "admin", scope: "assigned_groups"}`
+  against an existing **assistant** account. `assistant-1` starts at `assigned_groups` holding
+  `group-1`.
+- **Observed:** I ran a throwaway spec in the scratchpad, outside the repository, using the real
+  service and the in-memory repositories. The result was:
+
+  ```
+  {"before":"assigned_groups","storedAfter":"all_groups","respScope":"all_groups","respGroups":[],"role":"assistant"}
+  ```
+
+  The account is still an assistant. It now reaches **every group**, while the request's `scope` asked
+  for assigned groups.
+- **Before this change,** the same body stored `assigned_groups` with no groups. That was also
+  inconsistent, but it failed closed. It now fails open.
+- **Why it is not a privilege escalation:** the caller must already be a teacher or admin, and those
+  roles may grant `all_groups` legitimately. The `assistant.scope_changed` audit entry records the
+  widened scope, so the change is attributable.
+- **Why it still matters:**
+  - An assistant's reach is authorization state. A write that widens it contrary to the request's own
+    `scope` is exactly the silent fail-open `CLAUDE.md` §7 exists to prevent.
+  - The UI does not trigger it today, because `EditPanel` sends the account's real `role`. But any
+    other client, or a future UI that allows a role change, would.
+  - The CHANGELOG entry's claim of "no authorization change" is not true of this path.
+
+### Remediation
+
+1. In `update`'s account branch, derive the stored scope from the **account's** role:
+   `user.role === Role.Admin ? 'all_groups' : input.scope`. Alternatively, refuse a body whose
+   `role` differs from the account's with a 400, since role changes on accounts are not supported.
+   The body's `role` must never decide an existing account's scope.
+2. Add a spec that PATCHes an assistant account with a body of `role: admin`,
+   `scope: assigned_groups`, and asserts the stored scope is **not** `all_groups`: either unchanged, or
+   the request is refused.
+3. Correct the CHANGELOG admin-scope entry if its "no authorization change" wording no longer holds
+   after the fix, and state which of the two behaviours in step 1 was chosen.
+
+### Would all nine §2 conditions hold after that?
+
+Yes, once all of the following are true:
+
+- R-2 is fixed and its spec passes;
+- a re-check returns `APPROVED`;
+- `PHASE_ROADMAP.md` and `project_log.md` are written from that verdict.
+
+Every other condition already holds:
+
+- **Conditions 1, 2, 4, 5 and 9:** hold. Integration runs on real Postgres 16, with 017 from empty.
+- **Conditions 6 and 7:** hold. The CHANGELOG, `IMPLEMENTATION_PLAN.md` and `CLAUDE.md` are current,
+  apart from the correction in remediation step 3.
+- **Condition 8:** holds once `PHASE_ROADMAP.md` is written.
+
+Nothing else I found stands in the way. `F5-1`, `F5-2` and `F5-4` remain correctly recorded as
+non-blocking.

@@ -159,6 +159,18 @@ pending admin sent with `assigned_groups`, an edit of that invitation, and an ed
 account. It fails without the change and passes with it. After this pass: `npm test` **575 / 36**, e2e
 **244**, integration **125 / 125**, backend and frontend `tsc` **0**, lint unchanged.
 
+## Third remediation (after re-check 2: `REJECTED`, finding R-2)
+
+The R-1 fix keyed an **account's** stored scope off the body's `role`. `update` never changes an
+account's role, so `PATCH` of a real assistant with `role: admin` widened it to `all_groups`: a
+fail-open write to authorization state, introduced by `456b374`. Now `scopeFor(role, scope)` takes
+the role that will be stored. For an account that is its own role; for an invitation, the body's
+role (which is what it stores). A mismatched body is not refused, since that would be new API
+behaviour. It stores `assigned_groups` and, as it did before any of this, clears the group list,
+which errs toward less access. A new spec asserts that a real assistant PATCHed with
+`role: admin, scope: assigned_groups` keeps `assigned_groups`. It fails without the fix. After:
+`npm test` **576 / 36**, e2e **244**, integration **125 / 125**, backend `tsc` 0, lint unchanged.
+
 ## Security areas considered
 
 Authentication (invite/accept flow run for real; replay and unknown token give identical 401s) ·

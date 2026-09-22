@@ -120,6 +120,19 @@ describe('AdminAssistantsService', () => {
       );
       expect(await scopeRepo.findScope('admin-1')).toBe('all_groups');
     });
+
+    it('never widens a real assistant because the body claims role admin', async () => {
+      // `update` does not change an account's role, so the stored scope must
+      // follow the account's role, not the body's (re-check 2, R-2).
+      expect(await scopeRepo.findScope('assistant-1')).toBe('assigned_groups');
+      const result = await service.update(
+        'assistant-1',
+        { name: 'Nour Hassan', email: 'assistant@example.com', role: Role.Admin, scope: 'assigned_groups' },
+        TEACHER,
+      );
+      expect(await scopeRepo.findScope('assistant-1')).toBe('assigned_groups');
+      expect(result).toMatchObject({ role: Role.Assistant, scope: 'assigned_groups' });
+    });
   });
 
   describe('invite', () => {

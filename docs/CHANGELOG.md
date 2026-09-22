@@ -1295,7 +1295,21 @@ their admin reached "0 groups". Unit-5 closure review, finding C-1.
   "0 groups" (re-check finding R-1). `invite` and `update` now store `all_groups` for an admin,
   whatever the body sent.
 
-An unconfigured assistant is unchanged: it still reads as reaching nothing. This is a response and
-storage correction with no authorization change, because `StaffScopeService` never reads an admin's
-scope. `API_SPEC.yaml`'s `Assistant.scope` states the rule, and specs cover the active-admin,
-pending-admin, edit and unconfigured-assistant cases.
+An unconfigured assistant is unchanged: it still reads as reaching nothing.
+
+**This path does touch authorization state, and its first version got that wrong** (re-check 2,
+R-2). The first fix keyed the stored scope off the **body's** `role`. `update` never changes an
+account's role, so `PATCH` of a real assistant with `role: admin, scope: assigned_groups` stored
+`all_groups`: the assistant was widened to every group and failed open. The caller had to be a
+teacher or admin, who could grant that anyway, and the widening was audited. It was still wrong.
+
+**Resolution:**
+- The helper takes the role that will actually be stored. An account uses its own role; an
+  invitation uses the body's role, which is what it stores.
+- A mismatched body is **not** refused with a 400. That would be new API behaviour nobody decided
+  on. The same body now stores `assigned_groups` and, as before this change, clears the assistant's
+  group list. That errs toward less access (fail-closed), and the audit entry records it.
+
+`StaffScopeService` never reads an admin's scope, so the admin half is a response correction only.
+`API_SPEC.yaml`'s `Assistant.scope` states the rule. Specs cover the active-admin, pending-admin,
+edit, unconfigured-assistant and mismatched-role cases.

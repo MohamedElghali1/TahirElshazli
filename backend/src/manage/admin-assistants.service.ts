@@ -77,14 +77,20 @@ const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
  * email cancels it and re-invites.
  */
 /**
- * The scope a write stores. An admin is unscoped by role, so whatever `scope`
- * the body carried for one (the invite panel hides the Reach picker for an
- * admin but still sends its last value) is stored as `all_groups` - otherwise
- * a pending admin invitation listed as reaching "0 groups" (unit-5 closure
- * re-check, R-1). Validation still runs on the body as sent.
+ * The scope a write stores, given the role the row will actually hold. An
+ * admin is unscoped by role, so whatever `scope` the body carried for one (the
+ * invite panel hides the Reach picker for an admin but still sends its last
+ * value) is stored as `all_groups` - otherwise a pending admin invitation
+ * listed as reaching "0 groups" (unit-5 closure re-check, R-1).
+ *
+ * **`role` must be the role being stored, never merely the body's.** An
+ * invitation stores the body's role, so the two agree there. An account's role
+ * is never changed by `update`, so it passes the account's own role: keyed off
+ * the body, `PATCH` an assistant with `role: admin` widened a real assistant
+ * to every group (re-check 2, R-2 - fail-open on authorization state).
  */
-function scopeFor(input: AssistantWriteDto): AssistantScope {
-  return input.role === Role.Admin ? 'all_groups' : input.scope;
+function scopeFor(role: Role, scope: AssistantScope): AssistantScope {
+  return role === Role.Admin ? 'all_groups' : scope;
 }
 
 @Injectable()
@@ -129,7 +135,7 @@ export class AdminAssistantsService {
         name: input.name,
         email: input.email,
         role: input.role,
-        scope: scopeFor(input),
+        scope: scopeFor(input.role, input.scope),
         groupIds,
         token,
         expiresAt,
@@ -158,7 +164,7 @@ export class AdminAssistantsService {
     const groupIds = await this.validateWrite(input);
     const user = await this.userRepo.findById(id);
     if (user && (user.role === Role.Assistant || user.role === Role.Admin)) {
-      return this.updateAccount(user.id, scopeFor(input), groupIds, actor);
+      return this.updateAccount(user.id, scopeFor(user.role, input.scope), groupIds, actor);
     }
     return this.updateInvitation(id, input, groupIds, actor);
   }
@@ -259,7 +265,7 @@ export class AdminAssistantsService {
     return this.db.runInTransaction(async () => {
       const updated = await this.invitationRepo.updateDetails(id, {
         role: input.role,
-        scope: scopeFor(input),
+        scope: scopeFor(input.role, input.scope),
         groupIds,
       });
       await this.audit.record({
