@@ -3710,3 +3710,44 @@ server-rendered-page checks were substituted, as before. Full detail across all 
 what's missing is entirely environmental - no Docker in this build environment for migration
 `017`'s real-schema run, and the still-unresolved browser tool failure. Both are tracked as open
 follow-ups rather than closing the unit on an unverified claim.
+
+## 2026-09-22 — Unit 5 closed: 017 on real Postgres, a real browser, and a review that earned its keep
+
+Unit 5 had been `APPROVED WITH FOLLOW-UP` for two environmental reasons: no Postgres run for
+migration `017`, and no working browser tool. This session had neither Docker nor the Chrome tool.
+It had a local PostgreSQL 16 and headless Chromium, and both follow-ups closed on those.
+
+**The integration run alone would have been hollow.** 001–017 applied cleanly and 112 tests passed,
+but none of them touched `assistant_invitations` or the 5b staff-edit query. Those were the only two
+`Postgres*` changes the unit made. The 13 tests added for them passed first time: 017 is the first
+migration whose first real run found nothing.
+
+**The browser earned its place.** Everything unit 5 built worked end to end:
+- a teacher invited `ليلى فهمي`;
+- she accepted in a fresh browser and signed in;
+- her scope row and both audit entries were in the database;
+- a spent token and a made-up token got byte-identical 401s.
+
+But the screenshots showed what no curl call could, and each was fixed:
+- **Every sidebar link painted indigo, and the header's primary button was an empty blue pill.**
+  The handoff's unlayered `a { color }` outranked every Tailwind utility.
+- **Both sidebars vanished on desktop under `dir="rtl"`.**
+- **Missing marks rendered `--`.**
+
+It also found something bigger, which is recorded rather than guessed at. No `text-[var(--fs-*)]`
+class in the codebase sets a font size: Tailwind compiles them to `color:`. Six of the tokens they
+name do not exist. Every marketing heading renders at body size (`F5-1`).
+
+**The independent reviewer took three rounds, and the third was necessary:**
+1. It found an admin listed as reaching "0 groups".
+2. My fix missed pending invitations.
+3. My fix for that keyed an account's stored scope off the *request body's* role, so a `PATCH`
+   claiming `role: admin` silently widened a real assistant to every group. The reviewer caught it
+   with a throwaway probe and returned `REJECTED`.
+
+The fix keys scope off the role actually stored. The CHANGELOG now says plainly that the path
+touches authorization state, instead of the "no authorization change" it had claimed. A response-shape
+bug fix turned into an authorization regression in one commit, and only the review loop noticed.
+
+**Unit 5 is `COMPLETE`** on the reviewer's `APPROVED`. Final counts: 576 unit, 244 e2e, 125
+integration, frontend `tsc` 0. Unit 6 (`TASK-7`) is next, in a new chat per CLAUDE.md §14.

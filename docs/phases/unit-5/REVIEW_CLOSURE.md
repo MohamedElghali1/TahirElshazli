@@ -441,3 +441,91 @@ Every other condition already holds:
 
 Nothing else I found stands in the way. `F5-1`, `F5-2` and `F5-4` remain correctly recorded as
 non-blocking.
+
+---
+
+## Re-check 3 — 2026-09-22, after the R-2 fix
+
+**FINAL VERDICT: APPROVED**
+
+**Unit 5 may be marked `COMPLETE`** once `PHASE_ROADMAP.md` and `project_log.md` are written from
+this verdict (see the conditions below).
+
+### Scope
+
+- **Commit reviewed:** HEAD `2b9df5d` (`fix(people): key an account's stored scope off its own role,
+  not the body's`).
+- **Files:** its changes to `admin-assistants.service.ts`, `admin-assistants.service.spec.ts`,
+  `CHANGELOG.md`, `IMPLEMENTATION_PLAN.md`, `CLAUDE.md` and `FOLLOW_UP_CLOSURE.md`.
+- **Suites I re-ran:**
+
+| Suite | Result |
+|---|---|
+| `npm test` | **576 / 36** |
+| `npm run test:e2e` | **244** |
+| `TEST_DATABASE_URL=…/lms_test npm run test:integration` | **125 / 125**, with `017` applied from empty again |
+| backend `tsc` | 0 errors |
+| frontend `tsc` | 0 errors |
+| lint | only the pre-existing `dashboard.controller.spec.ts:17` warning |
+
+### R-2: closed
+
+- **The fix.** `scopeFor(role, scope)` now takes the role that will be stored:
+  - `update`'s account branch passes `user.role` (`admin-assistants.service.ts:167`). An account's
+    role is never changed by `update`.
+  - `invite` (`:138`) and `updateInvitation` (`:268`) pass `input.role`. That is correct there,
+    because an invitation stores exactly the body's role (`:137`, `:267`).
+- **The spec.** `never widens a real assistant because the body claims role admin` replays my
+  scenario from Re-check 2: `assistant-1`, body `role: admin` and `scope: assigned_groups`. It asserts
+  the stored scope stays `assigned_groups` and the response role stays `assistant`. Against
+  `456b374`'s line, the stored scope would have been `all_groups`, which is exactly what my probe
+  printed, so this spec discriminates between the two versions.
+
+### Adversarial pass: where else can the body's `role` reach stored account state?
+
+| Path | Assessment |
+|---|---|
+| **`validateWrite` (`:292-298`)** | It still branches on `input.role` for the `groupIds` rules. On an account edit this is the only remaining influence of the body's role. |
+| • Body `admin` on an **assistant** account | `groupIds` is forced empty, so the assistant loses every group assignment. This fails closed and the `assistant.scope_changed` entry records it. The behaviour predates this work, and the new CHANGELOG entry discloses it. |
+| • Body `assistant` on an **admin** account | Group assignment rows may be written for the admin, while the stored scope is `all_groups`. This is harmless. `StaffScopeService.heldGroupIds` returns `unrestricted` for `all_groups` without reading assignments (`staff-scope.service.ts:139-141`), and the admin is never scoped anyway. The list shows "Every group". This is also pre-existing. |
+| **`acceptInvitation`** (`auth.service.ts`, ~`:247-253`) | It copies `invitation.role`, `invitation.scope` and `invitation.groupIds` into the new account. Because invitations are now normalised at write, a new admin gets an `all_groups` row. An admin invitation stored `assigned_groups` *before* this fix still yields an `assigned_groups` row. That row is harmless, because `fromUser` reports admins as `all_groups` and no authorization path reads an admin's scope. |
+| **Anywhere a stored account `role` is written from this service** | Nowhere. `updateAccount` writes only `assistant_scopes` and `assistant_group_assignments`. |
+
+**Result.** No path lets the body's role widen what an existing account may reach. The one remaining
+influence can only narrow an assistant's reach (fail-closed) or add inert rows to an admin. Neither
+is a finding.
+
+**One open decision, not ruled on here.** Should `PATCH /admin/assistants/{id}` refuse, with a 400,
+a body whose `role` differs from the account's, since changing an account's role is unsupported? The
+coordinator was right not to invent that API behaviour. The question that closes it:
+*"Should a mismatched role on an account edit be refused, or should role changes on accounts become
+supported?"* Recording it in `IMPLEMENTATION_PLAN.md`'s unit-5 follow-ups table is recommended. It
+does not block this unit.
+
+### Documentation
+
+- The rewritten CHANGELOG admin-scope entry is accurate. It says this path touches authorization
+  state, describes R-2 and names the choice made.
+- The `IMPLEMENTATION_PLAN.md` `F5-3` row matches the code.
+- `CLAUDE.md`'s counts (576 / 244 / 125) match my runs.
+
+### The nine conditions of `PHASE_ROADMAP.md` §2, for unit 5
+
+| # | Condition | Status |
+|---|---|---|
+| 1 | Planner plan approved | Holds (unit-5 `PHASE_PLAN.md`, slices 5a–5d). |
+| 2 | Executor completed the scope | Holds. All unit-5 tasks are built, and the two carried-forward follow-ups are closed. |
+| 3 | Reviewer `APPROVED` | **Holds as of this re-check.** |
+| 4 | Tests pass, including integration on real PostgreSQL | Holds: 576 unit, 244 e2e, 125 integration, with 001–017 applied from an empty schema. The caveat stays on the record: PostgreSQL 16 locally, while production is 15. `017` uses nothing 16-only. |
+| 5 | Security checks and refusal tests | Holds. The 5a–5d refusal tests were accepted in `REVIEW_5A`…`REVIEW_5D`. The closure's own authorization-state change (R-2) carries a refusal-direction spec. |
+| 6 | `API_SPEC.yaml`, `CHANGELOG.md`, `project_log.md`, `CLAUDE.md` | `API_SPEC.yaml`, `CHANGELOG.md` and `CLAUDE.md` hold. **`project_log.md` holds once written.** |
+| 7 | `IMPLEMENTATION_PLAN.md` statuses | Holds. Recording the open decision above is recommended but not required. |
+| 8 | `PHASE_ROADMAP.md` unit-5 status | **Holds once written.** |
+| 9 | Zero unresolved blockers in scope | Holds. `F5-1` (a token-mapping decision), `F5-2` (a design question) and `F5-4` (shell hover underline) are unit-4 debt or design questions, correctly recorded as non-blocking. |
+
+**Confirmed.** Once `PHASE_ROADMAP.md` and `project_log.md` are written from this verdict, all nine
+conditions hold and unit 5 is `COMPLETE`.
+
+**Note for the record.** The work sits on `claude/compassionate-einstein-p1o6i0`, not `redesign`,
+which the coordinator attributes to the session harness. This is recorded for the user and does not
+affect this verdict.

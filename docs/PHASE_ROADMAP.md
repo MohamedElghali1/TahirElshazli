@@ -380,7 +380,7 @@ slice, to close — see below) — **0 elsewhere**, `0` in `lib/`. `npx eslint .
 
 ---
 
-### Chat unit 5 — People and groups `[~]` **`APPROVED WITH FOLLOW-UP` — all scope built, two environment follow-ups open**
+### Chat unit 5 — People and groups `[x]` **`COMPLETE` 2026-09-22**
 
 **Scope** `PEOPLE-1` … `PEOPLE-6`, `GROUP-1` … `GROUP-4`, **plus `AUTH-4`** (assistant invitations,
 re-homed from unit 1 on 2026-09-19 — it needs `AUTH-2` for `scope`/`groupIds` *and* `MAIL-1` from
@@ -407,6 +407,33 @@ failure (reproduced on fresh tabs each time — reported as product feedback); c
 verification was substituted and is recorded in each slice's review. Both are environment
 limitations external to the code, not open questions about what was built. See
 `docs/phases/unit-5/REVIEW_5A.md` … `REVIEW_5D.md`.
+
+**Status 2026-09-22: `COMPLETE`.** Both follow-ups are closed (`docs/phases/unit-5/FOLLOW_UP_CLOSURE.md`).
+- **Migration `017`**, and 001–016 before it, ran against real PostgreSQL from an empty schema, with 13
+  integration tests added for the two unit-5 `Postgres*` changes that had none (125 total).
+- **Every 5a–5d screen was verified in a real browser.** That included an invite, accept and sign-in done
+  entirely through the UI.
+
+The browser pass found three shell/token defects and fixed them: the unlayered `a` colour, the
+RTL sidebar and the `--` for a missing mark.
+
+The independent reviewer's closure review (`REVIEW_CLOSURE.md`) took three rounds:
+1. `APPROVED WITH FOLLOW-UP` found C-1, an admin listed as reaching "0 groups".
+2. Re-check 1 found R-1, the same bug on a pending admin invitation.
+3. Re-check 2 returned **`REJECTED`** for R-2: the R-1 fix let a `PATCH` claiming `role: admin` widen a
+   real assistant to every group.
+
+Re-check 3 returned **`APPROVED`**, with all nine §2 conditions holding once this entry and
+`project_log.md` were written.
+
+**Caveats, stated rather than hidden:**
+- The database was PostgreSQL 16, not production's 15.
+- Node was 22, not 24.
+- The work sits on the session branch `claude/compassionate-einstein-p1o6i0`, not `redesign`.
+
+**Carried forward, non-blocking:** `F5-1`, the marketing/auth font sizes, which need a token-mapping
+decision. `F5-2` and `F5-4`, both unit-4 polish. `F5-6`, an open question about role changes on
+`PATCH`. All are in `IMPLEMENTATION_PLAN.md`.
 
 ---
 

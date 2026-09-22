@@ -262,6 +262,7 @@ way:
 | `F5-2` `[ ]` | The console's role chip renders "Teacher" in **amber**, which §11.1 reserves for a queue. A design question. | low |
 | `F5-3` `[x]` (C-1, R-1, R-2) | `GET /admin/assistants` reported an **admin** as `assigned_groups` with no groups ("0 groups"). Fixed for active accounts (`fromUser`) and, after the re-check's R-1, for pending invitations and edits too (`invite`/`update` store `all_groups` for an admin, whatever the body's `scope`). The re-check then caught that fix keying an *account's* scope off the body's role, which let a `PATCH` claiming `role: admin` widen a real assistant (R-2). Now keyed off the account's own role. Specs cover all five cases. | low |
 | `F5-4` `[ ]` (C-2) | The default `a:hover` underline still shows on sidebar items and the header link-button. The `@layer base` fix is what makes `hover:no-underline` work now. Unit-4 shell polish. | low |
+| `F5-6` `[ ]` → needs a ruling | **Open question from the closure review:** should `PATCH /admin/assistants/{id}` answer 400 when the body's `role` differs from the account's, or should changing an account's role become a supported operation? Today the account's role is never changed and a mismatched body fails closed. Not invented here. | decision |
 | `F5-5` `[x]` | Fixed in the closure: the unlayered `a` colour rule beat every utility; `md:translate-x-0` lost to `rtl:translate-x-full`, hiding both sidebars on desktop RTL; `formatPercent(null)` rendered `--` instead of an em-dash. | — |
 
 ### Phase 7 — Tasks
