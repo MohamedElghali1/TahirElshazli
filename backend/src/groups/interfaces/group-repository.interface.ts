@@ -1,17 +1,44 @@
-import type { LearningMode } from '../../enrollments/interfaces/enrollment-repository.interface.js';
 
 /**
- * A class of students, standing on its own.
+ * A class of students, studying **one** course.
  *
- * CLAUDE.md §5.16: **no `courseId`**. A group exists before any course is
- * attached to it and may be enrolled in more than one - the client's answer
- * was *"no, I mean group of students"* - so what a group studies lives in
- * `GroupCourse` and not as a column here.
+ * `courseId` is required, and that reverses what migration 006 and the earlier
+ * CLAUDE.md §5.16 argued for. A `group_courses` join table let a group study
+ * two courses and let that be undone; a column cannot be un-collapsed once the
+ * pairings are dropped. The client chose one course per group anyway
+ * (`PRODUCT_SPEC.md:139`, migration 013), and the trade is recorded in the
+ * migration rather than re-argued here.
+ *
+ * A group still does **not** imply enrollment. Putting a student in a group
+ * enrols nobody; `Enrollment` remains the access gate (`DOMAIN_MODEL.md:98`),
+ * which is what keeps the payment question out of the group surface entirely.
  */
 export interface Group {
   id: string;
   name: string;
   teacherId: string;
+
+  /** The one course this group studies. */
+  courseId: string;
+
+  /**
+   * **Display only. Never an authorization input.**
+   *
+   * This says who *runs* this group, for a roster header and the admin list.
+   * What an assistant may **reach** is decided by `assistant_group_assignments`
+   * + `assistant_scopes` (`AUTH-2`), through `StaffScopeService` and nowhere
+   * else. The rule is written here as well as on the column in migration 013
+   * because the two facts look interchangeable and are not: the moment a query
+   * reads this field to decide access there are two disagreeing answers to
+   * "may this person see this group", and the authorization one quietly stops
+   * being authoritative.
+   */
+  assistantId: string | null;
+
+  /** When the group meets, as free text - "Saturday 18:00". Not a schedule. */
+  meets: string | null;
+  room: string | null;
+
   createdAt: string;
 }
 
@@ -19,27 +46,19 @@ export interface Group {
 export type NewGroup = Omit<Group, 'id' | 'createdAt'>;
 
 /**
- * "This group is enrolled in this course" - the client's own verb.
+ * A partial update. Every field optional; `undefined` means "leave alone",
+ * and for the three nullable columns `null` means "clear it".
  *
- * It carries the **learning mode** (§5.2), which moved here from `Enrollment`
- * on 2026-09-10: a group is taught one way, and two students in the same room
- * cannot be in different modes. It sits on the pairing rather than on `Group`
- * because a group taking two courses could take one live and one recorded.
- *
- * It does **not** imply enrollment. Adding a group to a course enrolls nobody
- * (§5.16); `Enrollment` remains the access gate, which is what keeps the
- * payment question (§5.12) out of the group surface entirely.
+ * `teacherId` is absent deliberately - reassigning a group to another teacher
+ * is not a request anyone has made, and there is one teacher (§1).
  */
-export interface GroupCourse {
-  id: string;
-  groupId: string;
-  courseId: string;
-  learningMode: LearningMode;
-  enrolledAt: string;
-  enrolledBy: string;
+export interface GroupPatch {
+  name?: string;
+  courseId?: string;
+  assistantId?: string | null;
+  meets?: string | null;
+  room?: string | null;
 }
-
-export type NewGroupCourse = Omit<GroupCourse, 'id' | 'enrolledAt'>;
 
 /**
  * "This student is in this group", placed by staff.
@@ -76,21 +95,17 @@ export interface GroupRepository {
   findByIds(groupIds: readonly string[]): Promise<Group[]>;
   create(input: NewGroup): Promise<Group>;
   /**
-   * Renames, returning the group as it now is, or null when there is no such
-   * group. There is deliberately **no delete**: a group carries placement
-   * history, and §6's convention is soft-delete where history matters. Removing
-   * one is a decision that has not been asked for, and a rename covers the
-   * mistyped-name case that would otherwise motivate it.
+   * Partial update, returning the group as it now is, or null when there is no
+   * such group. Replaces `rename`, which is now the one-field case of this.
+   *
+   * There is deliberately **no delete**: a group carries placement history, and
+   * §6's convention is soft-delete where history matters. Removing one is a
+   * decision that has not been asked for.
    */
-  rename(groupId: string, name: string): Promise<Group | null>;
+  update(groupId: string, patch: GroupPatch): Promise<Group | null>;
 
-  /** Idempotent: adding a course a group already studies returns the existing row. */
-  addCourse(input: NewGroupCourse): Promise<GroupCourse>;
-  /** False when the pairing did not exist; callers turn that into a 404. */
-  removeCourse(groupId: string, courseId: string): Promise<boolean>;
-  findCourses(groupId: string): Promise<GroupCourse[]>;
   /** Every group studying this course - the course console's group tab. */
-  findGroupCoursesByCourse(courseId: string): Promise<GroupCourse[]>;
+  findByCourse(courseId: string): Promise<Group[]>;
 
   /**
    * Idempotent for the same reason `EnrollmentRepository.create` is: two clicks
@@ -102,22 +117,24 @@ export interface GroupRepository {
   findMembershipsForStudent(studentId: string): Promise<GroupMembership[]>;
 
   /**
-   * The join both §5.2 and §5.17 are built on: *the groups this student sits in
-   * that study this course.*
+   * The join §5.17 and the assessment window are built on: *the groups this
+   * student sits in that study this course.*
    *
-   * One query rather than "fetch the student's memberships, fetch each group's
-   * courses, intersect in JavaScript" - the composition is a join, and doing it
-   * in the service would put a filter on the client side of a decision that
-   * gates what a student may read.
+   * One query rather than "fetch the student's memberships, fetch each group,
+   * filter in JavaScript" - the composition is a join, and doing it in the
+   * service would put a filter on the client side of a decision that gates
+   * what a student may read.
+   *
+   * **Ordered by the membership's `assigned_at`, oldest first.** That order is
+   * the tie-break `StudentGroupsService` names: longest-standing placement
+   * wins. It moved here from `group_courses.enrolled_at` when the join table
+   * collapsed - a substitution of the sort key, not of the rule.
    *
    * Normally zero or one row. Two is possible and legal (a student placed in
    * two groups both studying the same course), so this returns a list and the
    * callers say what they do with more than one.
    */
-  findStudentGroupCourses(
-    studentId: string,
-    courseId: string,
-  ): Promise<GroupCourse[]>;
+  findStudentGroups(studentId: string, courseId: string): Promise<Group[]>;
 
   /**
    * Member counts for many groups at once, keyed by group id. A count-only

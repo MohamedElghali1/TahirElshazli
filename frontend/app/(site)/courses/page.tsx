@@ -5,7 +5,7 @@ import { CourseCard } from '@/components/site/course-card';
 import { CatalogEmpty, CatalogUnavailable } from '@/components/site/catalog-states';
 import { CourseFilters } from '@/components/site/course-filters';
 import { fetchCatalog } from '@/lib/catalog';
-import type { LearningMode, PublicCourseSummary } from '@/lib/types';
+import type { PublicCourseSummary } from '@/lib/types';
 
 export const metadata: Metadata = {
   title: 'Courses',
@@ -16,43 +16,43 @@ export const metadata: Metadata = {
 const shell = 'mx-auto w-full max-w-[var(--maxw-site)] px-[var(--sp-6)]';
 
 /**
- * Filtering runs in the URL, not in component state: `?mode=live&q=chemistry`
- * is shareable, survives a reload, and renders on the server, so a crawler sees
+ * Filtering runs in the URL, not in component state: `?q=chemistry` is
+ * shareable, survives a reload, and renders on the server, so a crawler sees
  * the filtered page too.
  *
  * It also filters the array in memory rather than passing the query to the API.
  * That is right for a catalog of this size - the whole thing is one response,
  * capped at 100 - and wrong the moment it is not. The cap in
  * `PublicCoursesService` is what makes that transition visible.
+ *
+ * No Recorded/Live filter: `PublicCourseSummary` carries no learning-mode
+ * field (retired from the course model by migration `012` - see
+ * `docs/CHANGELOG.md`) - filtering on a field the wire shape does not have
+ * would silently match nothing, which is worse than not offering it.
  */
 function applyFilters(
   courses: PublicCourseSummary[],
-  mode: string | undefined,
   query: string | undefined,
 ): PublicCourseSummary[] {
   const needle = query?.trim().toLowerCase();
-  return courses.filter((course) => {
-    if (mode === 'live' || mode === 'recorded') {
-      if (course.learningMode !== (mode as LearningMode)) return false;
-    }
-    if (!needle) return true;
-    return (
+  if (!needle) return courses;
+  return courses.filter(
+    (course) =>
       course.title.toLowerCase().includes(needle) ||
-      course.description.toLowerCase().includes(needle)
-    );
-  });
+      course.description.toLowerCase().includes(needle),
+  );
 }
 
 export default async function CoursesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mode?: string; q?: string }>;
+  searchParams: Promise<{ q?: string }>;
 }) {
-  const [{ mode, q }, courses] = await Promise.all([
+  const [{ q }, courses] = await Promise.all([
     searchParams,
     fetchCatalog(),
   ]);
-  const filtered = courses ? applyFilters(courses, mode, q) : [];
+  const filtered = courses ? applyFilters(courses, q) : [];
 
   return (
     <>
@@ -78,7 +78,6 @@ export default async function CoursesPage({
         <>
           <div className={`${shell} pb-[var(--sp-8)]`}>
             <CourseFilters
-              mode={mode}
               query={q}
               total={courses.length}
               shown={filtered.length}
@@ -96,10 +95,10 @@ export default async function CoursesPage({
                   for and we will point you at the right one.
                 </p>
                 <div className="mt-[var(--sp-8)] flex flex-wrap gap-[var(--sp-3)]">
-                  <ButtonLink href="/courses" variant="primary" size="lg">
+                  <ButtonLink href="/courses" variant="primary" size="medium">
                     Clear filters
                   </ButtonLink>
-                  <ButtonLink href="/contact" variant="secondary" size="lg">
+                  <ButtonLink href="/contact" variant="secondary" size="medium">
                     Contact us
                   </ButtonLink>
                 </div>
@@ -123,7 +122,7 @@ export default async function CoursesPage({
             Not sure which one fits? Send us the year group and the exam board
             and we will tell you.
           </p>
-          <ButtonLink href="/contact" variant="primary" size="lg" className="shrink-0">
+          <ButtonLink href="/contact" variant="primary" size="medium" className="shrink-0">
             Contact us
           </ButtonLink>
         </div>

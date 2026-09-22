@@ -11,7 +11,7 @@ import type { CourseRepository } from '../courses/interfaces/course-repository.i
 import { COURSE_REPOSITORY } from '../courses/interfaces/course-repository.interface.js';
 import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
-import { Role } from '../auth/roles.enum.js';
+import { actorRoleOf } from '../auth/actor-role.js';
 
 /** What a teacher supplies to schedule a session. `courseId` comes from the URL. */
 export type ScheduleLiveSessionInput = Omit<NewLiveSession, 'courseId'>;
@@ -47,20 +47,6 @@ export class ManageLiveSessionsService {
     /** `DatabaseModule` is `@Global()`; this needs no import edge. */
     private readonly db: DatabaseService,
   ) {}
-
-  /**
-   * The actor's role *as it was* (CLAUDE.md §5.4), derived rather than assumed
-   * to be Teacher.
-   *
-   * Only a teacher can reach the write routes today, so this is currently
-   * always `teacher`. Deriving it is what keeps the log honest on the day §11
-   * resolves `CRS-11` and the routes move to the shared controller: a
-   * hardcoded `Role.Teacher` would then quietly attribute every assistant's
-   * scheduling to Dr. Tahir, which is worse than not logging it.
-   */
-  private roleOf(actor: StaffActor): Role {
-    return actor.role === Role.Assistant ? Role.Assistant : Role.Teacher;
-  }
 
   /**
    * Shared read: the TA sees the schedule of a course they hold, the teacher
@@ -111,7 +97,7 @@ export class ManageLiveSessionsService {
 
       await this.audit.record({
         actorId: actor.id,
-        actorRole: this.roleOf(actor),
+        actorRole: actorRoleOf(actor),
         action: 'live_session.scheduled',
         targetType: 'live_session',
         targetId: session.id,
@@ -147,7 +133,7 @@ export class ManageLiveSessionsService {
 
       await this.audit.record({
         actorId: actor.id,
-        actorRole: this.roleOf(actor),
+        actorRole: actorRoleOf(actor),
         action: 'live_session.updated',
         targetType: 'live_session',
         targetId: sessionId,
@@ -201,7 +187,7 @@ export class ManageLiveSessionsService {
 
       await this.audit.record({
         actorId: actor.id,
-        actorRole: this.roleOf(actor),
+        actorRole: actorRoleOf(actor),
         action: 'live_session.cancelled',
         targetType: 'live_session',
         targetId: sessionId,

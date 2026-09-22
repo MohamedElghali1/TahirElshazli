@@ -2,11 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type {
   Group,
-  GroupCourse,
   GroupMembership,
+  GroupPatch,
   GroupRepository,
   NewGroup,
-  NewGroupCourse,
   NewGroupMembership,
 } from '../interfaces/group-repository.interface.js';
 
@@ -19,42 +18,34 @@ import type {
  * student's course is empty by design (CLAUDE.md §5.16). A dev database with
  * enrollments and no groups would look broken rather than empty.
  *
- * `student-1` is in group-1 (course-1, recorded) and group-2 (course-2, live),
- * which mirrors the two enrollments in `InMemoryEnrollmentRepository` and gives
- * the classmate list (§5.17) something to return. `student-2` shares group-1
- * with them and is that something.
+ * `student-1` is in group-1 (course-1) and group-2 (course-2), which mirrors
+ * the two enrollments in `InMemoryEnrollmentRepository` and gives the classmate
+ * list (§5.17) something to return. `student-2` shares group-1 with them and is
+ * that something.
  */
 const SEED_GROUPS: readonly Group[] = [
   {
     id: 'group-1',
     name: 'IGCSE Chemistry — Saturday 18:00',
     teacherId: 'teacher-1',
+    courseId: 'course-1',
+    // `assistant-1` runs group-1 in the DISPLAY sense only. It grants nothing:
+    // what they may reach is `assistant_group_assignments` (`AUTH-2`), and the
+    // two are deliberately allowed to disagree in the fixtures.
+    assistantId: 'assistant-1',
+    meets: 'Saturday 18:00',
+    room: null,
     createdAt: '2026-01-15T09:00:00Z',
   },
   {
     id: 'group-2',
     name: 'IGCSE Chemistry — Tuesday 20:00',
     teacherId: 'teacher-1',
-    createdAt: '2026-05-20T09:00:00Z',
-  },
-];
-
-const SEED_GROUP_COURSES: readonly GroupCourse[] = [
-  {
-    id: 'group-course-1',
-    groupId: 'group-1',
-    courseId: 'course-1',
-    learningMode: 'recorded',
-    enrolledAt: '2026-01-15T09:00:00Z',
-    enrolledBy: 'teacher-1',
-  },
-  {
-    id: 'group-course-2',
-    groupId: 'group-2',
     courseId: 'course-2',
-    learningMode: 'live',
-    enrolledAt: '2026-05-20T09:00:00Z',
-    enrolledBy: 'teacher-1',
+    assistantId: null,
+    meets: 'Tuesday 20:00',
+    room: null,
+    createdAt: '2026-05-20T09:00:00Z',
   },
 ];
 
@@ -90,7 +81,6 @@ export class InMemoryGroupRepository implements GroupRepository {
    * would - the same reasoning as `InMemoryEnrollmentRepository`.
    */
   private readonly groups: Group[] = [...SEED_GROUPS];
-  private readonly groupCourses: GroupCourse[] = [...SEED_GROUP_COURSES];
   private readonly memberships: GroupMembership[] = [...SEED_MEMBERSHIPS];
 
   async findById(groupId: string): Promise<Group | null> {
@@ -129,52 +119,27 @@ export class InMemoryGroupRepository implements GroupRepository {
     return { ...stored };
   }
 
-  async rename(groupId: string, name: string): Promise<Group | null> {
+  async update(groupId: string, patch: GroupPatch): Promise<Group | null> {
     const found = this.groups.find((g) => g.id === groupId);
     if (!found) {
       return null;
     }
-    found.name = name;
+    // Only keys actually present are applied, so `undefined` means "leave
+    // alone" and `null` means "clear it" - the same distinction the Postgres
+    // driver gets from COALESCE-per-column. Object.assign would write an
+    // explicit `undefined` over a set value.
+    for (const [key, value] of Object.entries(patch)) {
+      if (value !== undefined) {
+        (found as unknown as Record<string, unknown>)[key] = value;
+      }
+    }
     return { ...found };
   }
 
-  async addCourse(input: NewGroupCourse): Promise<GroupCourse> {
-    const existing = this.groupCourses.find(
-      (gc) => gc.groupId === input.groupId && gc.courseId === input.courseId,
-    );
-    if (existing) {
-      return { ...existing };
-    }
-    const stored: GroupCourse = {
-      ...input,
-      id: randomUUID(),
-      enrolledAt: new Date().toISOString(),
-    };
-    this.groupCourses.push(stored);
-    return { ...stored };
-  }
-
-  async removeCourse(groupId: string, courseId: string): Promise<boolean> {
-    const index = this.groupCourses.findIndex(
-      (gc) => gc.groupId === groupId && gc.courseId === courseId,
-    );
-    if (index === -1) {
-      return false;
-    }
-    this.groupCourses.splice(index, 1);
-    return true;
-  }
-
-  async findCourses(groupId: string): Promise<GroupCourse[]> {
-    return this.groupCourses
-      .filter((gc) => gc.groupId === groupId)
-      .map((gc) => ({ ...gc }));
-  }
-
-  async findGroupCoursesByCourse(courseId: string): Promise<GroupCourse[]> {
-    return this.groupCourses
-      .filter((gc) => gc.courseId === courseId)
-      .map((gc) => ({ ...gc }));
+  async findByCourse(courseId: string): Promise<Group[]> {
+    return this.groups
+      .filter((g) => g.courseId === courseId)
+      .map((g) => ({ ...g }));
   }
 
   async addMember(input: NewGroupMembership): Promise<GroupMembership> {
@@ -218,18 +183,23 @@ export class InMemoryGroupRepository implements GroupRepository {
       .map((m) => ({ ...m }));
   }
 
-  async findStudentGroupCourses(
+  async findStudentGroups(
     studentId: string,
     courseId: string,
-  ): Promise<GroupCourse[]> {
-    const groupIds = new Set(
-      this.memberships
-        .filter((m) => m.studentId === studentId)
-        .map((m) => m.groupId),
-    );
-    return this.groupCourses
-      .filter((gc) => gc.courseId === courseId && groupIds.has(gc.groupId))
-      .map((gc) => ({ ...gc }));
+  ): Promise<Group[]> {
+    const byId = new Map(this.groups.map((g) => [g.id, g]));
+    return this.memberships
+      .filter((m) => m.studentId === studentId)
+      .filter((m) => byId.get(m.groupId)?.courseId === courseId)
+      // Longest-standing placement first. The sort key moved from
+      // `group_courses.enrolled_at` to the membership's `assigned_at` when the
+      // join table collapsed; the rule `StudentGroupsService` names is
+      // unchanged. The id breaks a shared millisecond so the order is total.
+      .sort(
+        (a, b) =>
+          a.assignedAt.localeCompare(b.assignedAt) || a.id.localeCompare(b.id),
+      )
+      .map((m) => ({ ...byId.get(m.groupId)! }));
   }
 
   async countMembersByGroups(

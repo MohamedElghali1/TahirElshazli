@@ -13,6 +13,7 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
+import { IsOptionalNotNull } from '../../common/validators/is-optional-not-null.js';
 import { IsMediaUrl } from '../../common/validators/is-media-url.validator.js';
 import {
   BLOG_CATEGORIES,
@@ -104,11 +105,11 @@ export class CreateBlogPostDto {
   @MaxLength(20_000)
   body!: string;
 
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsIn(BLOG_CATEGORIES)
   category?: BlogCategory = 'achievement';
 
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsArray()
   @ArrayMaxSize(12)
   @IsString({ each: true })
@@ -119,7 +120,7 @@ export class CreateBlogPostDto {
    * Defaults to `draft`, so a half-written post cannot be published by
    * forgetting a field. Publishing is something the author does on purpose.
    */
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsIn(BLOG_POST_STATUSES)
   status?: BlogPostStatus = 'draft';
 
@@ -128,7 +129,7 @@ export class CreateBlogPostDto {
    * "now" for anything else rather than making the form send a timestamp it
    * has no opinion about.
    */
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsISO8601()
   publishAt?: string;
 
@@ -154,7 +155,7 @@ export class CreateBlogPostDto {
  * chosen the other reading would eventually delete somebody's gallery.
  */
 export class UpdateBlogPostDto {
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsString()
   @MinLength(1)
   @MaxLength(200)
@@ -165,28 +166,28 @@ export class UpdateBlogPostDto {
   @MaxLength(400)
   excerpt?: string;
 
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsString()
   @MinLength(1)
   @MaxLength(20_000)
   body?: string;
 
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsIn(BLOG_CATEGORIES)
   category?: BlogCategory;
 
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsArray()
   @ArrayMaxSize(12)
   @IsString({ each: true })
   @MaxLength(40, { each: true })
   tags?: string[];
 
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsIn(BLOG_POST_STATUSES)
   status?: BlogPostStatus;
 
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsISO8601()
   publishAt?: string;
 }

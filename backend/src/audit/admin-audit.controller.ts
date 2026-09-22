@@ -1,7 +1,7 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { AuditService, DEFAULT_AUDIT_PAGE_SIZE } from './audit.service.js';
 import { Roles } from '../auth/roles.decorator.js';
-import { Role } from '../auth/roles.enum.js';
+import { STAFF_ADMIN } from '../auth/staff-roles.js';
 import { ListAuditLogQueryDto } from './dto/list-audit-log-query.dto.js';
 import type { AuditLogPage } from './interfaces/audit-log-repository.interface.js';
 
@@ -14,7 +14,7 @@ import type { AuditLogPage } from './interfaces/audit-log-repository.interface.j
  * so the useful query here is `?actorId=assistant-1`.
  */
 @Controller('admin/audit-log')
-@Roles(Role.Teacher)
+@Roles(...STAFF_ADMIN)
 export class AdminAuditController {
   constructor(private readonly auditService: AuditService) {}
 

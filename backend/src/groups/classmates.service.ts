@@ -72,16 +72,14 @@ export class ClassmatesService {
   ): Promise<ClassmateGroup[]> {
     await this.enrollments.assertEnrolled(courseId, studentId);
 
-    const pairings = await this.groupRepo.findStudentGroupCourses(
-      studentId,
-      courseId,
-    );
-    if (pairings.length === 0) {
+    const groups = await this.groupRepo.findStudentGroups(studentId, courseId);
+    if (groups.length === 0) {
       return [];
     }
 
-    const groupIds = pairings.map((pairing) => pairing.groupId);
-    const groups = await this.groupRepo.findByIds(groupIds);
+    // One read fewer than before: the groups come back whole rather than as
+    // pairings that then have to be resolved into groups by id.
+    const groupIds = groups.map((group) => group.id);
     const rosters = await Promise.all(
       groupIds.map((groupId) => this.groupRepo.findMembers(groupId)),
     );

@@ -5,54 +5,51 @@ import { api, ApiError } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
 import { formatDate } from '@/lib/format';
 import type { StudentProfile } from '@/lib/types';
-import {
-  Button,
-  ErrorState,
-  Field,
-  FormError,
-  Input,
-  Panel,
-  Skeleton,
-} from '@/components/ui';
-import { PageBody, PageHeader } from '@/components/app/page-parts';
+import { Panel, EmptyState, Loader, Button, TextInput, InlineBanner } from '@/components/ui';
+import { PageTitle } from '@/components/shell/page-chrome';
 
 const PASSWORD_RULE = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
 
+/**
+ * Settings (`docs/PRODUCT_SPEC.md` §6: `[CHANGED]`, "Profile photo upload —
+ * the upload route is staff-only today"). The upload capability has no
+ * backend yet, so this is the existing profile screen — name, phone,
+ * password — ported as-is; adding a photo control with nothing to call
+ * would be inventing a feature that does not work.
+ */
 export default function ProfilePage() {
-  const { data, error, loading, reload } = useApi(
-    (token) => api.students.profile(token),
-    [],
-  );
+  const { data, error, loading, reload } = useApi((token) => api.students.profile(token), []);
 
   return (
     <>
-      <PageHeader title="Profile" subtitle="Your details and sign-in." />
-      <PageBody className="grid gap-[var(--sp-6)] xl:grid-cols-2">
+      <PageTitle title="Settings" />
+      <div className="grid gap-6 p-6 xl:grid-cols-2">
         {loading && (
-          <>
-            <Skeleton className="h-[280px]" />
-            <Skeleton className="h-[240px]" />
-          </>
+          <div className="flex justify-center p-12 xl:col-span-2">
+            <Loader label="Loading your profile" />
+          </div>
         )}
-        {error && <ErrorState message={error.message} onRetry={reload} />}
+        {error && (
+          <div className="xl:col-span-2">
+            <EmptyState
+              icon="AlertTriangle"
+              title={error.message}
+              action={<Button onClick={reload}>Try again</Button>}
+            />
+          </div>
+        )}
         {data && (
           <>
             <DetailsPanel profile={data} onSaved={reload} />
             <PasswordPanel />
           </>
         )}
-      </PageBody>
+      </div>
     </>
   );
 }
 
-function DetailsPanel({
-  profile,
-  onSaved,
-}: {
-  profile: StudentProfile;
-  onSaved: () => void;
-}) {
+function DetailsPanel({ profile, onSaved }: { profile: StudentProfile; onSaved: () => void }) {
   const { token } = useSession();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,9 +74,7 @@ function DetailsPanel({
       onSaved();
     } catch (cause) {
       setError(
-        cause instanceof ApiError
-          ? cause.message
-          : 'Could not save your details. Please try again.',
+        cause instanceof ApiError ? cause.message : 'Could not save your details. Please try again.',
       );
     } finally {
       setBusy(false);
@@ -88,54 +83,43 @@ function DetailsPanel({
 
   return (
     <Panel title="Your details">
-      <form onSubmit={submit} noValidate className="flex flex-col gap-[var(--sp-4)]">
-        <Field label="Full name" htmlFor="name">
-          <Input
-            id="name"
-            name="name"
-            autoComplete="name"
-            defaultValue={profile.name}
-            required
-          />
-        </Field>
+      <form onSubmit={submit} noValidate className="flex flex-col gap-4">
+        <TextInput label="Full name" id="name" name="name" autoComplete="name" defaultValue={profile.name} required />
 
-        <Field
+        <TextInput
           label="Email"
-          htmlFor="email"
+          id="email"
+          value={profile.email}
+          disabled
+          readOnly
           hint="Contact us to change the address on your account."
-        >
-          <Input id="email" value={profile.email} disabled readOnly />
-        </Field>
+        />
 
-        <Field label="Phone" htmlFor="phone" hint="Optional">
-          <Input
-            id="phone"
-            name="phone"
-            type="tel"
-            autoComplete="tel"
-            defaultValue={profile.phone ?? ''}
-          />
-        </Field>
+        <TextInput
+          label="Phone"
+          id="phone"
+          name="phone"
+          type="tel"
+          autoComplete="tel"
+          defaultValue={profile.phone ?? ''}
+          hint="Optional"
+        />
 
-        {error && <FormError>{error}</FormError>}
+        {error && <InlineBanner tone="danger">{error}</InlineBanner>}
 
-        <div className="flex items-center justify-between gap-[var(--sp-4)] border-t border-[var(--border-light)] pt-[var(--sp-4)]">
-          <p className="num text-[var(--fs-xxs)] text-fg-4">
-            {profile.enrolledCourseCount} course
-            {profile.enrolledCourseCount === 1 ? '' : 's'} · joined{' '}
+        <div className="flex items-center justify-between gap-4 border-t border-border-light pt-4">
+          <p className="num text-xxs text-fg-4">
+            {profile.enrolledCourseCount} course{profile.enrolledCourseCount === 1 ? '' : 's'} · joined{' '}
             {formatDate(profile.createdAt)}
           </p>
-          <div className="flex items-center gap-[var(--sp-3)]">
+          <div className="flex items-center gap-3">
             {saved && (
-              <span
-                role="status"
-                className="text-[var(--fs-xs)] text-chip-green-fg"
-              >
+              <span role="status" className="text-xs text-status-green-text">
                 Saved
               </span>
             )}
-            <Button type="submit" variant="primary" loading={busy}>
-              Save changes
+            <Button type="submit" variant="primary" disabled={busy}>
+              {busy ? <Loader size={3} label="Saving" /> : 'Save changes'}
             </Button>
           </div>
         </div>
@@ -175,9 +159,7 @@ function PasswordPanel() {
       setDone(true);
     } catch (cause) {
       setError(
-        cause instanceof ApiError
-          ? cause.message
-          : 'Could not change your password. Please try again.',
+        cause instanceof ApiError ? cause.message : 'Could not change your password. Please try again.',
       );
     } finally {
       setBusy(false);
@@ -186,46 +168,37 @@ function PasswordPanel() {
 
   return (
     <Panel title="Password">
-      <form onSubmit={submit} noValidate className="flex flex-col gap-[var(--sp-4)]">
-        <Field label="Current password" htmlFor="currentPassword">
-          <Input
-            id="currentPassword"
-            name="currentPassword"
-            type="password"
-            autoComplete="current-password"
-            required
-          />
-        </Field>
+      <form onSubmit={submit} noValidate className="flex flex-col gap-4">
+        <TextInput
+          label="Current password"
+          id="currentPassword"
+          name="currentPassword"
+          type="password"
+          autoComplete="current-password"
+          required
+        />
 
-        <Field
+        <TextInput
           label="New password"
-          htmlFor="newPassword"
+          id="newPassword"
+          name="newPassword"
+          type="password"
+          autoComplete="new-password"
+          required
           hint="At least 8 characters, including one letter and one number."
           error={fieldError}
-        >
-          <Input
-            id="newPassword"
-            name="newPassword"
-            type="password"
-            autoComplete="new-password"
-            required
-            aria-invalid={Boolean(fieldError)}
-          />
-        </Field>
+        />
 
-        {error && <FormError>{error}</FormError>}
+        {error && <InlineBanner tone="danger">{error}</InlineBanner>}
 
-        <div className="flex items-center justify-end gap-[var(--sp-3)] border-t border-[var(--border-light)] pt-[var(--sp-4)]">
+        <div className="flex items-center justify-end gap-3 border-t border-border-light pt-4">
           {done && (
-            <span
-              role="status"
-              className="text-[var(--fs-xs)] text-chip-green-fg"
-            >
+            <span role="status" className="text-xs text-status-green-text">
               Password changed
             </span>
           )}
-          <Button type="submit" variant="primary" loading={busy}>
-            Change password
+          <Button type="submit" variant="primary" disabled={busy}>
+            {busy ? <Loader size={3} label="Changing password" /> : 'Change password'}
           </Button>
         </div>
       </form>

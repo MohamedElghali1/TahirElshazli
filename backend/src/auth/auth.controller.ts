@@ -3,6 +3,7 @@ import {
   Controller,
   HttpCode,
   HttpStatus,
+  Param,
   Post,
   Request,
   UseGuards,
@@ -12,11 +13,16 @@ import {
   AUTH_ATTEMPT_LIMIT,
   AUTH_ENUMERATION_LIMIT,
 } from '../common/rate-limit/limits.js';
-import { AuthService, AuthResult } from './auth.service.js';
+import {
+  AuthService,
+  AuthResult,
+  RegistrationResult,
+} from './auth.service.js';
 import { LoginDto } from './dto/login.dto.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { RequestPasswordResetDto } from './dto/request-password-reset.dto.js';
 import { ConfirmPasswordResetDto } from './dto/confirm-password-reset.dto.js';
+import { AcceptInvitationDto } from './dto/accept-invitation.dto.js';
 import { JwtAuthGuard } from './jwt-auth.guard.js';
 import { Public } from './public.decorator.js';
 import { AnyRole } from './any-role.decorator.js';
@@ -31,7 +37,7 @@ export class AuthController {
   @Post('register')
   @Public()
   @RateLimit(AUTH_ENUMERATION_LIMIT)
-  async register(@Body() dto: RegisterDto): Promise<AuthResult> {
+  async register(@Body() dto: RegisterDto): Promise<RegistrationResult> {
     return this.authService.register(dto.email, dto.password, dto.name);
   }
 
@@ -75,5 +81,18 @@ export class AuthController {
     @Body() dto: ConfirmPasswordResetDto,
   ): Promise<{ success: true }> {
     return this.authService.confirmPasswordReset(dto.token, dto.newPassword);
+  }
+
+  // Unauthenticated - the token IS the credential proving the invite was
+  // theirs. Same throttle as login: this mints a session the same way.
+  @Post('invitations/:token/accept')
+  @Public()
+  @RateLimit(AUTH_ATTEMPT_LIMIT)
+  @HttpCode(HttpStatus.OK)
+  async acceptInvitation(
+    @Param('token') token: string,
+    @Body() dto: AcceptInvitationDto,
+  ): Promise<AuthResult> {
+    return this.authService.acceptInvitation(token, dto.password);
   }
 }

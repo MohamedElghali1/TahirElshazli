@@ -1,6 +1,8 @@
 import { Transform } from 'class-transformer';
 import {
-  IsIn,
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsInt,
   IsOptional,
   IsString,
@@ -9,7 +11,9 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
+import { IsOptionalNotNull } from '../../common/validators/is-optional-not-null.js';
 import {
   DEFAULT_GROUP_PAGE_SIZE,
   MAX_GROUP_PAGE_SIZE,
@@ -23,6 +27,13 @@ import {
  */
 const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 
+/**
+ * The whole of a group, as a request body. `API_SPEC.yaml`'s `GroupWrite`.
+ *
+ * Both required fields are required for the same reason: a group now *is* a
+ * cohort studying one named course (migration 013), so neither half of that
+ * sentence can be left out and have a row still mean anything.
+ */
 export class CreateGroupDto {
   /**
    * The group's name, and it is the whole identity of the row - "IGCSE
@@ -34,11 +45,7 @@ export class CreateGroupDto {
   @MinLength(1)
   @MaxLength(120)
   name!: string;
-}
 
-export class RenameGroupDto extends CreateGroupDto {}
-
-export class AddGroupCourseDto {
   @IsString()
   @MaxLength(64)
   @Matches(ID_PATTERN, {
@@ -47,18 +54,74 @@ export class AddGroupCourseDto {
   courseId!: string;
 
   /**
-   * How this group is taught this course (CLAUDE.md §5.2, moved off the
-   * enrollment on 2026-09-10).
-   *
-   * Required rather than defaulted. The mode decides which dashboard a student
-   * sees - completion checkpoints or an attendance timeline - and a default
-   * here would silently pick one for a live cohort whose staff simply did not
-   * think about the field.
+   * Who runs this group. **Display only** - it grants nothing. What an
+   * assistant may reach is `assistant_group_assignments` (`AUTH-2`), decided by
+   * `StaffScopeService`. `null` clears the field.
    */
-  @IsIn(['recorded', 'live'], {
-    message: 'learningMode must be "recorded" or "live"',
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @MaxLength(64)
+  @Matches(ID_PATTERN, {
+    message: 'assistantId must contain only letters, digits, hyphens and underscores',
   })
-  learningMode!: 'recorded' | 'live';
+  assistantId?: string | null;
+
+  /** When the group meets, as free text - "Saturday 18:00". */
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @MaxLength(120)
+  meets?: string | null;
+
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @MaxLength(80)
+  room?: string | null;
+}
+
+/**
+ * The PATCH body: every field optional, including `name` and `courseId`.
+ *
+ * Not `PartialType(CreateGroupDto)` - `@nestjs/mapped-types` is not a
+ * dependency here, and repeating five decorators is cheaper than adding one.
+ */
+export class UpdateGroupDto {
+  @IsOptionalNotNull()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  name?: string;
+
+  @IsOptionalNotNull()
+  @IsString()
+  @MaxLength(64)
+  @Matches(ID_PATTERN, {
+    message: 'courseId must contain only letters, digits, hyphens and underscores',
+  })
+  courseId?: string;
+
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @MaxLength(64)
+  @Matches(ID_PATTERN, {
+    message: 'assistantId must contain only letters, digits, hyphens and underscores',
+  })
+  assistantId?: string | null;
+
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @MaxLength(120)
+  meets?: string | null;
+
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @MaxLength(80)
+  room?: string | null;
 }
 
 export class AddGroupMemberDto {
@@ -68,6 +131,22 @@ export class AddGroupMemberDto {
     message: 'studentId must contain only letters, digits, hyphens and underscores',
   })
   studentId!: string;
+}
+
+/**
+ * `POST /admin/groups/:groupId/members/bulk` (`GROUP-3`) - backs the roster's
+ * "Move N to group". `API_SPEC.yaml`'s bounds: 1-100 at once.
+ */
+export class BulkMoveMembersDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @IsString({ each: true })
+  @Matches(ID_PATTERN, {
+    each: true,
+    message: 'studentIds must contain only letters, digits, hyphens and underscores',
+  })
+  studentIds!: string[];
 }
 
 /** `enableImplicitConversion` is off globally, so query numbers need a transform. */

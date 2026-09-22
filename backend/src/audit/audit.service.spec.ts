@@ -184,6 +184,50 @@ describe('AuditService', () => {
     });
   });
 
+  /**
+   * **Retiring a table does not retire its audit history.**
+   *
+   * `group_courses` is dropped by migration 013 and `course_staff_assignments`
+   * is dropped by `AUTH-2`. The actions and target types that named them are
+   * deliberately KEPT in the unions, unused, because `ListAuditLogQueryDto`'s
+   * `@IsIn` is generated from the exhaustive `Record<AuditAction, true>` - so
+   * deleting a member "for tidiness" makes every historical row of that action
+   * answer **400** on `GET /admin/audit-log?action=…`, which is a silent loss
+   * of the evidence the log exists to hold.
+   *
+   * The compiler cannot catch this: removing a member and its `Record` entry
+   * together compiles cleanly. This test is the guard.
+   */
+  it('still accepts every retired action and target type as a filter', async () => {
+    const RETIRED_ACTIONS = [
+      // `course_staff_assignments`, retired by `AUTH-2`.
+      'course_staff.assigned',
+      'course_staff.unassigned',
+      // `group_courses`, retired by migration 013; `renamed` superseded by
+      // `group.updated`.
+      'group.renamed',
+      'group.course_added',
+      'group.course_removed',
+    ] as const;
+    const RETIRED_TARGET_TYPES = [
+      'course_staff_assignment',
+      'group_course',
+    ] as const;
+
+    for (const action of RETIRED_ACTIONS) {
+      expect(AUDIT_ACTIONS).toContain(action);
+      await record(entry({ action }));
+      const page = await service.find({ limit: 10, action });
+      expect(page.entries.length).toBeGreaterThan(0);
+    }
+    for (const targetType of RETIRED_TARGET_TYPES) {
+      expect(AUDIT_TARGET_TYPES).toContain(targetType);
+      await record(entry({ targetType }));
+      const page = await service.find({ limit: 10, targetType });
+      expect(page.entries.length).toBeGreaterThan(0);
+    }
+  });
+
   it('should keep the DTO filter lists in step with the action unions', async () => {
     // `@IsIn` needs runtime values a TypeScript union cannot provide, so the
     // two lists are written twice.

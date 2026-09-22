@@ -2,12 +2,6 @@
 
 import { use, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import {
-  ArrowDownIcon,
-  ArrowUpIcon,
-  FileArrowUpIcon,
-  TrashIcon,
-} from '@phosphor-icons/react';
 import { api, ApiError } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
 import { formatDateTime, formatFileSize } from '@/lib/format';
@@ -20,18 +14,16 @@ import type {
 } from '@/lib/types';
 import {
   Button,
-  Chip,
-  ErrorState,
-  Field,
-  FormError,
-  Input,
+  EmptyState,
+  InlineBanner,
+  Loader,
   Panel,
-  RowsSkeleton,
   Select,
-  Textarea,
+  Tag,
+  TextArea,
+  TextInput,
 } from '@/components/ui';
-import { PageBody } from '@/components/app/page-parts';
-import { PageTitle } from '@/components/app/page-chrome';
+import { PageTitle } from '@/components/shell/page-chrome';
 
 const CATEGORIES: { value: BlogCategory; label: string }[] = [
   { value: 'achievement', label: 'Achievement' },
@@ -43,6 +35,12 @@ const KINDS: { value: BlogMediaKind; label: string }[] = [
   { value: 'image', label: 'Image' },
   { value: 'video', label: 'Video' },
   { value: 'file', label: 'File' },
+];
+
+const STATUS_OPTIONS: { value: BlogPostStatus; label: string }[] = [
+  { value: 'draft', label: 'Draft — nobody sees it' },
+  { value: 'published', label: 'Published — live now' },
+  { value: 'scheduled', label: 'Scheduled — live at a time' },
 ];
 
 /**
@@ -61,38 +59,38 @@ const KINDS: { value: BlogMediaKind; label: string }[] = [
  * 403; this screen never reaches here for a post they cannot touch, because
  * `/manage/blog` does not link it.
  */
-export default function EditBlogPostPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default function EditBlogPostPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { data, error, loading, reload } = useApi(
-    (t) => api.staff.blogPost(t, id),
-    [id],
-  );
+  const { data, error, loading, reload } = useApi((t) => api.staff.blogPost(t, id), [id]);
 
   return (
     <>
       <PageTitle title={data?.title ?? 'Post'} backHref="/manage/blog" />
-      <PageBody className="flex flex-col gap-[var(--sp-5)]">
+      <div className="flex flex-col gap-5 p-6">
         {data && (
-          <div className="flex items-center gap-[var(--sp-2)] text-[var(--fs-xs)] text-fg-3">
+          <div className="flex items-center gap-2 text-xs text-fg-3">
             <span>Posted by {data.authorName}</span>
-            <StatusChip post={data} />
+            <StatusTag post={data} />
           </div>
         )}
-        {loading && <RowsSkeleton rows={6} />}
+        {loading && (
+          <div className="flex justify-center p-8">
+            <Loader label="Loading the post" />
+          </div>
+        )}
         {error && (
-          <ErrorState
-            message={
+          <EmptyState
+            icon="AlertTriangle"
+            title={
               error.isNotFound
                 ? 'That post no longer exists.'
                 : error.isAuth
                   ? 'Only Dr. Tahir can edit a post written by someone else.'
                   : error.message
             }
-            onRetry={error.isNotFound || error.isAuth ? undefined : reload}
+            action={
+              error.isNotFound || error.isAuth ? undefined : <Button onClick={reload}>Try again</Button>
+            }
           />
         )}
 
@@ -103,7 +101,7 @@ export default function EditBlogPostPage({
             <DangerZone post={data} />
           </>
         )}
-      </PageBody>
+      </div>
     </>
   );
 }
@@ -112,13 +110,13 @@ export default function EditBlogPostPage({
  * `status` and `isLive` are different facts, and both matter here.
  *
  * Nothing rewrites a row when its scheduled moment passes, so a post can say
- * `scheduled` and be live. The chip names the state a reader would actually
+ * `scheduled` and be live. The tag names the state a reader would actually
  * observe.
  */
-function StatusChip({ post }: { post: StaffBlogPost }) {
-  if (post.status === 'draft') return <Chip tone="neutral">Draft</Chip>;
-  if (post.isLive) return <Chip tone="green">Live</Chip>;
-  return <Chip tone="amber">Scheduled</Chip>;
+function StatusTag({ post }: { post: StaffBlogPost }) {
+  if (post.status === 'draft') return <Tag tone="gray">Draft</Tag>;
+  if (post.isLive) return <Tag tone="green">Live</Tag>;
+  return <Tag tone="amber">Scheduled</Tag>;
 }
 
 /**
@@ -148,13 +146,7 @@ function toLocalInput(iso: string): string {
   );
 }
 
-function PostForm({
-  post,
-  onSaved,
-}: {
-  post: StaffBlogPost;
-  onSaved: () => void;
-}) {
+function PostForm({ post, onSaved }: { post: StaffBlogPost; onSaved: () => void }) {
   const { token } = useSession();
   const [title, setTitle] = useState(post.title);
   const [excerpt, setExcerpt] = useState(post.excerpt ?? '');
@@ -191,9 +183,7 @@ function PostForm({
         // Only sent for a scheduled post. Sending it otherwise would let a
         // published post carry a future date - invisible while claiming to be
         // published, which is the confusing kind of correct.
-        ...(status === 'scheduled'
-          ? { publishAt: new Date(publishAt).toISOString() }
-          : {}),
+        ...(status === 'scheduled' ? { publishAt: new Date(publishAt).toISOString() } : {}),
       });
       setSaved(true);
       onSaved();
@@ -206,120 +196,86 @@ function PostForm({
 
   return (
     <Panel title="The post">
-      <form onSubmit={submit} className="flex flex-col gap-[var(--sp-4)]">
-        <Field
+      <form onSubmit={submit} className="flex flex-col gap-4">
+        <TextInput
           label="Title"
-          htmlFor="title"
+          id="title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
           hint={`The public address stays /blog/${post.slug} whatever you retitle it to — every link already shared keeps working.`}
-        >
-          <Input
-            id="title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            maxLength={200}
-            required
-          />
-        </Field>
+          maxLength={200}
+          required
+        />
 
-        <Field
+        <TextInput
           label="Standfirst"
-          htmlFor="excerpt"
+          id="excerpt"
+          value={excerpt}
+          onChange={(e) => setExcerpt(e.target.value)}
           hint="Optional. Left empty, the cards and the search description use the opening of the description instead."
-        >
-          <Input
-            id="excerpt"
-            value={excerpt}
-            onChange={(e) => setExcerpt(e.target.value)}
-            maxLength={400}
-          />
-        </Field>
+          maxLength={400}
+        />
 
-        <Field
+        <TextArea
           label="Description"
-          htmlFor="body"
-          hint="Plain text. Leave a blank line between paragraphs."
-        >
-          <Textarea
-            id="body"
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            rows={10}
-            maxLength={20000}
-            required
-          />
-        </Field>
+          id="body"
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          rows={10}
+          maxLength={20000}
+          required
+        />
 
-        <div className="flex flex-wrap gap-[var(--sp-4)]">
-          <div className="w-[180px]">
-            <Field label="Category" htmlFor="category">
-              <Select
-                id="category"
-                value={category}
-                onChange={(e) => setCategory(e.target.value as BlogCategory)}
-              >
-                {CATEGORIES.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          </div>
-          <div className="min-w-[240px] flex-1">
-            <Field label="Tags" htmlFor="tags" hint="Comma separated. Up to twelve.">
-              <Input
-                id="tags"
-                value={tags}
-                onChange={(e) => setTags(e.target.value)}
-                placeholder="IGCSE, Chemistry, Results"
-              />
-            </Field>
-          </div>
+        <div className="flex flex-wrap gap-4">
+          <Select
+            label="Category"
+            id="category"
+            className="w-[180px]"
+            value={category}
+            onChange={(e) => setCategory(e.target.value as BlogCategory)}
+            options={CATEGORIES}
+          />
+          <TextInput
+            label="Tags"
+            id="tags"
+            className="min-w-[240px] flex-1"
+            value={tags}
+            onChange={(e) => setTags(e.target.value)}
+            hint="Comma separated. Up to twelve."
+            placeholder="IGCSE, Chemistry, Results"
+          />
         </div>
 
-        <div className="flex flex-wrap items-start gap-[var(--sp-4)] border-t border-[var(--border-light)] pt-[var(--sp-4)]">
-          <div className="w-[180px]">
-            <Field label="Visibility" htmlFor="status">
-              <Select
-                id="status"
-                value={status}
-                onChange={(e) => setStatus(e.target.value as BlogPostStatus)}
-              >
-                <option value="draft">Draft — nobody sees it</option>
-                <option value="published">Published — live now</option>
-                <option value="scheduled">Scheduled — live at a time</option>
-              </Select>
-            </Field>
-          </div>
+        <div className="flex flex-wrap items-start gap-4 border-t border-border-light pt-4">
+          <Select
+            label="Visibility"
+            id="status"
+            className="w-[180px]"
+            value={status}
+            onChange={(e) => setStatus(e.target.value as BlogPostStatus)}
+            options={STATUS_OPTIONS}
+          />
 
           {status === 'scheduled' && (
-            <div className="w-[240px]">
-              <Field
-                label="Goes live"
-                htmlFor="publishAt"
-                hint="Your local time. It appears on its own — nothing has to be running."
-              >
-                <Input
-                  id="publishAt"
-                  type="datetime-local"
-                  value={publishAt}
-                  onChange={(e) => setPublishAt(e.target.value)}
-                  required
-                />
-              </Field>
-            </div>
+            <TextInput
+              label="Goes live"
+              id="publishAt"
+              type="datetime-local"
+              className="w-[240px]"
+              value={publishAt}
+              onChange={(e) => setPublishAt(e.target.value)}
+              hint="Your local time. It appears on its own — nothing has to be running."
+              required
+            />
           )}
         </div>
 
-        <div className="flex items-center gap-[var(--sp-3)]">
-          <Button type="submit" variant="primary" loading={busy}>
-            Save
+        <div className="flex items-center gap-3">
+          <Button type="submit" variant="primary" disabled={busy}>
+            {busy ? <Loader size={3} label="Saving" /> : 'Save'}
           </Button>
           {saved && (
-            <span
-              role="status"
-              className="text-[var(--fs-base)] text-fg-3"
-            >
+            <span role="status" className="text-base text-fg-3">
               Saved.
             </span>
           )}
@@ -328,14 +284,14 @@ function PostForm({
               href={`/blog/${post.slug}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-[var(--fs-base)] text-fg underline underline-offset-4"
+              className="text-base text-fg underline underline-offset-4"
             >
               View it live
             </a>
           )}
         </div>
+        {error && <InlineBanner tone="danger">{error}</InlineBanner>}
       </form>
-      {error && <FormError>{error}</FormError>}
     </Panel>
   );
 }
@@ -350,13 +306,7 @@ function PostForm({
  * URL field is not a fallback for a broken feature - it is the path that always
  * works, and the picker is the convenience on top.
  */
-function GalleryForm({
-  post,
-  onSaved,
-}: {
-  post: StaffBlogPost;
-  onSaved: () => void;
-}) {
+function GalleryForm({ post, onSaved }: { post: StaffBlogPost; onSaved: () => void }) {
   const { token } = useSession();
   const config = useApi((t) => api.staff.uploadConfig(t), []);
 
@@ -405,9 +355,7 @@ function GalleryForm({
       setDirty(false);
       onSaved();
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : 'Could not save the gallery.',
-      );
+      setError(err instanceof ApiError ? err.message : 'Could not save the gallery.');
     } finally {
       setBusy(false);
     }
@@ -418,41 +366,38 @@ function GalleryForm({
       title="Pictures, video and files"
       action={
         dirty ? (
-          <Button size="sm" variant="primary" loading={busy} onClick={save}>
-            Save gallery
+          <Button size="small" variant="primary" disabled={busy} onClick={save}>
+            {busy ? <Loader size={3} label="Saving" /> : 'Save gallery'}
           </Button>
         ) : undefined
       }
     >
-      <div className="flex flex-col gap-[var(--sp-4)]">
+      <div className="flex flex-col gap-4">
         {items.length === 0 && (
-          <p className="text-[var(--fs-base)] text-fg-3">
-            Nothing attached yet. A post with only words is fine — add a
-            certificate, a photo of the results board or a clip below.
+          <p className="text-base text-fg-3">
+            Nothing attached yet. A post with only words is fine — add a certificate, a photo of the
+            results board or a clip below.
           </p>
         )}
 
         {items.length > 0 && (
-          <ul className="flex flex-col gap-[var(--sp-2)]">
+          <ul className="flex flex-col gap-2">
             {items.map((item, i) => (
               <li
                 // `url` is unique within a gallery in practice and stable across
                 // a reorder, which an index key would not be - a reorder with
                 // index keys re-binds every caption input to the wrong row.
                 key={`${item.url}-${i}`}
-                className="flex flex-wrap items-center gap-[var(--sp-3)] rounded-[var(--r-sm)] border border-[var(--border-light)] bg-[var(--bg-primary)] p-[var(--sp-3)]"
+                className="flex flex-wrap items-center gap-3 rounded-sm border border-border-light bg-surface p-3"
               >
-                <Chip tone="neutral">{item.kind}</Chip>
+                <Tag tone="gray">{item.kind}</Tag>
 
-                <span className="min-w-[160px] flex-1 truncate font-[family-name:var(--font-mono)] text-[var(--fs-xxs)] text-fg-3">
+                <span className="min-w-[160px] flex-1 truncate font-mono text-xxs text-fg-3">
                   {item.url}
                 </span>
 
-                <label className="sr-only" htmlFor={`caption-${i}`}>
-                  Caption for attachment {i + 1}
-                </label>
-                <Input
-                  id={`caption-${i}`}
+                <TextInput
+                  aria-label={`Caption for attachment ${i + 1}`}
                   className="w-[240px]"
                   placeholder="Describe this one"
                   value={item.caption ?? ''}
@@ -465,62 +410,51 @@ function GalleryForm({
                 />
 
                 {item.sizeBytes !== undefined && (
-                  <span className="font-[family-name:var(--font-mono)] text-[var(--fs-xxs)] tabular-nums text-fg-3">
-                    {formatFileSize(item.sizeBytes)}
-                  </span>
+                  <span className="num font-mono text-xxs text-fg-3">{formatFileSize(item.sizeBytes)}</span>
                 )}
 
-                <div className="flex items-center gap-[var(--sp-1)]">
+                <div className="flex items-center gap-1">
                   <Button
-                    size="sm"
-                    variant="ghost"
+                    size="small"
+                    variant="tertiary"
                     aria-label={`Move attachment ${i + 1} up`}
+                    icon="ArrowUp"
                     disabled={i === 0}
                     onClick={() => move(i, -1)}
-                  >
-                    <ArrowUpIcon size={14} />
-                  </Button>
+                  />
                   <Button
-                    size="sm"
-                    variant="ghost"
+                    size="small"
+                    variant="tertiary"
                     aria-label={`Move attachment ${i + 1} down`}
+                    icon="ArrowDown"
                     disabled={i === items.length - 1}
                     onClick={() => move(i, 1)}
-                  >
-                    <ArrowDownIcon size={14} />
-                  </Button>
+                  />
                   <Button
-                    size="sm"
-                    variant="ghost"
+                    size="small"
+                    variant="tertiary"
+                    accent="danger"
                     aria-label={`Remove attachment ${i + 1}`}
+                    icon="Trash"
                     onClick={() => change(items.filter((_, j) => j !== i))}
-                  >
-                    <TrashIcon size={14} />
-                  </Button>
+                  />
                 </div>
               </li>
             ))}
           </ul>
         )}
 
-        <div className="border-t border-[var(--border-light)] pt-[var(--sp-4)]">
+        <div className="border-t border-border-light pt-4">
           {config.data?.enabled ? (
-            <UploadField
-              config={config.data}
-              onUploaded={(item) => change([...items, item])}
-            />
+            <UploadField config={config.data} onUploaded={(item) => change([...items, item])} />
           ) : (
             <UrlField onAdded={(item) => change([...items, item])} />
           )}
         </div>
 
-        {dirty && (
-          <p className="text-[var(--fs-xs)] text-fg-3">
-            Unsaved changes to the gallery.
-          </p>
-        )}
+        {dirty && <p className="text-xs text-fg-3">Unsaved changes to the gallery.</p>}
       </div>
-      {error && <FormError>{error}</FormError>}
+      {error && <InlineBanner tone="danger" className="mt-4">{error}</InlineBanner>}
     </Panel>
   );
 }
@@ -562,14 +496,11 @@ function UploadField({
   };
 
   return (
-    <div className="flex flex-col gap-[var(--sp-2)]">
-      <label
-        htmlFor="upload"
-        className="text-[var(--fs-xs)] font-medium text-fg-2"
-      >
+    <div className="flex flex-col gap-2">
+      <label htmlFor="upload" className="text-xs font-medium text-fg-2">
         Add a picture, a video or a file
       </label>
-      <div className="flex items-center gap-[var(--sp-3)]">
+      <div className="flex items-center gap-3">
         <input
           ref={input}
           id="upload"
@@ -580,23 +511,20 @@ function UploadField({
           accept={config.allowedMimeTypes.join(',')}
           onChange={pick}
           disabled={busy}
-          className="text-[var(--fs-base)] text-fg-2 file:me-[var(--sp-3)] file:rounded-[var(--r-md)] file:border file:border-[var(--border-medium)] file:bg-[var(--bg-tertiary)] file:px-[var(--sp-3)] file:py-[var(--sp-2)] file:text-[var(--fs-xs)] file:text-fg"
+          className="text-base text-fg-2 file:me-3 file:rounded-md file:border file:border-border-medium file:bg-surface-2 file:px-3 file:py-2 file:text-xs file:text-fg"
         />
         {busy && (
-          <span
-            role="status"
-            className="inline-flex items-center gap-[var(--sp-2)] text-[var(--fs-base)] text-fg-3"
-          >
-            <FileArrowUpIcon size={14} />
+          <span role="status" className="inline-flex items-center gap-2 text-base text-fg-3">
+            <Loader size={3} label="Uploading" />
             Uploading…
           </span>
         )}
       </div>
-      <p className="text-[var(--fs-xs)] text-fg-3">
-        Up to {formatFileSize(config.maxBytes)}. Uploading adds it to the list;
-        it is only attached once you save the gallery.
+      <p className="text-xs text-fg-3">
+        Up to {formatFileSize(config.maxBytes)}. Uploading adds it to the list; it is only attached once
+        you save the gallery.
       </p>
-      {error && <FormError>{error}</FormError>}
+      {error && <InlineBanner tone="danger">{error}</InlineBanner>}
     </div>
   );
 }
@@ -619,37 +547,25 @@ function UrlField({ onAdded }: { onAdded: (item: BlogMediaInput) => void }) {
   };
 
   return (
-    <div className="flex flex-wrap items-end gap-[var(--sp-3)]">
-      <div className="w-[140px]">
-        <Field label="Kind" htmlFor="media-kind">
-          <Select
-            id="media-kind"
-            value={kind}
-            onChange={(e) => setKind(e.target.value as BlogMediaKind)}
-          >
-            {KINDS.map((k) => (
-              <option key={k.value} value={k.value}>
-                {k.label}
-              </option>
-            ))}
-          </Select>
-        </Field>
-      </div>
-      <div className="min-w-[280px] flex-1">
-        <Field
-          label="Link"
-          htmlFor="media-url"
-          hint="An https:// address on a public host. File uploads are not configured on this server."
-        >
-          <Input
-            id="media-url"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://cdn.example.com/results-board.jpg"
-            maxLength={2048}
-          />
-        </Field>
-      </div>
+    <div className="flex flex-wrap items-end gap-3">
+      <Select
+        label="Kind"
+        id="media-kind"
+        className="w-[140px]"
+        value={kind}
+        onChange={(e) => setKind(e.target.value as BlogMediaKind)}
+        options={KINDS}
+      />
+      <TextInput
+        label="Link"
+        id="media-url"
+        className="min-w-[280px] flex-1"
+        value={url}
+        onChange={(e) => setUrl(e.target.value)}
+        hint="An https:// address on a public host. File uploads are not configured on this server."
+        placeholder="https://cdn.example.com/results-board.jpg"
+        maxLength={2048}
+      />
       <Button onClick={add} disabled={!url.trim()}>
         Add
       </Button>
@@ -691,31 +607,29 @@ function DangerZone({ post }: { post: StaffBlogPost }) {
   return (
     <Panel title="Delete this post">
       {confirming ? (
-        <div className="flex flex-col gap-[var(--sp-3)]">
-          <p className="text-[var(--fs-base)] text-fg-2">
+        <div className="flex flex-col gap-3">
+          <p className="text-base text-fg-2">
             This removes the post and its gallery for good.
             {post.isLive && ' It is live right now, so the public link will stop working.'}
           </p>
-          <div className="flex items-center gap-[var(--sp-2)]">
-            <Button variant="danger" loading={busy} onClick={remove}>
-              Delete permanently
+          <div className="flex items-center gap-2">
+            <Button variant="primary" accent="danger" disabled={busy} onClick={remove}>
+              {busy ? <Loader size={3} label="Deleting" /> : 'Delete permanently'}
             </Button>
-            <Button variant="ghost" onClick={() => setConfirming(false)}>
+            <Button variant="tertiary" onClick={() => setConfirming(false)}>
               Keep it
             </Button>
           </div>
         </div>
       ) : (
-        <div className="flex flex-wrap items-center justify-between gap-[var(--sp-3)]">
-          <p className="text-[var(--fs-base)] text-fg-3">
-            Last edited {formatDateTime(post.updatedAt)}.
-          </p>
-          <Button variant="ghost" onClick={() => setConfirming(true)}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-base text-fg-3">Last edited {formatDateTime(post.updatedAt)}.</p>
+          <Button variant="tertiary" onClick={() => setConfirming(true)}>
             Delete
           </Button>
         </div>
       )}
-      {error && <FormError>{error}</FormError>}
+      {error && <InlineBanner tone="danger" className="mt-3">{error}</InlineBanner>}
     </Panel>
   );
 }

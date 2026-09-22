@@ -1,5 +1,3 @@
-export type LearningMode = 'recorded' | 'live';
-
 export interface Enrollment {
   studentId: string;
   courseId: string;
@@ -7,16 +5,12 @@ export interface Enrollment {
 }
 
 /**
- * `LearningMode` no longer lives on the enrollment.
+ * There is no `learningMode` here, and there is no longer one anywhere.
  *
- * It moved to `GroupCourse` on 2026-09-10 (CLAUDE.md §5.2): a group is *taught*
- * one way, and two students in the same room cannot be in different modes.
- * `LearningModeService` is the only thing that answers "how is this student
- * taught this course" now, falling back to `courses.default_learning_mode` for
- * a student who is enrolled but not yet placed in a group.
- *
- * The type is still re-exported from here because it is the shape of a column
- * two other tables use, and moving it would touch every importer for no gain.
+ * The mode moved off the enrollment onto `GroupCourse` on 2026-09-10, and was
+ * retired outright by `D-9` (2026-09-20): every course is taught the same way,
+ * with recordings *and* live sessions, so there is nothing left to switch on.
+ * Course progress now carries both halves at once - see `CourseProgress`.
  */
 
 export interface EnrollmentRepository {

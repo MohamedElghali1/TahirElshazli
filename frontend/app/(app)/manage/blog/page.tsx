@@ -8,21 +8,18 @@ import { formatDateTime } from '@/lib/format';
 import type { BlogCategory, StaffBlogPost } from '@/lib/types';
 import {
   Button,
-  Chip,
   EmptyState,
-  ErrorState,
-  Field,
-  FormError,
-  Input,
+  InlineBanner,
+  Loader,
   Panel,
-  RowsSkeleton,
   Select,
-  Textarea,
+  Table,
+  Tag,
+  TextArea,
+  TextInput,
+  type Column,
 } from '@/components/ui';
-import { NewspaperIcon } from '@phosphor-icons/react';
-import { PageBody } from '@/components/app/page-parts';
-import { TableScroll, Td, Th, Tr } from '@/components/app/table';
-import { PageTitle } from '@/components/app/page-chrome';
+import { PageTitle } from '@/components/shell/page-chrome';
 
 /**
  * The blog console (CLAUDE.md §5.19).
@@ -46,131 +43,100 @@ import { PageTitle } from '@/components/app/page-chrome';
  * lose them.
  */
 export default function ManageBlogPage() {
+  const { user } = useSession();
   const { data, error, loading, reload } = useApi((t) => api.staff.blog(t), []);
+
+  // Mirrors `BlogService.assertMayMutate`. The server is what enforces it -
+  // this only decides whether the title renders as a link to the editor.
+  const mayEdit = (post: StaffBlogPost) => user?.role === 'teacher' || post.authorId === user?.id;
+
+  const columns: Column<StaffBlogPost>[] = [
+    {
+      label: 'Post',
+      render: (post) =>
+        mayEdit(post) ? (
+          <Link href={`/manage/blog/${post.id}`} className="text-fg hover:underline">
+            {post.title}
+          </Link>
+        ) : (
+          <span className="text-fg-2" title="Only Dr. Tahir can edit a post written by someone else">
+            {post.title}
+          </span>
+        ),
+    },
+    { label: 'Status', render: (post) => <StatusTag post={post} /> },
+    {
+      label: 'Category',
+      render: (post) => <Tag tone={post.category === 'achievement' ? 'amber' : 'gray'}>{post.category}</Tag>,
+    },
+    { label: 'Author', render: (post) => <span className="block max-w-[20ch] truncate">{post.authorName}</span> },
+    { label: 'Media', align: 'end', render: (post) => <span className="num">{post.media.length}</span> },
+    {
+      label: 'Publishes',
+      align: 'end',
+      render: (post) => (
+        <span className="whitespace-nowrap text-fg-3">
+          {post.status === 'draft' ? '—' : formatDateTime(post.publishAt)}
+        </span>
+      ),
+    },
+  ];
 
   return (
     <>
-      <PageTitle icon={NewspaperIcon} title="Blog" />
-      <PageBody dense className="flex flex-col gap-[var(--sp-2)]">
+      <PageTitle title="Blog" />
+      <div className="flex flex-col gap-4 p-6">
         <CreatePost onCreated={reload} />
 
-        {loading && <RowsSkeleton rows={4} />}
-        {error && <ErrorState message={error.message} onRetry={reload} />}
+        {loading && (
+          <div className="flex justify-center p-8">
+            <Loader label="Loading posts" />
+          </div>
+        )}
+        {error && (
+          <EmptyState
+            icon="AlertTriangle"
+            title={error.message}
+            action={<Button onClick={reload}>Try again</Button>}
+          />
+        )}
 
         {data && data.length === 0 && (
           <EmptyState
+            icon="Notes"
             title="No posts yet"
-            body="Write one above. It starts as a draft, so nothing is public until you publish it."
+            description="Write one above. It starts as a draft, so nothing is public until you publish it."
           />
         )}
 
         {data && data.length > 0 && (
           <>
-            <div className="flex h-[var(--topbar-h)] items-center justify-between px-[var(--sp-2)]">
-              <span className="inline-flex h-[var(--h-sm)] items-center gap-[var(--sp-1)] rounded-[var(--r-lg)] bg-[var(--bg-primary)] py-[var(--sp-1)] ps-[var(--sp-1)] pe-[var(--sp-2)] text-[var(--fs-base)] font-medium text-fg-2">
-                All posts
-                {' · '}
-                <span className="num">{data.length}</span>
+            <div className="flex items-center justify-between">
+              <span className="text-base font-medium text-fg-2">
+                All posts · <span className="num">{data.length}</span>
               </span>
-              <span className="text-[var(--fs-base)] text-fg-3">
-                Students and visitors read the published ones
-              </span>
+              <span className="text-base text-fg-3">Students and visitors read the published ones</span>
             </div>
 
-            <TableScroll minWidth={760}>
-              <thead>
-                <tr className="border-b border-[var(--border-medium)]">
-                  <Th>Post</Th>
-                  <Th>Status</Th>
-                  <Th>Category</Th>
-                  <Th>Author</Th>
-                  <Th align="end">Media</Th>
-                  <Th align="end">Publishes</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.map((post) => (
-                  <PostRow key={post.id} post={post} />
-                ))}
-              </tbody>
-            </TableScroll>
+            <Table columns={columns} rows={data} rowKey={(post) => post.id} />
           </>
         )}
-      </PageBody>
+      </div>
     </>
   );
 }
 
 /**
- * The status chip, and the one piece of UI that earns its keep.
- *
  * `status` and `isLive` are two different facts and the console has to show
  * both, because nothing rewrites a row when its scheduled time passes: a post
  * can say `scheduled` and be live, which is accurate history and completely
  * confusing without a label that names the *current* state. So a scheduled post
  * reads "Scheduled" before its time and "Live" after it.
  */
-function StatusChip({ post }: { post: StaffBlogPost }) {
-  if (post.status === 'draft') return <Chip tone="neutral">Draft</Chip>;
-  if (post.isLive) return <Chip tone="green">Live</Chip>;
-  return <Chip tone="amber">Scheduled</Chip>;
-}
-
-function PostRow({ post }: { post: StaffBlogPost }) {
-  const { user } = useSession();
-  // Mirrors `BlogService.assertMayMutate`. The server is what enforces it -
-  // this only decides whether to offer the link.
-  const mayEdit = user?.role === 'teacher' || post.authorId === user?.id;
-
-  // The record chip: the first column's title, carrying the link where there
-  // is one. A row a TA may not edit renders the same chip without the anchor
-  // and says why on hover, rather than vanishing - a TA seeing eleven posts on
-  // the public site and four here would reasonably think the console broke.
-  const chipClass =
-    'inline-flex h-[var(--h-tag)] max-w-full items-center gap-[var(--sp-1)] ' +
-    'rounded-[var(--r-sm)] bg-[var(--bg-wash-nav)] px-[var(--sp-1)] ' +
-    'text-[var(--fs-base)] font-medium text-fg';
-
-  return (
-    <Tr>
-      <Td>
-        {mayEdit ? (
-          <Link
-            href={`/manage/blog/${post.id}`}
-            className={`${chipClass} transition-colors duration-[var(--dur-fast)] hover:bg-[var(--bg-wash)]`}
-          >
-            <span className="truncate">{post.title}</span>
-          </Link>
-        ) : (
-          <span
-            className={`${chipClass} text-fg-2`}
-            title="Only Dr. Tahir can edit a post written by someone else"
-          >
-            <span className="truncate">{post.title}</span>
-          </span>
-        )}
-      </Td>
-      <Td>
-        <StatusChip post={post} />
-      </Td>
-      <Td>
-        <Chip tone={post.category === 'achievement' ? 'amber' : 'neutral'}>
-          {post.category}
-        </Chip>
-      </Td>
-      <Td>
-        <span className="block max-w-[20ch] truncate">{post.authorName}</span>
-      </Td>
-      <Td align="end">
-        <span className="num">{post.media.length}</span>
-      </Td>
-      <Td align="end">
-        <span className="whitespace-nowrap text-fg-3">
-          {post.status === 'draft' ? '--' : formatDateTime(post.publishAt)}
-        </span>
-      </Td>
-    </Tr>
-  );
+function StatusTag({ post }: { post: StaffBlogPost }) {
+  if (post.status === 'draft') return <Tag tone="gray">Draft</Tag>;
+  if (post.isLive) return <Tag tone="green">Live</Tag>;
+  return <Tag tone="amber">Scheduled</Tag>;
 }
 
 const CATEGORIES: { value: BlogCategory; label: string }[] = [
@@ -217,77 +183,53 @@ function CreatePost({ onCreated }: { onCreated: () => void }) {
 
   return (
     <Panel title="New post">
-      <form onSubmit={submit} className="flex flex-col gap-[var(--sp-4)]">
-        <div className="flex flex-wrap gap-[var(--sp-4)]">
-          <div className="min-w-[280px] flex-1">
-            <Field
-              label="Title"
-              htmlFor="post-title"
-              hint="This becomes the public address, and it does not change if you edit the title later."
-            >
-              <Input
-                id="post-title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="June 2026: 34 A* grades across the Chemistry cohorts"
-                maxLength={200}
-                required
-              />
-            </Field>
-          </div>
-          <div className="w-[180px]">
-            <Field label="Category" htmlFor="post-category">
-              <Select
-                id="post-category"
-                value={category}
-                onChange={(e) => setCategory(e.target.value as BlogCategory)}
-              >
-                {CATEGORIES.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          </div>
-        </div>
-
-        <Field
-          label="Description"
-          htmlFor="post-body"
-          hint="Plain text. Leave a blank line between paragraphs."
-        >
-          <Textarea
-            id="post-body"
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            rows={5}
-            maxLength={20000}
-            placeholder="What happened, and what made the difference."
+      <form onSubmit={submit} className="flex flex-col gap-4">
+        <div className="flex flex-wrap gap-4">
+          <TextInput
+            label="Title"
+            id="post-title"
+            className="min-w-[280px] flex-1"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="June 2026: 34 A* grades across the Chemistry cohorts"
+            hint="This becomes the public address, and it does not change if you edit the title later."
+            maxLength={200}
             required
           />
-        </Field>
+          <Select
+            label="Category"
+            id="post-category"
+            className="w-[180px]"
+            value={category}
+            onChange={(e) => setCategory(e.target.value as BlogCategory)}
+            options={CATEGORIES}
+          />
+        </div>
 
-        <div className="flex items-center gap-[var(--sp-3)]">
-          <Button
-            type="submit"
-            variant="primary"
-            loading={busy}
-            disabled={!title.trim() || !body.trim()}
-          >
-            Save as draft
+        <TextArea
+          label="Description"
+          id="post-body"
+          hint="Plain text. Leave a blank line between paragraphs."
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          rows={5}
+          maxLength={20000}
+          placeholder="What happened, and what made the difference."
+          required
+        />
+
+        <div className="flex items-center gap-3">
+          <Button type="submit" variant="primary" disabled={busy || !title.trim() || !body.trim()}>
+            {busy ? <Loader size={3} label="Saving" /> : 'Save as draft'}
           </Button>
           {created && (
-            <Link
-              href={`/manage/blog/${created}`}
-              className="text-[var(--fs-base)] text-fg underline underline-offset-4"
-            >
+            <Link href={`/manage/blog/${created}`} className="text-base text-fg underline underline-offset-4">
               Add pictures and publish it
             </Link>
           )}
         </div>
+        {error && <InlineBanner tone="danger">{error}</InlineBanner>}
       </form>
-      {error && <FormError>{error}</FormError>}
     </Panel>
   );
 }

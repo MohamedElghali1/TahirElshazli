@@ -8,7 +8,13 @@
 
 /* --- auth (auth/auth.service.ts, auth/roles.enum.ts) ---------------------- */
 
-export type Role = 'visitor' | 'student' | 'parent' | 'assistant' | 'teacher';
+export type Role =
+  | 'visitor'
+  | 'student'
+  | 'parent'
+  | 'assistant'
+  | 'admin'
+  | 'teacher';
 
 export interface AuthenticatedUser {
   id: string;
@@ -22,9 +28,30 @@ export interface AuthResult {
   user: AuthenticatedUser;
 }
 
-/* --- courses (courses/courses.service.ts, interfaces/course-repository) --- */
+/**
+ * Where an account sits in the registration queue (`DOM-4`). Mirrors
+ * `auth/interfaces/user-repository.interface.ts` `UserStatus`.
+ *
+ * Only `active` may authenticate, and that is enforced twice on the server -
+ * at `login`, and at `JwtStrategy.validate`, which every authenticated request
+ * passes through. Nothing here is a permission check; it is a label.
+ */
+export type UserStatus = 'waiting' | 'active' | 'rejected';
 
-export type LearningMode = 'recorded' | 'live';
+/**
+ * What `POST /auth/register` returns now: the queue position, and **no
+ * credential** (ruling R-6).
+ *
+ * A new account is `waiting` and cannot sign in until staff accept it, so the
+ * sign-up screen shows a "waiting for approval" state rather than navigating
+ * to the dashboard. That screen is unit 4's work; this type is what it will
+ * be built against.
+ */
+export interface RegistrationResult {
+  status: 'waiting';
+}
+
+/* --- courses (courses/courses.service.ts, interfaces/course-repository) --- */
 
 export interface Lesson {
   id: string;
@@ -47,15 +74,6 @@ export interface CompletionCheckpoint {
   completedAt: string | null;
 }
 
-/** CLAUDE.md §5.1 - completion. Never merged with the grade averages below. */
-export interface RecordedProgress {
-  type: 'recorded';
-  completedLessons: number;
-  totalLessons: number;
-  completionPercentage: number;
-  checkpoints: CompletionCheckpoint[];
-}
-
 export interface AttendanceEntry {
   sessionId: string;
   title: string;
@@ -63,16 +81,32 @@ export interface AttendanceEntry {
   attended: boolean;
 }
 
-/** CLAUDE.md §5.2 - live-mode courses render this timeline instead. */
-export interface LiveProgress {
-  type: 'live';
+/**
+ * One shape, carrying **both** halves - completion and attendance.
+ *
+ * This mirrors `courses.service.ts`, where it was a discriminated union keyed
+ * on the student's learning mode until `D-9` retired that axis (2026-09-20).
+ * Every course now has recordings to watch *and* sessions to attend, so both
+ * halves are always present; a course with no sessions reports `0 of 0` rather
+ * than serving a different shape.
+ *
+ * **Render them as two `Meter`s and never average them** (CLAUDE.md §11.1
+ * non-negotiable 2). `completionPercentage` and `attendancePercentage` measure
+ * different things - watching the material and turning up - and one blended
+ * figure would say neither. Grades never appear here at all: performance is
+ * `ReportSummary.performance`, and progress and performance never merge.
+ */
+export interface CourseProgress {
+  completedLessons: number;
+  totalLessons: number;
+  completionPercentage: number;
+  checkpoints: CompletionCheckpoint[];
+
   attendedSessions: number;
   totalSessions: number;
   attendancePercentage: number;
   timeline: AttendanceEntry[];
 }
-
-export type CourseProgress = RecordedProgress | LiveProgress;
 
 export interface CourseListItem {
   id: string;
@@ -80,9 +114,43 @@ export interface CourseListItem {
   description: string;
   thumbnailUrl: string | null;
   teacherName: string;
-  learningMode: LearningMode;
   progress: CourseProgress;
 }
+
+/**
+ * A course as `/admin/courses` writes and returns it (`DOM-5`). Mirrors
+ * `courses/interfaces/course-repository.ts` `StoredCourse`.
+ *
+ * Deliberately not `CourseDetail`: that one carries `progress`, which is a
+ * fact about a *student's* relationship to a course and has no meaning on the
+ * row an admin is editing.
+ */
+export interface AdminCourse {
+  id: string;
+  slug: string;
+  isPublished: boolean;
+  title: string;
+  description: string;
+  thumbnailUrl: string | null;
+  teacherName: string;
+  sequentialLockEnabled: boolean;
+  modules: CourseModule[];
+}
+
+/** The body of `POST /admin/courses`. */
+export interface AdminCourseWrite {
+  title: string;
+  description: string;
+  slug: string;
+  teacherName: string;
+  thumbnailUrl?: string | null;
+  sequentialLockEnabled?: boolean;
+  /** Absent means **draft**: publishing is a separate, deliberate PATCH. */
+  isPublished?: boolean;
+}
+
+/** The body of `PATCH /admin/courses/:courseId`. Every field optional. */
+export type AdminCoursePatch = Partial<AdminCourseWrite>;
 
 export interface CourseDetail extends CourseListItem {
   sequentialLockEnabled: boolean;
@@ -102,7 +170,6 @@ export interface CatalogItem {
   description: string;
   thumbnailUrl: string | null;
   teacherName: string;
-  learningMode: LearningMode;
   moduleCount: number;
   lessonCount: number;
   enrolled: boolean;
@@ -264,7 +331,6 @@ export interface DashboardResponse {
     id: string;
     title: string;
     teacherName: string;
-    learningMode: LearningMode;
   };
   progress: CourseProgress;
   stats: DashboardStats;
@@ -431,7 +497,6 @@ export interface RosterEntry {
   studentId: string;
   name: string;
   email: string;
-  learningMode: LearningMode;
   enrolledAt: string;
   submittedCount: number;
   gradedCount: number;
@@ -521,19 +586,90 @@ export interface DirectoryEntry {
   createdAt: string;
 }
 
+/**
+ * `status` is on the wire because this list is the only place a waiting
+ * registration is visible at all (`DOM-4`) - the queue screen is built on it.
+ *
+ * `API_SPEC.yaml`'s `StudentDetail` percentages are still absent: they have no
+ * source until the reports and analytics units.
+ */
 export interface StudentDirectoryEntry extends DirectoryEntry {
   enrolledCourseCount: number;
+  status: UserStatus;
 }
 
-/* --- staff assignment (staff/staff.service.ts) --------------------------- */
-
-export interface CourseStaffMember {
-  userId: string;
+/**
+ * The staff detail view, from `GET /admin/students/:id` (`PEOPLE-2`). Every
+ * profile field, including the three staff-owned ones the directory list
+ * never carries - a detail screen affords the extra read the list doesn't.
+ * Mirrors `manage/admin-students.service.ts`'s `StudentDetail`.
+ */
+export interface StudentDetail {
+  id: string;
   name: string;
   email: string;
-  assignedAt: string;
-  assignedBy: string;
+  status: UserStatus;
+  createdAt: string;
+  enrolledCourseCount: number;
+  phone: string | null;
+  avatarUrl: string | null;
+  schoolName: string | null;
+  parentEmail: string | null;
+  staffNotes: string | null;
 }
+
+/** `PATCH /admin/students/:id` body - every field optional, `null` clears a nullable one. */
+export interface AdminStudentUpdate {
+  name?: string;
+  phone?: string | null;
+  avatarUrl?: string | null;
+  schoolName?: string | null;
+  parentEmail?: string | null;
+  staffNotes?: string | null;
+}
+
+/** `POST /admin/students` body (`PEOPLE-3`) - no password; a sign-in link is emailed. */
+export interface CreateStudentInput {
+  name: string;
+  email: string;
+}
+
+/**
+ * How wide an assistant's reach is (`assistant_scopes`). A missing scope row
+ * means "never configured", not a default - see the backend interface of the
+ * same name.
+ */
+export type AssistantScope = 'all_groups' | 'assigned_groups';
+
+/**
+ * A row from `GET /admin/assistants` (`PEOPLE-4`) - a real account or a
+ * still-pending invitation, one shape either way. Mirrors
+ * `manage/admin-assistants.service.ts`'s `Assistant`.
+ */
+export interface Assistant extends DirectoryEntry {
+  role: Role;
+  scope: AssistantScope;
+  groupIds: string[];
+  status: 'invited' | 'active';
+  /** `MAX(created_at)` from the audit log for this actor - last *acted*, not last seen (`PEOPLE-6`). */
+  lastSeenAt: string | null;
+}
+
+/** The body of `POST /admin/assistants` and `PATCH /admin/assistants/:userId`. */
+export interface AssistantWrite {
+  name: string;
+  email: string;
+  role: Role;
+  scope: AssistantScope;
+  groupIds?: string[];
+}
+
+/* --- staff assignment ----------------------------------------------------
+ * `CourseStaffMember` is gone with `course_staff_assignments` and
+ * `/admin/courses/:courseId/staff` (`AUTH-2`). An assistant's scope is
+ * `assistant_scopes` + `assistant_group_assignments`; the shape the admin
+ * screen reads is `Assistant`, above.
+ * ----------------------------------------------------------------------- */
 
 /* --- audit log (audit/interfaces/audit-log-repository) ------------------- */
 
@@ -570,6 +706,17 @@ export type AuditAction =
   | 'group.course_removed'
   | 'group.student_assigned'
   | 'group.student_removed'
+  | 'student.accepted'
+  | 'student.rejected'
+  | 'student.updated'
+  | 'student.created'
+  | 'assistant.invited'
+  | 'assistant.invitation_accepted'
+  | 'assistant.invitation_resent'
+  | 'assistant.scope_changed'
+  | 'assistant.removed'
+  | 'course.created'
+  | 'course.updated'
   | 'assessment.created'
   | 'assessment.updated'
   | 'assessment.targeted'
@@ -634,8 +781,6 @@ export interface PublicCourseSummary {
   description: string;
   thumbnailUrl: string | null;
   teacherName: string;
-  /** Drives the Live / Recorded badge (CLAUDE.md §5.2). */
-  learningMode: LearningMode;
   moduleCount: number;
   lessonCount: number;
   totalDurationSeconds: number;
@@ -648,33 +793,90 @@ export interface PublicCourseDetail extends PublicCourseSummary {
 /* ------------------------------------------------------------------------
    Groups (CLAUDE.md §5.16) - the cohort a course is taught to.
 
-   A group is a class of *students*, not a subdivision of a course: it carries
-   no courseId, and several groups can be enrolled in the same course. What a
-   group studies is `GroupCourse`, which is also where the learning mode lives
-   (§5.2) - a group is taught one way, and two students in the same room cannot
-   be in different modes.
+   A group is a class of students studying **one** course. It used to carry no
+   courseId, with a `GroupCourse` join row saying what it studied; migration 013
+   collapsed that into a column, on the client's decision. Several groups can
+   still study the same course.
    ------------------------------------------------------------------------ */
 
 export interface Group {
   id: string;
   name: string;
   teacherId: string;
+  courseId: string;
+
+  /**
+   * Who runs this group. **Display only - never render a permission from it.**
+   * What an assistant may reach is decided server-side by `StaffScopeService`
+   * from `assistant_group_assignments`, and the two are deliberately allowed to
+   * disagree. Showing a control based on this field would be showing a control
+   * the server then refuses - and hiding one is courtesy, never security.
+   */
+  assistantId: string | null;
+
+  /** When the group meets, as free text - "Saturday 18:00". Not a schedule. */
+  meets: string | null;
+  room: string | null;
+
   createdAt: string;
 }
 
-export interface GroupCourse {
-  id: string;
-  groupId: string;
-  courseId: string;
-  learningMode: LearningMode;
-  enrolledAt: string;
-  enrolledBy: string;
+/** One console row: the group, and how many sit in it. */
+export interface GroupSummary extends Group {
+  memberCount: number;
 }
 
-/** One console row: the group, what it studies, how many sit in it. */
-export interface GroupSummary extends Group {
-  courses: GroupCourse[];
+/**
+ * The POST body. `name` and `courseId` are both required: a group IS a cohort
+ * studying one named course (migration 013). `API_SPEC.yaml`'s `GroupWrite`.
+ */
+export interface GroupWrite {
+  name: string;
+  courseId: string;
+  assistantId?: string | null;
+  meets?: string | null;
+  room?: string | null;
+}
+
+/**
+ * The PATCH body. Every field optional; `null` clears a nullable one, and an
+ * omitted field is left alone. `API_SPEC.yaml`'s `GroupPatch` - it used to be
+ * called `GroupWrite` here, which named the create shape in the spec and the
+ * edit shape in the browser (review F2A-5).
+ */
+export interface GroupPatch {
+  name?: string;
+  courseId?: string;
+  assistantId?: string | null;
+  meets?: string | null;
+  room?: string | null;
+}
+
+/**
+ * `GET /staff/groups/:id/report` (`GROUP-4`). Performance only - no
+ * progress/completion figure sits beside it (CLAUDE.md §11.1). No PDF field:
+ * the browser's own print-to-PDF renders this data, there is no server-side
+ * PDF file to link to.
+ */
+export interface GroupReportEntry {
+  studentId: string;
+  name: string;
+  email: string;
+  submittedCount: number;
+  gradedCount: number;
+  averageScorePercent: number | null;
+}
+
+export interface GroupReport {
+  groupId: string;
+  groupName: string;
+  courseId: string;
+  courseTitle: string;
   memberCount: number;
+  /** Assessments actually targeted at this group, not every assessment on the course. */
+  assessmentCount: number;
+  averageScorePercent: number | null;
+  entries: GroupReportEntry[];
 }
 
 /**

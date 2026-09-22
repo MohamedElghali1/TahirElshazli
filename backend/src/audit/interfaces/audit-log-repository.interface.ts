@@ -13,6 +13,13 @@ import { Role } from '../../auth/roles.enum.js';
  * Names are `<subject>.<past-tense verb>` so the admin feed reads as history.
  */
 export type AuditAction =
+  // ---------------------------------------------------------------------
+  // RETAINED, UNUSED. `course_staff_assignments` is retired by `AUTH-2`, but
+  // **retiring a table does not retire its audit history.** The log has no
+  // foreign keys precisely so it outlives what it describes, and
+  // `ListAuditLogQueryDto`'s `AUDIT_ACTION_VALUES` is built from this union -
+  // so deleting a member here makes every historical row of that action
+  // unfilterable with a 400. Do not tidy these away.
   | 'course_staff.assigned'
   | 'course_staff.unassigned'
   // The first TA mutation the log covers. §5.4 names grading explicitly, and
@@ -41,11 +48,49 @@ export type AuditAction =
   // renders. "Which assistant moved this student out of the Saturday group"
   // is exactly the question the log exists to answer.
   | 'group.created'
+  // The widened PATCH (`DOM-2`). One action covering name, course, assistant,
+  // meets and room, rather than five: the `before`/`after` pair already says
+  // which field moved, and five actions would make "what happened to this
+  // group" five filters instead of one.
+  | 'group.updated'
+  // RETAINED, UNUSED, for the reason given at the top of this union. `renamed`
+  // is superseded by `group.updated`; `course_added`/`course_removed` describe
+  // `group_courses`, which migration 013 dropped when a group's course became
+  // a column. Historical rows of all three still exist and must stay readable.
   | 'group.renamed'
   | 'group.course_added'
   | 'group.course_removed'
   | 'group.student_assigned'
   | 'group.student_removed'
+  // The registration queue (`DOM-4`). Accepting a student is the single
+  // highest-consequence staff action on the people surface: it activates an
+  // account, enrols it and places it in a cohort in one transaction, and there
+  // is no undo. Rejecting one refuses a person access to a course they may
+  // have paid for. "Who let this account in, and when" is exactly the question
+  // §5.4 exists to answer.
+  | 'student.accepted'
+  | 'student.rejected'
+  // The staff-facing detail edit and direct-create (`PEOPLE-2`, `PEOPLE-3`).
+  // `updated` covers only the fields a given call actually changed - the
+  // `before`/`after` pair is built from the update, not the whole row.
+  | 'student.updated'
+  | 'student.created'
+  // The assistant invitation flow (`AUTH-4`, `PEOPLE-4`). `invited` and
+  // `invitation_resent` are staff actions; `invitation_accepted` is
+  // self-attributed - there is no staff caller on the accept route
+  // (`security: []`), so the new account is the actor of its own activation,
+  // the same way a login is.
+  | 'assistant.invited'
+  | 'assistant.invitation_accepted'
+  | 'assistant.invitation_resent'
+  | 'assistant.scope_changed'
+  | 'assistant.removed'
+  // Course lifecycle (`DOM-5`). A course is what every enrollment, group,
+  // task and report hangs off, and un-publishing one removes it from the
+  // public site - a change to the platform's shape rather than to one
+  // student's record.
+  | 'course.created'
+  | 'course.updated'
   // Authoring (§5.18). Reachable by an assistant as of 2026-09-10 - the client
   // settled §11's open question in the wide direction - so these are TA
   // mutations of the kind §5.4 was written for: they decide what students are
@@ -84,16 +129,21 @@ export type AuditAction =
 
 /** What the action happened *to*. Grows with `AuditAction`, for the same reason. */
 export type AuditTargetType =
+  // RETAINED, UNUSED - `course_staff_assignments` is retired by `AUTH-2`. Same
+  // reason as the retained `AuditAction` members: historical rows name it.
   | 'course_staff_assignment'
   | 'assessment_submission'
   | 'recording'
   | 'live_session'
   | 'announcement'
   | 'group'
-  // The pairing and the placement are their own targets rather than both being
-  // filed under `group`: "everything that happened to group-1" and "everything
-  // that happened to this student's placement" are different questions, and
+  // The placement is its own target rather than being filed under `group`:
+  // "everything that happened to group-1" and "everything that happened to
+  // this student's placement" are different questions, and
   // `audit_log (target_type, target_id, ...)` is indexed to answer either.
+  //
+  // `group_course` is RETAINED, UNUSED - the table it named was dropped by
+  // migration 013, and its historical rows must stay filterable.
   | 'group_course'
   | 'group_membership'
   // The task itself. Its *audience* is not a separate target type: re-aiming a
@@ -113,7 +163,40 @@ export type AuditTargetType =
   // A mirrored external response. Its own target type rather than the
   // assessment's, because "what happened to this response" and "what happened
   // to this task" are different questions.
-  | 'external_result';
+  | 'external_result'
+  // The account, for the registration queue. The target of an accept or a
+  // reject is the *person*, not their group placement, and filing one under
+  // `group_membership` would make "what happened to this student's account"
+  // unanswerable.
+  //
+  // **`accept` writes exactly one entry, and it is this one.** It does not
+  // also write `group.student_assigned`, deliberately: `student.accepted`
+  // already carries `groupId` *and* `courseId` in its `after`
+  // (`registration-approval.service.ts`), so the placement is auditable under
+  // that action, and a second entry would be redundant - and would mean going
+  // through `GroupsService.addMember`, which opens a nested transaction
+  // inside the one `accept` already holds. Since `DOM-4`, acceptance is the
+  // only path by which a student is placed at registration, so there is no
+  // history being lost. `group.student_assigned` is still written by the
+  // staff placement route, which is a different decision by a different
+  // actor.
+  | 'student'
+  // The assistant/admin account, for the invitation flow. Its own target type
+  // rather than filed under nothing: an invitation names no account until it
+  // is accepted, so `assistant.invited`/`invitation_resent` target the
+  // invitation's own id, and `invitation_accepted` targets the real user id
+  // once one exists.
+  //
+  // `scope_changed` targets whichever id the assistant currently has -
+  // an invitation's id before acceptance (`AssistantInvitationRepository.
+  // updateDetails`), the real user id after. `removed` is scoped to pending
+  // invitations only in this slice (`AdminAssistantsService.remove`): this
+  // codebase has no precedent for hard-deleting or deactivating an already-
+  // active account, and inventing one was out of scope here - disclosed as
+  // an open item in `docs/phases/unit-5/REVIEW_5C.md` rather than guessed.
+  | 'assistant'
+  // The course itself, for create and update.
+  | 'course';
 
 /**
  * One side of a before/after pair.

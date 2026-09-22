@@ -6,22 +6,25 @@ import type {
   AuthoredAssessment,
   AuditLogPage,
   AuthResult,
+  RegistrationResult,
+  UserStatus,
+  AdminCourse,
+  AdminCourseWrite,
+  AdminCoursePatch,
   CatalogItem,
   ClassmateGroup,
   CourseDetail,
   CourseListItem,
   CourseRosterResponse,
-  CourseStaffMember,
   DashboardResponse,
-  DirectoryEntry,
   GradingQueueItem,
   GradingQueueResponse,
   GradingStatus,
-  Group,
-  GroupCourse,
   GroupMemberView,
+  GroupPatch,
+  GroupReport,
   GroupSummary,
-  LearningMode,
+  GroupWrite,
   LiveSession,
   LiveSessionListResponse,
   ManageOverview,
@@ -37,6 +40,11 @@ import type {
   ReportSummary,
   StaffCourseSummary,
   StaffRecording,
+  Assistant,
+  AssistantWrite,
+  AdminStudentUpdate,
+  CreateStudentInput,
+  StudentDetail,
   StudentDirectoryEntry,
   StudentHomeResponse,
   StudentProfile,
@@ -364,8 +372,13 @@ export const api = {
   },
 
   auth: {
+    /**
+     * Creates an account **in the waiting queue**. Returns `{ status:
+     * 'waiting' }` and no token (ruling R-6) - the account cannot sign in
+     * until staff accept it, so there is no session to start here.
+     */
     register: (body: { email: string; password: string; name: string }) =>
-      request<AuthResult>('/auth/register', { method: 'POST', body }),
+      request<RegistrationResult>('/auth/register', { method: 'POST', body }),
 
     login: (body: { email: string; password: string }) =>
       request<AuthResult>('/auth/login', { method: 'POST', body }),
@@ -384,6 +397,17 @@ export const api = {
         method: 'POST',
         body,
       }),
+
+    /**
+     * Accepts an assistant invitation (`AUTH-4`): creates the account and
+     * signs them in, same shape as `login`. `token` is a path segment, not a
+     * body field (`API_SPEC.yaml:789`).
+     */
+    acceptInvitation: (token: string, password: string) =>
+      request<AuthResult>(`/auth/invitations/${token}/accept`, {
+        method: 'POST',
+        body: { password },
+      }),
   },
 
   courses: {
@@ -394,16 +418,12 @@ export const api = {
     catalog: (token: string) =>
       request<CatalogItem[]>('/courses/catalog', { token }),
 
-    /**
-     * Enrolls the signed-in student. Takes no student id - the backend reads
-     * it from the token, so there is nothing here to point at someone else.
-     * Enrolling twice succeeds and returns the existing enrollment.
+    /*
+     * `enroll` is gone. `POST /courses/:id/enroll` is retired by `DOM-4`: a
+     * student no longer puts themselves on a course, staff accepting their
+     * registration does it (`admin.acceptRegistration` below). The route
+     * answers 404.
      */
-    enroll: (token: string, courseId: string) =>
-      request<CourseListItem>(`/courses/${courseId}/enroll`, {
-        method: 'POST',
-        token,
-      }),
 
     get: (token: string, courseId: string) =>
       request<CourseDetail>(`/courses/${courseId}`, { token }),
@@ -592,6 +612,10 @@ export const api = {
 
     groupMembers: (token: string, groupId: string) =>
       request<GroupMemberView[]>(`/staff/groups/${groupId}/members`, { token }),
+
+    /** Stats plus a per-student table (`GROUP-4`). No PDF route - the browser's own print-to-PDF renders the file. */
+    groupReport: (token: string, groupId: string) =>
+      request<GroupReport>(`/staff/groups/${groupId}/report`, { token }),
 
     /**
      * Placement - a TA power, granted by the client in as many words (§2.2,
@@ -813,59 +837,109 @@ export const api = {
        same call made for live-session scheduling (CLAUDE.md §11). */
     groups: (token: string) => request<GroupSummary[]>('/admin/groups', { token }),
 
-    createGroup: (token: string, name: string) =>
-      request<Group>('/admin/groups', { method: 'POST', token, body: { name } }),
-
-    renameGroup: (token: string, groupId: string, name: string) =>
-      request<Group>(`/admin/groups/${groupId}`, {
-        method: 'PATCH',
-        token,
-        body: { name },
-      }),
+    /**
+     * A group names its course at creation. Creating one enrols no students:
+     * `Enrollment` stays the access gate (§5.16), which is what keeps the
+     * payment question out of this surface.
+     */
+    createGroup: (token: string, body: GroupWrite) =>
+      request<GroupSummary>('/admin/groups', { method: 'POST', token, body }),
 
     /**
-     * Enrolls a *group* in a course - the client's verb. It enrolls no
-     * students: `Enrollment` stays the access gate (§5.16), which is what
-     * keeps the payment question out of this surface.
+     * Name, course, assistant, meets, room. Replaces the rename-only PATCH and
+     * the two retired `/groups/:id/courses` routes at once - a group's course
+     * is a field on it now, so changing it is editing the group.
+     *
+     * Moving a group that has members to another course answers **409**: every
+     * member would be left enrolled on the old course while being targeted by
+     * work set for the new one.
      */
-    addGroupCourse: (
-      token: string,
-      groupId: string,
-      body: { courseId: string; learningMode: LearningMode },
-    ) =>
-      request<GroupCourse>(`/admin/groups/${groupId}/courses`, {
-        method: 'POST',
+    updateGroup: (token: string, groupId: string, body: GroupPatch) =>
+      request<GroupSummary>(`/admin/groups/${groupId}`, {
+        method: 'PATCH',
         token,
         body,
       }),
 
-    removeGroupCourse: (token: string, groupId: string, courseId: string) =>
-      request<void>(`/admin/groups/${groupId}/courses/${courseId}`, {
-        method: 'DELETE',
-        token,
-      }),
-
-    students: (token: string, search?: string) =>
-      request<StudentDirectoryEntry[]>(`/admin/students${qs({ search })}`, { token }),
-
-    assistants: (token: string, search?: string) =>
-      request<DirectoryEntry[]>(`/admin/assistants${qs({ search })}`, { token }),
-
-    courseStaff: (token: string, courseId: string) =>
-      request<CourseStaffMember[]>(`/admin/courses/${courseId}/staff`, { token }),
-
-    assignStaff: (token: string, courseId: string, userId: string) =>
-      request<CourseStaffMember>(`/admin/courses/${courseId}/staff`, {
+    /** "Move N to group" (`GROUP-3`) - N `addMember` writes in one transaction. */
+    bulkMoveMembers: (token: string, groupId: string, studentIds: string[]) =>
+      request<{ moved: number }>(`/admin/groups/${groupId}/members/bulk`, {
         method: 'POST',
         token,
-        body: { userId },
+        body: { studentIds },
       }),
 
-    unassignStaff: (token: string, courseId: string, userId: string) =>
-      request<{ removed: true }>(`/admin/courses/${courseId}/staff/${userId}`, {
-        method: 'DELETE',
+    /**
+     * The student directory. `status` narrows it to one queue; **absent means
+     * every status**, not `active` - this list is the only place a waiting
+     * registration is visible, so a default that hid them would hide the queue
+     * from the one person who can clear it.
+     */
+    students: (token: string, search?: string, status?: UserStatus) =>
+      request<StudentDirectoryEntry[]>(
+        `/admin/students${qs({ search, status })}`,
+        { token },
+      ),
+
+    /**
+     * Accepts a waiting registration: activates the account, enrols it on the
+     * group's course and places it in the cohort - one transaction on the
+     * server, so it is all three or none.
+     *
+     * The group decides the course; there is no separate course parameter,
+     * because a group studies exactly one.
+     */
+    acceptRegistration: (token: string, studentId: string, groupId: string) =>
+      request<StudentDirectoryEntry>(`/admin/students/${studentId}/accept`, {
+        method: 'POST',
         token,
+        body: { groupId },
       }),
+
+    /**
+     * Rejects one. The account is kept, not deleted. Teacher and admin only -
+     * `registration.reject` is one of the four verbs withheld from an
+     * assistant, refused server-side with 403 whatever the nav renders.
+     */
+    rejectRegistration: (token: string, studentId: string, reason?: string) =>
+      request<{ ok: true }>(`/admin/students/${studentId}/reject`, {
+        method: 'POST',
+        token,
+        body: reason === undefined ? {} : { reason },
+      }),
+
+    /** The staff detail view - every profile field (`PEOPLE-2`). */
+    studentDetail: (token: string, studentId: string) =>
+      request<StudentDetail>(`/admin/students/${studentId}`, { token }),
+
+    /** Edits any field, including the three staff-owned ones (`PEOPLE-2`). */
+    updateStudent: (token: string, studentId: string, body: AdminStudentUpdate) =>
+      request<StudentDetail>(`/admin/students/${studentId}`, {
+        method: 'PATCH',
+        token,
+        body,
+      }),
+
+    /** Creates a student directly, already active, and emails a sign-in link (`PEOPLE-3`). */
+    createStudent: (token: string, body: CreateStudentInput) =>
+      request<StudentDetail>('/admin/students', { method: 'POST', token, body }),
+
+    /** Creates a course. It is a **draft** unless `isPublished` says otherwise. */
+    createCourse: (token: string, body: AdminCourseWrite) =>
+      request<AdminCourse>('/admin/courses', { method: 'POST', token, body }),
+
+    /** Edits one. 409 on a slug another course already holds. */
+    updateCourse: (token: string, courseId: string, body: AdminCoursePatch) =>
+      request<AdminCourse>(`/admin/courses/${courseId}`, {
+        method: 'PATCH',
+        token,
+        body,
+      }),
+
+    // `courseStaff`/`assignStaff`/`unassignStaff` are gone with
+    // `/admin/courses/:courseId/staff` (`AUTH-2`): an assistant's reach is held
+    // at the group grain now, and the route that edits it is unit 5's
+    // `PATCH /admin/assistants/{userId}`.
 
     createRecording: (
       token: string,
@@ -911,11 +985,40 @@ export const api = {
         token,
       }),
 
-    auditLog: (token: string, filter?: { courseId?: string; cursor?: string }) =>
+    auditLog: (
+      token: string,
+      filter?: { actorId?: string; courseId?: string; cursor?: string },
+    ) =>
       request<AuditLogPage>(
-        `/admin/audit-log${qs({ courseId: filter?.courseId, cursor: filter?.cursor })}`,
+        `/admin/audit-log${qs({
+          actorId: filter?.actorId,
+          courseId: filter?.courseId,
+          cursor: filter?.cursor,
+        })}`,
         { token },
       ),
+
+    /** The assistants/admins list - real accounts and pending invitations, merged (`PEOPLE-4`). */
+    assistants: (token: string) => request<Assistant[]>('/admin/assistants', { token }),
+
+    inviteAssistant: (token: string, body: AssistantWrite) =>
+      request<Assistant>('/admin/assistants', { method: 'POST', token, body }),
+
+    updateAssistant: (token: string, userId: string, body: AssistantWrite) =>
+      request<Assistant>(`/admin/assistants/${userId}`, {
+        method: 'PATCH',
+        token,
+        body,
+      }),
+
+    removeAssistant: (token: string, userId: string) =>
+      request<void>(`/admin/assistants/${userId}`, { method: 'DELETE', token }),
+
+    resendAssistantInvitation: (token: string, userId: string) =>
+      request<{ ok: true }>(`/admin/assistants/${userId}/resend`, {
+        method: 'POST',
+        token,
+      }),
   },
 
   students: {

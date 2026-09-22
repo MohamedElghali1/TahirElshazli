@@ -10,7 +10,7 @@ import {
 } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, ApiError } from './api';
-import type { AuthenticatedUser } from './types';
+import type { AuthenticatedUser, RegistrationResult } from './types';
 
 /**
  * Session state for the logged-in student.
@@ -38,11 +38,25 @@ interface SessionValue {
    * without waiting a render for `user` to land in state.
    */
   signIn: (email: string, password: string) => Promise<AuthenticatedUser>;
+  /**
+   * Accepts an assistant invitation and starts the session in one step
+   * (`AUTH-4`) - unlike `register`, this account is `active` immediately.
+   */
+  acceptInvitation: (
+    invitationToken: string,
+    password: string,
+  ) => Promise<AuthenticatedUser>;
+  /**
+   * Creates an account and **starts no session** (`DOM-4`, ruling R-6). The
+   * account is `waiting` and cannot authenticate until staff accept it, so
+   * there is no token to adopt and no user to route on - the caller shows a
+   * "waiting for approval" state instead of navigating.
+   */
   register: (
     name: string,
     email: string,
     password: string,
-  ) => Promise<AuthenticatedUser>;
+  ) => Promise<RegistrationResult>;
   signOut: () => Promise<void>;
 }
 
@@ -120,10 +134,16 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     [adopt],
   );
 
+  const acceptInvitation = useCallback(
+    async (invitationToken: string, password: string) =>
+      adopt(await api.auth.acceptInvitation(invitationToken, password)),
+    [adopt],
+  );
+
   const register = useCallback(
     async (name: string, email: string, password: string) =>
-      adopt(await api.auth.register({ name, email, password })),
-    [adopt],
+      api.auth.register({ name, email, password }),
+    [],
   );
 
   const signOut = useCallback(async () => {
@@ -144,8 +164,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, [token, router]);
 
   const value = useMemo<SessionValue>(
-    () => ({ user, token, loading, signIn, register, signOut }),
-    [user, token, loading, signIn, register, signOut],
+    () => ({ user, token, loading, signIn, acceptInvitation, register, signOut }),
+    [user, token, loading, signIn, acceptInvitation, register, signOut],
   );
 
   return (

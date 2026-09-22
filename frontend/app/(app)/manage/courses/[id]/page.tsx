@@ -4,15 +4,8 @@ import { use } from 'react';
 import { api } from '@/lib/api';
 import { useApi } from '@/lib/session';
 import { formatDate, formatPercent } from '@/lib/format';
-import {
-  Chip,
-  EmptyState,
-  ErrorState,
-  Panel,
-  RowsSkeleton,
-} from '@/components/ui';
-import { PageBody } from '@/components/app/page-parts';
-import { TableScroll, Td, Th, Tr } from '@/components/app/table';
+import type { RosterEntry } from '@/lib/types';
+import { Button, EmptyState, Loader, Panel, Table, type Column } from '@/components/ui';
 
 /**
  * The course roster - read-only, for both roles.
@@ -25,105 +18,92 @@ import { TableScroll, Td, Th, Tr } from '@/components/app/table';
  * Submitted/graded counts and the average are *performance*. Completion
  * progress is a different measurement and is deliberately not shown beside
  * them as if it were the same thing (§5.1).
+ *
+ * No "Mode" column: the pre-port screen read `entry.learningMode` off each
+ * roster row, but `AUTH-2`'s group-grain migration moved learning mode onto
+ * the group-course pairing and `RosterEntry` no longer carries it
+ * (`lib/types.ts`). Restoring an equivalent reading means joining the
+ * roster against the course's groups, which is a data-shape decision this
+ * slice does not make - dropped rather than left reading a field that no
+ * longer exists on the wire.
  */
-export default function CourseRosterPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default function CourseRosterPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { data, error, loading, reload } = useApi(
-    (token) => api.staff.roster(token, id),
-    [id],
-  );
+  const { data, error, loading, reload } = useApi((token) => api.staff.roster(token, id), [id]);
+
+  const columns: Column<RosterEntry>[] = [
+    {
+      label: 'Student',
+      render: (entry) => (
+        <>
+          <span className="block text-base text-fg">{entry.name}</span>
+          <span className="block text-xxs text-fg-4">{entry.email}</span>
+        </>
+      ),
+    },
+    {
+      label: 'Submitted',
+      align: 'end',
+      render: (entry) => (
+        <span className="num">
+          {entry.submittedCount}
+          <span className="text-fg-4">/{data?.assessmentCount}</span>
+        </span>
+      ),
+    },
+    {
+      label: 'Graded',
+      align: 'end',
+      render: (entry) => <span className="num">{entry.gradedCount}</span>,
+    },
+    {
+      label: 'Average',
+      align: 'end',
+      // A numeral, never a meter. Meters are for completion only, so a grade
+      // can never be misread as progress.
+      render: (entry) => <span className="num text-fg">{formatPercent(entry.averageScorePercent)}</span>,
+    },
+    {
+      label: 'Joined',
+      align: 'end',
+      render: (entry) => <span className="text-fg-3">{formatDate(entry.enrolledAt)}</span>,
+    },
+  ];
 
   return (
-    <PageBody>
+    <div className="p-6">
       <Panel
         title="Enrolled students"
-        action={
-          data && (
-            <span className="num text-[var(--fs-xs)] text-fg-3">
-              {data.entries.length}
-            </span>
-          )
-        }
+        action={data && <span className="num text-xs text-fg-3">{data.entries.length}</span>}
         bodyClassName=""
       >
-        {loading && <RowsSkeleton rows={5} />}
+        {loading && (
+          <div className="flex justify-center p-8">
+            <Loader label="Loading the roster" />
+          </div>
+        )}
         {error && (
-          <ErrorState
-            message={
+          <EmptyState
+            icon="AlertTriangle"
+            title={
               error.isNotFound
                 ? 'This course does not exist, or it is not assigned to you.'
                 : error.message
             }
-            onRetry={error.isNotFound ? undefined : reload}
+            action={error.isNotFound ? undefined : <Button onClick={reload}>Try again</Button>}
           />
         )}
         {data && data.entries.length === 0 && (
           <EmptyState
+            icon="Users"
             title="Nobody enrolled yet"
-            body="Students who join this course will be listed here with their submitted work and average mark."
+            description="Students who join this course will be listed here with their submitted work and average mark."
           />
         )}
         {data && data.entries.length > 0 && (
-          <TableScroll>
-              <thead>
-                <tr className="border-b border-[var(--border-light)]">
-                  <Th>Student</Th>
-                  <Th>Mode</Th>
-                  <Th align="end">Submitted</Th>
-                  <Th align="end">Graded</Th>
-                  <Th align="end">Average</Th>
-                  <Th align="end">Joined</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.entries.map((entry) => (
-                  <Tr key={entry.studentId}>
-                    <Td>
-                      <span className="block text-[var(--fs-base)] text-fg">
-                        {entry.name}
-                      </span>
-                      <span className="block text-[var(--fs-xxs)] text-fg-4">
-                        {entry.email}
-                      </span>
-                    </Td>
-                    <Td>
-                      <Chip tone={entry.learningMode === 'live' ? 'violet' : 'blue'}>
-                        {entry.learningMode === 'live' ? 'Live' : 'Recorded'}
-                      </Chip>
-                    </Td>
-                    <Td align="end">
-                      <span className="num">
-                        {entry.submittedCount}
-                        <span className="text-fg-4">
-                          /{data.assessmentCount}
-                        </span>
-                      </span>
-                    </Td>
-                    <Td align="end">
-                      <span className="num">{entry.gradedCount}</span>
-                    </Td>
-                    <Td align="end">
-                      {/* A numeral, never a meter. Meters are for completion
-                          only, so a grade can never be misread as progress. */}
-                      <span className="num text-fg">
-                        {formatPercent(entry.averageScorePercent)}
-                      </span>
-                    </Td>
-                    <Td align="end">
-                      <span className="text-fg-3">
-                        {formatDate(entry.enrolledAt)}
-                      </span>
-                    </Td>
-                  </Tr>
-                ))}
-              </tbody>
-          </TableScroll>
+          <Table columns={columns} rows={data.entries} rowKey={(entry) => entry.studentId} />
         )}
       </Panel>
-    </PageBody>
+    </div>
   );
 }

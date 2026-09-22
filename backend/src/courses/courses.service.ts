@@ -6,26 +6,14 @@ import type {
 } from './interfaces/course-repository.interface.js';
 import { COURSE_REPOSITORY } from './interfaces/course-repository.interface.js';
 import { EnrollmentsService } from '../enrollments/enrollments.service.js';
-import type {
-  Enrollment,
-  LearningMode,
-} from '../enrollments/interfaces/enrollment-repository.interface.js';
+import type { Enrollment } from '../enrollments/interfaces/enrollment-repository.interface.js';
 import { RecordingsService } from '../recordings/recordings.service.js';
 import { LiveSessionsService } from '../live-sessions/live-sessions.service.js';
-import { LearningModeService } from '../groups/learning-mode.service.js';
 
 export interface CompletionCheckpoint {
   lessonId: string;
   title: string;
   completedAt: string | null;
-}
-
-export interface RecordedProgress {
-  type: 'recorded';
-  completedLessons: number;
-  totalLessons: number;
-  completionPercentage: number;
-  checkpoints: CompletionCheckpoint[];
 }
 
 export interface AttendanceEntry {
@@ -35,19 +23,36 @@ export interface AttendanceEntry {
   attended: boolean;
 }
 
-export interface LiveProgress {
-  type: 'live';
+/**
+ * Course *progress* only - one shape, carrying **both** halves.
+ *
+ * This was a discriminated union, `{type:'recorded'} | {type:'live'}`, branched
+ * on the student's learning mode. `D-9` (2026-09-20) retired that axis: every
+ * course is now taught the same way, with recordings to watch *and* live
+ * sessions to attend, so both halves are always present and both sub-queries
+ * always run. A student with no sessions reports `0 of 0` attendance rather
+ * than being served a different response shape.
+ *
+ * **The two halves must never be averaged into one number** (`CLAUDE.md` §11.1
+ * non-negotiable 2). `completionPercentage` and `attendancePercentage` are
+ * separate figures about separate things - watching the material and turning
+ * up - and a single blended "progress" figure would say neither. They are
+ * rendered as two `Meter`s, never one.
+ *
+ * Grades never appear here either: performance lives in the reports summary,
+ * and progress and performance are the other pair that never merge.
+ */
+export interface CourseProgress {
+  completedLessons: number;
+  totalLessons: number;
+  completionPercentage: number;
+  checkpoints: CompletionCheckpoint[];
+
   attendedSessions: number;
   totalSessions: number;
   attendancePercentage: number;
   timeline: AttendanceEntry[];
 }
-
-/**
- * Course *progress* only. Grades never appear here - performance lives in the
- * reports summary, and the two are deliberately never blended into one number.
- */
-export type CourseProgress = RecordedProgress | LiveProgress;
 
 export interface CourseListItem {
   id: string;
@@ -55,7 +60,6 @@ export interface CourseListItem {
   description: string;
   thumbnailUrl: string | null;
   teacherName: string;
-  learningMode: LearningMode;
   progress: CourseProgress;
 }
 
@@ -79,8 +83,6 @@ export interface CatalogItem {
   description: string;
   thumbnailUrl: string | null;
   teacherName: string;
-  /** The mode this course is taught in, and the mode enrolling would use. */
-  learningMode: LearningMode;
   moduleCount: number;
   lessonCount: number;
   /** Whether the caller already holds this course. */
@@ -103,51 +105,39 @@ export class CoursesService {
     private readonly enrollmentsService: EnrollmentsService,
     private readonly recordingsService: RecordingsService,
     private readonly liveSessionsService: LiveSessionsService,
-    // Global (`GroupDataModule`), so there is no import edge back to
-    // `GroupsModule` - which imports this one. See that file for the cycle.
-    private readonly learningMode: LearningModeService,
   ) {}
 
   /**
-   * Derived on every read from watch progress (recorded) or attendance (live),
-   * so the completion bar can never drift from the underlying records.
+   * Derived on every read from watch progress **and** attendance, so neither
+   * bar can drift from the records underneath it.
+   *
+   * Three reads where the branched version did one or two. At the size this
+   * runs at (§7.3) that is the same fraction of a millisecond, and it buys a
+   * response shape that does not depend on a mode nobody sets any more.
    */
   async getProgress(
     courseId: string,
     studentId: string,
-    learningMode: LearningMode,
   ): Promise<CourseProgress> {
-    if (learningMode === 'live') {
-      const summary = await this.liveSessionsService.getAttendanceSummary(
-        courseId,
-        studentId,
-      );
-      return { type: 'live', ...summary };
-    }
-    const [completion, { recordings }] = await Promise.all([
+    const [completion, { recordings }, attendance] = await Promise.all([
       this.recordingsService.getCourseCompletion(courseId, studentId),
       this.recordingsService.getRecordingsForCourse(courseId, studentId),
+      this.liveSessionsService.getAttendanceSummary(courseId, studentId),
     ]);
     return {
-      type: 'recorded',
       ...completion,
       checkpoints: recordings.map((r) => ({
         lessonId: r.lessonId,
         title: r.title,
         completedAt: r.completedAt,
       })),
+      ...attendance,
     };
   }
 
-  /**
-   * `learningMode` is passed in rather than read off the enrollment: it lives
-   * on the student's group now (CLAUDE.md §5.2), and the caller has usually
-   * just resolved it for a whole list.
-   */
   private async toListItem(
     course: StoredCourse,
     enrollment: Enrollment,
-    learningMode: LearningMode,
   ): Promise<CourseListItem> {
     return {
       id: course.id,
@@ -155,12 +145,7 @@ export class CoursesService {
       description: course.description,
       thumbnailUrl: course.thumbnailUrl,
       teacherName: course.teacherName,
-      learningMode,
-      progress: await this.getProgress(
-        course.id,
-        enrollment.studentId,
-        learningMode,
-      ),
+      progress: await this.getProgress(course.id, enrollment.studentId),
     };
   }
 
@@ -182,12 +167,7 @@ export class CoursesService {
         if (!course) {
           return null;
         }
-        // One resolution per course the student holds - one to three of them
-        // (§7.3), and each is a group lookup that usually answers from the
-        // membership index. Not batched, because a batch keyed on the student
-        // would still be one query per course to find the pairings.
-        const mode = await this.learningMode.resolve(course.id, studentId);
-        return this.toListItem(course, enrollment, mode);
+        return this.toListItem(course, enrollment);
       }),
     );
     return items.filter((item): item is CourseListItem => item !== null);
@@ -224,7 +204,6 @@ export class CoursesService {
       description: course.description,
       thumbnailUrl: course.thumbnailUrl,
       teacherName: course.teacherName,
-      learningMode: course.defaultLearningMode,
       moduleCount: course.modules.length,
       lessonCount: course.modules.reduce((n, m) => n + m.lessons.length, 0),
       enrolled: enrolledIds.has(course.id),
@@ -237,10 +216,6 @@ export class CoursesService {
    * replacing it: the enrollment write stays here, and the payment becomes a
    * precondition in front of it.
    *
-   * The mode comes from the course, not the request body. A student has no way
-   * to know whether a course is taught live or from recordings, and letting
-   * the client choose would let it pick the wrong dashboard for itself
-   * (§5.2).
    */
   async enroll(courseId: string, studentId: string): Promise<CourseListItem> {
     const course = await this.courseRepo.findById(courseId);
@@ -251,15 +226,7 @@ export class CoursesService {
       throw new NotFoundException('Course not found');
     }
     const enrollment = await this.enrollmentsService.enroll(courseId, studentId);
-    // A self-enrolled student has no group yet (§7.2), so this resolves to the
-    // course default - which is exactly what the enrollment used to store, now
-    // computed rather than copied. Staff placing them in a group later changes
-    // the answer without anything having to be migrated.
-    return this.toListItem(
-      course,
-      enrollment,
-      await this.learningMode.resolve(courseId, studentId),
-    );
+    return this.toListItem(course, enrollment);
   }
 
   /** Returns the course only if the caller is enrolled in it. */
@@ -285,11 +252,7 @@ export class CoursesService {
       throw new NotFoundException('Course not found or student not enrolled');
     }
     return {
-      ...(await this.toListItem(
-        course,
-        enrollment,
-        await this.learningMode.resolve(courseId, studentId),
-      )),
+      ...(await this.toListItem(course, enrollment)),
       sequentialLockEnabled: course.sequentialLockEnabled,
       modules: course.modules,
     };

@@ -10,6 +10,7 @@ import { JwtService } from '@nestjs/jwt';
 import { DatabaseService } from '../../database/database.service.js';
 import { AuditService } from '../../audit/audit.service.js';
 import { Role } from '../../auth/roles.enum.js';
+import { actorRoleOf } from '../../auth/actor-role.js';
 import type { StaffActor } from '../../staff/staff-scope.service.js';
 import type { GoogleCredentialRepository } from './interfaces/google-credential-repository.interface.js';
 import { GOOGLE_CREDENTIAL_REPOSITORY } from './interfaces/google-credential-repository.interface.js';
@@ -90,18 +91,6 @@ export class GoogleIntegrationService {
     private readonly db: DatabaseService,
   ) {}
 
-  /**
-   * The acting role, derived from the caller rather than assumed.
-   *
-   * The same helper `GroupsService` carries, for the same reason: these routes
-   * are teacher-only today, and if one is ever widened the log must not keep
-   * attributing an assistant's action to Dr. Tahir - the defect CLAUDE.md §5.4
-   * records finding in `ManageRecordingsService`.
-   */
-  private actorRole(role: string): Role {
-    return role === Role.Teacher ? Role.Teacher : Role.Assistant;
-  }
-
   private require(): { oauth: GoogleOAuthService; cipher: TokenCipher } {
     if (!this.oauth || !this.cipher) {
       throw new ServiceUnavailableException(
@@ -181,7 +170,7 @@ export class GoogleIntegrationService {
     const { oauth, cipher } = this.require();
 
     let actorId: string;
-    let actorRole: string;
+    let actorRole: Role;
     try {
       const payload = await this.jwt.verifyAsync<{
         sub: string;
@@ -195,7 +184,11 @@ export class GoogleIntegrationService {
         throw new Error('wrong purpose');
       }
       actorId = payload.sub;
-      actorRole = payload.role ?? '';
+      // Resolved here, inside the same `try`, rather than at the audit write:
+      // a state token carrying no usable role is an unusable state token, and
+      // refusing it as one keeps the failure at the boundary instead of
+      // aborting the transaction from inside the audit entry.
+      actorRole = actorRoleOf({ role: payload.role ?? '' });
     } catch {
       throw new ForbiddenException(
         'This Google connection link is invalid or has expired. Start the ' +
@@ -233,7 +226,7 @@ export class GoogleIntegrationService {
         actorId,
         // From the signed state, so it is the role of whoever actually started
         // the flow rather than the role this route happens to require today.
-        actorRole: this.actorRole(actorRole),
+        actorRole,
         action: 'google.connected',
         targetType: 'google_credential',
         targetId: credential.id,
@@ -279,7 +272,7 @@ export class GoogleIntegrationService {
       await this.credentials.remove(credential.id);
       await this.audit.record({
         actorId: actor.id,
-        actorRole: this.actorRole(actor.role),
+        actorRole: actorRoleOf(actor),
         action: 'google.disconnected',
         targetType: 'google_credential',
         targetId: credential.id,

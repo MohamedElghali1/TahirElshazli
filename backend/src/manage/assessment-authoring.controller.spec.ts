@@ -14,8 +14,8 @@ import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interfac
 import { InMemoryGroupRepository } from '../groups/repositories/in-memory-group.repository.js';
 import { StudentGroupsService } from '../groups/student-groups.service.js';
 import { StaffScopeService } from '../staff/staff-scope.service.js';
-import { COURSE_STAFF_REPOSITORY } from '../staff/interfaces/course-staff-repository.interface.js';
-import { InMemoryCourseStaffRepository } from '../staff/repositories/in-memory-course-staff.repository.js';
+import { ASSISTANT_SCOPE_REPOSITORY } from '../staff/interfaces/assistant-scope-repository.interface.js';
+import { InMemoryAssistantScopeRepository } from '../staff/repositories/in-memory-assistant-scope.repository.js';
 import { AUDIT_LOG_REPOSITORY } from '../audit/interfaces/audit-log-repository.interface.js';
 import { InMemoryAuditLogRepository } from '../audit/repositories/in-memory-audit-log.repository.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -83,7 +83,10 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
         { provide: EXTERNAL_WORK_BINDER, useValue: { bindExternal: async () => {} } },
         { provide: ENROLLMENT_REPOSITORY, useClass: InMemoryEnrollmentRepository },
         { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },
-        { provide: COURSE_STAFF_REPOSITORY, useClass: InMemoryCourseStaffRepository },
+        {
+          provide: ASSISTANT_SCOPE_REPOSITORY,
+          useClass: InMemoryAssistantScopeRepository,
+        },
         { provide: AUDIT_LOG_REPOSITORY, useClass: InMemoryAuditLogRepository },
       ],
     })
@@ -194,12 +197,10 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
       const second = await groups.create({
         name: 'Chemistry — Monday',
         teacherId: 'teacher-1',
-      });
-      await groups.addCourse({
-        groupId: second.id,
         courseId: 'course-1',
-        learningMode: 'live',
-        enrolledBy: 'teacher-1',
+        assistantId: null,
+        meets: null,
+        room: null,
       });
       const created = await authoring.create('course-1', ADMIN, TASK);
 
@@ -231,12 +232,10 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
       const other = await groups.create({
         name: 'Chemistry — Monday',
         teacherId: 'teacher-1',
-      });
-      await groups.addCourse({
-        groupId: other.id,
         courseId: 'course-1',
-        learningMode: 'live',
-        enrolledBy: 'teacher-1',
+        assistantId: null,
+        meets: null,
+        room: null,
       });
       const secret = await authoring.create('course-1', ADMIN, {
         ...TASK,

@@ -1,7 +1,7 @@
 import { Controller, Get, Query, Request } from '@nestjs/common';
 import { StaffService, type StaffCourseSummary } from './staff.service.js';
 import { Roles } from '../auth/roles.decorator.js';
-import { Role } from '../auth/roles.enum.js';
+import { STAFF_ALL } from '../auth/staff-roles.js';
 import { ListStaffCoursesQueryDto } from './dto/list-staff-courses-query.dto.js';
 import {
   DEFAULT_COURSE_PAGE_SIZE,
@@ -19,7 +19,7 @@ import type { JwtPayload } from '../auth/jwt.strategy.js';
  * in `app.module.ts`, and `RolesGuard` refuses any route with no `@Roles`.
  */
 @Controller('staff')
-@Roles(Role.Assistant, Role.Teacher)
+@Roles(...STAFF_ALL)
 export class StaffController {
   constructor(private readonly staffService: StaffService) {}
 

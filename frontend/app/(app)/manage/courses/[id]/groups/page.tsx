@@ -1,25 +1,23 @@
 'use client';
 
 import { use, useCallback, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { api, ApiError } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
+import { isAdminRole } from '@/lib/roles';
 import { formatDate } from '@/lib/format';
 import type { GroupMemberView, GroupSummary } from '@/lib/types';
 import {
   Button,
-  Chip,
+  Checkbox,
   EmptyState,
-  ErrorState,
-  FormError,
+  InlineBanner,
+  Loader,
   Panel,
-  RowsSkeleton,
   Select,
-  cx,
+  SectionTitle,
+  Tag,
 } from '@/components/ui';
-import {
-  PageBody,
-  SectionIntro,
-} from '@/components/app/page-parts';
 
 /**
  * Groups on one course, and the placement screen (CLAUDE.md §5.16, §2.2).
@@ -36,47 +34,43 @@ import {
  * site is broken". Nobody should sit in that state unnoticed, so it is the
  * first thing on the page and it is loud when it is non-empty.
  */
-export default function CourseGroupsPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default function CourseGroupsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: courseId } = use(params);
-  const { token } = useSession();
+  const { token, user } = useSession();
 
-  const groupsCall = useApi(
-    (t) => api.staff.courseGroups(t, courseId),
-    [courseId],
-  );
+  const groupsCall = useApi((t) => api.staff.courseGroups(t, courseId), [courseId]);
   const rosterCall = useApi((t) => api.staff.roster(t, courseId), [courseId]);
 
   return (
-    <>
-      <PageBody className="flex flex-col gap-[var(--sp-5)]">
-        <SectionIntro title="Groups" subtitle="The cohorts this course is taught to, and who sits in each." />
-        {(groupsCall.loading || rosterCall.loading) && <RowsSkeleton rows={5} />}
+    <div className="flex flex-col gap-5 p-6">
+      <SectionTitle title="Groups" description="The cohorts this course is taught to, and who sits in each." />
+      {(groupsCall.loading || rosterCall.loading) && (
+        <div className="flex justify-center p-8">
+          <Loader label="Loading groups" />
+        </div>
+      )}
 
-        {groupsCall.error && (
-          <ErrorState
-            message={groupsCall.error.message}
-            onRetry={groupsCall.reload}
-          />
-        )}
+      {groupsCall.error && (
+        <EmptyState
+          icon="AlertTriangle"
+          title={groupsCall.error.message}
+          action={<Button onClick={groupsCall.reload}>Try again</Button>}
+        />
+      )}
 
-        {groupsCall.data && rosterCall.data && (
-          <CourseGroups
-            courseId={courseId}
-            token={token}
-            groups={groupsCall.data}
-            enrolled={rosterCall.data.entries.map((entry) => ({
-              studentId: entry.studentId,
-              name: entry.name,
-            }))}
-            onChanged={groupsCall.reload}
-          />
-        )}
-      </PageBody>
-    </>
+      {groupsCall.data && rosterCall.data && (
+        <CourseGroups
+          token={token}
+          admin={isAdminRole(user?.role)}
+          groups={groupsCall.data}
+          enrolled={rosterCall.data.entries.map((entry) => ({
+            studentId: entry.studentId,
+            name: entry.name,
+          }))}
+          onChanged={groupsCall.reload}
+        />
+      )}
+    </div>
   );
 }
 
@@ -86,14 +80,14 @@ interface EnrolledStudent {
 }
 
 function CourseGroups({
-  courseId,
   token,
+  admin,
   groups,
   enrolled,
   onChanged,
 }: {
-  courseId: string;
   token: string | null;
+  admin: boolean;
   groups: GroupSummary[];
   enrolled: EnrolledStudent[];
   onChanged: () => void;
@@ -112,10 +106,7 @@ function CourseGroups({
   const rostersCall = useApi(
     async (t) => {
       const entries = await Promise.all(
-        groups.map(
-          async (group) =>
-            [group.id, await api.staff.groupMembers(t, group.id)] as const,
-        ),
+        groups.map(async (group) => [group.id, await api.staff.groupMembers(t, group.id)] as const),
       );
       const next = Object.fromEntries(entries);
       setRosters(next);
@@ -140,28 +131,30 @@ function CourseGroups({
 
   if (groups.length === 0) {
     return (
-      <Panel bodyClassName="">
-        <EmptyState
-          title="No groups on this course yet"
-          body={
-            'A group is a class of students, and a course is taught to one or ' +
-            'more of them. Until a group is enrolled in this course, students ' +
-            'who hold it have no cohort and are set no work. Dr. Tahir creates ' +
-            'groups and adds courses to them from Groups in the sidebar.'
-          }
-        />
-      </Panel>
+      <EmptyState
+        icon="Hierarchy2"
+        title="No groups on this course yet"
+        description={
+          'A group is a class of students, and a course is taught to one or ' +
+          'more of them. Until a group is enrolled in this course, students ' +
+          'who hold it have no cohort and are set no work. Dr. Tahir creates ' +
+          'groups and adds courses to them from Groups in the sidebar.'
+        }
+      />
     );
   }
 
   return (
     <>
       {rostersCall.error && (
-        <ErrorState message={rostersCall.error.message} onRetry={refresh} />
+        <EmptyState
+          icon="AlertTriangle"
+          title={rostersCall.error.message}
+          action={<Button onClick={refresh}>Try again</Button>}
+        />
       )}
 
       <UnplacedPanel
-        courseId={courseId}
         token={token}
         students={unplaced}
         groups={groups}
@@ -169,12 +162,14 @@ function CourseGroups({
         onPlaced={refresh}
       />
 
-      <div className="flex flex-col gap-[var(--sp-4)]">
+      <div className="flex flex-col gap-4">
         {groups.map((group) => (
           <GroupCard
             key={group.id}
             group={group}
             token={token}
+            admin={admin}
+            otherGroups={groups.filter((g) => g.id !== group.id)}
             members={rosters[group.id] ?? []}
             loading={rostersCall.loading}
             onChanged={refresh}
@@ -191,14 +186,12 @@ function CourseGroups({
  * as something to act on rather than as a statistic.
  */
 function UnplacedPanel({
-  courseId,
   token,
   students,
   groups,
   loading,
   onPlaced,
 }: {
-  courseId: string;
   token: string | null;
   students: EnrolledStudent[];
   groups: GroupSummary[];
@@ -208,7 +201,9 @@ function UnplacedPanel({
   if (loading) {
     return (
       <Panel title="Enrolled, not yet placed">
-        <RowsSkeleton rows={2} />
+        <div className="flex justify-center p-4">
+          <Loader label="Loading" />
+        </div>
       </Panel>
     );
   }
@@ -216,9 +211,7 @@ function UnplacedPanel({
   if (students.length === 0) {
     return (
       <Panel title="Enrolled, not yet placed">
-        <p className="text-[var(--fs-base)] text-fg-3">
-          Everyone enrolled in this course is in a group. Nothing to do here.
-        </p>
+        <p className="text-base text-fg-3">Everyone enrolled in this course is in a group. Nothing to do here.</p>
       </Panel>
     );
   }
@@ -226,33 +219,25 @@ function UnplacedPanel({
   return (
     <Panel
       title="Enrolled, not yet placed"
-      className="border-[var(--accent)]"
+      className="shadow-[inset_0_0_0_1px_var(--accent)]"
       action={
-        <Chip tone="amber">
+        <Tag tone="amber">
           {students.length} {students.length === 1 ? 'student' : 'students'}
-        </Chip>
+        </Tag>
       }
     >
-      <p className="mb-[var(--sp-4)] text-[var(--fs-base)] text-fg-2">
-        These students hold this course but sit in no group, so they have been
-        set no work and their course page looks empty. Place them to fix it.
+      <p className="mb-4 text-base text-fg-2">
+        These students hold this course but sit in no group, so they have been set no work and their
+        course page looks empty. Place them to fix it.
       </p>
-      <ul className="flex flex-col gap-[var(--sp-2)]">
+      <ul className="flex flex-col gap-2">
         {students.map((student) => (
           <li
             key={student.studentId}
-            className="flex flex-wrap items-center justify-between gap-[var(--sp-3)] rounded-[var(--r-md)] border border-[var(--border-light)] px-[var(--sp-3)] py-[var(--sp-2)]"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border-light px-3 py-2"
           >
-            <span className="text-[var(--fs-base)] text-fg">
-              {student.name}
-            </span>
-            <PlaceStudent
-              token={token}
-              courseId={courseId}
-              studentId={student.studentId}
-              groups={groups}
-              onPlaced={onPlaced}
-            />
+            <span className="text-base text-fg">{student.name}</span>
+            <PlaceStudent token={token} studentId={student.studentId} groups={groups} onPlaced={onPlaced} />
           </li>
         ))}
       </ul>
@@ -268,7 +253,6 @@ function PlaceStudent({
   onPlaced,
 }: {
   token: string | null;
-  courseId: string;
   studentId: string;
   groups: GroupSummary[];
   onPlaced: () => void;
@@ -285,35 +269,25 @@ function PlaceStudent({
       await api.staff.addGroupMember(token, groupId, studentId);
       onPlaced();
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : 'Could not place that student.',
-      );
+      setError(err instanceof ApiError ? err.message : 'Could not place that student.');
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-[var(--sp-2)]">
-      <label className="sr-only" htmlFor={`place-${studentId}`}>
-        Group for this student
-      </label>
+    <div className="flex flex-wrap items-center gap-2">
       <Select
-        id={`place-${studentId}`}
+        aria-label="Group for this student"
+        className="min-w-[200px]"
         value={groupId}
         onChange={(e) => setGroupId(e.target.value)}
-        className="min-w-[200px]"
-      >
-        {groups.map((group) => (
-          <option key={group.id} value={group.id}>
-            {group.name}
-          </option>
-        ))}
-      </Select>
-      <Button size="sm" onClick={place} disabled={busy || !groupId}>
-        {busy ? 'Placing…' : 'Place'}
+        options={groups.map((group) => ({ value: group.id, label: group.name }))}
+      />
+      <Button size="small" onClick={place} disabled={busy || !groupId}>
+        {busy ? <Loader size={3} label="Placing" /> : 'Place'}
       </Button>
-      {error && <FormError>{error}</FormError>}
+      {error && <InlineBanner tone="danger">{error}</InlineBanner>}
     </div>
   );
 }
@@ -321,20 +295,26 @@ function PlaceStudent({
 function GroupCard({
   group,
   token,
+  admin,
+  otherGroups,
   members,
   loading,
   onChanged,
 }: {
   group: GroupSummary;
   token: string | null;
+  /** Removing a member and bulk-moving are both teacher/admin only (§5.16). */
+  admin: boolean;
+  otherGroups: GroupSummary[];
   members: GroupMemberView[];
   loading: boolean;
   onChanged: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
-  // The pairing for *this* course - `courseGroups` returns exactly one.
-  const pairing = group.courses[0];
+  const [selected, setSelected] = useState<string[]>([]);
+  const [moveTo, setMoveTo] = useState('');
+  const [moving, setMoving] = useState(false);
 
   const remove = async (studentId: string) => {
     if (!token) return;
@@ -344,11 +324,25 @@ function GroupCard({
       await api.staff.removeGroupMember(token, group.id, studentId);
       onChanged();
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : 'Could not remove that student.',
-      );
+      setError(err instanceof ApiError ? err.message : 'Could not remove that student.');
     } finally {
       setRemoving(null);
+    }
+  };
+
+  const moveSelected = async () => {
+    if (!token || !moveTo || selected.length === 0) return;
+    setMoving(true);
+    setError(null);
+    try {
+      await api.admin.bulkMoveMembers(token, moveTo, selected);
+      setSelected([]);
+      setMoveTo('');
+      onChanged();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not move those students.');
+    } finally {
+      setMoving(false);
     }
   };
 
@@ -356,56 +350,91 @@ function GroupCard({
     <Panel
       title={group.name}
       action={
-        <div className="flex items-center gap-[var(--sp-2)]">
-          {pairing && (
-            /* §5.2 - the mode belongs to this pairing, not to the student. */
-            <Chip tone={pairing.learningMode === 'live' ? 'violet' : 'neutral'}>
-              {pairing.learningMode === 'live' ? 'Live' : 'Recorded'}
-            </Chip>
-          )}
-          <Chip>
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/manage/groups/${group.id}/report`}
+            className="text-base text-fg-2 underline-offset-2 hover:underline"
+          >
+            Report
+          </Link>
+          <Tag tone="gray">
             {group.memberCount} {group.memberCount === 1 ? 'student' : 'students'}
-          </Chip>
+          </Tag>
         </div>
       }
     >
-      {error && <FormError>{error}</FormError>}
-      {loading && <RowsSkeleton rows={2} />}
-      {!loading && members.length === 0 && (
-        <p className="text-[var(--fs-base)] text-fg-3">
-          Nobody is in this group yet.
-        </p>
+      {error && <InlineBanner tone="danger" className="mb-3">{error}</InlineBanner>}
+      {loading && (
+        <div className="flex justify-center p-4">
+          <Loader label="Loading" />
+        </div>
       )}
+      {!loading && members.length === 0 && <p className="text-base text-fg-3">Nobody is in this group yet.</p>}
       {!loading && members.length > 0 && (
-        <ul className="flex flex-col gap-[var(--sp-1)]">
+        <ul className="flex flex-col gap-1">
           {members.map((member) => (
             <li
               key={member.studentId}
-              className={cx(
-                'flex flex-wrap items-center justify-between gap-[var(--sp-3)]',
-                'rounded-[var(--r-md)] px-[var(--sp-3)] py-[var(--sp-2)]',
-                'hover:bg-[var(--bg-tertiary)]',
-              )}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-md px-3 py-2 hover:bg-wash-hover"
             >
-              <span className="flex flex-col">
-                <span className="text-[var(--fs-base)] text-fg">
-                  {member.name}
-                </span>
-                <span className="text-[var(--fs-xs)] text-fg-3">
-                  {member.email} · placed {formatDate(member.assignedAt)}
+              <span className="flex items-center gap-3">
+                {admin && otherGroups.length > 0 && (
+                  <Checkbox
+                    label={`Select ${member.name} to move`}
+                    checked={selected.includes(member.studentId)}
+                    onChange={(checked) =>
+                      setSelected((ids) =>
+                        checked
+                          ? [...ids, member.studentId]
+                          : ids.filter((id) => id !== member.studentId),
+                      )
+                    }
+                  />
+                )}
+                <span className="flex flex-col">
+                  <span className="text-base text-fg">{member.name}</span>
+                  <span className="text-xs text-fg-3">
+                    {member.email} · placed {formatDate(member.assignedAt)}
+                  </span>
                 </span>
               </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => remove(member.studentId)}
-                disabled={removing === member.studentId}
-              >
-                {removing === member.studentId ? 'Removing…' : 'Remove'}
-              </Button>
+              {/* Removing is teacher/admin only (§5.16) - hidden for a TA
+                  rather than offered and then refused server-side. */}
+              {admin && (
+                <Button
+                  variant="tertiary"
+                  size="small"
+                  onClick={() => remove(member.studentId)}
+                  disabled={removing === member.studentId}
+                >
+                  {removing === member.studentId ? <Loader size={3} label="Removing" /> : 'Remove'}
+                </Button>
+              )}
             </li>
           ))}
         </ul>
+      )}
+
+      {/* "Move N to group" (GROUP-3) - admin only, same as the removal above. */}
+      {admin && otherGroups.length > 0 && selected.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-3 rounded-md border border-border-light px-3 py-2">
+          <span className="text-base text-fg-2">
+            Move {selected.length} selected to
+          </span>
+          <Select
+            aria-label="Destination group"
+            className="min-w-[200px]"
+            value={moveTo}
+            onChange={(e) => setMoveTo(e.target.value)}
+            options={[
+              { value: '', label: 'Choose a group…' },
+              ...otherGroups.map((g) => ({ value: g.id, label: g.name })),
+            ]}
+          />
+          <Button size="small" disabled={moving || !moveTo} onClick={() => void moveSelected()}>
+            {moving ? <Loader size={3} label="Moving" /> : 'Move'}
+          </Button>
+        </div>
       )}
     </Panel>
   );

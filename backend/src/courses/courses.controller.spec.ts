@@ -16,7 +16,6 @@ import { ENROLLMENT_REPOSITORY } from '../enrollments/interfaces/enrollment-repo
 import { InMemoryEnrollmentRepository } from '../enrollments/repositories/in-memory-enrollment.repository.js';
 import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interface.js';
 import { InMemoryGroupRepository } from '../groups/repositories/in-memory-group.repository.js';
-import { LearningModeService } from '../groups/learning-mode.service.js';
 import { StudentGroupsService } from '../groups/student-groups.service.js';
 
 const STUDENT = {
@@ -25,6 +24,7 @@ const STUDENT = {
 
 describe('CoursesController', () => {
   let controller: CoursesController;
+  let coursesService: CoursesService;
   let courseRepo: InMemoryCourseRepository;
 
   beforeEach(async () => {
@@ -37,12 +37,9 @@ describe('CoursesController', () => {
       providers: [
         EnrollmentsService,
         { provide: ENROLLMENT_REPOSITORY, useClass: InMemoryEnrollmentRepository },
-        // The learning mode lives on the group now (CLAUDE.md §5.2), so every
-        // module that renders a student's course needs these two. Real
-        // implementations rather than stubs: the resolution order (group,
-        // then course default) is the part worth exercising.
+        // Group data is still wired in: the assessment window resolves through
+        // it. Real implementations rather than stubs.
         { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },
-        LearningModeService,
         StudentGroupsService,
         CoursesService,
         RecordingsService,
@@ -59,6 +56,7 @@ describe('CoursesController', () => {
       .compile();
 
     controller = module.get<CoursesController>(CoursesController);
+    coursesService = module.get<CoursesService>(CoursesService);
     courseRepo = module.get(COURSE_REPOSITORY);
   });
 
@@ -75,30 +73,63 @@ describe('CoursesController', () => {
     expect(courses.map((c) => c.id)).toEqual(['course-1', 'course-2']);
   });
 
-  it('should derive recorded progress from actual watch progress', async () => {
+  // `D-9` collapsed the `{type:'recorded'} | {type:'live'}` union into one
+  // shape. The two tests below are the replacements for the two that asserted
+  // each branch: a course with **both** halves populated (course-1), and a
+  // course with sessions and no recordings (course-2), each carrying all four
+  // completion fields and all four attendance ones.
+  //
+  // The third direction - recordings and no sessions - is **not** covered, and
+  // cannot be with these fixtures: `InMemoryLiveSessionRepository` seeds
+  // sessions on both courses (deviation `D-3`, review F2A-6). A second fixture
+  // course is on `IMPLEMENTATION_PLAN.md` as the follow-up that closes it.
+  it('should carry completion and attendance together for a course that has both', async () => {
     const courses = await controller.listCourses(STUDENT);
-    const recorded = courses.find((c) => c.id === 'course-1');
-    expect(recorded?.learningMode).toBe('recorded');
-    expect(recorded?.progress).toMatchObject({
-      type: 'recorded',
+    const progress = courses.find((c) => c.id === 'course-1')?.progress;
+    expect(progress).toMatchObject({
       completedLessons: 5,
       totalLessons: 12,
       completionPercentage: 42,
+      attendedSessions: 1,
+      totalSessions: 1,
+      attendancePercentage: 100,
     });
+    expect(progress).toHaveProperty('checkpoints');
+    expect(progress).toHaveProperty('timeline');
+    // Nothing discriminates the shape any more.
+    expect(progress).not.toHaveProperty('type');
   });
 
-  it('should expose an attendance timeline for a live course, not completion', async () => {
+  // The half-empty direction: course-2 has sessions but no recordings, so the
+  // completion half must still be PRESENT and zeroed rather than absent. An
+  // absent half would force every caller to branch again, which is the thing
+  // `D-9` removed.
+  it('should carry a present, zeroed completion half for a course with no recordings', async () => {
     const courses = await controller.listCourses(STUDENT);
-    const live = courses.find((c) => c.id === 'course-2');
-    expect(live?.learningMode).toBe('live');
-    expect(live?.progress).toMatchObject({
-      type: 'live',
+    const progress = courses.find((c) => c.id === 'course-2')?.progress;
+    expect(progress).toMatchObject({
       attendedSessions: 1,
       totalSessions: 2,
       attendancePercentage: 50,
+      completedLessons: 0,
+      totalLessons: 0,
+      completionPercentage: 0,
     });
-    // A live course must not carry recorded-mode completion fields.
-    expect(live?.progress).not.toHaveProperty('completedLessons');
+    expect(progress).toHaveProperty('checkpoints');
+    expect(progress).toHaveProperty('timeline');
+    expect(progress).not.toHaveProperty('type');
+  });
+
+  it('should never average completion and attendance into one number', async () => {
+    // CLAUDE.md §11.1 non-negotiable 2. course-2 is 0% complete and 50%
+    // attended; a blended figure would be 25 and would say neither.
+    const courses = await controller.listCourses(STUDENT);
+    const progress = courses.find((c) => c.id === 'course-2')!.progress;
+    expect(Object.keys(progress)).not.toContain('overallPercentage');
+    expect(Object.keys(progress).filter((k) => k.endsWith('Percentage'))).toEqual([
+      'completionPercentage',
+      'attendancePercentage',
+    ]);
   });
 
   it('should never blend grades into the progress block', async () => {
@@ -121,7 +152,17 @@ describe('CoursesController', () => {
     ).rejects.toThrow();
   });
 
-  describe('catalog and self-enrollment', () => {
+  /**
+   * `POST /courses/:id/enroll` is retired (`DOM-4`): a student no longer
+   * enrols themselves, staff accepting their registration does it.
+   *
+   * These cases now exercise **`CoursesService.enroll` directly**, because the
+   * method did not go anywhere - `RegistrationApprovalService.accept` calls it,
+   * and its three properties (idempotent, 404 on an unknown course, refuses an
+   * unpublished one) are exactly what that transaction depends on. Deleting
+   * them with the route would have dropped the coverage and kept the risk.
+   */
+  describe('catalog, and enrolment through the service', () => {
     const STUDENT_2 = {
       user: { sub: 'student-2', email: 's2@example.com', role: 'student', jti: 'j2' },
     };
@@ -156,7 +197,7 @@ describe('CoursesController', () => {
         controller.getCourseDetail('course-2', STUDENT_2),
       ).rejects.toThrow();
 
-      const enrolled = await controller.enroll('course-2', STUDENT_2);
+      const enrolled = await coursesService.enroll('course-2', 'student-2');
       expect(enrolled.id).toBe('course-2');
 
       // After: the same read succeeds, and the course is on the dashboard.
@@ -166,22 +207,23 @@ describe('CoursesController', () => {
       expect(mine.map((c) => c.id).sort()).toEqual(['course-1', 'course-2']);
     });
 
-    it('should take the learning mode from the course, not the request', async () => {
-      // course-2 is taught live, so the enrollment must land in live mode and
-      // render an attendance timeline rather than a completion bar
-      // (CLAUDE.md §5.2). Nothing in the request could have said so.
-      const enrolled = await controller.enroll('course-2', STUDENT_2);
-      expect(enrolled.learningMode).toBe('live');
-      expect(enrolled.progress.type).toBe('live');
+    it('should report zeroed progress on a course just enrolled on', async () => {
+      // A fresh enrollment has watched nothing and attended nothing, and both
+      // halves say so rather than one of them being absent.
+      const enrolled = await coursesService.enroll('course-2', 'student-2');
+      expect(enrolled.progress).toMatchObject({
+        completedLessons: 0,
+        attendedSessions: 0,
+      });
     });
 
     it('should treat a repeated enrollment as success without resetting it', async () => {
-      const first = await controller.enroll('course-1', STUDENT_2);
+      const first = await coursesService.enroll('course-1', 'student-2');
       // student-2 was already enrolled on course-1 in March; a second click
-      // must not restamp that date or change the mode.
-      expect(first.learningMode).toBe('recorded');
+      // must not restamp that date.
+      expect(first.id).toBe('course-1');
 
-      const second = await controller.enroll('course-1', STUDENT_2);
+      const second = await coursesService.enroll('course-1', 'student-2');
       expect(second.id).toBe('course-1');
 
       const mine = await controller.listCourses(STUDENT_2);
@@ -189,7 +231,7 @@ describe('CoursesController', () => {
     });
 
     it('should 404 an enrollment on a course that does not exist', async () => {
-      await expect(controller.enroll('course-nope', STUDENT_2)).rejects.toThrow();
+      await expect(coursesService.enroll('course-nope', 'student-2')).rejects.toThrow();
     });
 
     it('should read the catalog from the published courses, not from every row', async () => {
@@ -213,15 +255,16 @@ describe('CoursesController', () => {
         isPublished: false,
       });
 
-      await expect(controller.enroll('course-2', STUDENT_2)).rejects.toThrow(
+      await expect(coursesService.enroll('course-2', 'student-2')).rejects.toThrow(
         'Course not found',
       );
     });
 
-    it('should enroll the caller from the token, never a supplied id', async () => {
-      await controller.enroll('course-2', STUDENT_2);
-      // The other student's roster is untouched - there is no parameter on
-      // the route that could have named them.
+    it('should enroll exactly the named student and nobody else', async () => {
+      await coursesService.enroll('course-2', 'student-2');
+      // Another student's roster is untouched. With the self-enrol route gone
+      // the caller is never the subject anyway: `accept` names the student it
+      // was given, under a `@Roles(...STAFF_ADMIN)` route.
       const other = await controller.listCourses({
         user: { sub: 'student-3', email: 's3@example.com', role: 'student', jti: 'j3' },
       });

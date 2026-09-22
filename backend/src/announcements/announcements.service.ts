@@ -9,6 +9,7 @@ import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { Role } from '../auth/roles.enum.js';
+import { actorRoleOf } from '../auth/actor-role.js';
 import type { CourseRepository } from '../courses/interfaces/course-repository.interface.js';
 import { COURSE_REPOSITORY } from '../courses/interfaces/course-repository.interface.js';
 import type { EnrollmentRepository } from '../enrollments/interfaces/enrollment-repository.interface.js';
@@ -149,7 +150,7 @@ export class AnnouncementsService {
         actorId: actor.id,
         // The actor's role as it was (§5.4). A TA posting to their own course and
         // the teacher posting platform-wide must not read alike in the log.
-        actorRole: actor.role === Role.Assistant ? Role.Assistant : Role.Teacher,
+        actorRole: actorRoleOf(actor),
         action: 'announcement.posted',
         targetType: 'announcement',
         targetId: announcement.id,
@@ -169,18 +170,25 @@ export class AnnouncementsService {
   /**
    * Who receives it, decided now (§5.14).
    *
-   * Nothing here reads a stored list. `all_tas` comes from `role = 'assistant'`
-   * at this instant, so an assistant hired after the announcement was drafted
-   * is covered and one who left is not.
+   * Nothing here reads a stored list. `all_tas` resolves from the role at this
+   * instant, so an assistant hired after the announcement was drafted is
+   * covered and one who left is not.
+   *
+   * **`all_tas` includes the Full admin** (unit-1 ruling 3, D-a). It is the
+   * staff broadcast channel and there is no other route to staff
+   * (`PHASE_ROADMAP.md` §4), so excluding `admin` would silently drop a
+   * recipient - and a missed recipient is invisible where a redundant one is
+   * merely redundant. `STAFF_ALL` is deliberately *not* used: the teacher is
+   * the person sending, not an audience member.
    */
   private async resolveRecipients(
     audience: AnnouncementAudience,
   ): Promise<string[]> {
     if (audience.type === 'all_tas') {
-      return this.userRepo.findIdsByRole(Role.Assistant);
+      return this.userRepo.findIdsByRole([Role.Assistant, Role.Admin]);
     }
     if (audience.type === 'all_students') {
-      return this.userRepo.findIdsByRole(Role.Student);
+      return this.userRepo.findIdsByRole([Role.Student]);
     }
 
     const courseId = audience.courseId!;

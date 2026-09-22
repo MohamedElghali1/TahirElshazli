@@ -3,13 +3,13 @@ import {
   IsArray,
   IsInt,
   IsISO8601,
-  IsOptional,
   IsString,
   IsUrl,
   Max,
   MaxLength,
   Min,
 } from 'class-validator';
+import { IsOptionalNotNull } from '../../common/validators/is-optional-not-null.js';
 
 const MAX_DURATION_SECONDS = 12 * 60 * 60;
 
@@ -21,35 +21,35 @@ const MAX_DURATION_SECONDS = 12 * 60 * 60;
  * check that gates every read of it, so a move is a delete and a re-create.
  */
 export class UpdateRecordingDto {
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsString()
   @MaxLength(200)
   title?: string;
 
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsString()
   @MaxLength(120)
   chapter?: string;
 
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsArray()
   @ArrayMaxSize(20)
   @IsString({ each: true })
   @MaxLength(80, { each: true })
   topics?: string[];
 
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
   @MaxLength(2048)
   videoUrl?: string;
 
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsInt()
   @Min(1)
   @Max(MAX_DURATION_SECONDS)
   durationSeconds?: number;
 
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsISO8601()
   lessonDate?: string;
 }

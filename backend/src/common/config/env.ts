@@ -394,6 +394,117 @@ export function resolveUploadDir(raw = process.env.UPLOAD_DIR): string {
 }
 
 /**
+ * The base URL a mail template builds a clickable link against (a sign-in
+ * link, `PEOPLE-3`; a password-reset link).
+ *
+ * No safe default exists in production - an unset value would silently mail
+ * out a `localhost` link, which is a broken email, not a missing feature, so
+ * it fails the same way `CORS_ORIGIN` does. `http://localhost:3000` is
+ * standing in for the real dev server address, which is what every other
+ * local default in this file already assumes.
+ */
+export function resolveFrontendUrl(
+  nodeEnv: NodeEnv,
+  raw = process.env.FRONTEND_URL,
+): string {
+  const value = raw?.trim();
+  if (value) {
+    return value.replace(/\/+$/, '');
+  }
+  if (nodeEnv === 'production') {
+    throw new Error(
+      'FRONTEND_URL must be set in production - mail templates build links against it.',
+    );
+  }
+  return 'http://localhost:3000';
+}
+
+/**
+ * Which mail transport the app wires up.
+ *
+ * Mirrors `StorageDriver` / `resolveStorageDriver` exactly:
+ *
+ * - `none` sends nothing; `MailService` answers 503. The production default,
+ *   and the honest one: a swallowed email is not data-loss the way an orphaned
+ *   upload is, so `'log'` is not refused in production.
+ * - `log` logs the template name only (never recipient or data, both can be
+ *   PII/secrets). The development default.
+ * - `smtp` sends via nodemailer with the five `MAIL_SMTP_*` env vars.
+ */
+export type MailDriver = 'none' | 'log' | 'smtp';
+
+const VALID_MAIL_DRIVERS: MailDriver[] = ['none', 'log', 'smtp'];
+
+export function resolveMailDriver(
+  nodeEnv: NodeEnv,
+  raw = process.env.MAIL_DRIVER,
+): MailDriver {
+  const value = raw?.trim();
+  if (!value) {
+    return nodeEnv === 'production' ? 'none' : 'log';
+  }
+  if (!VALID_MAIL_DRIVERS.includes(value as MailDriver)) {
+    throw new Error(
+      `MAIL_DRIVER must be one of ${VALID_MAIL_DRIVERS.join(', ')} ` +
+        `(got "${value}").`,
+    );
+  }
+  return value as MailDriver;
+}
+
+export interface SmtpConfig {
+  host: string;
+  port: number;
+  user: string;
+  pass: string;
+  from: string;
+}
+
+/**
+ * The five SMTP env vars, required when `MAIL_DRIVER=smtp`.
+ *
+ * Throws at boot if any is missing or empty, mirroring `resolveGoogleOAuthConfig`.
+ */
+export function resolveSmtpConfig(
+  env = process.env,
+): SmtpConfig {
+  const host = env.MAIL_SMTP_HOST?.trim();
+  const portRaw = env.MAIL_SMTP_PORT?.trim();
+  const user = env.MAIL_SMTP_USER?.trim();
+  const pass = env.MAIL_SMTP_PASS?.trim();
+  const from = env.MAIL_SMTP_FROM?.trim();
+
+  const missing = [
+    !host && 'MAIL_SMTP_HOST',
+    !portRaw && 'MAIL_SMTP_PORT',
+    !user && 'MAIL_SMTP_USER',
+    !pass && 'MAIL_SMTP_PASS',
+    !from && 'MAIL_SMTP_FROM',
+  ].filter(Boolean);
+
+  if (missing.length) {
+    throw new Error(
+      `MAIL_DRIVER=smtp requires ${missing.join(', ')}.`,
+    );
+  }
+
+  const port = Number(portRaw);
+  if (Number.isNaN(port)) {
+    throw new Error(
+      `MAIL_SMTP_PORT must be a number (got "${portRaw}").`,
+    );
+  }
+
+  return {
+    host: host!,
+    port,
+    user: user!,
+    pass: pass!,
+    from: from!,
+  };
+}
+
+/**
  * Which Google Forms integration is wired up.
  *
  * The same shape as `STORAGE_DRIVER`, and for the same reason (CLAUDE.md §3:

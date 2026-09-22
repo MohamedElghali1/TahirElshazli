@@ -10,7 +10,7 @@ import {
   Request,
 } from '@nestjs/common';
 import { Roles } from '../auth/roles.decorator.js';
-import { Role } from '../auth/roles.enum.js';
+import { STAFF_ALL } from '../auth/staff-roles.js';
 import type { JwtPayload } from '../auth/jwt.strategy.js';
 import {
   AnnouncementsService,
@@ -35,7 +35,7 @@ import {
  * `app.module.ts`, and `RolesGuard` refuses any route with no `@Roles`.
  */
 @Controller('staff')
-@Roles(Role.Assistant, Role.Teacher)
+@Roles(...STAFF_ALL)
 export class StaffAnnouncementsController {
   constructor(private readonly announcements: AnnouncementsService) {}
 

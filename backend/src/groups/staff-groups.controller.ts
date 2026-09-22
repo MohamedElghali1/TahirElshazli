@@ -10,10 +10,10 @@ import {
   Request,
 } from '@nestjs/common';
 import { Roles } from '../auth/roles.decorator.js';
-import { Role } from '../auth/roles.enum.js';
+import { STAFF_ADMIN, STAFF_ALL } from '../auth/staff-roles.js';
 import type { JwtPayload } from '../auth/jwt.strategy.js';
 import { AddGroupMemberDto } from './dto/group.dto.js';
-import type { GroupMemberView, GroupSummary } from './groups.service.js';
+import type { GroupMemberView, GroupReport, GroupSummary } from './groups.service.js';
 import { GroupsService } from './groups.service.js';
 
 /**
@@ -27,20 +27,28 @@ import { GroupsService } from './groups.service.js';
  * in among people who already hold the course; enrolling and unenrolling remain
  * teacher-only.
  *
- * **What is scoped here and what is not.** The course-tab read below names a
- * course, so it goes through `StaffScopeService` like every other `/staff`
- * route. The group reads and the placement writes name a *group*, and a group
- * is not a course - it spans them - so there is no course to scope by. That is
- * also what the client asked for directly: *"TAs are allowed to access all
- * groups"* (§5.11.1). If that posture reverses, the check that appears here is
- * "is this TA assigned to a course this group studies", and it belongs in
- * `GroupsService` beside the one `addCourse` already makes.
+ * **Every route here is scoped.** The course-tab read names a course and goes
+ * through `StaffScopeService.assertAssigned`; the group reads and the placement
+ * write name a *group* and go through `GroupsService.requireGroup`, which asks
+ * `StaffScopeService.mayReachGroup`. An assistant whose scope is
+ * `assigned_groups` gets a **404 with the byte-identical message** on a group
+ * they do not hold - reads included.
+ *
+ * That closes **decision `D-10`** (2026-09-20), built by `AUTH-2` in unit 2
+ * slice 2b-ii. Until then these three routes were unscoped: any assistant could
+ * fetch any group and its roster, every member's name and email included. It
+ * had been argued from "a group spans courses, so there is no course to scope
+ * by"; migration `013` made every group study exactly one course, which killed
+ * the premise, and `AUTHORIZATION_MODEL.md:105,207` had said so all along.
+ *
+ * The check is in `GroupsService`, not here - one chokepoint every group read
+ * and write already passes through, so a route added later cannot forget it.
  *
  * No `@UseGuards`: `JwtAuthGuard` and `RolesGuard` are global in
  * `app.module.ts`, and `RolesGuard` refuses any route with no `@Roles`.
  */
 @Controller('staff')
-@Roles(Role.Assistant, Role.Teacher)
+@Roles(...STAFF_ALL)
 export class StaffGroupsController {
   constructor(private readonly groups: GroupsService) {}
 
@@ -58,16 +66,29 @@ export class StaffGroupsController {
   }
 
   @Get('groups/:groupId')
-  async get(@Param('groupId') groupId: string): Promise<GroupSummary> {
-    return this.groups.get(groupId);
+  async get(
+    @Param('groupId') groupId: string,
+    @Request() req: { user: JwtPayload },
+  ): Promise<GroupSummary> {
+    return this.groups.get(groupId, this.actor(req));
   }
 
   /** The staff roster: names and emails (§5.17 keeps the student view narrower). */
   @Get('groups/:groupId/members')
   async members(
     @Param('groupId') groupId: string,
+    @Request() req: { user: JwtPayload },
   ): Promise<GroupMemberView[]> {
-    return this.groups.members(groupId);
+    return this.groups.members(groupId, this.actor(req));
+  }
+
+  /** Stats plus a per-student table (`GROUP-4`). Scoped like every other group read. */
+  @Get('groups/:groupId/report')
+  async report(
+    @Param('groupId') groupId: string,
+    @Request() req: { user: JwtPayload },
+  ): Promise<GroupReport> {
+    return this.groups.report(groupId, this.actor(req));
   }
 
   /**
@@ -89,7 +110,24 @@ export class StaffGroupsController {
     return { ok: true };
   }
 
+  /**
+   * **Teacher and admin only** (`AUTH-3`, `API_SPEC.yaml:713-727`), which is a
+   * narrowing of shipped behaviour: this route was TA-reachable through the
+   * class-level `@Roles`.
+   *
+   * A **method-level** override rather than a move to `AdminGroupsController`,
+   * because the path stays `/staff/groups/…` in the contract and moving the
+   * handler would change the URL. `RolesGuard` reads
+   * `getAllAndOverride(ROLES_KEY, [handler, class])` (`roles.guard.ts:62-65`),
+   * so handler metadata wins over the class's.
+   *
+   * **403, not 404.** The assistant is looking at the roster - they can see the
+   * group and the student - so it is the verb that is refused, not the
+   * resource's existence. `GroupsService.removeMember` refuses again with the
+   * same status regardless of what reaches it.
+   */
   @Delete('groups/:groupId/members/:studentId')
+  @Roles(...STAFF_ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
   async removeMember(
     @Param('groupId') groupId: string,

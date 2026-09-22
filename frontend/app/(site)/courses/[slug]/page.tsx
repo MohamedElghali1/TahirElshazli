@@ -12,7 +12,6 @@ import {
 } from '@phosphor-icons/react/dist/ssr';
 import { ButtonLink } from '@/components/ui';
 import { Reveal } from '@/components/site/reveal';
-import { ModeBadge } from '@/components/site/course-card';
 import { ApiError, api } from '@/lib/api';
 import { formatDuration } from '@/lib/format';
 import type { PublicCourseDetail } from '@/lib/types';
@@ -97,9 +96,6 @@ export default async function CoursePage({
   if (!course) notFound();
 
   const showHours = course.totalDurationSeconds >= 1800;
-  // Where a visitor lands once they have an account: the in-app catalog, which
-  // is the only screen that can actually create an enrollment.
-  const next = encodeURIComponent('/catalog');
 
   return (
     <>
@@ -108,8 +104,7 @@ export default async function CoursePage({
         className={`${shell} grid items-end gap-[var(--sp-8)] pb-[var(--sp-12)] pt-[var(--sp-16)] lg:grid-cols-[3fr_2fr] lg:gap-[var(--sp-16)] lg:pt-[var(--sp-24)]`}
       >
         <div>
-          <ModeBadge mode={course.learningMode} />
-          <h1 className="mt-[var(--sp-4)] text-[clamp(2.25rem,5vw,var(--fs-display))] font-semibold leading-[1.05] tracking-[-0.03em] text-fg">
+          <h1 className="text-[clamp(2.25rem,5vw,var(--fs-display))] font-semibold leading-[1.05] tracking-[-0.03em] text-fg">
             {course.title}
           </h1>
           <p className="mt-[var(--sp-6)] max-w-[var(--maxw-prose)] text-[var(--fs-lead)] leading-[var(--lh-loose)] text-fg-2">
@@ -286,29 +281,22 @@ export default async function CoursePage({
             ))}
           </div>
 
-          {/* Outcomes: what changes for the student, tied to facts the API
-              actually carries (mode, in-platform marking) rather than
-              per-course claims the backend has no field for yet - there is
-              no "level" or "exam board" column to draw a real audience line
-              from, so this stays general rather than inventing one. */}
+          {/* Outcomes: general rather than per-course, tied only to facts the
+              API actually carries (in-platform marking, progress tracking).
+              `PublicCourseDetail` has no learning-mode field for an
+              anonymous visitor (retired by migration `012`) and no "level"
+              or "exam board" column either, so nothing here is claimed per
+              format or audience that the backend cannot back up. */}
           <h2 className="mt-[var(--sp-24)] text-[clamp(1.5rem,3vw,var(--fs-h2))] font-semibold leading-[1.1] tracking-[-0.02em] text-fg">
             What you will be able to do.
           </h2>
           <ul className="mt-[var(--sp-6)] grid gap-[var(--sp-3)] sm:grid-cols-2">
-            {(course.learningMode === 'live'
-              ? [
-                  'Sit timetabled classes and ask questions live, with an attendance record your parent can see',
-                  'Rewatch any session you attended, or catch up on one you missed',
-                  'Submit work against a schedule and see your average update as it is marked',
-                  'Track completion and performance as two separate numbers, never blended',
-                ]
-              : [
-                  'Work through the recordings at your own pace, in order or by topic',
-                  'Pick up exactly where you stopped, on any device',
-                  'Submit work on your own schedule and see your average update as it is marked',
-                  'Track completion and performance as two separate numbers, never blended',
-                ]
-            ).map((line) => (
+            {[
+              'Work through lessons and recordings at your own pace, on any device',
+              'Rewatch any session or lesson whenever you need to',
+              'Submit work and see your average update as it is marked',
+              'Track completion and performance as two separate numbers, never blended',
+            ].map((line) => (
               <li
                 key={line}
                 className="flex items-start gap-[var(--sp-3)] rounded-[var(--r-md)] border border-[var(--border-light)] bg-[var(--bg-secondary)] p-[var(--sp-4)] text-[var(--fs-base)] leading-[var(--lh-loose)] text-fg-2"
@@ -337,29 +325,25 @@ export default async function CoursePage({
                   value={`${hoursLabel(course.totalDurationSeconds)} hours`}
                 />
               )}
-              <Stat
-                label="Taught"
-                value={course.learningMode === 'live' ? 'Live sessions' : 'Recorded'}
-              />
             </dl>
 
             {/* Enrollment is free while payment is unbuilt (CLAUDE.md §7.2).
                 When a gateway lands it sits in front of this button, and the
-                copy changes here rather than anywhere else. */}
+                copy changes here rather than anywhere else.
+                No `next` param: registration joins the waiting queue rather
+                than an enrollment on this course (`SHELL-5`), so there is
+                nothing course-specific to return to once signed in. */}
             <ButtonLink
-              href={`/register?next=${next}`}
+              href="/register"
               variant="primary"
-              size="lg"
+              size="medium"
               className="mt-[var(--sp-8)] w-full"
             >
               Create an account to enroll
             </ButtonLink>
             <p className="mt-[var(--sp-4)] text-center text-[var(--fs-base)] text-fg-2">
               Already have one?{' '}
-              <Link
-                href={`/login?next=${next}`}
-                className="text-fg underline underline-offset-4"
-              >
+              <Link href="/login" className="text-fg underline underline-offset-4">
                 Sign in
               </Link>
             </p>

@@ -3174,3 +3174,539 @@ already components rather than lines inside the page.
   than in all three states.
 - `/dashboard` is now the only student page on the shell's 40px header; the
   rest still draw their own. Unchanged from yesterday and still open.
+
+---
+
+## 2026-09-19 — Chat unit 1: the Full admin becomes a real role (`AUTH-1`, `AUTH-3`)
+
+First unit of the redesign to write backend code. Run through the three-agent pipeline:
+`redesign-planner` produced `docs/phases/unit-1/PHASE_PLAN.md` (993 lines), the coordinator ruled on
+its eight open questions in `COORDINATOR_RULINGS.md`, and this is the executor's pass.
+`docs/phases/unit-1/EXECUTION_NOTES.md` has the real command output.
+
+**A previous executor run died on a session limit having written nothing**, and its brief died with
+it. That is why the rulings are a file rather than a prompt, and why the execution notes are appended
+step by step instead of written at the end.
+
+### What landed
+
+`Role.Admin` — a sixth role, identical to the teacher in permission and distinct in identity, because
+attribution is the entire reason it is a role rather than a second teacher account. Migration `011`
+widens `users_role_check` and `audit_log_actor_role_check` to admit `'admin'`. Both staff role sets are
+defined once (`auth/staff-roles.ts`) and applied at 14 `@Roles` decorator sites covering 63 routes.
+An `admin-1` / `admin@example.com` fixture exists in both drivers. `AUTH-3` adds
+`auth/capabilities.ts` — the four withheld verbs as an exhaustive `Record` — and moves
+`DELETE /staff/groups/:groupId/members/:studentId` to teacher/admin with a 403.
+
+### The part that mattered, and it was not the enum
+
+**Fourteen hand-written `actorRole` ternaries would have made the new role useless.** Nine services
+carried an expression collapsing the role to a binary, in two families that failed in *opposite*
+directions: seven sites `role === Assistant ? Assistant : Teacher` (an admin logged as **teacher**),
+five `role === Teacher ? Teacher : Assistant` (an admin logged as **assistant**, landing inside the
+assistant activity trail that `PEOPLE-5` will render). Two more in `staff/staff.service.ts` were
+hardcoded `Role.Teacher`.
+
+Nothing would have errored. Migration `011` makes the column *able* to hold `'admin'`, so **the
+database accepts the lie** — and the audit log has no UPDATE and no DELETE path, so every entry
+written in that window would have been wrong permanently. The role would have existed and provided
+exactly none of the attribution it was added for.
+
+All fourteen now go through one `actorRoleOf` (`auth/actor-role.ts`), which **validates and throws**
+rather than defaulting: a role that is not a `Role` member means the actor construction upstream is
+broken, and filing it as `assistant` to keep the request alive is how the defect recurs.
+
+The plan's sequencing put this refactor *before* the decorators widened, so the window never opened.
+
+### Two tests that were made to fail on purpose
+
+Neither of these is worth having unless it can fail, and both were checked rather than assumed.
+
+- `auth/role-guards.spec.ts` discovers every controller with `import.meta.glob` and reflects `@Roles`
+  off all 25 of them. It exists because **adding a `Role` member produces zero compile errors** — no
+  `Record<Role, …>`, no `switch` on a role, anywhere in either workspace — so a missed widening (loud)
+  and an over-widening (**silent**, and the `/admin/*` hole) are both found only by enumeration.
+  Verified by over-widening `/admin/audit-log` to the assistant (2 failures) and by reverting
+  `StaffManageController` to its old role pair (1 failure), then restoring both.
+- The service-layer refusal in `groups.controller.spec.ts` asserts the capability check runs **before**
+  any repository read. The first version spied on `findMembers` and `removeMember` and **passed even
+  with the check moved after the group read** — `assertMay` still threw before those two. Strengthened
+  to spy on `findById`, the actual first read, which does fail in the wrong position. A test that
+  cannot fail is a comment; this one nearly shipped as one.
+
+### Not done, and why
+
+**Migration `011` has never run against real PostgreSQL.** No Docker daemon on this machine, nothing
+on 5432, no `psql`. `SPEC-12` is the open gate. So Definition-of-Done point 2 is **NOT MET**, `AUTH-1`
+is held at `[~]` and unit 1 is **not** complete — the *environment* blocked verification, not the
+work. `011` is the lowest-risk migration in the plan (two CHECK widenings, strictly looser, no data
+loss possible), which is what makes authoring it unverified defensible where it would not be for
+`DOM-1`'s destructive collapse. The integration suite **skipped itself**: 81 tests skipped, and a
+skipped suite is not a passing one.
+
+### Scope narrowed, deliberately
+
+`AUTH-2` moved to unit 2 and `AUTH-4` to unit 5 (`docs/CHANGELOG.md` has the full argument). The
+forcing constraint is mechanical: `AUTH-2`'s migration `014` joins `groups.course_id`, which `DOM-1`'s
+`013` creates, and `MigrationRunner` sorts filenames lexicographically — so a `014` with no `013`
+applies straight after `012` and aborts every boot and every integration run. The better reason is
+that `groups.assistant_id` (`DOM-2`) and `assistant_group_assignments` (`AUTH-2`) record the same
+authorization-bearing fact twice, and designing them in different units is how they end up
+disagreeing. Nothing downstream slipped: unit 5 depended on units 1 **and** 2 either way.
+
+### Follow-ups found and recorded rather than fixed
+
+- **`/notifications` is absent from `API_SPEC.yaml` entirely** — three implemented routes, widened by
+  this unit, with no entry in a spec marked `[x]` and validated.
+- Two `/admin/*` spec paths carry `x-roles: [… assistant]` (`/admin/students/{studentId}`,
+  `/admin/announcements/reach`) against the rule that `/admin/*` is teacher/admin and unscoped. Both
+  are unimplemented target routes, so nothing is wrong in the code — but the contract disagrees with
+  itself.
+- `GET /admin/assistants` now lists the Full admin, and `StaffService.assign` refuses a
+  non-assistant — so the course-staff picker shows a row it cannot act on. The emitted `role` field is
+  what lets the console suppress it; `PEOPLE-4` owns the screen.
+- `Assistant.lastSeenAt` has no source anywhere in the repository. Filed as `PEOPLE-6` `[!]`, emitting
+  `null`. Populating it means a write on every authenticated request for a figure nobody has asked to
+  act on.
+
+---
+
+## 2026-09-20 — Phase 1 complete; the migration gate closed
+
+`SPEC-12` had been the hard gate since phase 0: migrations 009 and 010 had never run against a real
+database, and unit 1 wrote `011` on top of them. Docker Desktop was started and the suite run against
+a **fresh, empty** database created beside the dev one — `CREATE DATABASE lms_migtest` rather than
+dropping `tahirelshazli_postgres_data`, which held 27 tables of existing data.
+
+All eleven migrations applied in order, four seed files, **81/81 integration tests passed**.
+
+**It found nothing, and that is the notable part.** 001–008 had each found something on their first
+real run. The one defect unit 1's review specifically predicted — `010`'s `score NUMERIC(10,2)`
+coming back from `pg` as the string `"85.00"`, the same class as the audit cursor bug — was probed
+directly and is already handled: the repository declares the row type as `string | null` and maps
+through `numOrNull`. The risk was real; the code was already right.
+
+`011` was verified behaviourally rather than merely applied: `admin` inserts, `'admln'` is rejected by
+`users_role_check`, and `audit_log_actor_role_check` admits `admin`. Review risk R-5 — Postgres having
+named the inline CHECK something other than `<table>_<column>_check`, which would have aborted the
+migration — did not materialise.
+
+**Chat unit 1 is COMPLETE**, all nine conditions of `PHASE_ROADMAP.md` §2. Final state: 467 unit ·
+216 e2e · 81 integration · frontend 301 pre-existing errors, 0 in `lib/`.
+
+The pipeline itself earned its keep three times: the planner refused to build `AUTH-2` and proved why
+from `MigrationRunner`'s lexicographic sort; the reviewer caught the executor overstating twice and
+caught a capability spec that could not fail; and two executors died on session limits without
+corrupting anything, because the handoff lives in files.
+
+**Not done:** `SPEC-16` and `SPEC-17` — two `API_SPEC.yaml` reconciliations unit 1 surfaced, both
+awaiting a decision (`D-7`, `D-8`), which is why unit 0 stays `[~]`. Next is unit 2 (`DOM-1` + the
+re-homed `AUTH-2`), in a new conversation.
+
+---
+
+## 2026-09-20 — Unit 2a: the group becomes the centre
+
+Unit 2 arrived oversized and the planner said so with numbers rather than an adjective: four
+migrations, three destructive, one **one-way**; 46 source files carrying `learning_mode` logic; two
+new tables; five frontend-visible response shapes; 22 `StaffScopeService` call sites. The
+coordinator split it at the boundary the planner recommended, and the boundary is not a convenience
+— it is a verified migration gate. `015`'s backfill joins `groups.course_id`, so `013` has to have
+landed and been proven first, and a unit boundary is the strongest form of "verified first"
+available. It also puts the project's two irreversible `DROP TABLE`s in different reviews.
+
+**Slice 2a landed three things.**
+
+`DOM-0` retired the learning mode. Every course is taught the same way now — recordings *and* live
+sessions — so the axis had nothing left to switch on. The visible consequence is not the dropped
+columns but the response shape: course progress was a discriminated union,
+`{type:'recorded'} | {type:'live'}`, and it collapsed into **one** shape carrying completion and
+attendance side by side. A course with no sessions reports `0 of 0` rather than serving a different
+shape. `CLAUDE.md` §11.1 non-negotiable 2 is restated where the type is declared, in the backend and
+in the mirror, and a test asserts the two percentages are never blended into a third.
+
+`DOM-1` is the one-way door. `group_courses` collapsed into `groups.course_id`, reversing an
+argument `CLAUDE.md` §6.1 made at length and lost to the client. The migration **refuses rather than
+guesses** on two conditions, not one: a group holding two courses, and a group holding **zero** —
+the second reachable through `GroupRepository.create`, and not named anywhere in the plan. Both
+messages name the offending group, because the operator who has to fix it by hand will look nowhere
+else. The abort tests were written and run **before** the happy path was validated, each in its own
+Postgres schema, and they assert the rollback as well as the throw: `group_courses` intact,
+`course_id` absent, no ledger row. A `pg_dump` of the dev database was taken first.
+
+`DOM-2` gave the group its `assistant_id`, `meets` and `room`, and widened the rename-only PATCH
+into the whole `GroupWrite` — which retired the two `/groups/:id/courses` routes, since a group's
+course is a field on it now. Moving a populated group to another course is refused with 409, an
+assumption stated as one in the code and ratified rather than invented: `Enrollment` is the access
+gate, so re-pointing silently would leave every member enrolled on the old course while being
+targeted by work set for the new one.
+
+**The rule that outlives this slice:** `groups.assistant_id` is a **display** field and is never an
+authorization input. `assistant_group_assignments` (2b) decides reach. The two look like the same
+fact and are allowed to disagree, which is exactly why the rule is written on the column, on the
+interface, in the mirror, in the spec, and asserted by an e2e test that names an assistant on a
+group and proves they still get a 404.
+
+**Two process points worth keeping.** The migration renumber was done as step 1, with no code:
+`DATABASE_PLAN.md` predated `DOM-0` and assigned `012` to `users.status`, and a `014` authored with
+no `013` applies straight after `012` and aborts every boot. And the seeds were regenerated in
+lock-step with each migration rather than as a tail task — the integration suite calls
+`runner.seed()` in the same `beforeAll` as `runner.migrate()`, so a stale fixture fails the
+migration gate at setup, which is the gate failing silently rather than a test failing loudly.
+
+`GroupDataModule` stays `@Global()`, but the cycle it was built to break is gone with
+`LearningModeService`. That is written on the module, so nobody cites it later as precedent for a
+fourth global module.
+
+**Verified:** 471 unit (from 467) · 217 e2e (from 216) · **87 integration from an empty schema**
+(from 81), 0 skipped, all 13 migrations applied against real PostgreSQL 15. `frontend/lib/` stayed
+at 0 typecheck errors; the legacy `app/` and `components/` count rose 301 → 326, every one of them
+a screen that rendered a Live/Recorded badge or branched on `progress.type`, and deliberately not
+patched — `SHELL-4` deletes that code.
+
+Next is unit 2b — `DOM-3`, `DOM-4`, `AUTH-2`, `DOM-5` — in a new conversation.
+
+## 2026-09-20 — unit 2a remediation: the seven closable follow-ups
+
+`redesign-reviewer` returned `APPROVED WITH FOLLOW-UP` on slice 2a with nine findings, none of them
+a security or authorization defect. Seven are now closed, `F2A-8` was the coordinator's, and `F2A-9`
+stays open by design — migration `012` is applied and its ledger row written, so the file is
+immutable and the only legal correction is a later migration.
+
+Two of the seven were more than the line they were reported as.
+
+**The `null` one was a root cause, not two call sites.** `@IsOptional()` skips every other validator
+when the value is `null` as well as `undefined`, so `PATCH /admin/groups/:id {"name": null}`
+validated — and then the two drivers disagreed, Postgres `COALESCE`ing it to a 200 no-op while the
+memory driver wrote `name = null`. The fix is a named decorator, `@IsOptionalNotNull()`, and a
+convention that greps: `@IsOptional()` where the column is nullable, `@IsOptionalNotNull()` where it
+is not. **38 fields across seven DTO files** turned out to have the shape, not two — blog, tasks,
+recordings, live sessions and the student profile as well as groups.
+
+**The tie-break test had to be built to fail.** `addMember` stamps `assignedAt` from the clock, so
+any test that appends placements passes with the comparator deleted. `student-groups.service.spec.ts`
+uses a fake timer to write the March placement before the February one; run with the comparator
+removed it fails, which is the only thing that makes it evidence.
+
+The `API_SPEC.yaml` drift was reconciled **toward the spec**: `POST` and `PATCH /admin/groups` now
+answer a `GroupSummary` like every other group response, so `memberCount` is no longer a required
+property that nothing emitted. `frontend/lib/types.ts`'s `GroupWrite` — which named the PATCH body
+while the spec's `GroupWrite` is the POST body — became `GroupPatch`.
+
+**Verified:** 473 unit (from 471) · 217 e2e, unchanged because the new assertions sit inside
+existing tests · 87 integration on a database created empty immediately before the run, 0 skipped,
+all 13 migrations from nothing. `frontend/lib/` still at 0 typecheck errors; the legacy total is
+unchanged at 326.
+
+Unit 2a's status is the coordinator's call; slice 2b — `DOM-3`, `DOM-4`, `AUTH-2`, `DOM-5` — is
+unstarted and untouched.
+
+## 2026-09-20 — unit 2, slice 2b-i: the registration queue, and course lifecycle
+
+Ruling R-5 split 2b again, at the same kind of boundary that produced the 2a/2b split: `014` is
+additive, `015` is destructive, and `AUTH-2` is the only item in the unit carrying an authorization
+contract. This slice is the additive half — `DOM-3`, `DOM-4`, `DOM-5`. Migration `015` was not
+authored, not even as an empty file, and nothing under `backend/src/staff/` was touched.
+
+**Registration is now a queue.** `users.status` is `waiting | active | rejected`; registering
+creates a `waiting` student and returns `{ status: 'waiting' }` with **no token**. Staff clear the
+queue from `/admin/students?status=waiting` with `POST /admin/students/:id/accept` — which
+activates, enrols on the group's course and places the student in the group inside **one**
+transaction — or `.../reject`, which keeps the row and marks it refused.
+
+The part worth writing down is where the gate went. `login` refusing to mint a token is the obvious
+half and the weaker one: every token issued before a rejection keeps working until it expires. The
+gate that closes it is one clause in `JwtStrategy.validate`, which already re-reads the user from
+the database on every request for existence and role — `status` has exactly that property, so it
+cost a condition on a query that was already running, at the chokepoint every route goes through.
+Both are built; the second has a named test, because without one it is simply forgotten.
+
+The second thing worth writing down is the explicit `'waiting'`. `users.status` defaults to
+`'active'`, which is right for every account that predates the queue and wrong for every one written
+after it. A service that leaned on that default would not fail — the waiting queue would just always
+be empty, and accounts that needed approval would quietly not need it. So the spec asserts the value
+passed to `UserRepository.create`, not the row that comes back, and an e2e proves a fresh
+registration cannot sign in.
+
+`POST /courses/:id/enroll` is gone rather than re-roled — a student cannot enrol themselves at all
+now. `CoursesService.enroll` stays and is what `accept` calls, so its three properties kept their
+tests, retargeted at the service. One consequence rippled further than expected: a signed-in student
+with zero enrollments is no longer reachable through the API, so four e2e cases that needed one
+moved to an account accepted into a cohort studying a course that holds none of the fixtures.
+
+`DOM-5` added `POST|PATCH /admin/courses` on a new controller in `CoursesModule`, beside the
+repository that owns the aggregate. A course is created as a **draft**; publishing is a separate,
+deliberate PATCH, because a course that published itself would put an empty outline on the
+marketing site.
+
+Ruling R-2's five documents were amended — `students.mode` is struck everywhere, including the
+`StudyMode` enum and the two schemas that made `mode` **required** on a field nothing emits.
+
+**Verified:** 515 unit / 32 files (from 473/29) · 224 e2e (from 217) · **103 integration on a
+database created empty immediately before the run, 0 skipped, all 14 migrations from nothing**.
+`frontend/lib/` still at 0 typecheck errors; the legacy total moved 326 → 328, both new errors under
+`app/` and both caused by this slice's contract changes (`api.courses.enroll` is gone;
+`register` no longer returns a user). Unit 4 deletes those files.
+
+Slice 2b-ii — `AUTH-2`, `D-10`, `015`, the final `DOM-6` pass — is unstarted and untouched.
+
+## Unit 2, slice 2b-ii — scope (2026-09-20)
+
+`AUTH-2`, `D-10`, migration `015`, the final `DOM-6` seed pass. The last slice of phase 2 and the
+one carrying the unit's authorization contract.
+
+An assistant's reach moved from the **course** grain to the **group** grain.
+`course_staff_assignments` is gone; `assistant_scopes` (how wide) and `assistant_group_assignments`
+(which groups) replace it behind one repository interface with two drivers. A course is reachable
+when a held group studies it, which migration `013` made derivable — the reverse was never true,
+and that gap was the leak.
+
+**`D-10` is the point of the slice.** Until today any assistant could fetch any group and its
+roster, every member's name and email included. Every staff group route is now scoped through one
+chokepoint — `GroupsService.requireGroup` — and an out-of-scope group answers **404 with a message
+byte-identical to a genuine miss**, on the reads *and* the placement write. Both messages are one
+exported `const` each and are asserted `===` against the genuine-miss path **in the same test**,
+for the course and for the group, because a spec comparing against its own literal would pass while
+the property was gone.
+
+**The contract held.** The seven cases in `staff-scope.service.spec.ts` pass unmodified against
+completely rewritten internals; the only edit is the `beforeEach` provider. The four
+`assign`/`unassign` cases were deleted with the methods they tested under ruling R-8, and their
+properties restated at the group grain. The two `groups.assistant_id`-grants-nothing tests from 2a
+still pass unmodified: the display field is read by nothing that decides access.
+
+`015` was written **last**, after the rewrite was green, and committed with its final caller. Real
+run on the dev database after a `pg_dump`: 1 course grant became 1 group grant, and both assistants
+came out with an explicit `assigned_groups` row — a migration never grants "sees everything".
+
+**Verified:** 517 unit / 32 files (from 515) · 228 e2e · **110 integration on a database created
+empty immediately before the run, 0 skipped, all 15 migrations from nothing** (from 103).
+`frontend/lib/` still at 0 typecheck errors; the legacy total moved 328 → 340, all twelve in
+`app/(app)/manage/courses/[id]/staff/page.tsx` — a screen for a route that no longer exists, which
+unit 4 deletes.
+
+One open question is recorded rather than answered: whether an assistant may read work analytics
+for a task targeted at a group they do not hold (`B-4`). Nothing was guessed; the gate is unchanged.
+
+
+---
+
+## 2026-09-21 — slice 2b-ii reviewed; the second door gets a decision, not a patch
+
+**`APPROVED WITH FOLLOW-UP`** (`docs/phases/unit-2/REVIEW_2B_II.md`). The reviewer did not take the
+executor's numbers on trust: it re-ran all three suites on its own tree (517 / 228 / 110, 0 skipped),
+created an empty database and applied all fifteen migrations into it, read the resulting
+`assistant_scopes` rows directly, and re-derived every claim in the execution notes — the seven
+unmodified contract cases hunk by hunk, the four deleted cases, the twenty-one untouched call sites,
+the four `===`-against-a-genuine-miss assertions, and ruling R-1 by grep *and* by both behavioural
+tests. It reported **no finding attributable to the change itself**. That is the first slice in
+unit 2 to come back that way.
+
+**What it did find is that the slice closed one of two doors.** `D-10` scoped every route that names
+a **group**. The routes that name a **course** are still course-grained — and once scope lives at the
+group grain, those are no longer the same thing. An assistant given one cohort of IGCSE was still
+reading every cohort on the course: names, emails and averages from the roster, the whole submission
+queue, analytics for tasks set to groups they cannot open, and the ability to *target* new work at
+those groups. Roughly 150 students where the grant was thirty. Pre-existing, not a regression — the
+executor had seen the shape of it, named the analytics instance `B-4`, and refused to invent the
+answer, which was the right call: the alternative on hand was not "refuse" but "silently narrow a
+denominator", and two staff members seeing different completion rates for one task with nothing
+failing is worse than an open door that is written down.
+
+**The user ruled: narrow everything to the held groups** — `D-23`, filed as task `AUTH-6`, and
+deliberately **not** folded into phase 2. The deciding argument was not the size of the leak but the
+disagreement: `AUTHORIZATION_MODEL.md` already said *any* assistant-facing read or write is
+group-scoped, and a model the code contradicts is worse than either rule adopted honestly. The
+accepted cost is stated rather than discovered — each affected screen now needs an explicit ruling on
+whether its numbers may depend on who is looking.
+
+The other gating finding was a documentation line that had quietly become the most dangerous kind:
+`AUTHORIZATION_MODEL.md:217` read *"group scope → 404. **Built**"*, which a future agent would cite to
+conclude the question was settled. It is qualified now, with a second row naming the open course door
+and pointing at `AUTH-6`, and the strike-through in `IMPLEMENTATION_PLAN.md` narrowed from *closed* to
+*partly closed*.
+
+`AUTH-2` is `[x]`. **Unit 2 is complete.** Three follow-ups remain and none blocks phase 3: an
+assistant created at runtime still gets no scope row (`D-20`, fails closed, `PEOPLE-4` owns it), a
+dead frontend screen that `SHELL-4` deletes, and a once-seen `npm run test:e2e` teardown abort
+(exit `3221226505`) that CI must not be able to read as a pass — invoke vitest directly when CI is
+authored.
+
+*Bookkeeping: the new decision is `D-23`, not `D-11`. `D-11` was taken on 2026-09-20 by the
+`@IsOptional()`-over-`NOT NULL` ruling, and the series had already run to `D-22`.*
+
+---
+
+## 2026-09-21 — Unit 3 (Mail) complete; the pipeline itself changes for units 3-5
+
+Units 3-5 run through a different process than the rest of the redesign: instead of three separate
+`redesign-planner`/`redesign-executor`/`redesign-reviewer` subagents, Claude stays one continuous
+session as orchestrator and reviewer, and **Antigravity** (Google's CLI, via the `agy-delegate`
+skill, model `claude-opus-4-6-thinking`) writes the code — the user's explicit request (`D-24`). The
+safeguards travel unchanged: a written phase plan first, an independent re-verification of the
+actual diff rather than the implementer's self-report, and the same nine-point completion gate.
+
+**Getting Antigravity to actually run took two findings before real work happened.** A first
+smoke-test dispatch reported `"completed"` and touched nothing — its headless permission system had
+soft-denied the first tool call against a stale allowlist from an unrelated project, and the relay's
+own success detection didn't catch that shape of failure. The user approved
+`--dangerously-skip-permissions` after seeing it. On the real unit-3 dispatch, Antigravity's account
+quota ran out mid-build — the mail module, migration, and service were already built correctly, but
+it never reached lint, the integration run, or its own final report. Per the user's instruction to
+keep working alone rather than wait out a ~4.5-hour reset, Claude finished the remainder directly:
+one trivial lint fix, and the actual Postgres integration run (starting the repo's existing, already
+-present but stopped `tahir-test-db` container on port `55432` — deliberately not the live
+`tahirelshazli-db` on `5432`, which the integration suite's `DROP SCHEMA` would have destroyed).
+
+**What landed (`MAIL-1`..`3`):** a `MailSender` port shaped exactly like `FileStorage`
+(`none|log|smtp`, 503 when unconfigured), a `mail_deliveries` table (migration `016`) storing
+recipient and template only — never the body, `SmtpMailSender` is the one file in the codebase that
+imports `nodemailer`, and `MailService.send` mirrors `AuditService.record`'s
+throws-outside-a-transaction contract. `PasswordResetNotifier` is gone; `AuthService` now injects
+`MailService`, and `requestPasswordReset` — previously not transaction-wrapped at all — now commits
+the reset token and its mail delivery row together. `MailModule` is deliberately **not** `@Global()`;
+the cap stays at three.
+
+**Verified:** 536 unit / 34 files (from 517/32) · **112 integration, 0 skipped, migration 016
+applied from an empty schema** (from 110) · lint clean but for one pre-existing, unrelated warning.
+Two things are recorded as open rather than guessed: the four non-password-reset template shapes are
+provisional until their real callers exist (units 5/9/10), and `MAIL_DRIVER=log` is not refused in
+production the way `STORAGE_DRIVER=local` is (judged lower-risk; revisit if wrong). Full detail in
+`docs/phases/unit-3/`. Units 4 (Shells) and 5 (People and groups) follow the same pipeline next.
+
+---
+
+## 2026-09-21 — Unit 4 (Shells) complete: the frontend renders live for the first time this redesign
+
+Unit 4 built the new console and student shells, flattened the student IA, ported every existing
+page off the retired component system, and deleted the dead half of it — split into four sequential
+slices (4a shells, 4b-i student surface, 4b-ii console surface, 4c marketing/auth, 4d deletion) for
+the same reason unit 2 was split: too large and too varied for one safe pass. Antigravity
+implemented what its account quota allowed across the run (all of 4a/4b-i/4b-ii, part of 4c); the
+orchestrator finished the rest directly rather than spawn another subagent, per the user's
+instruction to keep this down to a single implementing agent.
+
+**The headline isn't the port, it's that this is the first time in the whole redesign a signed-in
+screen has actually rendered in a browser.** Every prior review (unit 3, and slices 4a/4b-i/4b-ii of
+this unit) recorded the same structural finding: Turbopack's dev server serves the whole app's
+global error page the instant *any* route fails to compile, and with hundreds of pre-existing
+errors scattered across nearly every page, nothing could render live until the count came down far
+enough. Slice 4c's port of `(auth)/login` was what finally cleared that — and the very first live
+session immediately surfaced a real bug nobody could have caught by reading code or by `tsc`: an
+infinite render loop in the shared page-chrome contract, hundreds of "Maximum update depth exceeded"
+errors the moment `/manage` rendered with real data. Two effects were depending on a context value
+object that their own state updates rebuild every time they fire - a one-file fix once found, but
+invisible to every static check this whole redesign had been running on. Fixed and verified by
+reloading the live session and watching the error count go to, and stay at, zero.
+
+**What else landed:** the actual deletion pass caught its own near-miss. `SHELL-4`'s scope line
+said "delete `components/app/*`, `components/site/*`" — written before any of this unit's four
+slices existed. By the time the deletion slice ran, `components/site/*` had been fully ported in
+place during the marketing/auth slice and held no legacy code left to delete; deleting it anyway
+would have taken the marketing site and sign-in back out from under the app that slice had just
+finished fixing. Verified per-file by consumer count before deleting anything, not assumed from the
+plan's original wording — `D-25` records the correction.
+
+**Verified:** `npx tsc --noEmit` → 401 baseline down to **22 errors**, every one of them
+pre-existing `AUTH-2` domain-model drift in three `manage/*` files that unit 5 (`PEOPLE-4`) already
+owns, explicitly disclosed rather than left to look like an unfinished unit 4. `0` in `lib/`.
+`eslint` clean. Live-verified as both the seeded teacher and student against the real backend: real
+course/student data in the console shell, the flat student IA with real homework and marks,
+`/marks`'s Performance and Progress genuinely kept apart in a live render (not just in the code),
+and `/register` submitting for real to the exact waiting-for-approval screen `SHELL-5` specified.
+Full detail in `docs/phases/unit-4/`. Unit 5 (People and groups) follows the same pipeline next.
+
+## 2026-09-21 — Unit 5 (People and groups), slices 5a-5c: the student and assistant surfaces
+
+Continued the custom units-3-5 pipeline (`D-24`: Claude as orchestrator and reviewer in one
+session, Antigravity as primary implementer while its quota holds, Claude finishing directly with
+no further subagents once it doesn't — the user's standing instruction). A first planning pass
+wrongly claimed `PEOPLE-1` and `GET /admin/assistants` were entirely unbuilt; caught and corrected
+before any code was written by reading the actual current controllers rather than trusting a stale
+comment about a different, already-retired controller.
+
+**5a** put a status column, filter and accept/reject panel on `manage/students/page.tsx` — the
+backend and `lib/` mirror for the registration queue already existed from `DOM-4`; this was purely
+the frontend catching up to what unit 4's mechanical port had left behind. **5b** added the
+staff-facing student detail/edit screen and direct-create, the latter reusing the existing
+password-reset-token mechanism rather than inventing a new auth path — an account gets a real bcrypt
+hash of a value nobody holds, not a null or empty one, and sets its actual password through the same
+flow a self-service reset already uses.
+
+**5c**, the largest slice, built the assistant-invitation flow end to end (`PEOPLE-4`/`5`/`6`,
+`AUTH-4`): a new `assistant_invitations` table, an invitation repository with both drivers, and
+`AuthService.acceptInvitation` — one transaction that creates the account already `active` (an
+invitation *is* the admin decision; there is no queue the way registration has one), sets its scope,
+assigns every listed group, and self-attributes its own activation audit entry, since there is no
+staff caller on that route to attribute it to. `AdminAssistantsService` merges real accounts and
+still-pending invitations into one response shape, so the frontend never has to know which table a
+row came from. Two decisions surfaced and were recorded rather than guessed past (`D-26`): removing
+an assistant only ever cancels a pending invitation — this codebase has no precedent anywhere for
+hard-deleting or deactivating an already-active account, and building one wasn't asked for; and the
+"assistant activity" screen (`PEOPLE-5`) needed no new route at all, because `GET /admin/audit-log`
+already accepted an `actorId` filter with no frontend caller — the general activity feed built
+ahead of schedule in unit 4 slice 4d just needed a query-param filter added.
+
+**Verified:** 548 backend unit tests (17 new), 242 e2e (8 new — parity-table and refusal
+coverage), backend lint and `tsc` clean, frontend `tsc` steady at the same 22 pre-existing `AUTH-2`
+errors (`lib/` still 0), frontend lint clean. Every new backend route live-verified against the
+actually-running dev server with real requests, including the two negative cases that matter most:
+the cross-field scope/groupIds validation, and confirming `DELETE` genuinely 404s on a real account
+rather than silently accepting the request. **Interactive browser verification did not complete** -
+the Chrome automation tool's tab became unresponsive to clicks and typing (confirmed via zero
+network requests firing after repeated attempts on two fresh tabs); reported as a product bug and
+substituted with the direct-request verification above. Migration `017` has not been run against a
+real empty schema - no Docker in this build environment, the same disclosed gap `REVIEW_5B.md`
+already carried. Full detail: `docs/phases/unit-5/REVIEW_5A.md`, `REVIEW_5B.md`, `REVIEW_5C.md`.
+
+Unit 5 is not yet complete: slice 5d (bulk move, the group report, and closing the three
+`AUTH-2`-broken pages that hold the frontend's remaining 22 `tsc` errors) remains.
+
+## 2026-09-21 — Unit 5 slice 5d: bulk move, the group report, and the frontend hits zero `tsc` errors
+
+The closing slice of unit 5. Two small backend additions - `POST /admin/groups/:id/members/bulk`
+("Move N to group", validated whole-batch-or-nothing before any write, teacher/admin only) and
+`GET /staff/groups/:id/report` (per-student performance scored against what was actually targeted
+at the group, not every assessment the course has ever had) - and then the real work: making the
+three frontend pages this unit's earlier slices had left broken actually compile again.
+
+**The headline finding, and it reverses an assumption this unit's own plan carried:** the group
+report's "PDF" was expected to reuse the rendered-overlay pattern task-marking settled with `D-2`.
+Reading `D-2` in full before building anything found it answers a different question entirely - it
+is about annotating a submission that already exists as a file, never about generating one from
+nothing. A group report has no source PDF to draw on top of, and this stack carries no server-side
+PDF library by design (§1's ~10-group scale does not justify one). The actual answer was simpler
+than the plan assumed: render the report as a page and let the browser's own print-to-PDF produce
+the file - a "Print / save as PDF" button, and two `print:hidden` classes on the console shell's
+nav so the printed output is the report alone. Recorded as `D-27`, since the wrong assumption was
+written into the phase plan and someone re-reading it later would otherwise build the wrong thing.
+
+**The rest was overdue cleanup, not new design.** `manage/groups/page.tsx` was still calling a
+`createGroup(token, name)` signature and reading `group.courses`/`pairing.learningMode` - a
+join-table and a delivery-mode axis two earlier migrations had retired outright (`D-9`: every
+course is taught the same way now, recordings and live sessions both, always - there was nothing
+left for the axis to switch). Rewritten onto the model that has been correct since unit 2.
+`manage/courses/[id]/staff/page.tsx` was calling three routes `AUTH-2` deleted in unit 2 and had
+zero remaining callers anywhere in the app - confirmed by grep before deleting it outright, the
+same discipline unit 4's `SHELL-4` used for the dead quarter of `components/app/*`. One correctness
+fix rode along: the roster's remove-student button is now hidden for anyone who isn't teacher or
+admin, matching what the server already refused with 403 - a control that was offered and then
+always failed is not courtesy, it's a bug users would have reported.
+
+**Result: `npx tsc --noEmit` in `frontend/` is 0.** Not "0 in `lib/`", the actual total - the
+invariant `CLAUDE.md` §4.1 has tracked as a rising, tolerated count since unit 4 is retired along
+with the count it was covering for. A `tsc` error from the next unit on is an ordinary regression.
+
+**Verified:** 573 backend unit tests (7 new), 244 e2e (2 new), backend lint and `tsc` clean,
+frontend `tsc` at 0 and `eslint` clean across the whole tree. Every new/changed route verified live
+against the actually-running dev server with real requests and real fixture data - a genuine
+two-student bulk move, a group report showing a real graded average next to a real "not yet marked"
+null. **Interactive browser verification did not complete**, the same Chrome-automation-tool
+failure reported during slice 5c reproduced again on a freshly created tab; direct API and
+server-rendered-page checks were substituted, as before. Full detail across all four slices:
+`docs/phases/unit-5/REVIEW_5A.md` … `REVIEW_5D.md`.
+
+**Unit 5 is `APPROVED WITH FOLLOW-UP`, not `COMPLETE`.** Every task in scope is built and tested;
+what's missing is entirely environmental - no Docker in this build environment for migration
+`017`'s real-schema run, and the still-unresolved browser tool failure. Both are tracked as open
+follow-ups rather than closing the unit on an unverified claim.

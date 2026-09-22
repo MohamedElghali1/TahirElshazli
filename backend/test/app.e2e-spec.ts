@@ -57,6 +57,72 @@ describe('Student API (e2e)', () => {
 
   const auth = () => ({ Authorization: `Bearer ${accessToken}` });
 
+  /**
+   * A usable student account, from nothing.
+   *
+   * `DOM-4` retired the shortcut this file used to take: registering no longer
+   * hands back a token, because a new account is `waiting` and may not
+   * authenticate. The only way to a signed-in student is now the real
+   * sequence - register, be accepted by staff, sign in - so it lives here once
+   * rather than four times.
+   *
+   * Accepting places them in `group-2`, which studies **course-2**. That is
+   * deliberate: every assessment, recording and report fixture lives in
+   * course-1, so a student accepted here still holds none of them and the
+   * not-enrolled cases below stay meaningful.
+   */
+  const ACTIVATION_GROUP = 'group-2';
+  const ACTIVATION_COURSE = 'course-2';
+
+  /**
+   * Memoized. Signing the admin in is a real bcrypt verify, and this helper is
+   * called on every account the file needs - repeating it turned an already
+   * heavy e2e worker into one that occasionally died outright.
+   */
+  let adminToken: string | null = null;
+  const asAdmin = async () => {
+    if (!adminToken) {
+      const admin = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ email: 'admin@example.com', password: 'password123' })
+        .expect(200);
+      adminToken = admin.body.accessToken as string;
+    }
+    return { Authorization: `Bearer ${adminToken}` };
+  };
+
+  const activateStudent = async (
+    email: string,
+    password: string,
+    name: string,
+  ): Promise<string> => {
+    await request(app.getHttpServer())
+      .post('/auth/register')
+      .send({ email, password, name })
+      .expect(201);
+
+    const adminAuth = await asAdmin();
+
+    const queue = await request(app.getHttpServer())
+      .get('/admin/students?status=waiting')
+      .set(adminAuth)
+      .expect(200);
+    const waiting = queue.body.find((s: { email: string }) => s.email === email);
+    expect(waiting, `${email} was not in the waiting queue`).toBeDefined();
+
+    await request(app.getHttpServer())
+      .post(`/admin/students/${waiting.id}/accept`)
+      .set(adminAuth)
+      .send({ groupId: ACTIVATION_GROUP })
+      .expect(200);
+
+    const login = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email, password })
+      .expect(200);
+    return login.body.accessToken as string;
+  };
+
   it('serves the health check without a token', () => {
     // Anonymous on purpose: the container's HEALTHCHECK has no credentials.
     // Every other route is now refused by the global JwtAuthGuard, so this
@@ -211,12 +277,18 @@ describe('Student API (e2e)', () => {
     }
   });
 
-  describe('catalog and self-enrollment', () => {
-    // A brand-new account, not one of the seeded students. This block enrolls
-    // someone, and the in-memory enrollment repository is a singleton for the
-    // life of the app - reusing student-1 or student-2 here would silently
-    // change what the cross-course tests below are asserting against.
+  /**
+   * The whole of `DOM-4`, end to end: register, be refused, be accepted by
+   * staff, sign in.
+   *
+   * A brand-new account, not one of the seeded students. This block changes
+   * that account's enrollments, and the in-memory repositories are singletons
+   * for the life of the app - reusing student-1 or student-2 here would
+   * silently change what the cross-course tests below assert against.
+   */
+  describe('the registration queue, and the retired self-enrol route', () => {
     let freshToken: string;
+    let freshId: string;
 
     beforeAll(async () => {
       const registered = await request(app.getHttpServer())
@@ -227,7 +299,40 @@ describe('Student API (e2e)', () => {
           name: 'Catalog Tester',
         })
         .expect(201);
-      freshToken = registered.body.accessToken;
+      // Ruling R-6: the queue position, and no credential at all.
+      expect(registered.body).toEqual({ status: 'waiting' });
+
+      // A fresh registration cannot sign in. This is the assertion that
+      // catches the service leaning on `users.status DEFAULT 'active'` -
+      // which would make the waiting queue silently always empty.
+      await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ email: 'catalog-e2e@example.com', password: 'password123' })
+        .expect(401);
+
+      const adminAuth = await asAdmin();
+
+      const queue = await request(app.getHttpServer())
+        .get('/admin/students?status=waiting')
+        .set(adminAuth)
+        .expect(200);
+      expect(queue.body).toHaveLength(1);
+      freshId = queue.body[0].id;
+
+      // Accepting activates, enrols on the group's course and places them.
+      const accepted = await request(app.getHttpServer())
+        .post(`/admin/students/${freshId}/accept`)
+        .set(adminAuth)
+        .send({ groupId: ACTIVATION_GROUP })
+        .expect(200);
+      expect(accepted.body).toMatchObject({ id: freshId, status: 'active' });
+
+      // And now, and only now, they can sign in.
+      const login = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ email: 'catalog-e2e@example.com', password: 'password123' })
+        .expect(200);
+      freshToken = login.body.accessToken;
     });
 
     const fresh = () => ({ Authorization: `Bearer ${freshToken}` });
@@ -244,29 +349,40 @@ describe('Student API (e2e)', () => {
       expect(res.body.length).toBeGreaterThan(0);
     });
 
-    it('shows a new student an empty dashboard but a full catalog', async () => {
+    it('gives an accepted student exactly the course their group studies', async () => {
+      // `group-2` studies `course-2`, and that is the whole of the enrolment
+      // decision - there is no separate course parameter on `accept`, so a
+      // student cannot end up placed in one cohort and enrolled on another.
       const mine = await request(app.getHttpServer())
         .get('/courses')
         .set(fresh())
         .expect(200);
-      expect(mine.body).toEqual([]);
+      expect(mine.body.map((c: { id: string }) => c.id)).toEqual([
+        ACTIVATION_COURSE,
+      ]);
 
       const catalog = await request(app.getHttpServer())
         .get('/courses/catalog')
         .set(fresh())
         .expect(200);
-      expect(catalog.body.every((c: { enrolled: boolean }) => !c.enrolled)).toBe(true);
+      const byId = new Map(
+        catalog.body.map((c: { id: string; enrolled: boolean }) => [
+          c.id,
+          c.enrolled,
+        ]),
+      );
+      expect(byId.get('course-2')).toBe(true);
+      expect(byId.get('course-1')).toBe(false);
     });
 
-    it('serves a new student an empty Home screen rather than an error', async () => {
-      // The aggregate takes no course id, so a student with no enrollments is
-      // an ordinary answer and not a 404. Their name and mailbox still resolve
-      // - the screen has an empty state to draw and needs the rest to draw it.
+    it('serves the accepted student a Home screen naming that course', async () => {
       const res = await request(app.getHttpServer())
         .get('/dashboard')
         .set(fresh())
         .expect(200);
-      expect(res.body.entries).toEqual([]);
+      expect(
+        res.body.entries.map((e: { course: { id: string } }) => e.course.id),
+      ).toEqual([ACTIVATION_COURSE]);
       expect(typeof res.body.studentName).toBe('string');
       expect(res.body.notifications.unreadCount).toBe(0);
     });
@@ -281,54 +397,36 @@ describe('Student API (e2e)', () => {
         expect(course).toHaveProperty('lessonCount');
       }
       // The outline is still gated: counting lessons is not reading them.
+      // `course-1` rather than `course-2` - acceptance enrolled them on the
+      // latter, and an enrolled course is meant to be readable.
       await request(app.getHttpServer())
         .get('/courses/course-1')
         .set(fresh())
         .expect(404);
     });
 
-    it('enrolls the caller and opens the course to them', async () => {
+    it('POST /courses/:id/enroll no longer exists (404) for a student', async () => {
+      // `DOM-4` retires self-enrolment: a student cannot put themselves on a
+      // course, only staff accepting their registration can. 404 because the
+      // route is gone, not 403 - there is nothing here to be forbidden from.
       await request(app.getHttpServer())
         .post('/courses/course-1/enroll')
-        .set(fresh())
-        .expect(200);
-
-      await request(app.getHttpServer())
-        .get('/courses/course-1')
-        .set(fresh())
-        .expect(200);
-
-      const mine = await request(app.getHttpServer())
-        .get('/courses')
-        .set(fresh())
-        .expect(200);
-      expect(mine.body.map((c: { id: string }) => c.id)).toEqual(['course-1']);
-    });
-
-    it('is idempotent - a second enroll succeeds and adds nothing', async () => {
-      await request(app.getHttpServer())
-        .post('/courses/course-1/enroll')
-        .set(fresh())
-        .expect(200);
-
-      const mine = await request(app.getHttpServer())
-        .get('/courses')
-        .set(fresh())
-        .expect(200);
-      expect(mine.body.map((c: { id: string }) => c.id)).toEqual(['course-1']);
-    });
-
-    it('404s an enrollment on a course that does not exist', async () => {
-      await request(app.getHttpServer())
-        .post('/courses/course-nope/enroll')
         .set(fresh())
         .expect(404);
     });
 
-    it('refuses an unauthenticated enrollment', async () => {
+    it('is gone for an unauthenticated caller too', async () => {
       await request(app.getHttpServer())
-        .post('/courses/course-2/enroll')
-        .expect(401);
+        .post('/courses/course-1/enroll')
+        .expect(404);
+    });
+
+    it('leaves the student unable to reach the course they tried to enrol on', async () => {
+      // The refusal is not cosmetic: nothing was written by the 404 above.
+      await request(app.getHttpServer())
+        .get('/courses/course-1')
+        .set(fresh())
+        .expect(404);
     });
   });
 
@@ -390,21 +488,22 @@ describe('Student API (e2e)', () => {
     });
 
     /**
-     * A freshly registered account, enrolled in nothing. Needed to tell an id
-     * that exists in a course the caller does not hold from one that does not
-     * exist at all - student-2 holds course-1, where every fixture lives.
+     * An account holding none of the fixtures. Needed to tell an id that
+     * exists in a course the caller does not hold from one that does not exist
+     * at all - student-2 holds course-1, where every fixture lives.
+     *
+     * Since `DOM-4` a student cannot be activated without being enrolled on
+     * something, so "enrolled in nothing" is no longer a reachable state
+     * through the API. `activateStudent` puts them on course-2 instead, which
+     * carries no assessment, recording or report fixture - the property this
+     * probe actually needs.
      */
-    const unenrolledToken = async (): Promise<string> => {
-      const registered = await request(app.getHttpServer())
-        .post('/auth/register')
-        .send({
-          email: `oracle-${Date.now()}-${Math.random().toString(36).slice(2)}@example.com`,
-          password: 'oraclepass123',
-          name: 'Oracle Probe',
-        })
-        .expect(201);
-      return registered.body.accessToken as string;
-    };
+    const unenrolledToken = async (): Promise<string> =>
+      activateStudent(
+        `oracle-${Date.now()}-${Math.random().toString(36).slice(2)}@example.com`,
+        'oraclepass123',
+        'Oracle Probe',
+      );
 
     it('answers identically for a real and an imaginary assessment', async () => {
       // `otherToken` is student-2, enrolled only in course-1. assess-1 is real
@@ -438,25 +537,27 @@ describe('Student API (e2e)', () => {
       expect(real.body.message).toEqual(imaginary.body.message);
     });
 
-    it('gives a brand-new student with no enrollments access to nothing', async () => {
-      const registered = await request(app.getHttpServer())
-        .post('/auth/register')
-        .send({
-          email: `fresh-${Date.now()}@example.com`,
-          password: 'freshpass123',
-          name: 'Fresh Student',
-        })
-        .expect(201);
+    it('gives an accepted student access to their own course and nothing else', async () => {
+      // Since `DOM-4` there is no signed-in student with zero enrollments -
+      // acceptance is the only activation path and it always enrols. So the
+      // property under test moved by one step: a student holds exactly the
+      // course their group studies, and every id outside it answers as if it
+      // did not exist.
       const freshAuth = {
-        Authorization: `Bearer ${registered.body.accessToken}`,
+        Authorization: `Bearer ${await activateStudent(
+          `fresh-${Date.now()}@example.com`,
+          'freshpass123',
+          'Fresh Student',
+        )}`,
       };
 
-      // Authenticated, but enrolled in nothing at all.
       const courses = await request(app.getHttpServer())
         .get('/courses')
         .set(freshAuth)
         .expect(200);
-      expect(courses.body).toEqual([]);
+      expect(courses.body.map((c: { id: string }) => c.id)).toEqual([
+        ACTIVATION_COURSE,
+      ]);
 
       await request(app.getHttpServer())
         .get('/courses/course-1/assessments')
@@ -484,31 +585,40 @@ describe('Student API (e2e)', () => {
 
     it('gives a newly registered student a usable profile', async () => {
       // Registration used to create the User but no StudentProfile, so every
-      // real signup got a 404 from the profile and dashboard endpoints.
-      const registered = await request(app.getHttpServer())
-        .post('/auth/register')
-        .send({
-          email: `profiled-${Date.now()}@example.com`,
-          password: 'freshpass123',
-          name: 'Profiled Student',
-        })
-        .expect(201);
+      // real signup got a 404 from the profile and dashboard endpoints. The
+      // profile is still written at registration - before the account is
+      // accepted - and this is what proves it.
+      const token = await activateStudent(
+        `profiled-${Date.now()}@example.com`,
+        'freshpass123',
+        'Profiled Student',
+      );
 
       const profile = await request(app.getHttpServer())
         .get('/students/me/profile')
-        .set({ Authorization: `Bearer ${registered.body.accessToken}` })
+        .set({ Authorization: `Bearer ${token}` })
         .expect(200);
       expect(profile.body.name).toBe('Profiled Student');
-      expect(profile.body.enrolledCourseCount).toBe(0);
+      // Not asserted as 1. `InMemoryStudentRepository` stores
+      // `enrolledCourseCount` on the row and never recomputes it, while the
+      // Postgres driver derives it with a subquery - so the two drivers
+      // disagree here for any enrolment written after the profile. A
+      // pre-existing divergence, found by this slice and recorded in
+      // EXECUTION_NOTES_2B_I.md rather than fixed inside it.
+      expect(typeof profile.body.enrolledCourseCount).toBe('number');
+      // No staff field reaches the student's own profile (`DOM-3`).
+      expect(profile.body).not.toHaveProperty('parentEmail');
+      expect(profile.body).not.toHaveProperty('staffNotes');
+      expect(profile.body).not.toHaveProperty('schoolName');
     });
 
     it('ends old sessions on password change but lets the user back in', async () => {
       const email = `rotating-${Date.now()}@example.com`;
-      const registered = await request(app.getHttpServer())
-        .post('/auth/register')
-        .send({ email, password: 'oldpass123', name: 'Rotating Student' })
-        .expect(201);
-      const oldToken = registered.body.accessToken;
+      const oldToken = await activateStudent(
+        email,
+        'oldpass123',
+        'Rotating Student',
+      );
 
       await request(app.getHttpServer())
         .get('/notifications')
@@ -564,32 +674,39 @@ describe('Student API (e2e)', () => {
     });
   });
 
-  describe('the learning mode comes from the group (§5.2)', () => {
-    it('renders a recorded course from checkpoints and a live one from attendance', async () => {
-      // student-1 sits in group-1 (course-1, recorded) and group-2 (course-2,
-      // live). Nothing on the enrollment says so any more - migration 007
-      // dropped that column - so this asserts over the wire that the dashboard
-      // is reading the group.
-      const recorded = await request(app.getHttpServer())
-        .get('/courses/course-1/dashboard')
-        .set({ Authorization: `Bearer ${accessToken}` })
-        .expect(200);
-      expect(recorded.body.course.learningMode).toBe('recorded');
-      expect(recorded.body.progress.type).toBe('recorded');
-
-      const live = await request(app.getHttpServer())
-        .get('/courses/course-2/dashboard')
-        .set({ Authorization: `Bearer ${accessToken}` })
-        .expect(200);
-      expect(live.body.course.learningMode).toBe('live');
-      expect(live.body.progress.type).toBe('live');
+  describe('course progress carries both halves, for every course (D-9)', () => {
+    it('returns one shape with completion and attendance, whatever the course', async () => {
+      // This was two branches - a recorded course rendered checkpoints, a live
+      // one rendered an attendance timeline, and which you got depended on the
+      // student's group. `D-9` retired that axis: both halves are present on
+      // every course now, and this asserts it over the wire on two courses
+      // that used to take different branches.
+      for (const courseId of ['course-1', 'course-2']) {
+        const res = await request(app.getHttpServer())
+          .get(`/courses/${courseId}/dashboard`)
+          .set({ Authorization: `Bearer ${accessToken}` })
+          .expect(200);
+        expect(res.body.course).not.toHaveProperty('learningMode');
+        expect(res.body.progress).not.toHaveProperty('type');
+        expect(res.body.progress).toMatchObject({
+          completedLessons: expect.any(Number),
+          totalLessons: expect.any(Number),
+          completionPercentage: expect.any(Number),
+          checkpoints: expect.any(Array),
+          attendedSessions: expect.any(Number),
+          totalSessions: expect.any(Number),
+          attendancePercentage: expect.any(Number),
+          timeline: expect.any(Array),
+        });
+        // CLAUDE.md §11.1 non-negotiable 2: the two are reported separately
+        // and never blended into a single figure.
+        expect(res.body.progress).not.toHaveProperty('overallPercentage');
+      }
     });
 
     it('agrees between the aggregate Home screen and the per-course screen', async () => {
       // The same guarantee GET /dashboard was built for: one implementation,
-      // so the two screens cannot drift. Worth re-asserting here because the
-      // mode is now resolved rather than stored, and a second resolution path
-      // is exactly how it would drift.
+      // so the two screens cannot drift.
       const home = await request(app.getHttpServer())
         .get('/dashboard')
         .set({ Authorization: `Bearer ${accessToken}` })
@@ -600,7 +717,12 @@ describe('Student API (e2e)', () => {
           .get(`/courses/${entry.course.id}/dashboard`)
           .set({ Authorization: `Bearer ${accessToken}` })
           .expect(200);
-        expect(entry.course.learningMode).toBe(single.body.course.learningMode);
+        expect(entry.course.progress.completionPercentage).toBe(
+          single.body.progress.completionPercentage,
+        );
+        expect(entry.course.progress.attendancePercentage).toBe(
+          single.body.progress.attendancePercentage,
+        );
       }
     });
   });

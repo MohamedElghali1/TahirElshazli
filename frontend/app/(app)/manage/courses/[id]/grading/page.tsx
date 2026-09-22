@@ -1,30 +1,29 @@
 'use client';
 
 import { use, useState } from 'react';
-import { ArrowSquareOutIcon } from '@phosphor-icons/react';
 import { api, ApiError } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
-import {
-  ASSESSMENT_TYPE_LABEL,
-  formatDateTime,
-  formatPercent,
-} from '@/lib/format';
+import { ASSESSMENT_TYPE_LABEL, formatDateTime, formatPercent } from '@/lib/format';
 import type { GradingQueueItem, GradingStatus } from '@/lib/types';
 import {
   Button,
-  Chip,
   EmptyState,
-  ErrorState,
-  Field,
-  FormError,
-  Input,
+  Icon,
+  InlineBanner,
+  Loader,
   Panel,
-  RowsSkeleton,
   Select,
-  Textarea,
+  Table,
+  Tag,
+  TextArea,
+  TextInput,
 } from '@/components/ui';
-import { PageBody } from '@/components/app/page-parts';
-import { TableScroll, Td, Th, Tr } from '@/components/app/table';
+
+const STATUS_FILTER: { value: GradingStatus | ''; label: string }[] = [
+  { value: 'awaiting', label: 'Awaiting grading' },
+  { value: 'graded', label: 'Graded' },
+  { value: '', label: 'All' },
+];
 
 /**
  * The grading queue.
@@ -37,11 +36,7 @@ import { TableScroll, Td, Th, Tr } from '@/components/app/table';
  * arrive already derived from the server's own timestamps (§5.10); the filter
  * below narrows a server-derived value rather than recomputing one.
  */
-export default function CourseGradingPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default function CourseGradingPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [status, setStatus] = useState<GradingStatus | ''>('awaiting');
   const [editing, setEditing] = useState<GradingQueueItem | null>(null);
@@ -52,62 +47,49 @@ export default function CourseGradingPage({
   );
 
   return (
-    <PageBody className="flex flex-col gap-[var(--sp-6)]">
+    <div className="flex flex-col gap-6 p-6">
       {/* Per-assessment averages across every student - CLAUDE.md §5.6, the
           number that says whether a task was hard or easy. */}
       <Panel title="Assessment averages" bodyClassName="">
-        {loading && <RowsSkeleton rows={3} />}
+        {loading && (
+          <div className="flex justify-center p-8">
+            <Loader label="Loading assessment averages" />
+          </div>
+        )}
         {error && (
-          <ErrorState
-            message={
+          <EmptyState
+            icon="AlertTriangle"
+            title={
               error.isNotFound
                 ? 'This course does not exist, or it is not assigned to you.'
                 : error.message
             }
-            onRetry={error.isNotFound ? undefined : reload}
+            action={error.isNotFound ? undefined : <Button onClick={reload}>Try again</Button>}
           />
         )}
         {data && data.assessments.length === 0 && (
           <EmptyState
+            icon="ListDetails"
             title="No assessments yet"
-            body="Once this course has homework, assignments or quizzes, their cohort averages appear here."
+            description="Once this course has homework, assignments or quizzes, their cohort averages appear here."
           />
         )}
         {data && data.assessments.length > 0 && (
-          <TableScroll minWidth={560}>
-            <thead>
-              <tr className="border-b border-[var(--border-light)]">
-                <Th>Assessment</Th>
-                <Th>Type</Th>
-                <Th align="end">Submitted</Th>
-                <Th align="end">Graded</Th>
-                <Th align="end">Class average</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.assessments.map((assessment) => (
-                <Tr key={assessment.assessmentId}>
-                  <Td className="text-fg">{assessment.title}</Td>
-                  <Td>
-                    <Chip tone="neutral">
-                      {ASSESSMENT_TYPE_LABEL[assessment.type]}
-                    </Chip>
-                  </Td>
-                  <Td align="end">
-                    <span className="num">{assessment.submissionCount}</span>
-                  </Td>
-                  <Td align="end">
-                    <span className="num">{assessment.gradedCount}</span>
-                  </Td>
-                  <Td align="end">
-                    <span className="num text-fg">
-                      {formatPercent(assessment.averageScorePercent)}
-                    </span>
-                  </Td>
-                </Tr>
-              ))}
-            </tbody>
-          </TableScroll>
+          <Table
+            rowKey={(row) => row.assessmentId}
+            rows={data.assessments}
+            columns={[
+              { label: 'Assessment', render: (a) => a.title },
+              { label: 'Type', render: (a) => <Tag tone="gray">{ASSESSMENT_TYPE_LABEL[a.type]}</Tag> },
+              { label: 'Submitted', align: 'end', render: (a) => <span className="num">{a.submissionCount}</span> },
+              { label: 'Graded', align: 'end', render: (a) => <span className="num">{a.gradedCount}</span> },
+              {
+                label: 'Class average',
+                align: 'end',
+                render: (a) => <span className="num text-fg">{formatPercent(a.averageScorePercent)}</span>,
+              },
+            ]}
+          />
         )}
       </Panel>
 
@@ -115,25 +97,25 @@ export default function CourseGradingPage({
         title="Submissions"
         action={
           <Select
+            aria-label="Filter submissions by status"
+            className="w-auto min-w-[150px]"
             value={status}
             onChange={(e) => setStatus(e.target.value as GradingStatus | '')}
-            className="w-auto min-w-[150px]"
-            aria-label="Filter submissions by status"
-          >
-            <option value="awaiting">Awaiting grading</option>
-            <option value="graded">Graded</option>
-            <option value="">All</option>
-          </Select>
+            options={STATUS_FILTER}
+          />
         }
         bodyClassName=""
       >
-        {loading && <RowsSkeleton rows={5} />}
+        {loading && (
+          <div className="flex justify-center p-8">
+            <Loader label="Loading submissions" />
+          </div>
+        )}
         {data && data.items.length === 0 && (
           <EmptyState
-            title={
-              status === 'awaiting' ? 'Nothing waiting' : 'No submissions here'
-            }
-            body={
+            icon="Inbox"
+            title={status === 'awaiting' ? 'Nothing waiting' : 'No submissions here'}
+            description={
               status === 'awaiting'
                 ? 'Every submission on this course has been marked.'
                 : 'Work submitted by students on this course will appear here.'
@@ -141,7 +123,7 @@ export default function CourseGradingPage({
           />
         )}
         {data && data.items.length > 0 && (
-          <ul className="rows">
+          <ul className="divide-y divide-border-light">
             {data.items.map((item) => (
               <li key={item.submissionId}>
                 <SubmissionRow item={item} onGrade={() => setEditing(item)} />
@@ -161,35 +143,25 @@ export default function CourseGradingPage({
           }}
         />
       )}
-    </PageBody>
+    </div>
   );
 }
 
-function SubmissionRow({
-  item,
-  onGrade,
-}: {
-  item: GradingQueueItem;
-  onGrade: () => void;
-}) {
+function SubmissionRow({ item, onGrade }: { item: GradingQueueItem; onGrade: () => void }) {
   return (
-    <div className="flex flex-wrap items-center gap-[var(--sp-3)] px-[var(--sp-4)] py-[var(--sp-3)]">
+    <div className="flex flex-wrap items-center gap-3 px-4 py-3">
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[var(--fs-base)] font-medium text-fg">
-          {item.studentName}
-        </span>
-        <span className="mt-[var(--sp-1)] block truncate text-[var(--fs-xs)] text-fg-3">
+        <span className="block truncate text-base font-medium text-fg">{item.studentName}</span>
+        <span className="mt-1 block truncate text-xs text-fg-3">
           {item.assessmentTitle} · submitted {formatDateTime(item.lastSubmittedAt)}
         </span>
       </span>
 
-      {item.isLate && <Chip tone="red">Late</Chip>}
-      <Chip tone={item.status === 'graded' ? 'green' : 'amber'}>
-        {item.status === 'graded' ? 'Graded' : 'Awaiting'}
-      </Chip>
+      {item.isLate && <Tag tone="red">Late</Tag>}
+      <Tag tone={item.status === 'graded' ? 'green' : 'amber'}>{item.status === 'graded' ? 'Graded' : 'Awaiting'}</Tag>
 
-      <span className="num w-[68px] text-end text-[var(--fs-base)] text-fg">
-        {item.score === null ? '--' : `${item.score}/${item.maxScore}`}
+      <span className="num w-[68px] text-end text-base text-fg">
+        {item.score === null ? '—' : `${item.score}/${item.maxScore}`}
       </span>
 
       {item.fileUrl && (
@@ -197,14 +169,14 @@ function SubmissionRow({
           href={item.fileUrl}
           target="_blank"
           rel="noreferrer noopener"
-          className="inline-flex items-center gap-[var(--sp-1)] text-[var(--fs-xs)] text-fg-3 transition-colors duration-[var(--dur-fast)] hover:text-fg"
+          className="inline-flex items-center gap-1 text-xs text-fg-3 transition-colors duration-[var(--dur-fast)] ease-[var(--ease)] hover:text-fg"
         >
           Open work
-          <ArrowSquareOutIcon size={12} />
+          <Icon name="ArrowUpRight" size={12} />
         </a>
       )}
 
-      <Button size="sm" variant={item.status === 'graded' ? 'ghost' : 'primary'} onClick={onGrade}>
+      <Button size="small" variant={item.status === 'graded' ? 'tertiary' : 'primary'} onClick={onGrade}>
         {item.status === 'graded' ? 'Re-grade' : 'Grade'}
       </Button>
     </div>
@@ -249,11 +221,7 @@ function GradeDialog({
     } catch (cause) {
       // The score ceiling is the assessment's own maxScore and is enforced
       // server-side, so its message is the useful one to surface verbatim.
-      setError(
-        cause instanceof ApiError
-          ? cause.message
-          : 'Could not save that mark. Please try again.',
-      );
+      setError(cause instanceof ApiError ? cause.message : 'Could not save that mark. Please try again.');
       setBusy(false);
     }
   }
@@ -263,80 +231,70 @@ function GradeDialog({
       role="dialog"
       aria-modal="true"
       aria-labelledby="grade-title"
-      className="fixed inset-0 z-50 flex items-end justify-center bg-[var(--bg-scrim)] p-[var(--sp-4)] sm:items-center"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-surface-overlay p-4 sm:items-center"
     >
-      <div className="w-full max-w-[520px] overflow-hidden rounded-[var(--r-md)] border border-[var(--border-medium)] bg-[var(--bg-secondary)]">
-        <header className="flex items-start justify-between gap-[var(--sp-4)] border-b border-[var(--border-light)] px-[var(--sp-4)] py-[var(--sp-3)]">
+      <div className="w-full max-w-[520px] overflow-hidden rounded-md border border-border-medium bg-surface">
+        <header className="flex items-start justify-between gap-4 border-b border-border-light px-4 py-3">
           <div className="min-w-0">
-            <h2
-              id="grade-title"
-              className="truncate text-[var(--fs-base)] font-semibold text-fg"
-            >
+            <h2 id="grade-title" className="truncate text-base font-semibold text-fg">
               {item.studentName}
             </h2>
-            <p className="mt-[var(--sp-1)] truncate text-[var(--fs-xs)] text-fg-3">
+            <p className="mt-1 truncate text-xs text-fg-3">
               {item.assessmentTitle} · out of {item.maxScore}
             </p>
           </div>
-          <Button size="sm" variant="ghost" onClick={onClose} type="button">
+          <Button size="small" variant="tertiary" onClick={onClose} type="button">
             Cancel
           </Button>
         </header>
 
-        <form onSubmit={submit} noValidate className="flex flex-col gap-[var(--sp-4)] p-[var(--sp-4)]">
+        <form onSubmit={submit} noValidate className="flex flex-col gap-4 p-4">
           {item.answerText && (
-            <div className="rounded-[var(--r-sm)] bg-[var(--bg-wash)] p-[var(--sp-3)] text-[var(--fs-xs)] leading-[var(--lh-base)] text-fg-2">
-              {item.answerText}
-            </div>
+            <div className="rounded-sm bg-wash-hover p-3 text-xs leading-body text-fg-2">{item.answerText}</div>
           )}
 
-          <Field label="Score" htmlFor="score" hint={`0 to ${item.maxScore}`}>
-            <Input
-              id="score"
-              name="score"
-              type="number"
-              min={0}
-              max={item.maxScore}
-              step={1}
-              required
-              autoFocus
-              defaultValue={item.score ?? ''}
-            />
-          </Field>
+          <TextInput
+            label="Score"
+            id="score"
+            name="score"
+            type="number"
+            min={0}
+            max={item.maxScore}
+            step={1}
+            required
+            autoFocus
+            defaultValue={item.score ?? ''}
+            hint={`0 to ${item.maxScore}`}
+          />
 
-          <Field label="Feedback" htmlFor="feedback">
-            <Textarea
-              id="feedback"
-              name="feedback"
-              rows={4}
-              defaultValue={item.feedback ?? ''}
-              placeholder="What went well, and what to work on."
-            />
-          </Field>
+          <TextArea
+            label="Feedback"
+            id="feedback"
+            name="feedback"
+            rows={4}
+            defaultValue={item.feedback ?? ''}
+            placeholder="What went well, and what to work on."
+          />
 
-          <Field
+          <TextInput
             label="Annotated copy"
-            htmlFor="annotatedFileUrl"
+            id="annotatedFileUrl"
+            name="annotatedFileUrl"
+            type="url"
+            inputMode="url"
+            defaultValue={item.annotatedFileUrl ?? ''}
+            placeholder="https://"
             hint="Optional link to the marked-up file. The student's original is never replaced."
-          >
-            <Input
-              id="annotatedFileUrl"
-              name="annotatedFileUrl"
-              type="url"
-              inputMode="url"
-              defaultValue={item.annotatedFileUrl ?? ''}
-              placeholder="https://"
-            />
-          </Field>
+          />
 
-          {error && <FormError>{error}</FormError>}
+          {error && <InlineBanner tone="danger">{error}</InlineBanner>}
 
-          <div className="flex justify-end gap-[var(--sp-2)]">
-            <Button type="button" variant="ghost" onClick={onClose}>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="tertiary" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" variant="primary" loading={busy}>
-              Save mark
+            <Button type="submit" variant="primary" disabled={busy}>
+              {busy ? <Loader size={3} label="Saving" /> : 'Save mark'}
             </Button>
           </div>
         </form>

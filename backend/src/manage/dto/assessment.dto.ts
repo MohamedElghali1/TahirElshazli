@@ -15,6 +15,7 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
+import { IsOptionalNotNull } from '../../common/validators/is-optional-not-null.js';
 
 /** The id alphabet this schema uses, matching `AssignStaffDto.userId`. */
 const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
@@ -132,7 +133,7 @@ export class CreateAssessmentDto {
    * "required only when another field has this value" badly, and the rule needs
    * to hold for any writer rather than only for this DTO.
    */
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsIn(['file_upload', 'link', 'google_form'], {
     message: 'workType must be file_upload, link or google_form',
   })
@@ -175,48 +176,48 @@ export class CreateAssessmentDto {
 
 /** Every field optional; `undefined` leaves it alone. */
 export class UpdateAssessmentDto {
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsString()
   @MinLength(1)
   @MaxLength(200)
   title?: string;
 
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsString()
   @MaxLength(1000)
   description?: string;
 
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsString()
   @MaxLength(5000)
   instructions?: string;
 
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsArray()
   @IsString({ each: true })
   @MaxLength(80, { each: true })
   @ArrayMaxSize(20)
   topics?: string[];
 
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsISO8601()
   availableFrom?: string;
 
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsISO8601()
   availableTo?: string;
 
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsISO8601()
   dueAt?: string;
 
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsInt()
   @Min(1)
   @Max(1000)
   maxScore?: number;
 
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsArray()
   @IsString({ each: true })
   @MaxLength(120, { each: true })
@@ -224,7 +225,7 @@ export class UpdateAssessmentDto {
   @ArrayMaxSize(20)
   allowedFileTypes?: string[];
 
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsInt()
   @Min(1)
   @Max(MAX_UPLOAD_BYTES)
@@ -243,7 +244,7 @@ export class UpdateAssessmentDto {
    * `link` without supplying `externalUrl` is refused instead of producing a
    * task with a button that goes nowhere.
    */
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsIn(['file_upload', 'link', 'google_form'], {
     message: 'workType must be file_upload, link or google_form',
   })

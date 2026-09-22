@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ImagesIcon, PlayCircleIcon, PaperclipIcon } from '@phosphor-icons/react/dist/ssr';
-import { EmptyState, ButtonLink, ErrorState, Chip } from '@/components/ui';
+import { EmptyState, ButtonLink, Callout, Tag } from '@/components/ui';
 import { Reveal } from '@/components/site/reveal';
 import { ApiError, api } from '@/lib/api';
 import { formatDate } from '@/lib/format';
@@ -64,7 +64,9 @@ export default async function BlogPage() {
 
       {posts === null && (
         <div className="mt-[var(--sp-16)]">
-          <ErrorState message="The blog could not be loaded just now. Please try again shortly." />
+          <Callout tone="danger" title="The blog could not be loaded just now">
+            Please try again shortly.
+          </Callout>
         </div>
       )}
 
@@ -72,9 +74,9 @@ export default async function BlogPage() {
         <div className="mt-[var(--sp-16)] rounded-[var(--r-lg)] border border-[var(--border-medium)] bg-[var(--bg-secondary)]">
           <EmptyState
             title="Nothing published yet"
-            body="The first posts go up before the next intake. Until then, the course pages cover what each paper involves."
+            description="The first posts go up before the next intake. Until then, the course pages cover what each paper involves."
             action={
-              <ButtonLink href="/courses" variant="primary" size="lg">
+              <ButtonLink href="/courses" variant="primary" size="medium">
                 Browse courses
               </ButtonLink>
             }
@@ -136,9 +138,9 @@ function PostCard({ post }: { post: PublicBlogPost }) {
 
       <div className="flex flex-1 flex-col p-[var(--sp-6)]">
         <div className="flex items-center gap-[var(--sp-3)]">
-          <Chip tone={post.category === 'achievement' ? 'amber' : 'neutral'}>
+          <Tag tone={post.category === 'achievement' ? 'amber' : 'gray'}>
             {CATEGORY_LABEL[post.category]}
-          </Chip>
+          </Tag>
           <time
             dateTime={post.publishAt}
             className="text-[var(--fs-base)] text-fg-3"

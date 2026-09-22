@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -12,31 +11,27 @@ import {
   Request,
 } from '@nestjs/common';
 import { Roles } from '../auth/roles.decorator.js';
-import { Role } from '../auth/roles.enum.js';
+import { STAFF_ADMIN } from '../auth/staff-roles.js';
 import type { JwtPayload } from '../auth/jwt.strategy.js';
 import {
-  AddGroupCourseDto,
+  BulkMoveMembersDto,
   CreateGroupDto,
   ListGroupsQueryDto,
-  RenameGroupDto,
+  UpdateGroupDto,
 } from './dto/group.dto.js';
 import {
   DEFAULT_GROUP_PAGE_SIZE,
   GroupsService,
 } from './groups.service.js';
 import type { GroupSummary } from './groups.service.js';
-import type {
-  Group,
-  GroupCourse,
-} from './interfaces/group-repository.interface.js';
 
 /**
  * `/admin/*` - teacher only, unscoped, matching `AdminManageController`.
  *
  * The split against `StaffGroupsController` follows the shape §2.2 already
- * uses. **Creating and renaming a group, and deciding what it studies, are
- * teacher powers**; **placing students into it is a TA power** and lives on the
- * staff controller. The client's instruction covered placement explicitly
+ * uses. **Creating and editing a group, including what it studies, are teacher
+ * powers**; **placing students into it is a TA power** and lives on the staff
+ * controller. The client's instruction covered placement explicitly
  * (*"the assistants and teachers can add to specific group"*) and said nothing
  * about who creates a group, so the narrow reading ships - the same call made
  * for live-session scheduling on 2026-09-07 (§11), and reversible the same way:
@@ -45,7 +40,7 @@ import type {
  * rather than assuming the teacher.
  */
 @Controller('admin')
-@Roles(Role.Teacher)
+@Roles(...STAFF_ADMIN)
 export class AdminGroupsController {
   constructor(private readonly groups: GroupsService) {}
 
@@ -62,8 +57,14 @@ export class AdminGroupsController {
   }
 
   @Get('groups/:groupId')
-  async get(@Param('groupId') groupId: string): Promise<GroupSummary> {
-    return this.groups.get(groupId);
+  async get(
+    @Param('groupId') groupId: string,
+    @Request() req: { user: JwtPayload },
+  ): Promise<GroupSummary> {
+    // Unscoped in practice - this controller is `STAFF_ADMIN` - but the actor
+    // is passed rather than a stand-in so `GroupsService` has exactly one
+    // group-reachability chokepoint (`D-10`).
+    return this.groups.get(groupId, this.actor(req));
   }
 
   @Post('groups')
@@ -71,49 +72,37 @@ export class AdminGroupsController {
   async create(
     @Body() body: CreateGroupDto,
     @Request() req: { user: JwtPayload },
-  ): Promise<Group> {
-    return this.groups.create(this.actor(req), body.name);
-  }
-
-  @Patch('groups/:groupId')
-  async rename(
-    @Param('groupId') groupId: string,
-    @Body() body: RenameGroupDto,
-    @Request() req: { user: JwtPayload },
-  ): Promise<Group> {
-    return this.groups.rename(groupId, this.actor(req), body.name);
+  ): Promise<GroupSummary> {
+    return this.groups.create(this.actor(req), body);
   }
 
   /**
-   * Enroll this group in a course - the client's verb (§5.16).
+   * The widened PATCH. It replaces the rename-only route and the two
+   * `/groups/:id/courses` routes at once: a group's course is now a field on
+   * the group, so adding and removing one is editing it.
    *
-   * It enrolls **no students**: `Enrollment` stays the access gate and adding a
-   * group to a course grants nobody anything. That was the answer on
-   * 2026-09-10 (*"not necessary"*), and it is what keeps the payment question
-   * (§5.12) out of this surface.
+   * Creating a group still enrols **no students**: `Enrollment` stays the
+   * access gate and naming a course on a group grants nobody anything. That was
+   * the answer on 2026-09-10 (*"not necessary"*), and it is what keeps the
+   * payment question (§5.12) out of this surface.
    */
-  @Post('groups/:groupId/courses')
-  @HttpCode(HttpStatus.CREATED)
-  async addCourse(
+  @Patch('groups/:groupId')
+  async update(
     @Param('groupId') groupId: string,
-    @Body() body: AddGroupCourseDto,
+    @Body() body: UpdateGroupDto,
     @Request() req: { user: JwtPayload },
-  ): Promise<GroupCourse> {
-    return this.groups.addCourse(
-      groupId,
-      body.courseId,
-      this.actor(req),
-      body.learningMode,
-    );
+  ): Promise<GroupSummary> {
+    return this.groups.update(groupId, body, this.actor(req));
   }
 
-  @Delete('groups/:groupId/courses/:courseId')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async removeCourse(
+  /** "Move N to group" (`GROUP-3`) - N `addMember` writes in one transaction. */
+  @Post('groups/:groupId/members/bulk')
+  @HttpCode(HttpStatus.OK)
+  async bulkMoveMembers(
     @Param('groupId') groupId: string,
-    @Param('courseId') courseId: string,
+    @Body() body: BulkMoveMembersDto,
     @Request() req: { user: JwtPayload },
-  ): Promise<void> {
-    await this.groups.removeCourse(groupId, courseId, this.actor(req));
+  ): Promise<{ moved: number }> {
+    return this.groups.bulkMove(groupId, body.studentIds, this.actor(req));
   }
 }

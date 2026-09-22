@@ -1,17 +1,22 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { vi } from 'vitest';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { AdminGroupsController } from './admin-groups.controller.js';
 import { StaffGroupsController } from './staff-groups.controller.js';
 import { ClassmatesController } from './classmates.controller.js';
 import { ClassmatesService } from './classmates.service.js';
-import { GroupsService } from './groups.service.js';
-import { LearningModeService } from './learning-mode.service.js';
+import { GROUP_NOT_FOUND, GroupsService } from './groups.service.js';
 import { StudentGroupsService } from './student-groups.service.js';
 import { GROUP_REPOSITORY } from './interfaces/group-repository.interface.js';
 import { InMemoryGroupRepository } from './repositories/in-memory-group.repository.js';
 import { StaffScopeService } from '../staff/staff-scope.service.js';
-import { COURSE_STAFF_REPOSITORY } from '../staff/interfaces/course-staff-repository.interface.js';
-import { InMemoryCourseStaffRepository } from '../staff/repositories/in-memory-course-staff.repository.js';
+import { ASSISTANT_SCOPE_REPOSITORY } from '../staff/interfaces/assistant-scope-repository.interface.js';
+import { InMemoryAssistantScopeRepository } from '../staff/repositories/in-memory-assistant-scope.repository.js';
 import { COURSE_REPOSITORY } from '../courses/interfaces/course-repository.interface.js';
 import { InMemoryCourseRepository } from '../courses/repositories/in-memory-course.repository.js';
 import { ENROLLMENT_REPOSITORY } from '../enrollments/interfaces/enrollment-repository.interface.js';
@@ -19,6 +24,8 @@ import { InMemoryEnrollmentRepository } from '../enrollments/repositories/in-mem
 import { EnrollmentsService } from '../enrollments/enrollments.service.js';
 import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js';
 import { InMemoryUserRepository } from '../auth/repositories/in-memory-user.repository.js';
+import { ASSESSMENT_REPOSITORY } from '../assessments/interfaces/assessment-repository.interface.js';
+import { InMemoryAssessmentRepository } from '../assessments/repositories/in-memory-assessment.repository.js';
 import { AUDIT_LOG_REPOSITORY } from '../audit/interfaces/audit-log-repository.interface.js';
 import { InMemoryAuditLogRepository } from '../audit/repositories/in-memory-audit-log.repository.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -38,6 +45,10 @@ const UNASSIGNED_TA = {
 const ADMIN = {
   user: { sub: 'teacher-1', email: 't@example.com', role: 'teacher', jti: 'j3' },
 };
+/** The Full admin (AUTH-1): the teacher's reach under her own identity. */
+const FULL_ADMIN = {
+  user: { sub: 'admin-1', email: 'admin@example.com', role: 'admin', jti: 'j6' },
+};
 const STUDENT_1 = {
   user: { sub: 'student-1', email: 's1@example.com', role: 'student', jti: 'j4' },
 };
@@ -51,7 +62,8 @@ describe('Groups', () => {
   let classmates: ClassmatesController;
   let audit: AuditService;
   let enrollments: InMemoryEnrollmentRepository;
-  let learningMode: LearningModeService;
+  let groupRepo: InMemoryGroupRepository;
+  let scopeRepo: InMemoryAssistantScopeRepository;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -63,7 +75,6 @@ describe('Groups', () => {
       providers: [
         GroupsService,
         ClassmatesService,
-        LearningModeService,
         StudentGroupsService,
         EnrollmentsService,
         StaffScopeService,
@@ -75,11 +86,15 @@ describe('Groups', () => {
         DatabaseService,
         { provide: DATABASE_POOL, useValue: null },
         { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },
-        { provide: COURSE_STAFF_REPOSITORY, useClass: InMemoryCourseStaffRepository },
+        {
+          provide: ASSISTANT_SCOPE_REPOSITORY,
+          useClass: InMemoryAssistantScopeRepository,
+        },
         { provide: COURSE_REPOSITORY, useClass: InMemoryCourseRepository },
         { provide: ENROLLMENT_REPOSITORY, useClass: InMemoryEnrollmentRepository },
         { provide: USER_REPOSITORY, useClass: InMemoryUserRepository },
         { provide: AUDIT_LOG_REPOSITORY, useClass: InMemoryAuditLogRepository },
+        { provide: ASSESSMENT_REPOSITORY, useClass: InMemoryAssessmentRepository },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -96,49 +111,27 @@ describe('Groups', () => {
     // nested beforeEach would assert against an array nothing under test ever
     // writes to - which is a test that cannot fail.
     enrollments = module.get(ENROLLMENT_REPOSITORY);
-    learningMode = module.get(LearningModeService);
+    // The same instance the service holds, so a spy on it observes the real
+    // calls rather than a second repository nothing writes to.
+    groupRepo = module.get(GROUP_REPOSITORY);
+    scopeRepo = module.get(ASSISTANT_SCOPE_REPOSITORY);
   });
 
   const entries = async () =>
     (await audit.find({ limit: 50 })).entries;
 
-  describe('a group is a class of students, not a subdivision of a course', () => {
-    it('is created with no course and can then study more than one', async () => {
-      const group = await admin.create({ name: 'IELTS — Friday' }, ADMIN);
-      // The shape CLAUDE.md §5.16 insisted on: nothing about a course here.
-      expect(group).not.toHaveProperty('courseId');
-
-      await admin.addCourse(
-        group.id,
-        { courseId: 'course-1', learningMode: 'live' },
+  describe('a group studies exactly one course (DOM-1)', () => {
+    it('names its course at creation', async () => {
+      const group = await admin.create(
+        { name: 'IELTS — Friday', courseId: 'course-2' },
         ADMIN,
       );
-      await admin.addCourse(
-        group.id,
-        { courseId: 'course-2', learningMode: 'recorded' },
-        ADMIN,
-      );
-
-      const summary = await admin.get(group.id);
-      expect(summary.courses.map((c) => c.courseId).sort()).toEqual([
-        'course-1',
-        'course-2',
-      ]);
-      // And each pairing carries its own mode - the reason §5.2 put it on
-      // GroupCourse rather than on Group.
-      expect(
-        summary.courses.find((c) => c.courseId === 'course-1')?.learningMode,
-      ).toBe('live');
-      expect(
-        summary.courses.find((c) => c.courseId === 'course-2')?.learningMode,
-      ).toBe('recorded');
+      expect(group.courseId).toBe('course-2');
     });
 
     it('lets more than one group study the same course', async () => {
-      const second = await admin.create({ name: 'Chemistry — Monday' }, ADMIN);
-      await admin.addCourse(
-        second.id,
-        { courseId: 'course-1', learningMode: 'live' },
+      const second = await admin.create(
+        { name: 'Chemistry — Monday', courseId: 'course-1' },
         ADMIN,
       );
 
@@ -147,21 +140,25 @@ describe('Groups', () => {
         ['group-1', second.id].sort(),
       );
     });
+
+    it('404s a course that does not exist', async () => {
+      await expect(
+        admin.create({ name: 'Nowhere', courseId: 'course-nope' }, ADMIN),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
   });
 
-  describe('adding a course to a group enrolls nobody (§5.16)', () => {
+  describe('creating a group enrolls nobody (§5.16)', () => {
     it('leaves the enrollment table untouched', async () => {
       const before = await enrollments.findByCourse('course-2');
 
-      await admin.addCourse(
-        'group-1',
-        { courseId: 'course-2', learningMode: 'live' },
+      await admin.create(
+        { name: 'Chemistry — extra', courseId: 'course-2' },
         ADMIN,
       );
 
-      // group-1 holds student-1 and student-2. If adding a course cascaded -
-      // the convenience the client declined on 2026-09-10 - course-2 would
-      // have gained student-2 here.
+      // If naming a course on a group cascaded - the convenience the client
+      // declined on 2026-09-10 - course-2 would have gained students here.
       const after = await enrollments.findByCourse('course-2');
       expect(after).toHaveLength(before.length);
       expect(after.map((e) => e.studentId)).not.toContain('student-2');
@@ -178,9 +175,14 @@ describe('Groups', () => {
 
   describe('placement is a staff action, and it is audited (§5.4, §5.16)', () => {
     it('lets an assistant place a student and records who did it', async () => {
-      await staff.addMember('group-2', { studentId: 'student-2' }, ASSIGNED_TA);
+      // **group-1, not group-2** (`D-10`): assistant-1 holds group-1 and
+      // nothing else, so placing into group-2 is now a 404 - asserted in its
+      // own case below. The property under test is unchanged: an assistant may
+      // place, and the log names them.
+      await staff.removeMember('group-1', 'student-2', ADMIN);
+      await staff.addMember('group-1', { studentId: 'student-2' }, ASSIGNED_TA);
 
-      const members = await staff.members('group-2');
+      const members = await staff.members('group-1', ASSIGNED_TA);
       expect(members.map((m) => m.studentId).sort()).toEqual([
         'student-1',
         'student-2',
@@ -195,7 +197,7 @@ describe('Groups', () => {
       expect(entry?.actorId).toBe('assistant-1');
       expect(entry?.actorRole).toBe(Role.Assistant);
       expect(entry?.after).toMatchObject({
-        groupId: 'group-2',
+        groupId: 'group-1',
         studentId: 'student-2',
       });
     });
@@ -218,7 +220,7 @@ describe('Groups', () => {
       await staff.addMember('group-2', { studentId: 'student-2' }, ADMIN);
       await staff.addMember('group-2', { studentId: 'student-2' }, ADMIN);
 
-      const members = await staff.members('group-2');
+      const members = await staff.members('group-2', ADMIN);
       expect(members.filter((m) => m.studentId === 'student-2')).toHaveLength(1);
     });
 
@@ -241,13 +243,186 @@ describe('Groups', () => {
     });
   });
 
-  describe('rename keeps a before/after pair that differs', () => {
-    it('records the old and new name', async () => {
-      await admin.rename('group-1', { name: 'Chemistry — Saturday 19:00' }, ADMIN);
+  describe('the widened PATCH (DOM-2)', () => {
+    it('keeps a before/after pair that differs, never an alias', async () => {
+      await admin.update(
+        'group-1',
+        { name: 'Chemistry — Saturday 19:00', room: 'Room 3' },
+        ADMIN,
+      );
 
-      const entry = (await entries()).find((e) => e.action === 'group.renamed');
-      expect(entry?.before).toEqual({ name: 'IGCSE Chemistry — Saturday 18:00' });
-      expect(entry?.after).toEqual({ name: 'Chemistry — Saturday 19:00' });
+      const entry = (await entries()).find((e) => e.action === 'group.updated');
+      expect(entry?.before).toMatchObject({
+        name: 'IGCSE Chemistry — Saturday 18:00',
+        room: null,
+      });
+      expect(entry?.after).toMatchObject({
+        name: 'Chemistry — Saturday 19:00',
+        room: 'Room 3',
+      });
+      // The defect that shipped twice: a `before` that is the same object as
+      // `after` records a change that appears never to have happened.
+      expect(entry?.before).not.toEqual(entry?.after);
+    });
+
+    it('leaves fields the patch omits alone', async () => {
+      const before = await admin.get('group-1', ADMIN);
+      const after = await admin.update('group-1', { room: 'Room 9' }, ADMIN);
+      expect(after.name).toBe(before.name);
+      expect(after.courseId).toBe(before.courseId);
+      expect(after.meets).toBe(before.meets);
+      expect(after.room).toBe('Room 9');
+    });
+
+    it('clears a nullable field when the patch says null, rather than ignoring it', async () => {
+      // The distinction COALESCE alone cannot make: `undefined` means "leave
+      // alone" and `null` means "clear it", and both arrive as SQL NULL.
+      const after = await admin.update('group-1', { assistantId: null }, ADMIN);
+      expect(after.assistantId).toBeNull();
+    });
+
+    it('sets assistantId without granting the assistant anything', async () => {
+      // `groups.assistant_id` is a DISPLAY field. Naming an assistant on a
+      // group must not widen what they may reach - that is decided by
+      // `StaffScopeService` and nothing else. `unassigned-ta` does not hold
+      // course-2, and naming them on group-2 must not change that.
+      await admin.update('group-2', { assistantId: 'assistant-2' }, ADMIN);
+      await expect(
+        staff.listForCourse('course-2', UNASSIGNED_TA),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('refuses with 409 when the course changes on a group that has members', async () => {
+      // group-1 holds student-1 and student-2. Re-pointing it would leave both
+      // enrolled on the old course while being targeted by work set for the
+      // new one (`DOMAIN_MODEL.md:98-100`). Stated as an assumption in
+      // `groups.service.ts`; ratified by the coordinator 2026-09-20.
+      await expect(
+        admin.update('group-1', { courseId: 'course-2' }, ADMIN),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('allows the course to change on an empty group', async () => {
+      const empty = await admin.create(
+        { name: 'Empty cohort', courseId: 'course-1' },
+        ADMIN,
+      );
+      const moved = await admin.update(
+        empty.id,
+        { courseId: 'course-2' },
+        ADMIN,
+      );
+      expect(moved.courseId).toBe('course-2');
+    });
+
+    it('404s a group that does not exist', async () => {
+      await expect(
+        admin.update('group-nope', { name: 'x' }, ADMIN),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  /**
+   * **`D-10`**, closed 2026-09-20 and built by `AUTH-2`. Until this, any
+   * assistant could read any group and its roster - every member's name and
+   * email. The refusal is a **404 byte-identical to a genuine miss**, so an
+   * assistant cannot enumerate cohorts one id at a time, and it covers the
+   * write as well as the reads (`AUTHORIZATION_MODEL.md:207`).
+   *
+   * Both directions, per `CLAUDE.md` §10: the assistant who holds the group
+   * succeeds, the one who does not is refused.
+   */
+  describe('D-10: an assistant reaches only the groups they hold', () => {
+    const message = async (p: Promise<unknown>) =>
+      p.then(() => 'no error', (e: Error) => e.message);
+
+    it('lets the holding assistant read the group and its roster', async () => {
+      // assistant-1 holds group-1. The positive half, without which the
+      // negative half below could be satisfied by refusing everyone.
+      await expect(staff.get('group-1', ASSIGNED_TA)).resolves.toMatchObject({
+        id: 'group-1',
+      });
+      const members = await staff.members('group-1', ASSIGNED_TA);
+      expect(members.map((m) => m.studentId)).toContain('student-1');
+    });
+
+    it('404s a group they do not hold, with the message of a genuine miss', async () => {
+      // The two messages compared IN THE SAME TEST. Comparing each against its
+      // own literal would pass while the property was gone.
+      await expect(staff.get('group-2', ASSIGNED_TA)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(await message(staff.get('group-2', ASSIGNED_TA))).toBe(
+        await message(staff.get('group-does-not-exist', ASSIGNED_TA)),
+      );
+      expect(await message(staff.get('group-2', ASSIGNED_TA))).toBe(
+        GROUP_NOT_FOUND,
+      );
+    });
+
+    it('404s the roster of a group they do not hold, identically', async () => {
+      // The leak `D-10` names: this read carries names and email addresses.
+      expect(await message(staff.members('group-2', ASSIGNED_TA))).toBe(
+        await message(staff.members('group-does-not-exist', ASSIGNED_TA)),
+      );
+      expect(await message(staff.members('group-2', ASSIGNED_TA))).toBe(
+        GROUP_NOT_FOUND,
+      );
+    });
+
+    it('404s placing a student into a group they do not hold, identically', async () => {
+      // The write, not only the reads. And it must not have written first.
+      expect(
+        await message(
+          staff.addMember('group-2', { studentId: 'student-2' }, ASSIGNED_TA),
+        ),
+      ).toBe(
+        await message(
+          staff.addMember(
+            'group-does-not-exist',
+            { studentId: 'student-2' },
+            ASSIGNED_TA,
+          ),
+        ),
+      );
+      const members = await staff.members('group-2', ADMIN);
+      expect(members.map((m) => m.studentId)).not.toContain('student-2');
+      expect(
+        (await entries()).filter((e) => e.action === 'group.student_assigned'),
+      ).toEqual([]);
+    });
+
+    it('refuses an assistant with no groups at all, on a group that exists', async () => {
+      expect(await message(staff.get('group-1', UNASSIGNED_TA))).toBe(
+        GROUP_NOT_FOUND,
+      );
+    });
+
+    it('lets an all_groups assistant read any group (ruling R-7)', async () => {
+      await scopeRepo.setScope('assistant-2', 'all_groups');
+      await expect(staff.get('group-1', UNASSIGNED_TA)).resolves.toMatchObject({
+        id: 'group-1',
+      });
+      await expect(staff.get('group-2', UNASSIGNED_TA)).resolves.toMatchObject({
+        id: 'group-2',
+      });
+    });
+
+    it.each([
+      ['the teacher', ADMIN],
+      ['the full admin', FULL_ADMIN],
+    ])('lets %s read every group', async (_label, actor) => {
+      await expect(staff.get('group-1', actor)).resolves.toBeDefined();
+      await expect(staff.get('group-2', actor)).resolves.toBeDefined();
+    });
+
+    it('does not read groups.assistant_id to decide reach (ruling R-1)', async () => {
+      // The binding rule, at the group grain this time. Naming assistant-2 on
+      // group-2 is a DISPLAY change; it must not make group-2 reachable.
+      await admin.update('group-2', { assistantId: 'assistant-2' }, ADMIN);
+      expect(await message(staff.get('group-2', UNASSIGNED_TA))).toBe(
+        GROUP_NOT_FOUND,
+      );
     });
   });
 
@@ -295,10 +470,8 @@ describe('Groups', () => {
     it('does not leak the other group studying the same course', async () => {
       // A second group on course-1, with a student in it. student-1 is in
       // group-1 and must not see them.
-      const other = await admin.create({ name: 'Chemistry — Monday' }, ADMIN);
-      await admin.addCourse(
-        other.id,
-        { courseId: 'course-1', learningMode: 'live' },
+      const other = await admin.create(
+        { name: 'Chemistry — Monday', courseId: 'course-1' },
         ADMIN,
       );
       await staff.addMember(other.id, { studentId: 'student-2' }, ADMIN);
@@ -310,10 +483,8 @@ describe('Groups', () => {
     it('returns two lists for a student in two groups, never one merged set', async () => {
       // student-1 already sits in group-1; put them in a second group that also
       // studies course-1.
-      const other = await admin.create({ name: 'Chemistry — Monday' }, ADMIN);
-      await admin.addCourse(
-        other.id,
-        { courseId: 'course-1', learningMode: 'live' },
+      const other = await admin.create(
+        { name: 'Chemistry — Monday', courseId: 'course-1' },
         ADMIN,
       );
       await staff.addMember(other.id, { studentId: 'student-1' }, ADMIN);
@@ -339,64 +510,160 @@ describe('Groups', () => {
     });
   });
 
-  describe('the learning mode comes from the group (§5.2)', () => {
-    it('reads the mode off the group the student is placed in', async () => {
-      // group-1 studies course-1 recorded; group-2 studies course-2 live.
-      // student-1 is in both, so the same student has two different modes -
-      // which is exactly what a column on the enrollment could express too.
-      // The point is the next test.
-      expect(await learningMode.resolve('course-1', 'student-1')).toBe('recorded');
-      expect(await learningMode.resolve('course-2', 'student-1')).toBe('live');
+  /**
+   * `AUTH-3`, at the service layer. The method-level `@Roles(...STAFF_ADMIN)` on
+   * the controller is the outer gate and the e2e suite proves it over HTTP; this
+   * proves the rule is in the **service**, which is `IMPLEMENTATION_PLAN.md`'s
+   * Definition of Done point 5 and `CLAUDE.md` §5. A permission enforced only at
+   * a decorator is one refactor away from being enforced nowhere.
+   */
+  describe('AUTH-3: removing a member is withheld from an assistant', () => {
+    it('refuses an assistant before the repository is touched', async () => {
+      // `findById` is the **first** read `removeMember` performs, via
+      // `requireGroup`. Spying only on `findMembers` or `removeMember` would not
+      // pin the ordering: `assertMay` placed after the group read still refuses
+      // before either of those, so the test would pass with the check in the
+      // wrong place. Verified by moving the assertion and watching this go red.
+      const findById = vi.spyOn(groupRepo, 'findById');
+      const findMembers = vi.spyOn(groupRepo, 'findMembers');
+      const removeMember = vi.spyOn(groupRepo, 'removeMember');
+
+      await expect(
+        staff.removeMember('group-1', 'student-2', ASSIGNED_TA),
+      ).rejects.toThrow(ForbiddenException);
+
+      // Not merely "did not remove" - did not *read*. The capability check is
+      // the first statement in the method, so a refused assistant cannot use the
+      // difference between a 403 and a 404 to learn whether a group or a
+      // membership exists.
+      expect(findById).not.toHaveBeenCalled();
+      expect(findMembers).not.toHaveBeenCalled();
+      expect(removeMember).not.toHaveBeenCalled();
     });
 
-    it('follows the student when staff move them to another group', async () => {
-      // The reason the mode is not a column: moving a student between cohorts
-      // has to change how their dashboard renders, with nothing migrated.
-      const evening = await admin.create({ name: 'Chemistry — live evening' }, ADMIN);
-      await admin.addCourse(
-        evening.id,
-        { courseId: 'course-1', learningMode: 'live' },
+    it('writes no audit entry for the refused removal', async () => {
+      await expect(
+        staff.removeMember('group-1', 'student-2', ASSIGNED_TA),
+      ).rejects.toThrow(ForbiddenException);
+      expect(
+        (await entries()).filter((e) => e.action === 'group.student_removed'),
+      ).toEqual([]);
+    });
+
+    it('leaves the student in the group', async () => {
+      await expect(
+        staff.removeMember('group-1', 'student-2', ASSIGNED_TA),
+      ).rejects.toThrow(ForbiddenException);
+      const members = await staff.members('group-1', ADMIN);
+      expect(members.map((m) => m.studentId)).toContain('student-2');
+    });
+
+    it('still lets the assistant add a member - add stays, remove moves', async () => {
+      // The paired grant from the client's 2026-09-10 answer. Losing it would
+      // be an over-correction, and the e2e suite alone would not distinguish
+      // "the assistant cannot remove" from "the assistant cannot place".
+      // group-1, for the same `D-10` reason as above: it is the group this
+      // assistant holds.
+      await staff.removeMember('group-1', 'student-1', ADMIN);
+      await staff.addMember('group-1', { studentId: 'student-1' }, ASSIGNED_TA);
+      const members = await staff.members('group-1', ASSIGNED_TA);
+      expect(members.map((m) => m.studentId)).toContain('student-1');
+    });
+
+    it.each([
+      ['the teacher', ADMIN],
+      ['the full admin', FULL_ADMIN],
+    ])('lets %s remove a member', async (_label, actor) => {
+      await staff.removeMember('group-1', 'student-2', actor);
+      const members = await staff.members('group-1', ADMIN);
+      expect(members.map((m) => m.studentId)).not.toContain('student-2');
+    });
+
+    it('records the full admin as admin on the removal', async () => {
+      await staff.removeMember('group-1', 'student-2', FULL_ADMIN);
+      const entry = (await entries()).find(
+        (e) => e.action === 'group.student_removed',
+      );
+      expect(entry).toMatchObject({
+        actorId: 'admin-1',
+        actorRole: Role.Admin,
+      });
+    });
+  });
+
+  describe('bulk move (GROUP-3)', () => {
+    it('moves several students at once, one write and one audit entry per student', async () => {
+      const result = await admin.bulkMoveMembers(
+        'group-2',
+        { studentIds: ['student-1', 'student-2'] },
         ADMIN,
       );
-      await staff.removeMember('group-1', 'student-2', ADMIN);
-      await staff.addMember(evening.id, { studentId: 'student-2' }, ADMIN);
+      expect(result).toEqual({ moved: 2 });
 
-      expect(await learningMode.resolve('course-1', 'student-2')).toBe('live');
-    });
+      const members = await staff.members('group-2', ADMIN);
+      expect(members.map((m) => m.studentId).sort()).toEqual(['student-1', 'student-2']);
 
-    it('falls back to the course default for an enrolled but unplaced student', async () => {
-      // §7.2's state, and §5.2 requires the dashboard to always have a mode.
-      await staff.removeMember('group-1', 'student-2', ADMIN);
-      expect(await learningMode.resolve('course-1', 'student-2')).toBe('recorded');
-    });
-
-    it('resolves a whole roster in one pass, agreeing with the single read', async () => {
-      const { byStudent, courseDefault } =
-        await learningMode.resolveForCourse('course-1');
-      expect(courseDefault).toBe('recorded');
-      for (const studentId of ['student-1', 'student-2']) {
-        expect(byStudent[studentId] ?? courseDefault).toBe(
-          await learningMode.resolve('course-1', studentId),
-        );
-      }
-    });
-
-    it('gives a student in two groups on one course the same answer either way', async () => {
-      // Legal, if unusual. The two methods must not disagree - two reads of one
-      // value that differ is worse than either answer.
-      const other = await admin.create({ name: 'Chemistry — Monday live' }, ADMIN);
-      await admin.addCourse(
-        other.id,
-        { courseId: 'course-1', learningMode: 'live' },
-        ADMIN,
+      const assigned = (await entries()).filter(
+        (e) => e.action === 'group.student_assigned' && e.after?.groupId === 'group-2',
       );
-      await staff.addMember(other.id, { studentId: 'student-1' }, ADMIN);
+      expect(assigned.map((e) => e.after?.studentId).sort()).toEqual([
+        'student-1',
+        'student-2',
+      ]);
+    });
 
-      const { byStudent, courseDefault } =
-        await learningMode.resolveForCourse('course-1');
-      expect(byStudent['student-1'] ?? courseDefault).toBe(
-        await learningMode.resolve('course-1', 'student-1'),
-      );
+    it('404s a group that does not exist', async () => {
+      await expect(
+        admin.bulkMoveMembers('group-nope', { studentIds: ['student-1'] }, ADMIN),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('validates every id before writing any - a batch half valid is refused whole', async () => {
+      const before = await staff.members('group-2', ADMIN);
+      await expect(
+        admin.bulkMoveMembers(
+          'group-2',
+          { studentIds: ['student-1', 'nobody-at-all'] },
+          ADMIN,
+        ),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      const after = await staff.members('group-2', ADMIN);
+      expect(after.length).toBe(before.length);
+    });
+
+    it('400s a non-student id', async () => {
+      await expect(
+        admin.bulkMoveMembers('group-2', { studentIds: ['teacher-1'] }, ADMIN),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('group report (GROUP-4)', () => {
+    it('returns the group, its course, and a row per member', async () => {
+      const report = await staff.report('group-1', ADMIN);
+      expect(report.groupId).toBe('group-1');
+      expect(report.courseId).toBe('course-1');
+      expect(report.entries.map((e) => e.studentId).sort()).toEqual([
+        'student-1',
+        'student-2',
+      ]);
+      expect(report.memberCount).toBe(report.entries.length);
+    });
+
+    it('lets the assistant read the group they hold', async () => {
+      const report = await staff.report('group-1', ASSIGNED_TA);
+      expect(report.groupId).toBe('group-1');
+    });
+
+    it('404s a group the assistant does not hold, same message as unknown', async () => {
+      const heldMiss = await staff
+        .report('group-2', ASSIGNED_TA)
+        .catch((e: Error) => e.message);
+      const unknownMiss = await staff
+        .report('group-nope', ASSIGNED_TA)
+        .catch((e: Error) => e.message);
+      expect(heldMiss).toBe(GROUP_NOT_FOUND);
+      expect(heldMiss).toBe(unknownMiss);
     });
   });
 });

@@ -7,7 +7,6 @@ import type {
 import { COURSE_REPOSITORY } from '../courses/interfaces/course-repository.interface.js';
 import type {
   EnrollmentRepository,
-  LearningMode,
 } from '../enrollments/interfaces/enrollment-repository.interface.js';
 import { ENROLLMENT_REPOSITORY } from '../enrollments/interfaces/enrollment-repository.interface.js';
 import type { AssessmentRepository } from '../assessments/interfaces/assessment-repository.interface.js';
@@ -16,7 +15,6 @@ import type { RecordingRepository } from '../recordings/interfaces/recording-rep
 import { RECORDING_REPOSITORY } from '../recordings/interfaces/recording-repository.interface.js';
 import type { UserRepository } from '../auth/interfaces/user-repository.interface.js';
 import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js';
-import { LearningModeService } from '../groups/learning-mode.service.js';
 
 /**
  * Which courses the numbers on a screen cover. Sent to the UI and rendered,
@@ -50,7 +48,6 @@ export interface RosterEntry {
   studentId: string;
   name: string;
   email: string;
-  learningMode: LearningMode;
   enrolledAt: string;
   /** Performance, kept apart from completion progress (CLAUDE.md §5.1). */
   submittedCount: number;
@@ -94,8 +91,6 @@ const OVERVIEW_COURSE_LIMIT = 100;
 export class ManageService {
   constructor(
     private readonly scope: StaffScopeService,
-    /** Global (`GroupDataModule`); the mode lives on the group now (§5.2). */
-    private readonly learningMode: LearningModeService,
     @Inject(COURSE_REPOSITORY) private readonly courseRepo: CourseRepository,
     @Inject(ENROLLMENT_REPOSITORY)
     private readonly enrollmentRepo: EnrollmentRepository,
@@ -196,16 +191,10 @@ export class ManageService {
       this.assessmentRepo.findByCourse(courseId),
     ]);
 
-    const [users, submissions, modes] = await Promise.all([
+    const [users, submissions] = await Promise.all([
       this.userRepo.findByIds(enrollments.map((e) => e.studentId)),
       this.assessmentRepo.findSubmissionsForAssessments(assessments.map((a) => a.id)),
-      // One read for the whole roster, bounded by the number of *groups* on the
-      // course rather than the number of students in it (CLAUDE.md §5.2). The
-      // per-student form would be thirty round trips on a page that lists
-      // thirty people - the O(N) §7.3 says is still worth avoiding at 300.
-      this.learningMode.resolveForCourse(courseId),
     ]);
-    const { byStudent: modeByStudent, courseDefault } = modes;
 
     const byId = new Map(users.map((u) => [u.id, u]));
     const maxScoreById = new Map(assessments.map((a) => [a.id, a.maxScore]));
@@ -236,7 +225,6 @@ export class ManageService {
             studentId: enrollment.studentId,
             name: user.name,
             email: user.email,
-            learningMode: modeByStudent[enrollment.studentId] ?? courseDefault,
             enrolledAt: enrollment.enrolledAt,
             submittedCount: mine.length,
             gradedCount: graded.length,

@@ -1,16 +1,8 @@
 'use client';
 
-import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { MagnifyingGlassIcon, XIcon } from '@phosphor-icons/react';
-import { cx, Input, IconButton } from '@/components/ui';
-
-const MODES = [
-  { value: undefined, label: 'All courses' },
-  { value: 'recorded', label: 'Recorded' },
-  { value: 'live', label: 'Live' },
-] as const;
+import { Icon, IconButton } from '@/components/ui';
 
 /**
  * The only client component on the public course index. Everything else -
@@ -20,14 +12,16 @@ const MODES = [
  * Search is a real form. Submitting navigates, which means it works with
  * JavaScript disabled and the result is a shareable address; the debounce below
  * is a convenience on top of that, not the mechanism.
+ *
+ * No Recorded/Live filter: `PublicCourseSummary` carries no learning-mode
+ * field for an anonymous visitor (retired by migration `012`) - see
+ * `app/(site)/courses/page.tsx`'s `applyFilters`.
  */
 export function CourseFilters({
-  mode,
   query,
   total,
   shown,
 }: {
-  mode?: string;
   query?: string;
   total: number;
   shown: number;
@@ -63,40 +57,10 @@ export function CourseFilters({
     return () => clearTimeout(id);
   }, [value, query, params, router]);
 
-  const hrefFor = (nextMode?: string) => {
-    const next = new URLSearchParams(params.toString());
-    if (nextMode) next.set('mode', nextMode);
-    else next.delete('mode');
-    return next.size ? `/courses?${next}` : '/courses';
-  };
-
-  const filtered = Boolean(mode) || Boolean(query);
+  const filtered = Boolean(query);
 
   return (
-    <div className="flex flex-col gap-[var(--sp-6)] border-y border-[var(--border-light)] py-[var(--sp-6)] lg:flex-row lg:items-center lg:justify-between">
-      <div className="flex flex-wrap items-center gap-[var(--sp-2)]">
-        {MODES.map((option) => {
-          const active = (mode ?? undefined) === option.value;
-          return (
-            <Link
-              key={option.label}
-              href={hrefFor(option.value)}
-              scroll={false}
-              aria-current={active ? 'true' : undefined}
-              className={cx(
-                'inline-flex h-[var(--h-lg)] items-center rounded-[var(--r-full)] px-[var(--sp-4)]',
-                'text-[var(--fs-base)] font-medium transition-colors duration-[var(--dur-fast)]',
-                active
-                  ? 'bg-[var(--accent-wash)] text-accent ring-1 ring-inset ring-[var(--accent-line)]'
-                  : 'text-fg-2 hover:bg-[var(--bg-wash)] hover:text-fg',
-              )}
-            >
-              {option.label}
-            </Link>
-          );
-        })}
-      </div>
-
+    <div className="flex items-center justify-end gap-[var(--sp-6)] border-y border-[var(--border-light)] py-[var(--sp-6)]">
       <div className="flex items-center gap-[var(--sp-4)]">
         <p
           aria-live="polite"
@@ -124,38 +88,32 @@ export function CourseFilters({
           className="relative flex items-center"
           role="search"
         >
-          {/* Preserved so submitting the search does not silently drop the
-              mode the reader already chose. */}
-          {mode && <input type="hidden" name="mode" value={mode} />}
-          <MagnifyingGlassIcon
+          <Icon
+            name="Search"
             size={16}
             aria-hidden
             className="pointer-events-none absolute start-[var(--sp-3)] text-fg-3"
           />
-          {/* The shared control, so the search field cannot drift from every
-              other input on the site. It keeps the global `:focus-visible`
-              outline rather than suppressing it - an earlier version paired
-              `outline-none` with a box-shadow ring, which left the field with
-              no focus indicator at all once the ring token was retired. */}
-          <Input
+          {/* A plain input styled to match the system — the surrounding wrapper
+              already provides the search icon and clear button, so using
+              SearchInput would double the icon. */}
+          <input
             type="search"
             name="q"
-            uiSize="lg"
             value={value}
-            onChange={(e) => setValue(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setValue(e.target.value)}
             placeholder="Search courses"
             aria-label="Search courses"
-            className="min-w-[220px] ps-[var(--sp-8)] pe-[var(--sp-8)]"
+            className="min-w-[220px] rounded-md border-0 bg-wash-field py-1.5 ps-[var(--sp-8)] pe-[var(--sp-8)] font-sans text-base leading-body text-fg shadow-[inset_0_0_0_1px_var(--border-light)] outline-none placeholder:text-fg-4 focus:shadow-[inset_0_0_0_2px_var(--accent)]"
           />
           {value && (
             <IconButton
+              icon="X"
               label="Clear search"
-              size="sm"
+              size={24}
               onClick={() => setValue('')}
               className="absolute end-[var(--sp-2)]"
-            >
-              <XIcon size={14} />
-            </IconButton>
+            />
           )}
         </form>
       </div>

@@ -1,83 +1,108 @@
-'use client';
-
+import * as React from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
 import { cx } from './cx';
+import { Icon, type IconName } from './icon';
 
 /**
- * Link tabs.
+ * Page navigation: 40px tabs over a hairline, the active one underlined.
  *
- * One component replacing two near-identical copies - `CourseTabs` and
- * `ManageCourseTabs` differed only in their array and in which entries a role
- * may see. Both now pass an array.
+ * **The underline is `--fg`, not the accent.** The reference component's own
+ * doc-comment says "accent underline" while its code draws
+ * `inset 0 -1px 0 0 var(--fg)` — the code is what the click-through kits
+ * rendered and what was reviewed, so it wins. It is also the more consistent
+ * of the two with the system's own third rule: a selected tab is a *state*, and
+ * indigo is reserved for the one *action* on a screen.
  *
- * The anatomy is the reference system's Tabs: the hairline belongs to the
- * *list* and runs its whole width, while each tab is a 40px-tall target whose
- * inner content takes the hover fill and an md radius. The active tab is
- * marked by weight and colour, with a 2px accent rule sitting on the list's
- * hairline.
- *
- * Matching is exact for the base href and prefix for the rest, because the
- * base route is a parent of every sibling and would otherwise light up on all
- * of them.
+ * Tabs come in two flavours because the app has both kinds. A tab that changes
+ * the route takes an `href` and renders a `<Link>` (course sections, the staff
+ * console's course tabs). A tab that switches a local view takes `value` and
+ * the list takes `onChange` (To do / Marked / All).
  */
+
 export interface TabItem {
-  href: string;
+  /** Stable id. Defaults to the label when omitted. */
+  value?: string;
   label: string;
+  icon?: IconName;
+  /** A count, set in mono beside the label — "Unmatched 3". */
+  count?: number | null;
+  /** Present for route tabs; absent for local-state tabs. */
+  href?: string;
 }
 
-export function Tabs({
-  items,
-  base,
-  label,
-}: {
-  items: TabItem[];
-  /** The href that must match exactly rather than by prefix. */
-  base: string;
-  label: string;
-}) {
-  const pathname = usePathname();
+function tabClasses(active: boolean): string {
+  return cx(
+    'inline-flex h-10 cursor-pointer items-center gap-1 border-0 bg-transparent px-2',
+    'text-base font-medium leading-body no-underline',
+    'transition-colors duration-[var(--dur-fast)] ease-[var(--ease)]',
+    active
+      ? 'text-fg shadow-[inset_0_-1px_0_0_var(--fg)]'
+      : 'text-fg-3 hover:text-fg hover:no-underline',
+  );
+}
 
+export function TabList({
+  tabs,
+  value,
+  onChange,
+  label,
+  className,
+  ...rest
+}: {
+  tabs: readonly TabItem[];
+  /** The active tab's `value` (or, for route tabs, its `href`). */
+  value: string;
+  onChange?: (value: string) => void;
+  /** Names the tab list for assistive tech — "Course sections". */
+  label: string;
+  className?: string;
+} & React.HTMLAttributes<HTMLDivElement>) {
   return (
-    <nav
+    <div
+      {...rest}
+      role="tablist"
       aria-label={label}
-      className="relative flex gap-[var(--sp-1)] overflow-x-auto px-[var(--sp-6)] after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-[var(--border-light)]"
+      className={cx(
+        'flex items-stretch gap-1 border-b border-border-light',
+        className,
+      )}
     >
-      {items.map((tab) => {
-        const active =
-          tab.href === base ? pathname === base : pathname.startsWith(tab.href);
-        return (
+      {tabs.map((tab) => {
+        const id = tab.href ?? tab.value ?? tab.label;
+        const active = id === value;
+        const body = (
+          <>
+            {tab.icon && <Icon name={tab.icon} size={16} />}
+            {tab.label}
+            {tab.count != null && (
+              <span className="num text-xs text-fg-4">{tab.count}</span>
+            )}
+          </>
+        );
+
+        return tab.href ? (
           <Link
-            key={tab.href}
+            key={id}
             href={tab.href}
-            aria-current={active ? 'page' : undefined}
-            data-active={active || undefined}
-            className={cx(
-              'relative flex min-h-[var(--h-lg)] shrink-0 items-center whitespace-nowrap',
-              'text-[var(--fs-base)] font-medium transition-colors duration-[var(--dur-fast)]',
-              active
-                ? 'text-fg'
-                : 'text-fg-2 hover:text-fg',
-            )}
+            role="tab"
+            aria-selected={active}
+            className={tabClasses(active)}
           >
-            <span
-              className={cx(
-                'rounded-[var(--r-md)] px-[var(--sp-2)] py-[var(--sp-1)]',
-                'transition-colors duration-[var(--dur-fast)]',
-                !active && 'hover:bg-[var(--bg-tertiary)]',
-              )}
-            >
-              {tab.label}
-            </span>
-            {active && (
-              <span
-                aria-hidden
-                className="absolute inset-x-0 bottom-0 z-10 h-[2px] rounded-[var(--r-full)] bg-[var(--accent)]"
-              />
-            )}
+            {body}
           </Link>
+        ) : (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange?.(id)}
+            className={tabClasses(active)}
+          >
+            {body}
+          </button>
         );
       })}
-    </nav>
+    </div>
   );
 }

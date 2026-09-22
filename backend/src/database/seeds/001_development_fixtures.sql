@@ -17,15 +17,24 @@
 -- Accounts
 -- ============================================================
 
-INSERT INTO users (id, email, password_hash, role, name, created_at) VALUES
-  ('student-1', 'student@example.com',  '$2b$10$vH5MRaUG1QbYnIcsyN12zOEvyckQqIdz9bB93STxpIzDiIVDQF81i', 'student', 'Ali Esam',           '2026-01-15T10:00:00Z'),
-  ('student-2', 'student2@example.com', '$2b$10$vH5MRaUG1QbYnIcsyN12zOEvyckQqIdz9bB93STxpIzDiIVDQF81i', 'student', 'Sara Ahmed',         '2026-03-10T08:00:00Z'),
-  ('teacher-1', 'teacher@example.com',  '$2b$10$vH5MRaUG1QbYnIcsyN12zOEvyckQqIdz9bB93STxpIzDiIVDQF81i', 'teacher', 'Dr. Tahir Elshazli', '2025-11-01T09:00:00Z')
+-- `status` is written out rather than left to migration 014's `DEFAULT
+-- 'active'`: these accounts are meant to be signed in with, and a fixture that
+-- depends on a column default is a fixture that breaks silently the day the
+-- default changes.
+INSERT INTO users (id, email, password_hash, role, name, status, created_at) VALUES
+  ('student-1', 'student@example.com',  '$2b$10$vH5MRaUG1QbYnIcsyN12zOEvyckQqIdz9bB93STxpIzDiIVDQF81i', 'student', 'Ali Esam',           'active', '2026-01-15T10:00:00Z'),
+  ('student-2', 'student2@example.com', '$2b$10$vH5MRaUG1QbYnIcsyN12zOEvyckQqIdz9bB93STxpIzDiIVDQF81i', 'student', 'Sara Ahmed',         'active', '2026-03-10T08:00:00Z'),
+  ('teacher-1', 'teacher@example.com',  '$2b$10$vH5MRaUG1QbYnIcsyN12zOEvyckQqIdz9bB93STxpIzDiIVDQF81i', 'teacher', 'Dr. Tahir Elshazli', 'active', '2025-11-01T09:00:00Z')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO student_profiles (id, user_id, name, email, phone, avatar_url, created_at, updated_at) VALUES
-  ('profile-1', 'student-1', 'Ali Esam',   'student@example.com',  '+201234567890', NULL, '2026-01-15T10:00:00Z', '2026-08-01T12:00:00Z'),
-  ('profile-2', 'student-2', 'Sara Ahmed', 'student2@example.com', NULL,            NULL, '2026-03-10T08:00:00Z', '2026-07-20T14:00:00Z')
+-- `school_name`, `parent_email` and `staff_notes` (migration 014) are staff
+-- fields and are populated on exactly one profile, on purpose: a fixture where
+-- every row is NULL cannot tell "the column is never read" apart from "the
+-- column never leaks", and the second is the property that matters - none of
+-- the three may reach a student-facing response (`DOMAIN_MODEL.md:35`).
+INSERT INTO student_profiles (id, user_id, name, email, phone, avatar_url, school_name, parent_email, staff_notes, created_at, updated_at) VALUES
+  ('profile-1', 'student-1', 'Ali Esam',   'student@example.com',  '+201234567890', NULL, 'El Alsson School', 'parent1@example.com', 'Needs extra practice on titration.', '2026-01-15T10:00:00Z', '2026-08-01T12:00:00Z'),
+  ('profile-2', 'student-2', 'Sara Ahmed', 'student2@example.com', NULL,            NULL, NULL,               NULL,                  NULL,                                  '2026-03-10T08:00:00Z', '2026-07-20T14:00:00Z')
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================
@@ -39,13 +48,13 @@ ON CONFLICT (id) DO NOTHING;
 -- All three are published, so the public catalog has something to show out of
 -- the box. Flip `is_published` to false on one to exercise the draft path -
 -- it should vanish from /public/courses while staying in the student catalog.
-INSERT INTO courses (id, slug, is_published, title, description, thumbnail_url, teacher_name, sequential_lock_enabled, default_learning_mode) VALUES
-  ('course-1', 'as-chemistry',            true, 'AS Chemistry',             'Complete AS-level Chemistry course with Dr. Tahir', NULL, 'Dr. Tahir Elshazli', true,  'recorded'),
-  ('course-2', 'ielts-preparation-live',  true, 'IELTS Preparation - Live', 'Live IELTS preparation course',                     NULL, 'Dr. Tahir Elshazli', false, 'live'),
+INSERT INTO courses (id, slug, is_published, title, description, thumbnail_url, teacher_name, sequential_lock_enabled) VALUES
+  ('course-1', 'as-chemistry',            true, 'AS Chemistry',             'Complete AS-level Chemistry course with Dr. Tahir', NULL, 'Dr. Tahir Elshazli', true),
+  ('course-2', 'ielts-preparation-live',  true, 'IELTS Preparation - Live', 'Live IELTS preparation course',                     NULL, 'Dr. Tahir Elshazli', false),
   -- A third course nobody is seeded into, so the catalog has something to
   -- enroll on out of the box. Without it every seeded student already holds
   -- every course and the Enroll button has nothing to act on.
-  ('course-3', 'igcse-english-language',  true, 'IGCSE English Language',   'IGCSE First Language English, Papers 1 and 2',      NULL, 'Dr. Tahir Elshazli', false, 'recorded')
+  ('course-3', 'igcse-english-language',  true, 'IGCSE English Language',   'IGCSE First Language English, Papers 1 and 2',      NULL, 'Dr. Tahir Elshazli', false)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO course_modules (id, course_id, title, chapter, position) VALUES
@@ -77,9 +86,9 @@ INSERT INTO lessons (id, module_id, title, position, duration_seconds) VALUES
   ('lesson-17', 'mod-6', 'Register and Audience',             2, 2220)
 ON CONFLICT (id) DO NOTHING;
 
--- No learning_mode: it moved to `group_courses` in 006 and the column was
--- dropped in 007 (CLAUDE.md 5.2). These students' modes come from the groups
--- seeded in 003_group_fixtures.sql, which is also why that file exists.
+-- No learning_mode: dropped from this table in 007 and retired from the model
+-- entirely in 012 (`D-9`). Every course is taught the same way now. Which
+-- cohort these students sit in comes from 003_group_fixtures.sql.
 INSERT INTO enrollments (student_id, course_id, enrolled_at) VALUES
   ('student-1', 'course-1', '2026-01-20T09:00:00Z'),
   ('student-1', 'course-2', '2026-06-01T09:00:00Z'),

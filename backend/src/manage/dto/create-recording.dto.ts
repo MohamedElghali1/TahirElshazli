@@ -3,7 +3,6 @@ import {
   IsArray,
   IsInt,
   IsISO8601,
-  IsOptional,
   IsString,
   IsUrl,
   Matches,
@@ -11,6 +10,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { IsOptionalNotNull } from '../../common/validators/is-optional-not-null.js';
 
 /** Twelve hours. A duration past this is a typo, not a lesson. */
 const MAX_DURATION_SECONDS = 12 * 60 * 60;
@@ -37,12 +37,12 @@ export class CreateRecordingDto {
   title!: string;
 
   /** Defaults to the module's chapter when omitted, so the student filter works. */
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsString()
   @MaxLength(120)
   chapter?: string;
 
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsArray()
   @ArrayMaxSize(20)
   @IsString({ each: true })
@@ -67,7 +67,7 @@ export class CreateRecordingDto {
   durationSeconds!: number;
 
   /** When the lesson was taught. Defaults to now. */
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsISO8601()
   lessonDate?: string;
 }

@@ -1,4 +1,3 @@
-import type { LearningMode } from '../../enrollments/interfaces/enrollment-repository.interface.js';
 
 export interface Lesson {
   id: string;
@@ -37,13 +36,34 @@ export interface StoredCourse {
   thumbnailUrl: string | null;
   teacherName: string;
   sequentialLockEnabled: boolean;
-  /**
-   * The mode a self-enrollment lands in. The enrollment still owns the mode
-   * per student (CLAUDE.md §5.2) - this is only the default applied when a
-   * student enrolls themselves and has no way to know how a course is taught.
-   */
-  defaultLearningMode: LearningMode;
   modules: CourseModule[];
+}
+
+/**
+ * A course as it is created (`DOM-5`).
+ *
+ * `id` is the repository's to assign, and `modules` is deliberately absent: a
+ * course is created empty and its outline is authored afterwards. Accepting a
+ * whole module tree on create would be a second, unreviewed way to write
+ * `course_modules` and `lessons`.
+ */
+export type NewCourse = Omit<StoredCourse, 'id' | 'modules'>;
+
+/**
+ * A partial update. Every field optional; `undefined` means "leave alone".
+ *
+ * Only `thumbnailUrl` is nullable, so it is the only member where `null` is a
+ * value rather than a 400 - see `IsOptionalNotNull`. `modules` is absent for
+ * the same reason it is absent from `NewCourse`.
+ */
+export interface CoursePatch {
+  slug?: string;
+  isPublished?: boolean;
+  title?: string;
+  description?: string;
+  thumbnailUrl?: string | null;
+  teacherName?: string;
+  sequentialLockEnabled?: boolean;
 }
 
 export interface CourseRepository {
@@ -85,6 +105,18 @@ export interface CourseRepository {
    * differs by surface (the public page 404s; an admin preview would not).
    */
   findBySlug(slug: string): Promise<StoredCourse | null>;
+  /**
+   * Creates a course, with no modules. The caller has already established that
+   * the slug is free - the 409 is a service decision, not a driver error, and
+   * the two drivers must agree on it (`courses_slug_key` is the backstop, not
+   * the check).
+   */
+  create(course: NewCourse): Promise<StoredCourse>;
+  /**
+   * Partial update, returning the course as it now is, or null when there is
+   * no such course. Same shape as `GroupRepository.update`.
+   */
+  update(courseId: string, patch: CoursePatch): Promise<StoredCourse | null>;
 }
 
 export const COURSE_REPOSITORY = Symbol('COURSE_REPOSITORY');

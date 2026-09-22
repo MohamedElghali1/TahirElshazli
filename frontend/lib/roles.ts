@@ -13,7 +13,7 @@ import type { Role } from './types';
  * to *send* someone - never what they are allowed to read.
  */
 export function isStaffRole(role: Role | undefined): boolean {
-  return role === 'teacher' || role === 'assistant';
+  return role === 'teacher' || role === 'admin' || role === 'assistant';
 }
 
 /** Where an account lands after signing in, and where a wrong turn returns to. */
@@ -22,11 +22,18 @@ export function homePathFor(role: Role | undefined): string {
 }
 
 /**
- * Admin means Dr. Tahir's own account (CLAUDE.md §2.1 - there is no third
- * "admin" role; the teacher *is* the admin). A TA is a strict subset.
+ * The two unscoped staff roles: Dr. Tahir's own account, and the Full admin.
+ *
+ * `admin` is a real role as of AUTH-1 (CLAUDE.md §2.1 as amended, CHANGELOG
+ * 2026-09-19) - identical to the teacher in permission, distinct in identity so
+ * the audit log can attribute an action to the person who took it. It is the
+ * backend's `STAFF_ADMIN`. A TA is a strict subset of both.
+ *
+ * The comment this replaced said there was no separate admin role, which is
+ * what produced the wrong reading here in the first place.
  */
 export function isAdminRole(role: Role | undefined): boolean {
-  return role === 'teacher';
+  return role === 'teacher' || role === 'admin';
 }
 
 /**

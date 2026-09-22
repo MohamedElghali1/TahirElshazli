@@ -16,7 +16,6 @@ const published: StoredCourse = {
   thumbnailUrl: null,
   teacherName: 'Dr. Tahir Elshazli',
   sequentialLockEnabled: true,
-  defaultLearningMode: 'recorded',
   modules: [
     {
       id: 'mod-1',
@@ -65,6 +64,15 @@ class StubCourseRepository implements CourseRepository {
   async findBySlug(slug: string) {
     return this.courses.find((c) => c.slug === slug) ?? null;
   }
+  // The public surface is read-only. These exist to satisfy the interface and
+  // refuse rather than silently succeed, so a public path that ever reached
+  // one fails loudly in a test instead of writing a course.
+  async create(): Promise<never> {
+    throw new Error('the public surface never writes a course');
+  }
+  async update(): Promise<never> {
+    throw new Error('the public surface never writes a course');
+  }
 }
 
 async function build(courses: StoredCourse[]): Promise<PublicCoursesService> {
@@ -91,7 +99,6 @@ describe('PublicCoursesService', () => {
       description: 'Complete AS-level Chemistry',
       thumbnailUrl: null,
       teacherName: 'Dr. Tahir Elshazli',
-      learningMode: 'recorded',
       moduleCount: 2,
       lessonCount: 2,
       totalDurationSeconds: 300,

@@ -7,18 +7,34 @@ import { GradingService } from './grading.service.js';
 import { ManageRecordingsService } from './manage-recordings.service.js';
 import { ManageLiveSessionsService } from './manage-live-sessions.service.js';
 import { DirectoryService } from './directory.service.js';
+import { RegistrationApprovalService } from './registration-approval.service.js';
+import { AdminStudentsService } from './admin-students.service.js';
+import { AdminAssistantsService } from './admin-assistants.service.js';
+import { ASSISTANT_INVITATION_REPOSITORY } from './interfaces/assistant-invitation-repository.interface.js';
+import { InMemoryAssistantInvitationRepository } from './repositories/in-memory-assistant-invitation.repository.js';
+import { STUDENT_REPOSITORY } from '../students/interfaces/student-repository.interface.js';
+import { InMemoryStudentRepository } from '../students/repositories/in-memory-student.repository.js';
+import { BcryptPasswordHasher } from '../auth/bcrypt-password-hasher.js';
+import { PASSWORD_HASHER } from '../auth/interfaces/password-hasher.interface.js';
+import { MailService } from '../mail/mail.service.js';
+import { MAIL_SENDER } from '../mail/mail-sender.interface.js';
+import { MAIL_DELIVERY_REPOSITORY } from '../mail/mail-delivery.repository.js';
+import { InMemoryMailDeliveryRepository } from '../mail/in-memory-mail-delivery.repository.js';
 import { AssessmentAuthoringService } from './assessment-authoring.service.js';
 import { StaffScopeService } from '../staff/staff-scope.service.js';
-import { COURSE_STAFF_REPOSITORY } from '../staff/interfaces/course-staff-repository.interface.js';
-import { InMemoryCourseStaffRepository } from '../staff/repositories/in-memory-course-staff.repository.js';
+import { ASSISTANT_SCOPE_REPOSITORY } from '../staff/interfaces/assistant-scope-repository.interface.js';
+import { InMemoryAssistantScopeRepository } from '../staff/repositories/in-memory-assistant-scope.repository.js';
 import { COURSE_REPOSITORY } from '../courses/interfaces/course-repository.interface.js';
 import { InMemoryCourseRepository } from '../courses/repositories/in-memory-course.repository.js';
 import { ENROLLMENT_REPOSITORY } from '../enrollments/interfaces/enrollment-repository.interface.js';
 import { InMemoryEnrollmentRepository } from '../enrollments/repositories/in-memory-enrollment.repository.js';
 import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interface.js';
 import { InMemoryGroupRepository } from '../groups/repositories/in-memory-group.repository.js';
-import { LearningModeService } from '../groups/learning-mode.service.js';
 import { StudentGroupsService } from '../groups/student-groups.service.js';
+import { CoursesService } from '../courses/courses.service.js';
+import { EnrollmentsService } from '../enrollments/enrollments.service.js';
+import { RecordingsService } from '../recordings/recordings.service.js';
+import { LiveSessionsService } from '../live-sessions/live-sessions.service.js';
 import { ASSESSMENT_REPOSITORY } from '../assessments/interfaces/assessment-repository.interface.js';
 import { WORK_REPOSITORY, EXTERNAL_WORK_BINDER } from '../assessments/interfaces/work-repository.interface.js';
 import { InMemoryWorkRepository } from '../assessments/repositories/in-memory-work.repository.js';
@@ -28,6 +44,7 @@ import { InMemoryRecordingRepository } from '../recordings/repositories/in-memor
 import { LIVE_SESSION_REPOSITORY } from '../live-sessions/interfaces/live-session-repository.interface.js';
 import { InMemoryLiveSessionRepository } from '../live-sessions/repositories/in-memory-live-session.repository.js';
 import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js';
+import { Role } from '../auth/roles.enum.js';
 import { InMemoryUserRepository } from '../auth/repositories/in-memory-user.repository.js';
 import { AUDIT_LOG_REPOSITORY } from '../audit/interfaces/audit-log-repository.interface.js';
 import { InMemoryAuditLogRepository } from '../audit/repositories/in-memory-audit-log.repository.js';
@@ -47,12 +64,17 @@ const UNASSIGNED_TA = {
 const ADMIN = {
   user: { sub: 'teacher-1', email: 't@example.com', role: 'teacher', jti: 'j3' },
 };
+/** The Full admin (AUTH-1): the teacher's reach under her own identity. */
+const FULL_ADMIN = {
+  user: { sub: 'admin-1', email: 'admin@example.com', role: 'admin', jti: 'j4' },
+};
 
 describe('Manage surface', () => {
   let staff: StaffManageController;
   let admin: AdminManageController;
   let audit: AuditService;
   let assessments: InMemoryAssessmentRepository;
+  let users: InMemoryUserRepository;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -63,6 +85,26 @@ describe('Manage surface', () => {
         ManageRecordingsService,
         ManageLiveSessionsService,
         DirectoryService,
+        // The registration queue (`DOM-4`). `accept` runs activation,
+        // enrolment and placement in one transaction, so the real
+        // `CoursesService` is wired rather than a stub - the point of the
+        // transaction test is that a failing enrol really does roll back.
+        RegistrationApprovalService,
+        AdminStudentsService,
+        AdminAssistantsService,
+        {
+          provide: ASSISTANT_INVITATION_REPOSITORY,
+          useClass: InMemoryAssistantInvitationRepository,
+        },
+        MailService,
+        { provide: STUDENT_REPOSITORY, useClass: InMemoryStudentRepository },
+        { provide: PASSWORD_HASHER, useClass: BcryptPasswordHasher },
+        { provide: MAIL_SENDER, useValue: { send: vi.fn().mockResolvedValue(undefined) } },
+        { provide: MAIL_DELIVERY_REPOSITORY, useClass: InMemoryMailDeliveryRepository },
+        CoursesService,
+        EnrollmentsService,
+        RecordingsService,
+        LiveSessionsService,
         AssessmentAuthoringService,
         StaffScopeService,
         AuditService,
@@ -72,7 +114,10 @@ describe('Manage surface', () => {
         // `runInTransaction` is a passthrough that still enters the context.
         DatabaseService,
         { provide: DATABASE_POOL, useValue: null },
-        { provide: COURSE_STAFF_REPOSITORY, useClass: InMemoryCourseStaffRepository },
+        {
+          provide: ASSISTANT_SCOPE_REPOSITORY,
+          useClass: InMemoryAssistantScopeRepository,
+        },
         { provide: COURSE_REPOSITORY, useClass: InMemoryCourseRepository },
         { provide: ENROLLMENT_REPOSITORY, useClass: InMemoryEnrollmentRepository },
         // The learning mode lives on the group now (CLAUDE.md §5.2), so every
@@ -80,7 +125,6 @@ describe('Manage surface', () => {
         // implementations rather than stubs: the resolution order (group,
         // then course default) is the part worth exercising.
         { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },
-        LearningModeService,
         StudentGroupsService,
         { provide: ASSESSMENT_REPOSITORY, useClass: InMemoryAssessmentRepository },
         { provide: WORK_REPOSITORY, useClass: InMemoryWorkRepository },
@@ -106,6 +150,7 @@ describe('Manage surface', () => {
     admin = module.get(AdminManageController);
     audit = module.get(AuditService);
     assessments = module.get(ASSESSMENT_REPOSITORY);
+    users = module.get(USER_REPOSITORY);
   });
 
   describe('GET /staff/overview', () => {
@@ -285,6 +330,18 @@ describe('Manage surface', () => {
       const page = await audit.find({ limit: 10 });
       const entry = page.entries.find((e) => e.action === 'submission.graded');
       expect(entry?.actorRole).toBe('teacher');
+    });
+
+    it('records the full admin as admin, not as a teacher or an assistant', async () => {
+      // AUTH-1's whole reason for existing. Before `actorRoleOf` this line
+      // returned 'assistant' here - `grading.service.ts` carried the
+      // `=== Teacher ? Teacher : Assistant` form - so an admin's marking landed
+      // inside the assistant activity trail, permanently: the audit log has no
+      // UPDATE and no DELETE path.
+      await staff.grade('sub-2', { score: 11 }, FULL_ADMIN);
+      const page = await audit.find({ limit: 10 });
+      const entry = page.entries.find((e) => e.action === 'submission.graded');
+      expect(entry).toMatchObject({ actorId: 'admin-1', actorRole: 'admin' });
     });
   });
 
@@ -559,6 +616,70 @@ describe('Manage surface', () => {
       expect(JSON.stringify(students)).not.toMatch(/passwordHash|\$2[aby]\$/);
     });
 
+    it('carries each student’s account status', async () => {
+      const students = await admin.students({});
+      expect(students.every((s) => s.status === 'active')).toBe(true);
+    });
+
+    it('filters to the waiting queue, and shows every status when asked for none', async () => {
+      const queued = await users.create({
+        email: 'queued@example.com',
+        passwordHash: 'hash',
+        name: 'Queued Student',
+        role: Role.Student,
+        status: 'waiting',
+      });
+
+      const waiting = await admin.students({ status: 'waiting' });
+      expect(waiting.map((s) => s.id)).toEqual([queued.id]);
+
+      // Absent means every status, not `active` - this list is the only place
+      // the queue is visible at all.
+      const everyone = await admin.students({});
+      expect(everyone.map((s) => s.id)).toContain(queued.id);
+      expect(everyone.length).toBeGreaterThan(waiting.length);
+    });
+
+    it('accepts a waiting registration and moves it out of the queue', async () => {
+      const queued = await users.create({
+        email: 'queued@example.com',
+        passwordHash: 'hash',
+        name: 'Queued Student',
+        role: Role.Student,
+        status: 'waiting',
+      });
+
+      const row = await admin.acceptRegistration(
+        queued.id,
+        { groupId: 'group-1' },
+        FULL_ADMIN,
+      );
+
+      expect(row).toMatchObject({ id: queued.id, status: 'active' });
+      expect(await admin.students({ status: 'waiting' })).toEqual([]);
+    });
+
+    it('rejects a waiting registration', async () => {
+      const queued = await users.create({
+        email: 'queued2@example.com',
+        passwordHash: 'hash',
+        name: 'Queued Two',
+        role: Role.Student,
+        status: 'waiting',
+      });
+
+      expect(
+        await admin.rejectRegistration(
+          queued.id,
+          { reason: 'Wrong year group' },
+          ADMIN,
+        ),
+      ).toEqual({ ok: true });
+      expect(
+        (await admin.students({ status: 'rejected' })).map((s) => s.id),
+      ).toEqual([queued.id]);
+    });
+
     it('counts each student’s enrollments without an N+1', async () => {
       const students = await admin.students({});
       const ali = students.find((s) => s.email === 'student@example.com');
@@ -572,10 +693,34 @@ describe('Manage surface', () => {
       expect(none).toEqual([]);
     });
 
-    it('lists assistants for the assignment picker', async () => {
-      const assistants = await admin.assistants({});
+    it('lists assistants and admins, and nothing else', async () => {
+      const assistants = await admin.assistants();
       expect(assistants.length).toBeGreaterThan(0);
-      expect(assistants.every((a) => a.email.includes('assistant'))).toBe(true);
+      // An `admin` account that appeared in no directory would be a person
+      // with the teacher's access whom nobody can see (AUTH-1,
+      // `API_SPEC.yaml:217`).
+      expect(
+        assistants.every(
+          (a) => a.role === Role.Assistant || a.role === Role.Admin,
+        ),
+      ).toBe(true);
+      expect(assistants.map((a) => a.id)).toContain('assistant-1');
+      expect(assistants.map((a) => a.id)).toContain('admin-1');
+      expect(assistants.map((a) => a.id)).not.toContain('student-1');
+      expect(assistants.map((a) => a.id)).not.toContain('teacher-1');
+      // `role` is emitted so the console can tell the tiers apart - the picker
+      // must not offer to assign an admin, whom `StaffService.assign` refuses.
+      expect(assistants.find((a) => a.id === 'admin-1')?.role).toBe(Role.Admin);
+      // `PEOPLE-4`: every real account is `active`, with its scope/groupIds.
+      expect(assistants.every((a) => a.status === 'active')).toBe(true);
+    });
+
+    it('refuses a role filter that would return every account', async () => {
+      // The safety property behind `findByRole`'s required, non-empty list: an
+      // empty filter must never be read as "no filter".
+      await expect(
+        users.findByRole([], { limit: 50, offset: 0 }),
+      ).rejects.toThrow();
     });
   });
 });

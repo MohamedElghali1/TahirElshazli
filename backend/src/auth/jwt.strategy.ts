@@ -43,8 +43,17 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     // The role travels in the token but is authoritative only in the database:
     // without this, a deleted or demoted user keeps their old access until the
     // token expires. RolesGuard reads what we return here.
+    //
+    // `status` has exactly that property, so it is a clause on the read that
+    // already happens rather than a second query (`DOM-4`, ruling R-6). This
+    // is the chokepoint every route passes through: a gate in `login` alone
+    // would leave every token minted *before* a rejection working until it
+    // expired, which is precisely the window an account gets rejected in.
+    //
+    // Same message as a deleted account, on purpose - a rejected account and a
+    // nonexistent one are indistinguishable to the caller.
     const user = await this.userRepo.findById(payload.sub);
-    if (!user) {
+    if (!user || user.status !== 'active') {
       throw new UnauthorizedException('Account no longer exists');
     }
     return { ...payload, email: user.email, role: user.role };

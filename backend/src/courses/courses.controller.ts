@@ -1,13 +1,4 @@
-import {
-  Controller,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Param,
-  Post,
-  Request,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Param, Request, UseGuards } from '@nestjs/common';
 import {
   CoursesService,
   CatalogItem,
@@ -46,23 +37,17 @@ export class CoursesController {
   }
 
   /**
-   * Enrolls the *calling* student - the id comes from the verified JWT, never
-   * from the request. There is no body and no student parameter, so there is
-   * nothing here for a client to substitute another student's id into.
+   * **`POST /:id/enroll` is retired** (`DOM-4`, `PRODUCT_SPEC.md:41-49`).
    *
-   * 200, not 201: enrolling twice is defined to succeed and return the
-   * enrollment that already existed (§5.2 keeps the mode on the enrollment,
-   * and a repeat must not reset it), so a created-status code would be a lie
-   * on the second call.
+   * A student no longer enrols themselves. Enrolment is a consequence of staff
+   * accepting a registration - `POST /admin/students/:studentId/accept` - and
+   * the account is `waiting` until they do, so there is no signed-in student
+   * for whom self-enrolment was ever reachable.
+   *
+   * `CoursesService.enroll` stays and is called from there. Only the route is
+   * gone, and it now answers 404 like any other path that does not exist; an
+   * e2e case asserts that.
    */
-  @Post(':id/enroll')
-  @HttpCode(HttpStatus.OK)
-  async enroll(
-    @Param('id') id: string,
-    @Request() req: { user: JwtPayload },
-  ): Promise<CourseListItem> {
-    return this.coursesService.enroll(id, req.user.sub);
-  }
 
   @Get(':id')
   async getCourseDetail(

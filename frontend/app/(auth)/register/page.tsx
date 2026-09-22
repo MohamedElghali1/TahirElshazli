@@ -2,28 +2,21 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
 import { ApiError } from '@/lib/api';
 import { useSession } from '@/lib/session';
-import { resolvePostAuthPath } from '@/lib/roles';
-import { Button, Field, FormError, Input } from '@/components/ui';
+import { Button, TextInput, InlineBanner } from '@/components/ui';
 
 /** Mirrors the backend's RegisterDto rule, so the failure is caught here first. */
 const PASSWORD_RULE = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
 
 export default function RegisterPage() {
   const { register } = useSession();
-  const router = useRouter();
-  // As on the sign-in page: honour where the visitor was heading. Registration
-  // only ever creates a student, so there is no staff case to exclude here -
-  // `resolvePostAuthPath` still checks, because that is not this file's promise
-  // to keep.
-  // Named `nextPath`, not `next`: `submit` already has a local `next` for the
-  // field-error map, and the shadowing silently passed that object here.
-  const nextPath = useSearchParams().get('next');
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  // SHELL-5: the waiting state comes from register's own 201 body, not from a
+  // session or a redirect. A waiting account cannot authenticate at all.
+  const [waiting, setWaiting] = useState(false);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -46,8 +39,14 @@ export default function RegisterPage() {
 
     setBusy(true);
     try {
-      const account = await register(name, email, password);
-      router.push(resolvePostAuthPath(account.role, nextPath));
+      const result = await register(name, email, password);
+      // SHELL-5: register returns { status: 'waiting' } and no credential.
+      // The UI must not navigate, must not assume a session, and must not try
+      // to distinguish waiting from rejected by any API error — the waiting
+      // state comes only from this 201 body.
+      if (result.status === 'waiting') {
+        setWaiting(true);
+      }
     } catch (cause) {
       setError(
         cause instanceof ApiError
@@ -56,6 +55,28 @@ export default function RegisterPage() {
       );
       setBusy(false);
     }
+  }
+
+  // SHELL-5: the waiting-for-approval state, shown after a successful
+  // registration. No session, no redirect, no dashboard.
+  if (waiting) {
+    return (
+      <div role="status">
+        <h1 className="text-[var(--fs-h2)] font-semibold tracking-[-0.02em] text-fg">
+          Your account is being reviewed
+        </h1>
+        <p className="mt-[var(--sp-4)] text-[var(--fs-body)] leading-[var(--lh-loose)] text-fg-2">
+          We will let you know once your place is confirmed. This usually takes
+          one working day.
+        </p>
+        <Link
+          href="/login"
+          className="mt-[var(--sp-8)] inline-block text-[var(--fs-base)] text-fg-2 underline underline-offset-4 hover:text-fg"
+        >
+          Back to sign in
+        </Link>
+      </div>
+    );
   }
 
   return (
@@ -68,48 +89,44 @@ export default function RegisterPage() {
       </p>
 
       <form onSubmit={submit} noValidate className="mt-[var(--sp-8)] flex flex-col gap-[var(--sp-6)]">
-        <Field label="Full name" htmlFor="name" error={fieldErrors.name}>
-          <Input
-            id="name"
-            name="name"
-            autoComplete="name"
-            required
-            autoFocus
-            aria-invalid={Boolean(fieldErrors.name)}
-          />
-        </Field>
+        <TextInput
+          label="Full name"
+          id="name"
+          name="name"
+          autoComplete="name"
+          required
+          autoFocus
+          error={fieldErrors.name}
+          aria-invalid={Boolean(fieldErrors.name)}
+        />
 
-        <Field label="Email" htmlFor="email" error={fieldErrors.email}>
-          <Input
-            id="email"
-            name="email"
-            type="email"
-            autoComplete="email"
-            required
-            aria-invalid={Boolean(fieldErrors.email)}
-          />
-        </Field>
+        <TextInput
+          label="Email"
+          id="email"
+          name="email"
+          type="email"
+          autoComplete="email"
+          required
+          error={fieldErrors.email}
+          aria-invalid={Boolean(fieldErrors.email)}
+        />
 
-        <Field
+        <TextInput
           label="Password"
-          htmlFor="password"
+          id="password"
+          name="password"
+          type="password"
+          autoComplete="new-password"
+          required
           hint="At least 8 characters, including one letter and one number."
           error={fieldErrors.password}
-        >
-          <Input
-            id="password"
-            name="password"
-            type="password"
-            autoComplete="new-password"
-            required
-            aria-invalid={Boolean(fieldErrors.password)}
-          />
-        </Field>
+          aria-invalid={Boolean(fieldErrors.password)}
+        />
 
-        {error && <FormError>{error}</FormError>}
+        {error && <InlineBanner tone="danger">{error}</InlineBanner>}
 
-        <Button type="submit" variant="primary" size="md" loading={busy}>
-          Create account
+        <Button type="submit" variant="primary" size="medium" disabled={busy}>
+          {busy ? 'Creating account…' : 'Create account'}
         </Button>
       </form>
 

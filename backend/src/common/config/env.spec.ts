@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { resolveAutoSeed, resolveStorageDriver } from './env.js';
+import {
+  resolveAutoSeed,
+  resolveMailDriver,
+  resolveSmtpConfig,
+  resolveStorageDriver,
+} from './env.js';
 
 /**
  * The two environment switches whose wrong value is a *quiet* failure rather
@@ -65,5 +70,60 @@ describe('resolveStorageDriver', () => {
     expect(() => resolveStorageDriver('development', 'r2')).toThrow(
       /STORAGE_DRIVER must be one of/,
     );
+  });
+});
+
+describe('resolveMailDriver', () => {
+  it('defaults to log off production and to none on it', () => {
+    expect(resolveMailDriver('development', undefined)).toBe('log');
+    expect(resolveMailDriver('test', undefined)).toBe('log');
+    expect(resolveMailDriver('production', undefined)).toBe('none');
+  });
+
+  it.each(['none', 'log', 'smtp'] as const)('accepts %s', (v) => {
+    expect(resolveMailDriver('development', v)).toBe(v);
+  });
+
+  it('rejects an unknown driver', () => {
+    expect(() => resolveMailDriver('development', 'sendgrid')).toThrow(
+      /MAIL_DRIVER must be one of/,
+    );
+  });
+
+  it('does not refuse log in production', () => {
+    // Unlike STORAGE_DRIVER=local, a swallowed email is not data-loss.
+    expect(resolveMailDriver('production', 'log')).toBe('log');
+  });
+});
+
+describe('resolveSmtpConfig', () => {
+  const full = {
+    MAIL_SMTP_HOST: 'smtp.example.com',
+    MAIL_SMTP_PORT: '587',
+    MAIL_SMTP_USER: 'user',
+    MAIL_SMTP_PASS: 'pass',
+    MAIL_SMTP_FROM: 'noreply@example.com',
+  };
+
+  it('returns a config when all vars are set', () => {
+    const config = resolveSmtpConfig(full);
+    expect(config).toEqual({
+      host: 'smtp.example.com',
+      port: 587,
+      user: 'user',
+      pass: 'pass',
+      from: 'noreply@example.com',
+    });
+  });
+
+  it('throws when a required var is missing', () => {
+    const { MAIL_SMTP_HOST: _, ...rest } = full;
+    expect(() => resolveSmtpConfig(rest)).toThrow(/MAIL_SMTP_HOST/);
+  });
+
+  it('throws when MAIL_SMTP_PORT is not a number', () => {
+    expect(() =>
+      resolveSmtpConfig({ ...full, MAIL_SMTP_PORT: 'abc' }),
+    ).toThrow(/must be a number/);
   });
 });

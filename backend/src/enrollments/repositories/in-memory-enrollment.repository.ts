@@ -5,9 +5,8 @@ import type {
 } from '../interfaces/enrollment-repository.interface.js';
 
 const SEED_ENROLLMENTS: readonly Enrollment[] = [
-  // No `learningMode`: it lives on the group now (CLAUDE.md §5.2). These three
-  // students are placed in the seeded groups of `InMemoryGroupRepository`, and
-  // that is where their mode comes from.
+  // No `learningMode`: the axis was retired by `D-9`. These three students are
+  // placed in the seeded groups of `InMemoryGroupRepository`.
   { studentId: 'student-1', courseId: 'course-1', enrolledAt: '2026-01-20T09:00:00Z' },
   { studentId: 'student-1', courseId: 'course-2', enrolledAt: '2026-06-01T09:00:00Z' },
   { studentId: 'student-2', courseId: 'course-1', enrolledAt: '2026-03-15T09:00:00Z' },

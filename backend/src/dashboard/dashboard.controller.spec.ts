@@ -39,7 +39,6 @@ import { ENROLLMENT_REPOSITORY } from '../enrollments/interfaces/enrollment-repo
 import { InMemoryEnrollmentRepository } from '../enrollments/repositories/in-memory-enrollment.repository.js';
 import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interface.js';
 import { InMemoryGroupRepository } from '../groups/repositories/in-memory-group.repository.js';
-import { LearningModeService } from '../groups/learning-mode.service.js';
 import { StudentGroupsService } from '../groups/student-groups.service.js';
 
 const STUDENT = {
@@ -66,7 +65,6 @@ describe('DashboardController', () => {
         // implementations rather than stubs: the resolution order (group,
         // then course default) is the part worth exercising.
         { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },
-        LearningModeService,
         StudentGroupsService,
         DashboardService,
         StudentsService,
@@ -115,8 +113,18 @@ describe('DashboardController', () => {
       id: 'course-1',
       title: 'AS Chemistry',
       teacherName: 'Dr. Tahir Elshazli',
-      learningMode: 'recorded',
     });
+  });
+
+  it('should carry no staff-owned field from the student record', async () => {
+    // `student-1`'s profile fixture holds all three of `DOM-3`'s staff fields.
+    // The dashboard does not read `student_profiles` today, and this is what
+    // keeps that true: the next thing that joins it in must not bring them.
+    const body = JSON.stringify(await controller.getDashboard('course-1', STUDENT));
+    expect(body).not.toContain('parent1@example.com');
+    expect(body).not.toContain('titration');
+    expect(body).not.toContain('El Alsson');
+    expect(body).not.toMatch(/parentEmail|staffNotes|schoolName/);
   });
 
   it('should back the progress bar with real completion numbers', async () => {

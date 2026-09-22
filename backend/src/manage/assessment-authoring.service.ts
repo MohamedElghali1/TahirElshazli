@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
-import { Role } from '../auth/roles.enum.js';
+import { actorRoleOf } from '../auth/actor-role.js';
 import type {
   AssessmentRepository,
   AssessmentTarget,
@@ -114,13 +114,6 @@ export class AssessmentAuthoringService {
     private readonly binder: ExternalWorkBinder,
   ) {}
 
-  private actorRole(actor: StaffActor): Role {
-    // Derived from the caller, never assumed - this route is reachable by both
-    // roles, so a hardcoded role here would misattribute every TA's work to Dr.
-    // Tahir (§5.4).
-    return actor.role === Role.Teacher ? Role.Teacher : Role.Assistant;
-  }
-
   /**
    * Each work type needs its own payload, and a task missing it is a task
    * students open onto nothing.
@@ -196,9 +189,7 @@ export class AssessmentAuthoringService {
       throw new BadRequestException('A group can be targeted only once');
     }
     const studying = new Set(
-      (await this.groupRepo.findGroupCoursesByCourse(courseId)).map(
-        (pairing) => pairing.groupId,
-      ),
+      (await this.groupRepo.findByCourse(courseId)).map((group) => group.id),
     );
     for (const groupId of groupIds) {
       if (!studying.has(groupId)) {
@@ -308,7 +299,7 @@ export class AssessmentAuthoringService {
 
       await this.audit.record({
         actorId: actor.id,
-        actorRole: this.actorRole(actor),
+        actorRole: actorRoleOf(actor),
         action: 'assessment.created',
         targetType: 'assessment',
         targetId: assessment.id,
@@ -385,7 +376,7 @@ export class AssessmentAuthoringService {
       }
       await this.audit.record({
         actorId: actor.id,
-        actorRole: this.actorRole(actor),
+        actorRole: actorRoleOf(actor),
         action: 'assessment.updated',
         targetType: 'assessment',
         targetId: assessmentId,
@@ -424,7 +415,7 @@ export class AssessmentAuthoringService {
       const after = await this.assessmentRepo.setTargets(assessmentId, targets);
       await this.audit.record({
         actorId: actor.id,
-        actorRole: this.actorRole(actor),
+        actorRole: actorRoleOf(actor),
         action: 'assessment.targeted',
         targetType: 'assessment',
         targetId: assessmentId,
@@ -460,7 +451,7 @@ export class AssessmentAuthoringService {
       await this.assessmentRepo.remove(assessmentId);
       await this.audit.record({
         actorId: actor.id,
-        actorRole: this.actorRole(actor),
+        actorRole: actorRoleOf(actor),
         action: 'assessment.deleted',
         targetType: 'assessment',
         targetId: assessmentId,

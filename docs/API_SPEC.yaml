@@ -1,0 +1,1677 @@
+openapi: 3.1.0
+
+# =============================================================================
+# Dr. Tahir LMS — API contract for the redesign.
+#
+# SCOPE OF THIS FILE
+#   It specifies every route the redesign ADDS or CHANGES, plus the shared
+#   model (errors, security, pagination, common schemas) that all routes obey.
+#   The ~57 routes classified [KEEP] in API_GAP_ANALYSIS.md are already
+#   specified by their NestJS DTOs and are not restated here; duplicating them
+#   would create a second source of truth that drifts.
+#
+# CONVENTIONS THAT ARE NOT NEGOTIABLE
+#   1. No global prefix. `setGlobalPrefix` is never called; paths are literal.
+#   2. Error envelope is Nest's default {statusCode, message, error}. Tests
+#      compare `message` byte-for-byte to prove an out-of-scope 404 is
+#      indistinguishable from a genuinely-missing 404. A custom envelope would
+#      break that oracle for no gain.
+#   3. Out-of-scope resources answer 404, never 403. 403 is reserved for
+#      "you are the wrong ROLE for this action", which leaks nothing.
+#   4. The acting user is always the JWT subject. No route accepts a student id
+#      that names someone other than the caller.
+#   5. Scope lives in the path (/staff/groups/{groupId}/...), never in a query
+#      parameter — it makes the authorization object obvious at the route level.
+#   6. Timestamps are ISO 8601 UTC. Money, if it ever appears, is minor units.
+# =============================================================================
+
+info:
+  title: Dr. Tahir LMS API
+  version: 2.0.0-redesign
+  description: >
+    Backend for tahirelshazli.com. This version reconciles the existing API with
+    the Claude Design product redesign. See docs/API_GAP_ANALYSIS.md for the
+    route-by-route disposition and docs/AUTHORIZATION_MODEL.md for the rules
+    every `x-roles` annotation below is shorthand for.
+
+servers:
+  - url: http://localhost:3001
+    description: Local development
+  - url: https://api.tahirelshazli.com
+    description: Production
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: auth
+  - name: students-admin
+  - name: assistants-admin
+  - name: groups
+  - name: tasks
+  - name: marking
+  - name: markbook
+  - name: sessions
+  - name: reports
+  - name: announcements
+  - name: settings
+  - name: student
+
+# =============================================================================
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    BadRequest:
+      description: Validation failed. `message` is an array of constraint strings.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Missing, expired, revoked or tampered token.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: >
+        Authenticated but the wrong ROLE for this action. Never used for
+        out-of-scope resources — those are 404.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: >
+        The resource does not exist, OR exists outside the caller's scope. The
+        body is identical in both cases, deliberately.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: The action contradicts current state (e.g. already sent).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    TooManyRequests:
+      description: Rate limit exceeded.
+      headers:
+        Retry-After: { schema: { type: integer } }
+        X-RateLimit-Limit: { schema: { type: integer } }
+        X-RateLimit-Remaining: { schema: { type: integer } }
+        X-RateLimit-Reset: { schema: { type: integer } }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ServiceUnavailable:
+      description: A required driver is not configured (mail, storage, Google).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  parameters:
+    Limit:
+      { name: limit, in: query, required: false,
+        schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+    Offset:
+      { name: offset, in: query, required: false,
+        schema: { type: integer, minimum: 0, default: 0 } }
+    Cursor:
+      { name: cursor, in: query, required: false, schema: { type: string, maxLength: 200 },
+        description: Opaque keyset cursor. Never an offset for append-only feeds. }
+
+  schemas:
+
+    Error:
+      type: object
+      required: [statusCode, message]
+      properties:
+        statusCode: { type: integer }
+        message:
+          oneOf:
+            - { type: string }
+            - { type: array, items: { type: string } }
+        error: { type: string }
+
+    Id:
+      type: string
+      maxLength: 64
+      pattern: '^[A-Za-z0-9][A-Za-z0-9_-]*$'
+
+    Role:
+      type: string
+      enum: [visitor, student, parent, assistant, teacher, admin]
+
+    UserStatus:
+      type: string
+      enum: [waiting, active, rejected]
+
+    AssistantScope:
+      type: string
+      enum: [all_groups, assigned_groups]
+
+    # StudyMode is REMOVED. `CHANGELOG.md` `D-4`, ruling R-2 (2026-09-20):
+    # `students.mode` is not built, so the enum had no producer and no consumer
+    # and `mode` was `required` on two schemas nothing could satisfy. Removing
+    # it is the same reconciliation unit 1 did for `Assistant`.
+    SessionMode:  { type: string, enum: [on_ground, online] }
+    AttendanceStatus: { type: string, enum: [present, absent, late] }
+    TaskVisibility:   { type: string, enum: [published, scheduled, hidden] }
+    WorkType:         { type: string, enum: [file_upload, link, google_form] }
+    AssessmentType:   { type: string, enum: [homework, assignment, quiz] }
+    ReportStatus:     { type: string, enum: [new, under_review, reviewed, sent] }
+    AnnotationKind:   { type: string, enum: [comment, tick, cross] }
+
+    # --- People ------------------------------------------------------------
+    # The TARGET shape, filled in by `PEOPLE-1` (unit 5). What the server emits
+    # today is `StudentDirectoryEntry` below - the percentages have no source
+    # until the reports and analytics units.
+    StudentSummary:
+      type: object
+      required: [id, name, email, status]
+      properties:
+        id:        { $ref: '#/components/schemas/Id' }
+        name:      { type: string }
+        email:     { type: string, format: email }
+        status:    { $ref: '#/components/schemas/UserStatus' }
+        schoolName: { type: [string, 'null'] }
+        groupId:   { type: [string, 'null'] }
+        groupName: { type: [string, 'null'] }
+        joinedAt:  { type: string, format: date-time }
+        # Progress and performance are SEPARATE fields and must never be
+        # averaged into one figure (non-negotiable 02).
+        attendancePercent: { type: [number, 'null'] }
+        quizAveragePercent: { type: [number, 'null'] }
+        taskAveragePercent: { type: [number, 'null'] }
+        progressPercent:    { type: [number, 'null'] }
+
+    StudentDetail:
+      allOf:
+        - $ref: '#/components/schemas/StudentSummary'
+        - type: object
+          properties:
+            phone:       { type: [string, 'null'] }
+            avatarUrl:   { type: [string, 'null'] }
+            parentEmail: { type: [string, 'null'], format: email }
+            staffNotes:  { type: [string, 'null'] }
+
+    StudentWrite:
+      type: object
+      required: [name, email]
+      properties:
+        name:        { type: string, minLength: 2, maxLength: 100 }
+        email:       { type: string, format: email }
+        schoolName:  { type: [string, 'null'], maxLength: 160 }
+        parentEmail: { type: [string, 'null'], format: email }
+        staffNotes:  { type: [string, 'null'], maxLength: 4000 }
+        groupId:     { type: [string, 'null'] }
+        avatarUrl:   { type: [string, 'null'], maxLength: 2048 }
+
+    # **What `GET /admin/students` and `POST .../accept` return today**
+    # (`manage/directory.service.ts` `StudentDirectoryEntry`, `DOM-4`).
+    #
+    # A narrower shape than `StudentSummary` on purpose: `groupId`, `groupName`
+    # and the four percentages have no source in the repository until the
+    # reports and analytics units, and emitting a shape the server cannot fill
+    # is the drift `CLAUDE.md` §6 names. `PEOPLE-1` widens this to
+    # `StudentSummary`.
+    StudentDirectoryEntry:
+      type: object
+      required: [id, name, email, createdAt, enrolledCourseCount, status]
+      properties:
+        id:        { $ref: '#/components/schemas/Id' }
+        name:      { type: string }
+        email:     { type: string, format: email }
+        createdAt: { type: string, format: date-time }
+        enrolledCourseCount: { type: integer, minimum: 0 }
+        status:    { $ref: '#/components/schemas/UserStatus' }
+
+    # --- Courses, as an admin writes them (`DOM-5`) -------------------------
+    Course:
+      type: object
+      required:
+        [id, slug, isPublished, title, description, teacherName,
+         sequentialLockEnabled, modules]
+      properties:
+        id:          { $ref: '#/components/schemas/Id' }
+        slug:        { type: string, pattern: '^[a-z0-9-]+$', maxLength: 120 }
+        isPublished: { type: boolean }
+        title:       { type: string, maxLength: 200 }
+        description: { type: string, maxLength: 4000 }
+        thumbnailUrl: { type: [string, 'null'], maxLength: 2048 }
+        teacherName: { type: string, maxLength: 160 }
+        sequentialLockEnabled: { type: boolean }
+        modules:     { type: array, items: { type: object } }
+
+    CourseWrite:
+      type: object
+      required: [title, description, slug, teacherName]
+      properties:
+        title:       { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 4000 }
+        slug:        { type: string, pattern: '^[a-z0-9-]+$', maxLength: 120 }
+        teacherName: { type: string, minLength: 1, maxLength: 160 }
+        thumbnailUrl: { type: [string, 'null'], maxLength: 2048 }
+        sequentialLockEnabled: { type: boolean }
+        # Absent means DRAFT. A course that published itself on creation would
+        # put an empty outline on the public site.
+        isPublished: { type: boolean }
+
+    # Every field optional. `thumbnailUrl` is the only one where `null` is a
+    # value ("clear it") rather than a 400 - the rest are NOT NULL columns.
+    CoursePatch:
+      type: object
+      properties:
+        title:       { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 4000 }
+        slug:        { type: string, pattern: '^[a-z0-9-]+$', maxLength: 120 }
+        teacherName: { type: string, minLength: 1, maxLength: 160 }
+        thumbnailUrl: { type: [string, 'null'], maxLength: 2048 }
+        sequentialLockEnabled: { type: boolean }
+        isPublished: { type: boolean }
+
+    Assistant:
+      type: object
+      # Built and populated by `PEOPLE-4`/`PEOPLE-6`/`AUTH-4` (unit 5,
+      # `AdminAssistantsService`). One shape for a real account and a
+      # still-pending invitation - the two backing tables differ, the
+      # response does not.
+      required: [id, name, email, role, createdAt, scope, groupIds, status, lastSeenAt]
+      properties:
+        id:     { $ref: '#/components/schemas/Id' }
+        name:   { type: string }
+        email:  { type: string, format: email }
+        role:   { type: string, enum: [assistant, admin] }
+        createdAt: { type: string, format: date-time }
+        scope:  { $ref: '#/components/schemas/AssistantScope' }
+        groupIds: { type: array, items: { $ref: '#/components/schemas/Id' } }
+        status: { type: string, enum: [invited, active] }
+        # Derived from the audit log, not stored (D-9 / PEOPLE-6): MAX(created_at)
+        # for that actor. It is *last acted*, not *last seen* - an assistant who
+        # signs in and only reads shows null. Label it accordingly.
+        lastSeenAt: { type: [string, 'null'], format: date-time }
+
+    AssistantWrite:
+      type: object
+      required: [name, email, role, scope]
+      properties:
+        name:  { type: string, minLength: 2, maxLength: 100 }
+        email: { type: string, format: email }
+        role:  { type: string, enum: [assistant, admin] }
+        scope: { $ref: '#/components/schemas/AssistantScope' }
+        groupIds:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/Id' }
+          description: >
+            Required and non-empty when scope is assigned_groups; must be empty
+            when scope is all_groups or role is admin.
+
+    # --- Groups ------------------------------------------------------------
+    # The one group response shape, and every group response is it - the list,
+    # the single read, and both writes. `memberCount` is required and therefore
+    # emitted by all four; `POST` answers 0 without a query (review F2A-4).
+    Group:
+      type: object
+      required: [id, name, courseId, memberCount]
+      properties:
+        id:           { $ref: '#/components/schemas/Id' }
+        name:         { type: string }
+        courseId:     { $ref: '#/components/schemas/Id' }
+        courseTitle:  { type: string }
+        # DISPLAY ONLY. Who runs this group. It is NEVER an authorization
+        # input: what an assistant may reach is decided from
+        # `assistant_group_assignments` + `assistant_scopes`, and the two are
+        # allowed to disagree.
+        assistantId:  { type: [string, 'null'] }
+        assistantName: { type: [string, 'null'] }
+        meets:        { type: [string, 'null'], maxLength: 120 }
+        room:         { type: [string, 'null'], maxLength: 80 }
+        memberCount:  { type: integer }
+
+    # POST body. `name` and `courseId` are both required: a group IS a cohort
+    # studying one named course (migration 013), so neither half can be left out
+    # and have the row still mean anything. `assistantId` is DISPLAY ONLY and
+    # grants nothing - see `Group.assistantId`.
+    GroupWrite:
+      type: object
+      required: [name, courseId]
+      properties:
+        name:         { type: string, minLength: 1, maxLength: 120 }
+        courseId:     { $ref: '#/components/schemas/Id' }
+        assistantId:  { type: [string, 'null'] }
+        meets:        { type: [string, 'null'], maxLength: 120 }
+        room:         { type: [string, 'null'], maxLength: 80 }
+
+    # PATCH body. Every field optional; an explicit null clears a nullable one,
+    # and an omitted field is left alone.
+    GroupPatch:
+      type: object
+      minProperties: 1
+      properties:
+        name:         { type: string, minLength: 1, maxLength: 120 }
+        courseId:     { $ref: '#/components/schemas/Id' }
+        assistantId:  { type: [string, 'null'] }
+        meets:        { type: [string, 'null'], maxLength: 120 }
+        room:         { type: [string, 'null'], maxLength: 80 }
+
+    # `GET /staff/groups/{groupId}/report` (`GROUP-4`). Performance only - no
+    # progress/completion figure sits beside it (CLAUDE.md §11.1).
+    GroupReportEntry:
+      type: object
+      required: [studentId, name, email, submittedCount, gradedCount, averageScorePercent]
+      properties:
+        studentId: { $ref: '#/components/schemas/Id' }
+        name:      { type: string }
+        email:     { type: string, format: email }
+        submittedCount: { type: integer }
+        gradedCount:    { type: integer }
+        averageScorePercent: { type: [integer, 'null'] }
+
+    GroupReport:
+      type: object
+      required: [groupId, groupName, courseId, courseTitle, memberCount, assessmentCount, averageScorePercent, entries]
+      properties:
+        groupId:     { $ref: '#/components/schemas/Id' }
+        groupName:   { type: string }
+        courseId:    { $ref: '#/components/schemas/Id' }
+        courseTitle: { type: string }
+        memberCount: { type: integer }
+        # Assessments actually targeted at this group, not every assessment
+        # on the course.
+        assessmentCount: { type: integer }
+        # Every graded submission's own share, averaged once across the whole
+        # group - not an average of the per-student averages.
+        averageScorePercent: { type: [integer, 'null'] }
+        entries:
+          type: array
+          items: { $ref: '#/components/schemas/GroupReportEntry' }
+
+    # --- Tasks -------------------------------------------------------------
+    TaskDraft:
+      type: object
+      required: [id, courseId, type, workType, title, usedCount]
+      properties:
+        id:        { $ref: '#/components/schemas/Id' }
+        courseId:  { $ref: '#/components/schemas/Id' }
+        type:      { $ref: '#/components/schemas/AssessmentType' }
+        workType:  { $ref: '#/components/schemas/WorkType' }
+        title:     { type: string }
+        description:  { type: string }
+        instructions: { type: string }
+        attachments:  { type: array, items: { $ref: '#/components/schemas/Attachment' } }
+        usedCount: { type: integer }
+        updatedAt: { type: string, format: date-time }
+
+    Attachment:
+      type: object
+      required: [url, name]
+      properties:
+        url:       { type: string, maxLength: 2048 }
+        name:      { type: string, maxLength: 200 }
+        mimeType:  { type: [string, 'null'] }
+        sizeBytes: { type: [integer, 'null'] }
+
+    # --- Marking -----------------------------------------------------------
+    Annotation:
+      type: object
+      required: [id, submissionId, page, xPercent, yPercent, kind, text]
+      properties:
+        id:           { $ref: '#/components/schemas/Id' }
+        submissionId: { $ref: '#/components/schemas/Id' }
+        page:         { type: integer, minimum: 1 }
+        xPercent:     { type: number, minimum: 0, maximum: 100 }
+        yPercent:     { type: number, minimum: 0, maximum: 100 }
+        kind:         { $ref: '#/components/schemas/AnnotationKind' }
+        text:         { type: string, maxLength: 2000 }
+        createdBy:    { $ref: '#/components/schemas/Id' }
+        createdAt:    { type: string, format: date-time }
+
+    AnnotationWrite:
+      type: object
+      required: [page, xPercent, yPercent, kind, text]
+      properties:
+        page:     { type: integer, minimum: 1 }
+        xPercent: { type: number, minimum: 0, maximum: 100 }
+        yPercent: { type: number, minimum: 0, maximum: 100 }
+        kind:     { $ref: '#/components/schemas/AnnotationKind' }
+        text:     { type: string, maxLength: 2000 }
+
+    # --- Sessions ----------------------------------------------------------
+    Session:
+      type: object
+      required: [id, groupId, title, scheduledAt, endsAt, mode, state]
+      properties:
+        id:          { $ref: '#/components/schemas/Id' }
+        groupId:     { $ref: '#/components/schemas/Id' }
+        groupName:   { type: string }
+        title:       { type: string }
+        scheduledAt: { type: string, format: date-time }
+        endsAt:      { type: string, format: date-time }
+        mode:        { $ref: '#/components/schemas/SessionMode' }
+        location:
+          type: [string, 'null']
+          description: >
+            A room name when mode is on_ground; a meeting link when online.
+            The link is REDACTED for students until 30 minutes before the start.
+        assistantId: { type: [string, 'null'] }
+        description: { type: [string, 'null'] }
+        isVisible:   { type: boolean }
+        state:       { type: string, enum: [planned, published] }
+
+    SessionWrite:
+      type: object
+      required: [title, scheduledAt, endsAt, mode]
+      properties:
+        title:        { type: string, minLength: 1, maxLength: 200 }
+        scheduledAt:  { type: string, format: date-time }
+        endsAt:       { type: string, format: date-time }
+        mode:         { $ref: '#/components/schemas/SessionMode' }
+        location:     { type: [string, 'null'], maxLength: 2048 }
+        assistantId:  { type: [string, 'null'] }
+        description:  { type: [string, 'null'], maxLength: 2000 }
+        privateNotes: { type: [string, 'null'], maxLength: 2000 }
+        isVisible:    { type: boolean, default: true }
+        state:        { type: string, enum: [planned, published], default: published }
+        notifyOnChange: { type: boolean, default: true }
+
+    AttendanceEntry:
+      type: object
+      required: [studentId, status]
+      properties:
+        studentId: { $ref: '#/components/schemas/Id' }
+        status:    { $ref: '#/components/schemas/AttendanceStatus' }
+
+    # --- Reports -----------------------------------------------------------
+    WeeklyReportSummary:
+      type: object
+      required: [id, studentId, studentName, groupId, weekNumber, status, sent]
+      properties:
+        id:          { $ref: '#/components/schemas/Id' }
+        studentId:   { $ref: '#/components/schemas/Id' }
+        studentName: { type: string }
+        groupId:     { $ref: '#/components/schemas/Id' }
+        groupName:   { type: string }
+        weekNumber:  { type: integer }
+        periodStart: { type: string, format: date }
+        periodEnd:   { type: string, format: date }
+        status:      { $ref: '#/components/schemas/ReportStatus' }
+        assistantName: { type: [string, 'null'] }
+        reviewedAt:  { type: [string, 'null'], format: date-time }
+        sent:        { type: boolean }
+
+    WeeklyReportDetail:
+      allOf:
+        - $ref: '#/components/schemas/WeeklyReportSummary'
+        - type: object
+          properties:
+            # Every figure below is COMPUTED over the period. None is stored as
+            # a mark; none may be averaged with another (non-negotiable 02).
+            attendancePercent:  { type: [number, 'null'] }
+            homeworkPercent:    { type: [number, 'null'] }
+            quizPercent:        { type: [number, 'null'] }
+            performancePercent: { type: [number, 'null'] }
+            progressPercent:    { type: [number, 'null'] }
+            items:
+              type: array
+              items:
+                type: object
+                properties:
+                  title:    { type: string }
+                  type:     { $ref: '#/components/schemas/AssessmentType' }
+                  handedInAt: { type: [string, 'null'], format: date-time }
+                  score:    { type: [number, 'null'] }
+                  maxScore: { type: [number, 'null'] }
+            trend:
+              type: array
+              description: Five-week performance trend, marks out of 100.
+              items:
+                type: object
+                properties:
+                  label: { type: string }
+                  value: { type: number }
+            teacherNote:   { type: [string, 'null'] }
+            assistantNote: { type: [string, 'null'] }
+
+# =============================================================================
+paths:
+
+  # --- Registration approval ---------------------------------------------
+  /admin/students:
+    get:
+      tags: [students-admin]
+      summary: Student directory, including the waiting queue
+      x-roles: [teacher, admin]
+      parameters:
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/UserStatus' } }
+        - { name: groupId, in: query, schema: { $ref: '#/components/schemas/Id' } }
+        - { name: search, in: query, schema: { type: string, maxLength: 120 } }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/StudentDirectoryEntry' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [students-admin]
+      summary: Create a student directly, skipping the waiting list
+      description: The student is created active and emailed a sign-in link.
+      x-roles: [teacher, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StudentWrite' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StudentDetail' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /admin/students/{studentId}:
+    parameters:
+      - { name: studentId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    get:
+      tags: [students-admin]
+      x-roles: [teacher, admin, assistant]
+      description: Assistants may read a student only within their group scope.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StudentDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [students-admin]
+      x-roles: [teacher, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StudentWrite' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StudentDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/students/{studentId}/accept:
+    post:
+      tags: [students-admin]
+      summary: Accept a pending registration
+      description: >
+        Activates the account, enrols it on the group's course and places it in
+        the group, in one transaction. Audited as `student.accepted`.
+      x-roles: [teacher, admin]
+      parameters:
+        - { name: studentId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [groupId]
+              properties:
+                groupId: { $ref: '#/components/schemas/Id' }
+      responses:
+        '200':
+          description: Accepted
+          content:
+            application/json:
+              # The directory row, as it now is - not `StudentDetail`, which
+              # carries fields with no source until the reports unit.
+              schema: { $ref: '#/components/schemas/StudentDirectoryEntry' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          # An unknown student, a staff id, and an unknown group all answer
+          # with the same 404. A staff id is not a registration, and saying so
+          # would confirm which ids name staff.
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      x-audit: student.accepted
+
+  /admin/students/{studentId}/reject:
+    post:
+      tags: [students-admin]
+      summary: Reject a pending registration
+      description: >
+        Refused for assistants — one of the four withheld verbs. The account is
+        marked rejected, never hard-deleted.
+      x-roles: [teacher, admin]
+      parameters:
+        - { name: studentId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, maxLength: 500 }
+      responses:
+        '200':
+          description: Rejected
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+      x-audit: student.rejected
+
+  /admin/students/{studentId}/enrollments/{courseId}:
+    delete:
+      tags: [students-admin]
+      summary: Unenrol a student from a course
+      description: A withheld verb — teacher and admin only.
+      x-roles: [teacher, admin]
+      parameters:
+        - { name: studentId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+        - { name: courseId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '204': { description: Unenrolled }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-audit: student.unenrolled
+
+  # --- Assistants ---------------------------------------------------------
+  /admin/assistants:
+    get:
+      tags: [assistants-admin]
+      x-roles: [teacher, admin]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Assistant' } }
+    post:
+      tags: [assistants-admin]
+      summary: Invite an assistant
+      x-roles: [teacher, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssistantWrite' }
+      responses:
+        '201':
+          description: Invitation sent
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Assistant' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+      x-audit: assistant.invited
+
+  /admin/assistants/{userId}:
+    parameters:
+      - { name: userId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    patch:
+      tags: [assistants-admin]
+      summary: Change role, scope or assigned groups
+      x-roles: [teacher, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssistantWrite' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Assistant' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-audit: assistant.scope_changed
+    delete:
+      tags: [assistants-admin]
+      x-roles: [teacher, admin]
+      responses:
+        '204': { description: Removed }
+      x-audit: assistant.removed
+
+  /admin/assistants/{userId}/resend:
+    post:
+      tags: [assistants-admin]
+      x-roles: [teacher, admin]
+      parameters:
+        - { name: userId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200': { description: Invitation resent }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # `POST /courses/{id}/enroll` is RETIRED (`DOM-4`, `PRODUCT_SPEC.md:41-49`)
+  # and was never written into this file. A student no longer enrols
+  # themselves; staff accepting their registration does it, at
+  # `POST /admin/students/{studentId}/accept`. The path answers 404.
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: Register, into the waiting queue
+      description: >
+        Creates a `student` account with `status = waiting` and its profile
+        row. **Returns no credential** (ruling R-6, 2026-09-20): only `active`
+        may authenticate, so a token here would authenticate an account the
+        same response records as unable to. The account cannot sign in until
+        staff accept it.
+        A 409 on a taken email is an account-existence oracle that signup
+        genuinely needs to report; rate limiting is what stops it being
+        enumerable in bulk.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, name]
+              properties:
+                email:    { type: string, format: email }
+                password: { type: string, minLength: 8 }
+                name:     { type: string, minLength: 1 }
+      responses:
+        '201':
+          description: Registered, and waiting for a decision
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [waiting] }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { description: Rate limited }
+
+  /auth/invitations/{token}/accept:
+    post:
+      tags: [auth]
+      summary: Accept an invitation and set a password
+      security: []
+      x-public: true
+      x-rate-limit: AUTH_ATTEMPT_LIMIT
+      parameters:
+        - { name: token, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password:
+                  type: string
+                  minLength: 8
+                  maxLength: 128
+                  description: Must contain a letter and a digit, as elsewhere.
+      responses:
+        '200': { description: Account activated; returns a session }
+        '401':
+          description: >
+            Token unknown, already used, or expired — one message for all three,
+            matching the password-reset flow's anti-enumeration behaviour.
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  # --- Groups -------------------------------------------------------------
+  #
+  # `POST /admin/groups/{groupId}/courses` and
+  # `DELETE /admin/groups/{groupId}/courses/{courseId}` were RETIRED by `DOM-1`
+  # (2026-09-20). A group's course is a field on the group, so adding and
+  # removing one is the PATCH below. Both paths now answer 404.
+  /admin/groups:
+    get:
+      tags: [groups]
+      summary: The group console list
+      x-roles: [teacher, admin]
+      parameters:
+        - { name: limit,  in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Group' }
+    post:
+      tags: [groups]
+      summary: Create a group
+      description: >
+        Enrols no students. `Enrollment` remains the access gate, so naming a
+        course on a group grants nobody anything.
+      x-roles: [teacher, admin]
+      x-audit: group.created
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GroupWrite' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Group' }
+        '404':
+          description: >
+            No such course, or a course this staff member may not reach — one
+            message for both, so an assistant cannot enumerate the catalog.
+
+  # --- The staff group surface, scoped by D-10 ---------------------------
+  # These three exist in the implementation and were absent here. `AUTH-2`
+  # changed their authorization, which is the point at which an undocumented
+  # route stops being a nuisance and starts being a contract nobody can check.
+  #
+  # An assistant whose scope is `assigned_groups` reaches ONLY the groups named
+  # by `assistant_group_assignments`. Out of scope answers **404 with a message
+  # byte-identical to a genuine miss** — reads and the placement write alike, so
+  # an assistant cannot enumerate cohorts one id at a time. `groups.assistantId`
+  # is a DISPLAY field and is never read for this decision.
+  /staff/groups/{groupId}:
+    parameters:
+      - { name: groupId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    get:
+      tags: [groups]
+      summary: One group, with its member count
+      x-roles: [assistant, teacher, admin]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Group' }
+        '404':
+          description: >
+            No such group, or a group this assistant may not reach — one
+            message for both (D-10).
+
+  /staff/groups/{groupId}/report:
+    get:
+      tags: [groups]
+      summary: Group report — stats plus a per-student table (`GROUP-4`)
+      description: >
+        Scored against what was actually targeted at this group, not every
+        assessment on the course. No PDF route: the frontend renders this
+        data and the browser's own print-to-PDF produces the file — there is
+        no server-side PDF library in this stack, and no existing PDF to
+        overlay the way marking's rendered-overlay pattern (`D-2`) assumes.
+      x-roles: [assistant, teacher, admin]
+      parameters:
+        - { name: groupId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GroupReport' }
+        '404':
+          description: >
+            No such group, or a group this assistant may not reach — one
+            message for both (D-10).
+
+  /staff/groups/{groupId}/members:
+    parameters:
+      - { name: groupId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    get:
+      tags: [groups]
+      summary: The staff roster — name and email per member
+      description: >
+        Narrower than it looks: the student-facing classmate list carries no
+        email, and the two are built by different methods so widening this one
+        cannot widen that one. This read is the leak D-10 closed.
+      x-roles: [assistant, teacher, admin]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [studentId, name, email, assignedBy, assignedAt]
+                  properties:
+                    studentId:  { $ref: '#/components/schemas/Id' }
+                    name:       { type: string }
+                    email:      { type: string, format: email }
+                    assignedBy: { $ref: '#/components/schemas/Id' }
+                    assignedAt: { type: string, format: date-time }
+        '404':
+          description: >
+            No such group, or a group this assistant may not reach — one
+            message for both (D-10).
+    post:
+      tags: [groups]
+      summary: Place a student in this group
+      description: >
+        Idempotent: placing someone already in the group answers 201 rather than
+        409, because two clicks on Add describe one true state. Placement grants
+        no course access — `Enrollment` remains the gate.
+      x-roles: [assistant, teacher, admin]
+      x-audit: group.student_assigned
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [studentId]
+              properties:
+                studentId: { $ref: '#/components/schemas/Id' }
+      responses:
+        '201':
+          description: Placed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404':
+          description: >
+            No such group or student, or a group this assistant may not reach —
+            one message for the group cases (D-10).
+
+  /admin/groups/{groupId}:
+    parameters:
+      - { name: groupId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    get:
+      tags: [groups]
+      summary: One group, with its member count
+      x-roles: [teacher, admin]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Group' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [groups]
+      summary: Edit a group — name, course, assistant, meets, room
+      description: >
+        Replaces the rename-only PATCH and the two retired
+        `/groups/{groupId}/courses` routes. Changing the course of a group that
+        has members is refused with 409: every member would be left enrolled on
+        the old course while being targeted by work set for the new one.
+      x-roles: [teacher, admin]
+      x-audit: group.updated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GroupPatch' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Group' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The group has members and the course would change.
+    delete:
+      tags: [groups]
+      x-roles: [teacher, admin]
+      description: >
+        Refused while the group has members or sessions. **Target only — not
+        implemented.** There is deliberately no delete on `GroupRepository`: a
+        group carries placement history, and §9's convention is soft-delete
+        where history matters. Removing one has not been asked for.
+      responses:
+        '204': { description: Deleted }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/groups/{groupId}/members/bulk:
+    post:
+      tags: [groups]
+      summary: Move several students into this group at once
+      description: >
+        Backs the roster's "Move N to group". The write underneath is per
+        student and audited per student; this endpoint exists so the UI is not
+        forced into N requests.
+      x-roles: [teacher, admin]
+      parameters:
+        - { name: groupId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [studentIds]
+              properties:
+                studentIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items: { $ref: '#/components/schemas/Id' }
+      responses:
+        '200':
+          description: Moved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  moved: { type: integer }
+      x-audit: group.student_assigned
+
+  /staff/groups/{groupId}/members/{studentId}:
+    delete:
+      tags: [groups]
+      summary: Remove a student from a group
+      description: >
+        MOVED to teacher/admin by the 2026-09-19 decision. Assistants may add to
+        a group but not remove from one.
+      x-roles: [teacher, admin]
+      parameters:
+        - { name: groupId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+        - { name: studentId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '204': { description: Removed }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-audit: group.student_removed
+
+  # --- Task drafts --------------------------------------------------------
+  /staff/task-drafts:
+    get:
+      tags: [tasks]
+      x-roles: [assistant, teacher, admin]
+      parameters:
+        - { name: courseId, in: query, schema: { $ref: '#/components/schemas/Id' } }
+        - { name: type, in: query, schema: { $ref: '#/components/schemas/AssessmentType' } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/TaskDraft' } }
+    post:
+      tags: [tasks]
+      x-roles: [assistant, teacher, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaskDraft' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskDraft' }
+      x-audit: task_draft.created
+
+  /staff/task-drafts/{draftId}:
+    parameters:
+      - { name: draftId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    patch:
+      tags: [tasks]
+      x-roles: [assistant, teacher, admin]
+      description: >
+        Editing a draft never changes a task already created from it — the
+        content is copied at authoring time, not referenced.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaskDraft' }
+      responses:
+        '200': { description: OK }
+      x-audit: task_draft.updated
+    delete:
+      tags: [tasks]
+      x-roles: [assistant, teacher, admin]
+      responses:
+        '204': { description: Deleted }
+      x-audit: task_draft.deleted
+
+  /staff/tasks:
+    get:
+      tags: [tasks]
+      summary: Every task in scope, across groups
+      description: Backs the console's Tasks list. Today only a per-course read exists.
+      x-roles: [assistant, teacher, admin]
+      parameters:
+        - { name: courseId, in: query, schema: { $ref: '#/components/schemas/Id' } }
+        - { name: groupId, in: query, schema: { $ref: '#/components/schemas/Id' } }
+        - { name: status, in: query, schema: { type: string, enum: [open, marking, marked] } }
+        - { name: search, in: query, schema: { type: string, maxLength: 120 } }
+      responses:
+        '200': { description: OK }
+
+  # --- Marking ------------------------------------------------------------
+  /staff/assessments/{assessmentId}/submissions:
+    get:
+      tags: [marking]
+      summary: Submissions for one task, including students who have not submitted
+      description: >
+        The "Not submitted" row is the absence of a submission computed against
+        the targeted groups' membership — it is not a stored state. This answers
+        the long-open question of how a missed task is represented.
+      x-roles: [assistant, teacher, admin]
+      parameters:
+        - { name: assessmentId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200': { description: OK }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /staff/submissions/{submissionId}/annotations:
+    parameters:
+      - { name: submissionId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    get:
+      tags: [marking]
+      x-roles: [assistant, teacher, admin]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Annotation' } }
+    post:
+      tags: [marking]
+      x-roles: [assistant, teacher, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnnotationWrite' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Annotation' }
+      x-audit: submission.annotated
+
+  /staff/submissions/{submissionId}/annotations/{annotationId}:
+    parameters:
+      - { name: submissionId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      - { name: annotationId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    patch:
+      tags: [marking]
+      x-roles: [assistant, teacher, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnnotationWrite' }
+      responses:
+        '200': { description: OK }
+    delete:
+      tags: [marking]
+      x-roles: [assistant, teacher, admin]
+      responses:
+        '204': { description: Deleted }
+
+  /staff/submissions/{submissionId}/return:
+    post:
+      tags: [marking]
+      summary: Return the marked paper to the student
+      description: >
+        Distinct from saving a mark. Saving records the score and annotations;
+        returning is what makes them visible. The original file is never
+        replaced — the annotated copy sits alongside it.
+      x-roles: [assistant, teacher, admin]
+      parameters:
+        - { name: submissionId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                includeInReport: { type: boolean, default: true }
+      responses:
+        '200': { description: Returned }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-audit: submission.returned
+
+  # --- Mark book ----------------------------------------------------------
+  /staff/groups/{groupId}/markbook:
+    get:
+      tags: [markbook]
+      summary: Student × task grid for one group
+      description: A missing mark is null and renders as an em-dash, never as zero.
+      x-roles: [assistant, teacher, admin]
+      parameters:
+        - { name: groupId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200': { description: OK }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # --- Sessions and attendance -------------------------------------------
+  /staff/sessions:
+    get:
+      tags: [sessions]
+      summary: Sessions in scope within a date range
+      x-roles: [assistant, teacher, admin]
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date } }
+        - { name: groupId, in: query, schema: { $ref: '#/components/schemas/Id' } }
+        - { name: state, in: query, schema: { type: string, enum: [planned, published] } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Session' } }
+
+  /staff/groups/{groupId}/sessions:
+    post:
+      tags: [sessions]
+      summary: Create a session for a group
+      x-roles: [teacher, admin]
+      parameters:
+        - { name: groupId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SessionWrite' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+      x-audit: session.published
+
+  /staff/sessions/{sessionId}:
+    parameters:
+      - { name: sessionId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    patch:
+      tags: [sessions]
+      x-roles: [teacher, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SessionWrite' }
+      responses:
+        '200': { description: OK }
+      x-audit: live_session.updated
+    delete:
+      tags: [sessions]
+      x-roles: [teacher, admin]
+      responses:
+        '204': { description: Cancelled }
+      x-audit: live_session.cancelled
+
+  /staff/sessions/{sessionId}/publish:
+    post:
+      tags: [sessions]
+      summary: Promote a planned session to published
+      x-roles: [teacher, admin]
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200': { description: Published }
+        '409': { $ref: '#/components/responses/Conflict' }
+      x-audit: session.published
+
+  /staff/sessions/{sessionId}/attendance:
+    parameters:
+      - { name: sessionId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    get:
+      tags: [sessions]
+      summary: The attendance sheet for a session
+      x-roles: [assistant, teacher, admin]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/AttendanceEntry' } }
+    put:
+      tags: [sessions]
+      summary: Mark attendance for the whole session at once
+      description: >
+        Idempotent whole-sheet replace. Three states, not a boolean — the
+        boolean could not express "late", which the design requires.
+      x-roles: [assistant, teacher, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entries]
+              properties:
+                entries:
+                  type: array
+                  maxItems: 200
+                  items: { $ref: '#/components/schemas/AttendanceEntry' }
+      responses:
+        '200': { description: Recorded }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-audit: attendance.marked
+
+  # --- Weekly reports -----------------------------------------------------
+  /staff/reports:
+    get:
+      tags: [reports]
+      summary: Weekly reports in scope
+      x-roles: [assistant, teacher, admin]
+      parameters:
+        - { name: groupId, in: query, schema: { $ref: '#/components/schemas/Id' } }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/ReportStatus' } }
+        - { name: week, in: query, schema: { type: integer } }
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/WeeklyReportSummary' } }
+
+  /staff/reports/{reportId}:
+    parameters:
+      - { name: reportId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    get:
+      tags: [reports]
+      x-roles: [assistant, teacher, admin]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WeeklyReportDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [reports]
+      summary: Save the assistant note
+      description: >
+        Moves the report from `new` to `under_review`. The note reaches the
+        parent verbatim and is the only human-written part of the report.
+      x-roles: [assistant, teacher, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                assistantNote: { type: string, maxLength: 4000 }
+                teacherNote:   { type: string, maxLength: 4000 }
+      responses:
+        '200': { description: Saved }
+        '409':
+          description: The report has already been sent and is immutable.
+
+  /staff/reports/{reportId}/review:
+    post:
+      tags: [reports]
+      summary: Mark a report reviewed
+      description: Requires a non-empty assistant note.
+      x-roles: [assistant, teacher, admin]
+      parameters:
+        - { name: reportId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200': { description: Reviewed }
+        '409': { $ref: '#/components/responses/Conflict' }
+      x-audit: report.reviewed
+
+  /staff/reports/{reportId}/send:
+    post:
+      tags: [reports]
+      summary: Send the report to the parent
+      description: >
+        Teacher and admin only — an assistant may never send. Requires status
+        `reviewed` and a `parentEmail` on the student. Irreversible: there is no
+        unsend, and deliberately no send-to-all-groups action anywhere in the API.
+      x-roles: [teacher, admin]
+      parameters:
+        - { name: reportId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200': { description: Sent }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: Not reviewed, already sent, or the student has no parent email.
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+      x-audit: report.sent
+
+  /admin/reports/generate:
+    post:
+      tags: [reports]
+      summary: Generate or regenerate a week's reports
+      x-roles: [teacher, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [weekNumber]
+              properties:
+                weekNumber: { type: integer }
+                courseId:   { $ref: '#/components/schemas/Id' }
+      responses:
+        '200':
+          description: Generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated: { type: integer }
+                  skipped:   { type: integer, description: Already sent; never overwritten. }
+
+  # --- Announcements ------------------------------------------------------
+  /admin/announcements/reach:
+    get:
+      tags: [announcements]
+      summary: How many students an audience currently reaches
+      description: >
+        Resolved live. The audience is never stored as a frozen recipient list —
+        a stored list silently misses anyone who joins after drafting.
+      x-roles: [assistant, teacher, admin]
+      parameters:
+        - { name: audience, in: query, required: true,
+            schema: { type: string, pattern: '^(all_students|all_tas|course:[A-Za-z0-9_-]+|group:[A-Za-z0-9_-]+)$' } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { reach: { type: integer } }
+
+  /admin/announcements/{announcementId}/publish:
+    post:
+      tags: [announcements]
+      summary: Publish a draft announcement
+      description: >
+        Appears in the LMS immediately and emails every recipient exactly once.
+        The email cannot be recalled; editing afterwards does not re-send.
+      x-roles: [teacher, admin]
+      parameters:
+        - { name: announcementId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200': { description: Published }
+        '409': { $ref: '#/components/responses/Conflict' }
+      x-audit: announcement.posted
+
+  # --- Settings -----------------------------------------------------------
+  /admin/courses:
+    post:
+      tags: [settings]
+      summary: Create a course
+      description: >
+        Created as a DRAFT unless `isPublished` says otherwise, with an empty
+        outline - modules and lessons are authored afterwards. Unscoped:
+        creating a course is not a question an assistant is asked.
+      x-roles: [teacher, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CourseWrite' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Course' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+      x-audit: course.created
+
+  /admin/courses/{courseId}:
+    patch:
+      tags: [settings]
+      summary: Edit a course
+      description: >
+        Partial. The outline is not writable here. 409 on a slug another course
+        already holds.
+      x-roles: [teacher, admin]
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CoursePatch' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Course' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+      x-audit: course.updated
+
+  /me/profile:
+    get:
+      tags: [settings]
+      summary: The signed-in staff member's own profile
+      description: >
+        `/students/me/profile` is student-only; staff have had no equivalent.
+      x-roles: [assistant, teacher, admin]
+      responses:
+        '200': { description: OK }
+    patch:
+      tags: [settings]
+      x-roles: [assistant, teacher, admin]
+      responses:
+        '200': { description: OK }
+
+  /me/notification-preferences:
+    get:
+      tags: [settings]
+      x-roles: [assistant, teacher, admin]
+      responses:
+        '200': { description: OK }
+    put:
+      tags: [settings]
+      x-roles: [assistant, teacher, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                submissions:   { type: boolean }
+                registrations: { type: boolean }
+                unmatched:     { type: boolean }
+                weeklySummary: { type: boolean }
+      responses:
+        '200': { description: OK }
+
+  # --- Student surface ----------------------------------------------------
+  /students/me/timetable:
+    get:
+      tags: [student]
+      summary: The student's own week
+      description: >
+        A meeting link is omitted from the payload until 30 minutes before the
+        session starts — enforced server-side, not by hiding a button.
+      x-roles: [student]
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Session' } }
+
+  /students/me/attendance:
+    get:
+      tags: [student]
+      x-roles: [student]
+      responses:
+        '200': { description: OK }
+
+  /students/me/reports:
+    get:
+      tags: [student]
+      summary: The student's own weekly reports, newest first
+      description: Only reports with status `sent` are visible to the student.
+      x-roles: [student]
+      parameters:
+        - { name: period, in: query, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+
+  /students/me/avatar:
+    post:
+      tags: [student]
+      summary: Upload a profile photo
+      description: >
+        The only student-reachable upload. Images only, tighter size cap than
+        the staff endpoint. Filename is server-minted; the client's is discarded.
+      x-roles: [student]
+      x-rate-limit: UPLOAD_LIMIT
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201': { description: Uploaded }
+        '413': { description: Too large }
+        '415': { description: Unsupported media type }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }

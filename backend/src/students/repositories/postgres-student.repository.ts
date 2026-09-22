@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { DatabaseService } from '../../database/database.service.js';
 import { iso, num } from '../../database/database.types.js';
 import type {
+  AdminStudentProfileUpdate,
   StudentProfile,
   StudentProfileUpdate,
   StudentRepository,
@@ -18,6 +19,9 @@ interface ProfileRow {
   enrolled_course_count: string;
   created_at: Date;
   updated_at: Date;
+  school_name: string | null;
+  parent_email: string | null;
+  staff_notes: string | null;
 }
 
 /**
@@ -34,6 +38,9 @@ const PROFILE_SELECT = `
          p.avatar_url,
          p.created_at,
          p.updated_at,
+         p.school_name,
+         p.parent_email,
+         p.staff_notes,
          (SELECT count(*) FROM enrollments e WHERE e.student_id = p.user_id)
            AS enrolled_course_count
   FROM student_profiles p
@@ -50,6 +57,9 @@ function toProfile(row: ProfileRow): StudentProfile {
     enrolledCourseCount: num(row.enrolled_course_count),
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
+    schoolName: row.school_name,
+    parentEmail: row.parent_email,
+    staffNotes: row.staff_notes,
   };
 }
 
@@ -78,6 +88,7 @@ export class PostgresStudentRepository implements StudentRepository {
        )
        SELECT p.id, p.user_id, p.name, p.email, p.phone, p.avatar_url,
               p.created_at, p.updated_at,
+              p.school_name, p.parent_email, p.staff_notes,
               (SELECT count(*) FROM enrollments e WHERE e.student_id = p.user_id)
                 AS enrolled_course_count
        FROM inserted p`,
@@ -106,6 +117,7 @@ export class PostgresStudentRepository implements StudentRepository {
        )
        SELECT p.id, p.user_id, p.name, p.email, p.phone, p.avatar_url,
               p.created_at, p.updated_at,
+              p.school_name, p.parent_email, p.staff_notes,
               (SELECT count(*) FROM enrollments e WHERE e.student_id = p.user_id)
                 AS enrolled_course_count
        FROM updated p`,
@@ -117,6 +129,48 @@ export class PostgresStudentRepository implements StudentRepository {
         update.phone ?? null,
         update.avatarUrl !== undefined,
         update.avatarUrl ?? null,
+      ],
+    );
+    return row ? toProfile(row) : null;
+  }
+
+  async updateByUserIdAsStaff(
+    userId: string,
+    update: AdminStudentProfileUpdate,
+  ): Promise<StudentProfile | null> {
+    const row = await this.db.queryOne<ProfileRow>(
+      `WITH updated AS (
+         UPDATE student_profiles
+         SET name         = CASE WHEN $2::boolean THEN $3::text ELSE name END,
+             phone        = CASE WHEN $4::boolean THEN $5::text ELSE phone END,
+             avatar_url   = CASE WHEN $6::boolean THEN $7::text ELSE avatar_url END,
+             school_name  = CASE WHEN $8::boolean THEN $9::text ELSE school_name END,
+             parent_email = CASE WHEN $10::boolean THEN $11::text ELSE parent_email END,
+             staff_notes  = CASE WHEN $12::boolean THEN $13::text ELSE staff_notes END,
+             updated_at   = now()
+         WHERE user_id = $1
+         RETURNING *
+       )
+       SELECT p.id, p.user_id, p.name, p.email, p.phone, p.avatar_url,
+              p.created_at, p.updated_at,
+              p.school_name, p.parent_email, p.staff_notes,
+              (SELECT count(*) FROM enrollments e WHERE e.student_id = p.user_id)
+                AS enrolled_course_count
+       FROM updated p`,
+      [
+        userId,
+        update.name !== undefined,
+        update.name ?? null,
+        update.phone !== undefined,
+        update.phone ?? null,
+        update.avatarUrl !== undefined,
+        update.avatarUrl ?? null,
+        update.schoolName !== undefined,
+        update.schoolName ?? null,
+        update.parentEmail !== undefined,
+        update.parentEmail ?? null,
+        update.staffNotes !== undefined,
+        update.staffNotes ?? null,
       ],
     );
     return row ? toProfile(row) : null;
