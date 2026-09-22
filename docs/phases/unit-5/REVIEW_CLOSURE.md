@@ -260,3 +260,85 @@ Once 1–3 hold, a short re-check can return `APPROVED`, and unit 5 can then be 
   (unit-4 debt, high, needs the decision above).
 - `F5-2`: role chip tone (design question).
 - Test hardening: assert the FK constraint name in the inviter-delete integration test.
+
+---
+
+## Re-check — 2026-09-22, after the remediation pass
+
+**RE-CHECK VERDICT: APPROVED WITH FOLLOW-UP**
+
+**Unit 5 may not yet be marked `COMPLETE`.** Almost everything in the remediation checklist is done,
+and I re-derived each item. What remains is `C-1`'s sibling path: the pending-invitation half of the
+same defect. It is a one-line fix plus a spec. Everything else is ready.
+
+### Scope
+
+- **Commits.** `f92b492` on top of `1c74513`, on `claude/compassionate-einstein-p1o6i0`.
+- **Branch.** The coordinator records that the harness mandates this branch. I accept that as outside
+  this verdict; the user has it on record.
+- **Files re-read.**
+  - `backend/src/manage/admin-assistants.service.ts`
+  - `admin-assistants.service.spec.ts`
+  - `backend/test/postgres-repositories.integration-spec.ts`
+  - `docs/API_SPEC.yaml`
+  - `docs/CHANGELOG.md`
+  - `docs/IMPLEMENTATION_PLAN.md`
+  - `CLAUDE.md`
+  - `FOLLOW_UP_CLOSURE.md`
+  - `frontend/app/(app)/manage/assistants/page.tsx`
+- **Suites, run by me:**
+
+| Suite | Result |
+|---|---|
+| `npm test` | **574 / 36** |
+| `npm run test:e2e` | **244 / 4** |
+| `TEST_DATABASE_URL=…/lms_test npm run test:integration` | **125 / 125**. `017` applied from empty in this run too. |
+| backend `tsc --noEmit` | 0 errors |
+| frontend `tsc --noEmit` | 0 errors |
+| `npm run lint` | only the pre-existing `dashboard.controller.spec.ts:17` warning |
+
+### Checklist items
+
+| Item | Status |
+|---|---|
+| **C-1, active accounts** | **Closed.** `fromUser` now returns `all_groups` for `role === Admin`, while an unconfigured assistant still fails closed as `assigned_groups` with `[]`. The new spec asserts both absent-row cases in one test, against `admin-1` and a freshly created assistant with no row. Against the old line it would fail on `admin-1`. `API_SPEC.yaml`'s `Assistant.scope` comment matches the code. No authorization path reads an admin's scope, so this is a response correction only, as the CHANGELOG says. |
+| **Test note** | **Closed.** The inviter-RESTRICT test now matches `/assistant_invitations_invited_by_fkey/` and passed on real Postgres. |
+| **C-4** | **Closed.** One remaining nit: the corrections section calls all four failed marketing loads "`picsum` images". Three were `picsum.photos` through `/_next/image`, and one was `cdn.example.com`. All four were sandbox egress failures either way, so it does not matter to the verdict. |
+| **C-3** | **Closed as far as it can be.** The two CHANGELOG entries are accurate. Both record the `@layer base` narrowing of "ported verbatim" with the `:focus-visible` reason, and the admin-scope correction. `IMPLEMENTATION_PLAN.md` now shows `AUTH-4`'s `017` as run, closes `F2B2-3` with evidence I saw in `lms_dev`, and adds the `F5-1`…`F5-5` table, with `C-2` as `F5-4`. `CLAUDE.md` §3/§4.1 carry 574/244/125, the stale "009 and 010 never run" line in §9 is replaced accurately, and the two new §11 rules plus the size half of rule 1 are correct statements of what the browser pass found. |
+| **Writing `PHASE_ROADMAP.md` and `project_log.md` after this verdict** | **Correct ordering.** Both documents state the verdict, so they cannot be written before it exists. Conditions 6–8 hold once they are written to match this re-check. |
+
+### Residual finding
+
+**R-1 (low, confirmed, unit-5 scope): a pending admin invitation can still read "0 groups".**
+
+- **Cause.**
+  - `validateWrite` (`admin-assistants.service.ts:281`) explicitly accepts `role: admin` with
+    `scope: assigned_groups` and no groups.
+  - `fromInvitation` (`:339-345`) returns `invitation.scope` verbatim.
+  - In the page's `InvitePanel` (`manage/assistants/page.tsx:218, 230-236`), the scope state
+    survives a role change, because the Reach picker returns `null` for an admin (`:173`) but the
+    stale value is still sent.
+- **Scenario.** The teacher opens *Invite assistant*, sets Reach to "Assigned groups only", then
+  switches Role to Admin and sends. The pending row reads `admin · invited · 0 groups` until the
+  invitation is accepted. That is the same false statement `C-1` described, on the invitation half of
+  the same list.
+- **What happens on acceptance.** `acceptInvitation` writes an `assigned_groups` scope row for the
+  admin. This is harmless, because no authorization path reads it and `fromUser` now overrides it.
+- **Why `F5-3` should not yet be marked `[x]`.** The `IMPLEMENTATION_PLAN.md` row and the CHANGELOG's
+  "the two absent rows cannot read alike again" are true of active accounts only.
+- **Security impact.** None.
+
+### Remediation
+
+1. Normalise an admin's scope once, at the service. Either:
+   - have `validateWrite`/`invite`/`update` store `all_groups` whenever `role === admin`; or
+   - have `fromInvitation` apply the same `role === Admin ? 'all_groups' : …` rule `fromUser` now uses.
+
+   The first is preferable, because the stored invitation is then right as well as the response.
+2. Extend the new spec, or add one, so that a pending admin invitation sent with `assigned_groups`
+   lists as `all_groups`.
+3. Keep `F5-3` open in `IMPLEMENTATION_PLAN.md` until then.
+
+When those hold, and `PHASE_ROADMAP.md` and `project_log.md` are written from the final verdict,
+nothing else stands between unit 5 and `COMPLETE`. `F5-1`, `F5-2` and `F5-4` are correctly
+recorded as non-blocking unit-4 debt or design questions.
