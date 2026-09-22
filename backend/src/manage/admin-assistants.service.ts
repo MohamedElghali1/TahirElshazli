@@ -323,11 +323,15 @@ export class AdminAssistantsService {
       email: user!.email,
       role: user!.role as Role.Assistant | Role.Admin,
       createdAt: user!.createdAt,
-      // A missing scope row means "never configured" (`AUTHORIZATION_MODEL.md`
-      // §3), not a default - `assigned_groups` with no groups is the honest
-      // read here, since that's exactly what an unconfigured assistant may
-      // reach: nothing.
-      scope: scope ?? 'assigned_groups',
+      // An admin is unscoped (`STAFF_ADMIN` never passes through
+      // `StaffScopeService`) and holds no scope row, so for an admin the honest
+      // read is every group - reading the absent row as below told the teacher
+      // their admin reached "0 groups" (unit-5 closure review, C-1).
+      // For an assistant a missing row means "never configured"
+      // (`AUTHORIZATION_MODEL.md` §3), not a default - `assigned_groups` with
+      // no groups is the honest read, since that's exactly what an
+      // unconfigured assistant may reach: nothing.
+      scope: user!.role === Role.Admin ? 'all_groups' : (scope ?? 'assigned_groups'),
       groupIds: assignments.map((a) => a.groupId),
       status: 'active',
       lastSeenAt: lastSeen,

@@ -286,6 +286,10 @@ components:
         email:  { type: string, format: email }
         role:   { type: string, enum: [assistant, admin] }
         createdAt: { type: string, format: date-time }
+        # Always `all_groups` for an active `admin` - admins are unscoped by
+        # role and hold no scope row. For an active `assistant` with no scope
+        # row ("never configured"), `assigned_groups` with no groups: it
+        # reaches nothing.
         scope:  { $ref: '#/components/schemas/AssistantScope' }
         groupIds: { type: array, items: { $ref: '#/components/schemas/Id' } }
         status: { type: string, enum: [invited, active] }

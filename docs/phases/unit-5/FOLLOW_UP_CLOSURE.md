@@ -64,7 +64,7 @@ Signed in as the seeded teacher, on the Postgres-backed stack:
 | New account has an `assistant_scopes` row (`all_groups`), which closes `F2B2-3` | pass (`psql`) |
 | Audit trail shows `assistant.invited` (teacher) and `assistant.invitation_accepted` (assistant) | pass (`psql`) |
 | Spent token, then made-up token, against `POST /auth/invitations/:token/accept` | both **401**, byte-identical body |
-| Console errors or uncaught page errors across all of the above | **0** |
+| Console errors or uncaught page errors across all of the above (console screens and the auth pages only) | **0** |
 
 ### What the browser found that curl and `tsc` could not
 
@@ -106,8 +106,11 @@ renders inside that shell, and none of those screens can pass a visual check whi
   to sizes, and the §"Verification" design check #4 in `IMPLEMENTATION_PLAN.md` should have caught it.
 - `F5-2` (low): the console's role chip renders **"Teacher" in amber**. §11.1 reserves amber for a
   queue. This is a design question, not a bug.
-- `F5-3` (low): the assistants list's Reach column reads `groups 0` / `group 1`. The copy reads
-  backwards, and `0` for an assigned-groups assistant with none is ambiguous with "not set up".
+- ~~`F5-3`~~: **misfiled here, and misdescribed** (the column reads "0 groups", not "groups 0").
+  The reviewer showed it is a unit-5 defect, not unit-4 debt: `GET /admin/assistants` reported the
+  **admin** as `assigned_groups` with no groups, because `AdminAssistantsService.fromUser` read the
+  admin's absent scope row as "never configured". Admins are unscoped by role, so the teacher was
+  told their admin reached nothing. **Fixed in the remediation pass below (review finding C-1).**
 
 ## After
 
@@ -119,6 +122,32 @@ renders inside that shell, and none of those screens can pass a visual check whi
 | `npm run lint` (frontend eslint + backend oxlint) | clean, same pre-existing warning |
 | `npm run build:frontend` | pass, 33/33 pages |
 | Browser pass, repeated on the fixed build | 13/13, 0 console errors |
+
+## Corrections to this record (from `REVIEW_CLOSURE.md`)
+
+- "0 console errors" covered the console screens and the auth pages this pass drove. The
+  reviewer's wider run also loaded the marketing pages, which logged three 403s and one failed
+  image load. All four were external `picsum` images blocked by this sandbox's egress proxy, not
+  application errors.
+- When the reviewer began, the dev stack was **not fully stopped**: an API process from the first
+  browser run was still holding :3001. The reviewer killed it.
+
+## Remediation pass (after `REVIEW_CLOSURE.md`: `APPROVED WITH FOLLOW-UP`)
+
+- **C-1 fixed.** `AdminAssistantsService.fromUser` now reports `scope: 'all_groups'` for an
+  `admin`. An `assistant` with no scope row still reads `assigned_groups` with no groups, i.e. it
+  fails closed as before. A new spec asserts **both** in one test, so the two absent rows can never
+  read the same again. The spec fails without the fix and passes with it. `API_SPEC.yaml`'s
+  `Assistant.scope` now says so. This is a response-field correction only: `StaffScopeService`
+  never consults an admin's scope, so no authorization path changed.
+- **Test note fixed.** The inviter-RESTRICT test now asserts the constraint name
+  (`assistant_invitations_invited_by_fkey`), not just `/foreign key/`.
+- **C-2 recorded, not fixed.** Hovering a sidebar item or the header link-button still shows the
+  default `a:hover` underline. This is pre-existing, and the layering fix is what now makes it fixable
+  with `hover:no-underline`. It is unit-4 shell polish and was left alone.
+- **C-3.** The phase-end documents are updated in the same change.
+- After: `npm test` **574 / 36** (+1), `npm run test:e2e` **244**, integration **125 / 125**,
+  backend `tsc` clean, lint unchanged.
 
 ## Security areas considered
 

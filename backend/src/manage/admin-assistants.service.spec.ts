@@ -25,6 +25,7 @@ const TEACHER = { id: 'teacher-1', role: 'teacher' };
 describe('AdminAssistantsService', () => {
   let service: AdminAssistantsService;
   let scopeRepo: InMemoryAssistantScopeRepository;
+  let userRepo: InMemoryUserRepository;
   let audit: AuditService;
   let mailSend: ReturnType<typeof vi.fn>;
 
@@ -49,6 +50,7 @@ describe('AdminAssistantsService', () => {
 
     service = module.get(AdminAssistantsService);
     scopeRepo = module.get(ASSISTANT_SCOPE_REPOSITORY);
+    userRepo = module.get(USER_REPOSITORY);
     audit = module.get(AuditService);
   });
 
@@ -63,6 +65,32 @@ describe('AdminAssistantsService', () => {
       const invited = list.find((a) => a.email === 'newta@example.com');
       expect(active).toMatchObject({ status: 'active' });
       expect(invited).toMatchObject({ status: 'invited', role: Role.Assistant });
+    });
+
+    it('reports an admin as reaching every group, and an unconfigured assistant as none', async () => {
+      // Neither has a scope row. The admin is unscoped by role; the assistant
+      // is fail-closed - the two absent rows must not read the same.
+      const unconfigured = await userRepo.create({
+        email: 'unconfigured@example.com',
+        passwordHash: 'x',
+        name: 'Unconfigured TA',
+        role: Role.Assistant,
+        status: 'active',
+      });
+      expect(await scopeRepo.findScope('admin-1')).toBeNull();
+      expect(await scopeRepo.findScope(unconfigured.id)).toBeNull();
+
+      const list = await service.list();
+      expect(list.find((a) => a.id === 'admin-1')).toMatchObject({
+        role: Role.Admin,
+        scope: 'all_groups',
+        groupIds: [],
+      });
+      expect(list.find((a) => a.id === unconfigured.id)).toMatchObject({
+        role: Role.Assistant,
+        scope: 'assigned_groups',
+        groupIds: [],
+      });
     });
   });
 

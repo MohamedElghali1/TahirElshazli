@@ -1249,3 +1249,45 @@ teacher can look at and print.
 **Affected.** `docs/API_GAP_ANALYSIS.md`'s "Group report ... PDF" row and
 `docs/IMPLEMENTATION_PLAN.md`'s `GROUP-4` row both now say so explicitly, rather than reading as an
 unfinished PDF feature. Full detail: `docs/phases/unit-5/REVIEW_5D.md`.
+
+---
+
+## 2026-09-22 — The handoff's `a` rules move into `@layer base` (a narrowing of "ported verbatim")
+
+**Context.** The unit-5 browser pass found every `<a>` in the app computing to `--fg-accent`
+regardless of its own class. `semantic.css`, ported byte-for-byte from the handoff, declares
+`a { color: var(--fg-accent) }` and `a:hover { … }` **unlayered**. Tailwind v4 emits utilities in
+`@layer utilities`, and an unlayered rule outranks every layered rule whatever the specificity. So
+`text-fg-2` on a nav link and `text-fg-invert` on a link-button both lost. The sidebar was
+all-indigo, and the header's primary link-button rendered indigo text on an indigo fill.
+
+**Alternatives.** (a) Add `!important` or a stronger selector at every affected call site. (b) Move
+the two `a` rules into `@layer base`. (c) Layer the whole of `semantic.css`'s element block.
+
+**Chosen.** (b). The rules stay the default for an `<a>` with no colour class, because they come after
+Tailwind's preflight in the same layer, and a utility on the element now wins.
+
+**Why not (c).** `:focus-visible` is deliberately left unlayered. CLAUDE.md §11 relies on the global
+outline always winning. `components/site/course-filters.tsx` pairs `outline-none` with a box-shadow
+ring, and today only the unlayered outline keeps that control's focus visible. Layering it would
+silently remove a focus indicator.
+
+**This narrows the 2026-09-18 "tokens ported verbatim" decision.** The tokens themselves are
+untouched. What changed is the cascade layer of two element rules in the same file. Marked in place,
+beside the file's one earlier departure (the dark-theme washes).
+
+**Affected.** `frontend/app/tokens/semantic.css`. Recorded in
+`docs/phases/unit-5/FOLLOW_UP_CLOSURE.md`, confirmed independently in `REVIEW_CLOSURE.md`.
+
+---
+
+## 2026-09-22 — An admin's `Assistant.scope` reads `all_groups`
+
+**Context.** `GET /admin/assistants` read a missing `assistant_scopes` row as "never configured"
+for every account, which is correct and fail-closed for an assistant. Admins are unscoped by role
+(`STAFF_ADMIN` never reaches `StaffScopeService`) and have no row, so the list told the teacher
+their admin reached "0 groups". Unit-5 closure review, finding C-1.
+
+**Chosen.** `scope: 'all_groups'` for `role = admin`; an unconfigured assistant is unchanged. It is
+a response correction, with no authorization change. `API_SPEC.yaml`'s `Assistant.scope` states both
+cases, and one spec asserts both, so the two absent rows cannot read alike again.

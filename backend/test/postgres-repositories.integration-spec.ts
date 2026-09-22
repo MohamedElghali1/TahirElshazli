@@ -2102,8 +2102,10 @@ describeIfDb('Postgres repositories', () => {
       await expect(
         repo().create({ ...base, token: 'tok-ghost', invitedBy: 'no-such-user' }),
       ).rejects.toThrow(/foreign key/i);
+      // Named, so the test proves it is this table's FK that holds the row -
+      // not some other reference to admin-1 elsewhere in the fixtures.
       await expect(db.query(`DELETE FROM users WHERE id = 'admin-1'`)).rejects.toThrow(
-        /foreign key/i,
+        /assistant_invitations_invited_by_fkey/,
       );
     });
 

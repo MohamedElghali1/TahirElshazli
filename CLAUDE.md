@@ -152,7 +152,7 @@ Backend TypeScript is `strict: true`, `module: nodenext`, `target: ES2023`, with
 
 ```
 npm run dev                  # both services, no database needed
-npm test                     # backend unit — 467 tests, 28 files
+npm test                     # backend unit — 574 tests, 36 files
 npm run test:e2e             # backend e2e
 npm run test:integration     # backend integration; SKIPS ITSELF without TEST_DATABASE_URL
 npm run lint                 # frontend eslint + backend oxlint
@@ -230,8 +230,9 @@ destroyed live code (`docs/phases/unit-4/REVIEW_4D.md`). Do not read `SHELL-4`'s
 ("delete `components/app/*`, `components/site/*`") as still describing the directory's contents —
 verify against the actual consumer graph before treating either directory as legacy again.
 
-The backend **is** green and must stay green: **573 unit / 36 files, 244 e2e** as of unit 5 slice 5d
-(`docs/phases/unit-5/REVIEW_5D.md`).
+The backend **is** green and must stay green: **574 unit / 36 files, 244 e2e, 125 integration**
+(against real PostgreSQL, 001–017 from an empty schema) as of the unit-5 closure, 2026-09-22
+(`docs/phases/unit-5/FOLLOW_UP_CLOSURE.md`).
 
 ---
 
@@ -416,8 +417,9 @@ A security claim needs a test that proves the unauthorized case fails (§10).
   a gate, not a nicety: migrations 001–008 were each verified this way and **every single first run
   found something** — including the audit log silently ending after page one, because
   `created_at` was microsecond `TIMESTAMPTZ` while the JavaScript cursor carried only milliseconds.
-  **009 and 010 have never been run.** Authoring 011 on top of two unverified migrations buries
-  whatever they get wrong.
+  **As of 2026-09-22, 001–017 have all run from an empty schema** (`FOLLOW_UP_CLOSURE.md`). Keep it
+  that way: authoring a migration on top of an unverified one buries whatever it gets wrong. Without
+  Docker, a local `postgres` cluster pointed at by `TEST_DATABASE_URL` is enough.
 - **Destructive migrations validate existing data first and raise rather than guess.** The
   `group_courses → groups.course_id` collapse must abort if any group holds two courses; silently
   picking one corrupts every session, task and report hanging off it.
@@ -500,10 +502,19 @@ historical only.
   1. **Never `text-[var(--x)]`.** Tailwind cannot tell a colour from a size; where the element also
      carries a size utility the size wins and the colour is silently dropped. It typechecks, lints
      and builds — only the rendered stylesheet is wrong. **478 of these shipped unnoticed.** Use the
-     named utilities: `text-fg`, `text-fg-2`, `text-accent`, `text-status-amber-text`.
+     named utilities: `text-fg`, `text-fg-2`, `text-accent`, `text-status-amber-text`. **The same
+     holds for sizes:** Tailwind v4 compiles `text-[var(--fs-*)]` to `color:`, so it never sets a
+     size at all (113 shipped, `F5-1`). A size from a variable is `text-(length:--x)`.
   2. **One utility per property.** Two `rounded-*` or two `text-*` in one class string are resolved
      by stylesheet source order, not the order you wrote them.
   3. **No card inside a card.** `Panel` is the application's one container.
+- **Element rules in the token CSS must not sit outside a cascade layer** unless they are meant to
+  beat every utility. An unlayered rule outranks all of `@layer utilities` whatever its specificity:
+  the handoff's unlayered `a { color }` painted every nav link and link-button indigo until it moved
+  into `@layer base`. `:focus-visible` is the one rule that stays unlayered on purpose.
+- **A layout-critical transform or position needs a browser check in `dir="rtl"`, not a read.**
+  `md:translate-x-0` lost to `rtl:translate-x-full` and hid both sidebars on RTL desktop. Scope a
+  state to the breakpoint it belongs to (`max-md:`) rather than overriding it at a larger one.
 - **Two type scales that never mix:** the marketing site's 17px body and display-to-68px, and the
   console's 13px. In the console, a heading differs from a caption by **tint, not size** — reach for
   the next tint before the next size.
