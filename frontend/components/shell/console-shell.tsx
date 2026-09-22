@@ -173,8 +173,11 @@ function ConsoleShellInner({ children }: { children: React.ReactNode }) {
       <aside
         className={cx(
           'fixed inset-y-0 start-0 z-40 flex w-[244px] flex-col border-e border-border-light bg-surface-2',
-          'transition-transform duration-[var(--dur-fast)] ease-[var(--ease)] md:translate-x-0 print:hidden',
-          open ? 'translate-x-0' : '-translate-x-full rtl:translate-x-full',
+          'transition-transform duration-[var(--dur-fast)] ease-[var(--ease)] print:hidden',
+          // Closed only below `md`. A `md:translate-x-0` override lost to
+          // `rtl:translate-x-full` (emitted later, same specificity), which hid
+          // the sidebar on every desktop page under `dir="rtl"`.
+          open ? 'translate-x-0' : 'max-md:-translate-x-full max-md:rtl:translate-x-full',
         )}
       >
         <div className="flex h-[52px] shrink-0 items-center border-b border-border-light px-2">

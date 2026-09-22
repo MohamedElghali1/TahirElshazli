@@ -86,7 +86,8 @@ export function formatFileSize(bytes: number): string {
 }
 
 export function formatPercent(value: number | null): string {
-  return value === null ? '--' : `${Math.round(value)}%`;
+  // A missing mark is an em-dash, never `0` or `--` (CLAUDE.md §11.1).
+  return value === null ? '—' : `${Math.round(value)}%`;
 }
 
 /* --- Labels -------------------------------------------------------------- */

@@ -21,6 +21,7 @@ import { PostgresAnnouncementRepository } from '../src/announcements/repositorie
 import { PostgresGroupRepository } from '../src/groups/repositories/postgres-group.repository.js';
 import { PostgresBlogRepository } from '../src/blog/repositories/postgres-blog.repository.js';
 import { PostgresMailDeliveryRepository } from '../src/mail/postgres-mail-delivery.repository.js';
+import { PostgresAssistantInvitationRepository } from '../src/manage/repositories/postgres-assistant-invitation.repository.js';
 import { Role } from '../src/auth/roles.enum.js';
 
 /**
@@ -1950,6 +1951,170 @@ describeIfDb('Postgres repositories', () => {
       );
       expect(row?.indexdef).toContain('recipient');
       expect(row?.indexdef).toContain('created_at');
+    });
+  });
+
+  /**
+   * `PEOPLE-2`'s staff edit path (unit 5 slice 5b). Same omitted-vs-null
+   * contract as the self-service `updateByUserId`, plus the three staff-owned
+   * columns that path cannot express.
+   */
+  describe('student profiles, staff edit', () => {
+    const repo = () => new PostgresStudentRepository(db);
+
+    it('writes the staff-owned fields and leaves omitted ones untouched', async () => {
+      const updated = await repo().updateByUserIdAsStaff('student-2', {
+        schoolName: 'Cairo American College',
+        parentEmail: 'parent@example.com',
+        staffNotes: 'Needs extra reading practice.',
+      });
+      expect(updated).toMatchObject({
+        name: 'Sara Ahmed',
+        schoolName: 'Cairo American College',
+        parentEmail: 'parent@example.com',
+        staffNotes: 'Needs extra reading practice.',
+        enrolledCourseCount: 1,
+      });
+    });
+
+    it('clears a field on an explicit null only', async () => {
+      const cleared = await repo().updateByUserIdAsStaff('student-2', { staffNotes: null });
+      expect(cleared?.staffNotes).toBeNull();
+      expect(cleared?.schoolName).toBe('Cairo American College');
+    });
+
+    it('returns null for a user with no profile', async () => {
+      expect(await repo().updateByUserIdAsStaff('no-such-user', { name: 'X' })).toBeNull();
+    });
+  });
+
+  /**
+   * Migration 017 (`AUTH-4` / `PEOPLE-4`, unit 5 slice 5c). Its first run
+   * against real Postgres: the table, its CHECKs and FK, the `TEXT[]` round
+   * trip, and the single-use rule every mutating method enforces in SQL.
+   */
+  describe('assistant_invitations', () => {
+    const repo = () => new PostgresAssistantInvitationRepository(db);
+    const base = {
+      name: 'ليلى فهمي',
+      email: 'invitee@example.com',
+      role: Role.Assistant as const,
+      scope: 'assigned_groups' as const,
+      groupIds: ['group-1', 'group-2'],
+      token: 'tok-1',
+      expiresAt: '2026-10-01T10:00:00.000Z',
+      invitedBy: 'admin-1',
+    };
+
+    it('creates a pending invitation and round-trips every column', async () => {
+      const created = await repo().create(base);
+      expect(created).toMatchObject({
+        name: 'ليلى فهمي',
+        email: 'invitee@example.com',
+        role: 'assistant',
+        scope: 'assigned_groups',
+        groupIds: ['group-1', 'group-2'],
+        token: 'tok-1',
+        expiresAt: '2026-10-01T10:00:00.000Z',
+        acceptedAt: null,
+        invitedBy: 'admin-1',
+      });
+      expect(await repo().findById(created.id)).toEqual(created);
+      expect(await repo().findByToken('tok-1')).toEqual(created);
+      expect((await repo().findPendingByEmail('invitee@example.com'))?.id).toBe(created.id);
+    });
+
+    it('defaults group_ids to an empty array, not NULL', async () => {
+      await db.query(
+        `INSERT INTO assistant_invitations (id, name, email, role, scope, token, expires_at, invited_by)
+         VALUES ('inv-default', 'D', 'd@example.com', 'admin', 'all_groups', 'tok-default', now(), 'admin-1')`,
+      );
+      expect((await repo().findById('inv-default'))?.groupIds).toEqual([]);
+      expect(await repo().remove('inv-default')).toBe(true);
+    });
+
+    it('lists pending invitations newest first', async () => {
+      await db.query(
+        `INSERT INTO assistant_invitations (id, name, email, role, scope, token, expires_at, invited_by, created_at)
+         VALUES ('inv-old', 'Old', 'old@example.com', 'assistant', 'all_groups', 'tok-old', now(), 'admin-1', '2026-01-01T00:00:00Z')`,
+      );
+      const pending = await repo().findPending();
+      const ids = pending.map((i) => i.id);
+      expect(ids).toContain('inv-old');
+      expect(ids[ids.length - 1]).toBe('inv-old');
+    });
+
+    it('reissues a fresh token and expiry, and edits details, while pending', async () => {
+      const inv = (await repo().findByToken('tok-1'))!;
+      const reissued = await repo().reissue(inv.id, 'tok-2', '2026-10-08T10:00:00.000Z');
+      expect(reissued).toMatchObject({ token: 'tok-2', expiresAt: '2026-10-08T10:00:00.000Z' });
+      expect(await repo().findByToken('tok-1')).toBeNull();
+
+      const edited = await repo().updateDetails(inv.id, {
+        role: Role.Admin,
+        scope: 'all_groups',
+        groupIds: [],
+      });
+      expect(edited).toMatchObject({ role: 'admin', scope: 'all_groups', groupIds: [] });
+    });
+
+    it('once accepted, drops out of pending and refuses reissue, edit and cancel', async () => {
+      const inv = (await repo().findByToken('tok-2'))!;
+      await repo().markAccepted(inv.id);
+
+      const accepted = await repo().findById(inv.id);
+      expect(accepted?.acceptedAt).not.toBeNull();
+      expect((await repo().findPending()).map((i) => i.id)).not.toContain(inv.id);
+      expect(await repo().findPendingByEmail('invitee@example.com')).toBeNull();
+
+      expect(await repo().reissue(inv.id, 'tok-3', '2026-11-01T00:00:00.000Z')).toBeNull();
+      expect(
+        await repo().updateDetails(inv.id, { role: Role.Assistant, scope: 'all_groups', groupIds: [] }),
+      ).toBeNull();
+      expect(await repo().remove(inv.id)).toBe(false);
+      // The spent token still resolves - the service, not the lookup, refuses it.
+      expect((await repo().findByToken('tok-2'))?.acceptedAt).not.toBeNull();
+    });
+
+    it('cancels a pending invitation', async () => {
+      expect(await repo().remove('inv-old')).toBe(true);
+      expect(await repo().findById('inv-old')).toBeNull();
+      expect(await repo().remove('inv-old')).toBe(false);
+    });
+
+    it('refuses a duplicate token', async () => {
+      await repo().create({ ...base, email: 'a@example.com', token: 'tok-dup' });
+      await expect(
+        repo().create({ ...base, email: 'b@example.com', token: 'tok-dup' }),
+      ).rejects.toThrow(/unique/i);
+    });
+
+    it('refuses a role or scope outside its CHECK', async () => {
+      await expect(
+        repo().create({ ...base, token: 'tok-bad-role', role: 'teacher' as unknown as Role.Admin }),
+      ).rejects.toThrow(/check constraint/i);
+      await expect(
+        repo().create({ ...base, token: 'tok-bad-scope', scope: 'everything' as never }),
+      ).rejects.toThrow(/check constraint/i);
+    });
+
+    it('refuses an unknown inviter, and keeps the inviter from being deleted', async () => {
+      await expect(
+        repo().create({ ...base, token: 'tok-ghost', invitedBy: 'no-such-user' }),
+      ).rejects.toThrow(/foreign key/i);
+      await expect(db.query(`DELETE FROM users WHERE id = 'admin-1'`)).rejects.toThrow(
+        /foreign key/i,
+      );
+    });
+
+    it('has the partial pending-by-email index and the token index', async () => {
+      const rows = await db.query<{ indexname: string; indexdef: string }>(
+        `SELECT indexname, indexdef FROM pg_indexes
+          WHERE schemaname = current_schema() AND tablename = 'assistant_invitations'`,
+      );
+      const byName = Object.fromEntries(rows.map((r) => [r.indexname, r.indexdef]));
+      expect(byName.assistant_invitations_email_idx).toMatch(/WHERE \(accepted_at IS NULL\)/);
+      expect(byName.assistant_invitations_token_idx).toContain('token');
     });
   });
 });

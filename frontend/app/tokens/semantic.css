@@ -176,8 +176,19 @@ html { font-family: var(--font-sans); color: var(--fg); background: var(--surfac
 body { margin: 0; font-size: var(--fs-base); line-height: var(--lh-body); -webkit-font-smoothing: antialiased; }
 *, *::before, *::after { box-sizing: border-box; }
 
-a { color: var(--fg-accent); text-decoration: none; }
-a:hover { color: var(--accent-hover); text-decoration: underline; }
+/* The link default, inside `@layer base` - a change to the handoff's text.
+   Unlayered, it outranked every Tailwind utility (utilities live in
+   `@layer utilities`, and an unlayered rule beats a layered one whatever the
+   specificity), so every `<a>` rendered as a nav item or a button took
+   `--fg-accent` over its own `text-fg-2` / `text-fg-invert`: the whole sidebar
+   painted indigo, and the header's primary link-button indigo text on an indigo
+   fill. Layered, it stays the default and a utility on the element wins. Found
+   by the unit-5 browser pass. `:focus-visible` below stays unlayered on purpose -
+   it must keep beating a stray `outline-none` (CLAUDE.md §11). */
+@layer base {
+  a { color: var(--fg-accent); text-decoration: none; }
+  a:hover { color: var(--accent-hover); text-decoration: underline; }
+}
 
 :focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 
