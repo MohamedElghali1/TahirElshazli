@@ -18,7 +18,7 @@ import type {
 @Injectable()
 export class InMemoryAnnouncementRepository implements AnnouncementRepository {
   /** Newest first, matching the order both read methods return. */
-  private readonly announcements: Announcement[] = [];
+  private announcements: Announcement[] = [];
 
   async create(input: NewAnnouncement): Promise<Announcement> {
     const stored: Announcement = {
@@ -27,14 +27,65 @@ export class InMemoryAnnouncementRepository implements AnnouncementRepository {
       audience: encodeAudience({
         type: input.audienceType,
         courseId: input.courseId,
+        groupId: input.groupId,
       }),
-      postedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      publishedAt: null,
     };
     this.announcements.unshift(stored);
-    // A copy, so the caller cannot mutate the stored row through the return
-    // value - the defect that made a grading audit entry's before and after
-    // the same object.
     return { ...stored };
+  }
+
+  async findById(id: string): Promise<Announcement | null> {
+    const found = this.announcements.find(a => a.id === id);
+    return found ? { ...found } : null;
+  }
+
+  async publish(id: string, recipientCount: number): Promise<Announcement | null> {
+    const idx = this.announcements.findIndex(a => a.id === id);
+    if (idx === -1) return null;
+    const row = this.announcements[idx];
+    if (row.publishedAt !== null) return null; // already published
+    
+    this.announcements[idx] = {
+      ...row,
+      publishedAt: new Date().toISOString(),
+      recipientCount,
+    };
+    return { ...this.announcements[idx] };
+  }
+
+  async update(id: string, patch: Partial<Omit<Announcement, 'id' | 'createdAt' | 'publishedAt' | 'recipientCount' | 'audience'>>): Promise<Announcement | null> {
+    const idx = this.announcements.findIndex(a => a.id === id);
+    if (idx === -1) return null;
+    
+    const row = this.announcements[idx];
+    this.announcements[idx] = { ...row, ...patch };
+    
+    // Recompute audience if audience fields were patched
+    if (patch.audienceType || patch.courseId !== undefined || patch.groupId !== undefined) {
+      this.announcements[idx].audience = encodeAudience({
+        type: this.announcements[idx].audienceType,
+        courseId: this.announcements[idx].courseId,
+        groupId: this.announcements[idx].groupId,
+      });
+    }
+
+    return { ...this.announcements[idx] };
+  }
+
+  async remove(id: string): Promise<boolean> {
+    const idx = this.announcements.findIndex(a => a.id === id);
+    if (idx === -1) return false;
+    if (this.announcements[idx].publishedAt !== null) return false;
+    
+    this.announcements.splice(idx, 1);
+    return true;
+  }
+
+  private filterByStatus(matches: Announcement[], status?: 'draft' | 'published') {
+    if (!status) return matches;
+    return matches.filter(a => status === 'draft' ? a.publishedAt === null : a.publishedAt !== null);
   }
 
   private page(
@@ -44,24 +95,44 @@ export class InMemoryAnnouncementRepository implements AnnouncementRepository {
   ): Announcement[] {
     return matches
       .slice()
-      .sort((a, b) => b.postedAt.localeCompare(a.postedAt))
+      .sort((a, b) => {
+        // Sort by publishedAt if available, else createdAt. Fall back to ID to break ties.
+        const aTime = a.publishedAt ?? a.createdAt;
+        const bTime = b.publishedAt ?? b.createdAt;
+        if (bTime !== aTime) return bTime.localeCompare(aTime);
+        return b.id.localeCompare(a.id);
+      })
       .slice(offset, offset + limit)
       .map((a) => ({ ...a }));
+  }
+
+  async findByGroup(
+    groupId: string,
+    limit: number,
+    offset: number,
+    status?: 'draft' | 'published',
+  ): Promise<Announcement[]> {
+    return this.page(
+      this.filterByStatus(this.announcements.filter((a) => a.groupId === groupId), status),
+      limit,
+      offset,
+    );
   }
 
   async findByCourse(
     courseId: string,
     limit: number,
     offset: number,
+    status?: 'draft' | 'published',
   ): Promise<Announcement[]> {
     return this.page(
-      this.announcements.filter((a) => a.courseId === courseId),
+      this.filterByStatus(this.announcements.filter((a) => a.courseId === courseId), status),
       limit,
       offset,
     );
   }
 
-  async findAll(limit: number, offset: number): Promise<Announcement[]> {
-    return this.page(this.announcements, limit, offset);
+  async findAll(limit: number, offset: number, status?: 'draft' | 'published'): Promise<Announcement[]> {
+    return this.page(this.filterByStatus(this.announcements, status), limit, offset);
   }
 }

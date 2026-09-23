@@ -563,18 +563,24 @@ describe('Staff and admin API (e2e)', () => {
     const message = { title: 'Sunday session moved', body: 'It now starts at 19:00.' };
 
     it('lets an assigned TA post to their own course (CLAUDE.md 2.2)', async () => {
-      const posted = await request(app.getHttpServer())
+      const draft = await request(app.getHttpServer())
         .post('/staff/courses/course-1/announcements')
         .set(bearer(assignedTaToken))
         .send(message)
         .expect(201);
-      expect(posted.body).toMatchObject({
+      expect(draft.body).toMatchObject({
         audience: 'course:course-1',
         courseId: 'course-1',
         postedBy: 'assistant-1',
-        // course-1 holds student-1 and student-2.
-        recipientCount: 2,
+        recipientCount: 0,
+        publishedAt: null,
       });
+
+      // An admin/teacher must publish what the TA drafted.
+      await request(app.getHttpServer())
+        .post(`/admin/announcements/${draft.body.id}/publish`)
+        .set(bearer(adminToken))
+        .expect(200);
     });
 
     it('404s a course the TA does not hold, and writes nothing', async () => {
@@ -610,9 +616,23 @@ describe('Staff and admin API (e2e)', () => {
         .set(bearer(assignedTaToken))
         .send({ ...message, audience: 'all_students' })
         .expect(201);
+      
       // Whitelisted away by the global pipe, and the audience comes from the
       // URL regardless.
       expect(posted.body.audience).toBe('course:course-1');
+    });
+
+    it('refuses an assistant token calling the admin publish route', async () => {
+      const draft = await request(app.getHttpServer())
+        .post('/staff/courses/course-1/announcements')
+        .set(bearer(assignedTaToken))
+        .send(message)
+        .expect(201);
+      
+      await request(app.getHttpServer())
+        .post(`/admin/announcements/${draft.body.id}/publish`)
+        .set(bearer(assignedTaToken))
+        .expect(403);
     });
 
     it('delivers to the enrolled students, who read it in their own feed', async () => {
@@ -633,11 +653,15 @@ describe('Staff and admin API (e2e)', () => {
     });
 
     it('lets the teacher address every assistant, who can now read it', async () => {
-      const posted = await request(app.getHttpServer())
+      const draft = await request(app.getHttpServer())
         .post('/admin/announcements')
         .set(bearer(adminToken))
         .send({ audience: 'all_tas', title: 'Marking deadline', body: 'Friday, please.' })
         .expect(201);
+      const posted = await request(app.getHttpServer())
+        .post(`/admin/announcements/${draft.body.id}/publish`)
+        .set(bearer(adminToken))
+        .expect(200);
       // Resolved from the role at send time (CLAUDE.md 5.14): assistant-1,
       // assistant-2 - and admin-1. Was 2 before `Role.Admin` existed. `all_tas`
       // is the staff broadcast channel and there is no other route to staff, so
@@ -709,7 +733,7 @@ describe('Staff and admin API (e2e)', () => {
 
     it('records who posted what, and to how many (CLAUDE.md 5.4)', async () => {
       const log = await request(app.getHttpServer())
-        .get('/admin/audit-log?action=announcement.posted&actorId=assistant-1')
+        .get('/admin/audit-log?action=announcement.created&actorId=assistant-1')
         .set(bearer(adminToken))
         .expect(200);
       expect(log.body.entries.length).toBeGreaterThan(0);
@@ -721,8 +745,39 @@ describe('Staff and admin API (e2e)', () => {
       });
       expect(log.body.entries[0].after).toMatchObject({
         audience: 'course:course-1',
-        recipientCount: 2,
       });
+    });
+
+    it('allows an admin to patch the audience of a draft over HTTP', async () => {
+      const draft = await request(app.getHttpServer())
+        .post('/admin/announcements')
+        .set(bearer(adminToken))
+        .send({ audience: 'all_tas', title: 'To patch', body: 'Draft.' })
+        .expect(201);
+      expect(draft.body.audience).toBe('all_tas');
+
+      const patched = await request(app.getHttpServer())
+        .patch(`/admin/announcements/${draft.body.id}`)
+        .set(bearer(adminToken))
+        .send({ audience: 'all_students' })
+        .expect(200);
+      expect(patched.body.audience).toBe('all_students');
+    });
+
+    it('strips audience when an assistant patches a draft, leaving audience unchanged', async () => {
+      const draft = await request(app.getHttpServer())
+        .post('/staff/courses/course-1/announcements')
+        .set(bearer(assignedTaToken))
+        .send({ title: 'TA title', body: 'TA body' })
+        .expect(201);
+      expect(draft.body.audience).toBe('course:course-1');
+
+      const patched = await request(app.getHttpServer())
+        .patch(`/staff/courses/course-1/announcements/${draft.body.id}`)
+        .set(bearer(assignedTaToken))
+        .send({ audience: 'all_students' })
+        .expect(200);
+      expect(patched.body.audience).toBe('course:course-1');
     });
 
     it('shows the admin every audience and the TA only their own course', async () => {

@@ -357,6 +357,8 @@ describe('the authorization boundary', () => {
       // teacher or admin override (`MARK-1`, unit 7 slice 7c).
       expect(assistantDeletes.sort()).toEqual(
         [
+          'StaffAnnouncementsController.deleteCourseDraft',
+          'StaffAnnouncementsController.deleteGroupDraft',
           'StaffBlogController.remove',
           'StaffManageController.deleteAnnotation',
           'StaffManageController.deleteAssessment',
