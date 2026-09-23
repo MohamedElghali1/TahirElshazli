@@ -703,3 +703,24 @@ $ npm run test:e2e
 ```
 
 unit 659 → **660**; e2e 296 → **297**.
+
+---
+
+## Browser pass (coordinator record, 2026-09-22)
+
+**Done by the user, not by the coordinator.** The user signed in as the teacher against the running
+dev stack (`npm run dev`, memory driver, HEAD `8fe8350`) and reported: *"signed in as teacher.
+check is clear"*.
+
+- The coordinator's own browser pane was never signed in. A fixture password may not be entered by
+  an agent. So the coordinator **did not independently observe** the screens, and records the pass
+  as the user's verification, as reported.
+- **Scope of the report as given:** the teacher, with the check stated as clear. The report does not
+  itemise:
+  - the assistant-1 view;
+  - LTR/RTL coverage;
+  - the F-2 per-group-date survival;
+  - the F-4 audience-required save.
+
+  The reviewer's request named all of these. The coordinator records the report at the resolution
+  it was given rather than expanding it.
