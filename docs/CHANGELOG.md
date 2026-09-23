@@ -1750,3 +1750,21 @@ step, the staff publish routes deleted).
 
 **The durable lesson, worth more than the fix:** a green suite says nothing about what a rewrite
 took away with it. Compare test counts across a merge, and treat a shrinking spec file as a finding.
+
+## 2026-09-23 — Unit 10 complete: slice 10b, and what the UI is allowed to decide
+
+Slice 10b (the announcements compose and drafts surface) landed, completing unit 10. One rule
+governed every gating choice on the screen and is worth stating once, because it recurs on every
+console surface: **the UI offers nothing the server refuses, and the server refuses regardless of
+what the UI offers.** Publish is rendered only for an admin on a draft; delete only while
+unpublished; a published announcement shows its audience read-only with the reason. Each of those
+mirrors a server rule that is independently enforced and independently tested. Hiding a control is
+courtesy (§11.1.5) — the screen is easier to trust when it never dangles an action that will 403.
+
+Media handling took the same line. A YouTube URL is not interpolated into an `iframe src`; the video
+id is extracted behind a hostname allowlist and a `youtube-nocookie` URL is reconstructed from it, so
+author-supplied text never becomes markup. Announcement bodies render as paragraphs — no
+`dangerouslySetInnerHTML` anywhere on the surface.
+
+Removed before commit: an unrequested debounced search box over the announcement list. §1's scale
+numbers are the test — a list this size does not get search furniture.

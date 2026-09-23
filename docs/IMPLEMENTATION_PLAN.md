@@ -329,15 +329,15 @@ Unit-7 follow-ups (found, recorded, **not** fixed here):
 `RPT-9` `[ ]` Student Marks page (the report *is* the page)
 
 ### Phase 12 — Announcements
-Slice 10a (backend) is merged and `APPROVED`; slice 10b (frontend) is in progress, so every
-row below that needs a screen is `[~]`, not `[x]`.
+Both slices are merged: 10a (backend) `APPROVED`, 10b (frontend) built 2026-09-23 against the
+live routes. Not yet driven in a browser, and not checked in `dir="rtl"` or dark.
 
-`ANN-1` `[~]` `group:<id>` audience — backend done (migration `021` widens the `audience_type` CHECK; both repository drivers; parser and DTO pattern kept in step). Picker pending 10b ·
-`ANN-2` `[~]` Media — backend done (`mediaKind`/`mediaUrl` pair, validated). Picker pending 10b, reusing `/staff/uploads` ·
-`ANN-3` `[~]` Draft + publish — backend done. **Draft-ness is derived from `published_at IS NULL`**, the house idiom; there is deliberately no status column ·
+`ANN-1` `[x]` `group:<id>` audience — backend done (migration `021` widens the `audience_type` CHECK; both repository drivers; parser and DTO pattern kept in step). Picker built in 10b ·
+`ANN-2` `[x]` Media — backend done (`mediaKind`/`mediaUrl` pair, validated). Picker built in 10b, reusing `/staff/uploads` ·
+`ANN-3` `[x]` Draft + publish — backend done. **Draft-ness is derived from `published_at IS NULL`**, the house idiom; there is deliberately no status column ·
 `ANN-4` `[x]` Email fan-out, idempotent on `published_at` (`MAIL-3`) — `publish()` is the only writer of that column and `updateDraft()` never touches it, so editing a published announcement cannot re-send. Proven by test (publish twice → second is 409, mail sent once) ·
-`ANN-5` `[~]` Live reach preview — `GET /staff/announcements/reach` exists and is group-scoped; an unheld group answers 404 with the byte-identical `GROUP_NOT_FOUND` string. Counter pending 10b ·
-`ANN-6` `[~]` Compose screen with student-view preview — pending 10b
+`ANN-5` `[x]` Live reach preview — `GET /staff/announcements/reach` exists and is group-scoped; an unheld group answers 404 with the byte-identical `GROUP_NOT_FOUND` string. Counter built in 10b ·
+`ANN-6` `[x]` Compose screen with student-view preview — built in 10b; the UI offers nothing the server refuses (publish admin-only and drafts-only, delete only while unpublished, audience read-only once published)
 
 Two authorization holes were found and closed here across two review rounds, both recorded in
 `docs/CHANGELOG.md`: `B-ANN-1` (an assistant could publish through two undocumented `/staff/*`

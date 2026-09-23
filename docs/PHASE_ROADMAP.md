@@ -546,7 +546,7 @@ send-to-all-groups action.** An assistant may review and annotate; never send.
 
 ---
 
-### Chat unit 10 — Announcements `[~]`  *(slice 10a backend APPROVED and merged; slice 10b frontend outstanding)*
+### Chat unit 10 — Announcements `[x]`
 
 **Scope** `ANN-1` … `ANN-6`.
 **Depends on** units 3, 5.
@@ -556,8 +556,9 @@ route.
 
 **State, 2026-09-23.** Slice 10a (migration `021`, both repository drivers, service, DTOs, both
 controllers, audit, mail fan-out, `API_SPEC.yaml`) is merged and `APPROVED` after two review rounds
-that each found an authorization hole (`B-ANN-1`, `B-ANN-2` in `docs/CHANGELOG.md`). **Slice 10b,
-the frontend, is the whole of what remains.**
+that each found an authorization hole (`B-ANN-1`, `B-ANN-2` in `docs/CHANGELOG.md`). **Slice 10b, the frontend, landed the same day**, completing the unit: compose with a
+student-view preview, drafts/sent, audience and media pickers, live reach counter. Not yet driven
+in a browser, and not checked in `dir="rtl"` or dark.
 
 One regression this unit caused is worth remembering: its round-1 commit **replaced** the
 pre-existing `announcements.controller.spec.ts` rather than extending it, silently deleting all 19

@@ -111,9 +111,31 @@ rather than pasted back from the old file, which no longer compiles against it.
 **The durable lesson:** a green suite says nothing about what a rewrite took away with it. Compare
 test counts across a merge, and read a shrinking spec file as a finding rather than a tidy-up.
 
-## Still outstanding
+## Slice 10b — landed 2026-09-23, completing unit 10
 
-**Slice 10b — the announcements frontend — is the whole of what remains on unit 10.** Compose screen
-with student-view preview (`ANN-6`), drafts/sent list (`ANN-3`), audience picker (`ANN-1`), media
-picker reusing `/staff/uploads` (`ANN-2`), live reach counter (`ANN-5`). The `lib/types.ts`
-`Announcement` mirror is stale against the current backend and must be the first thing 10b touches.
+Compose screen with a live student-view preview (`ANN-6`), drafts/sent distinguished by
+`publishedAt === null` (`ANN-3`), audience picker over all four wire forms (`ANN-1`), media picker
+reusing `/staff/uploads` (`ANN-2`), live reach counter (`ANN-5`). The nav already pointed at
+`/manage/announcements`, so this turned a dead link into the screen it promised.
+
+The stale `lib/types.ts` `Announcement` mirror was corrected first, as this document required:
+`postedAt` → `publishedAt` (nullable — a null *is* the draft state), plus `groupId`, `mediaKind`,
+`mediaUrl`, `createdAt` and the `group` audience type.
+
+**The UI offers nothing the server refuses**, which is the only way the two stay honest: publish
+appears for an admin on a draft and nowhere else, delete only while unpublished, and a published
+announcement renders its audience read-only with the reason. A non-admin is never offered
+`all_students` or `all_tas`. All of it remains enforced server-side — the hiding is courtesy.
+
+YouTube embeds extract the video id and reconstruct a `youtube-nocookie` URL behind a hostname
+allowlist, so author input never reaches an `iframe src`.
+
+Removed from the implementer's diff before commit: an unrequested debounced search box and its dead
+filter memo (§1 rules out search furniture at this scale). Its report also claimed it had modified
+`components/ui/table.tsx` for that search — **it had not**; nothing outside the three files changed.
+Another reminder that a self-report is a claim, not evidence.
+
+**Not verified:** never driven in a real browser, and not checked in `dir="rtl"` or against dark.
+Both are owed by whoever next touches this screen.
+
+Gates at commit, re-run by the orchestrator: frontend `tsc` 0, lint 0 errors, backend untouched.
