@@ -99,9 +99,12 @@ The redesign adds ~17 actions. Each needs the union entry, the `Record` entry, a
 the entry it writes.
 
 ### 2.4 One scoping chokepoint
-`StaffScopeService` is the only place that answers "may this staff member reach this?". **Nine**
-services call it, across 22 `assertAssigned`/`scopeFor` call sites. It 404s rather than 403s, with a
-message identical to a genuine miss.
+`StaffScopeService` is the only place that answers "may this staff member reach this?". **Ten**
+services call it, across 29 call sites (recounted 2026-09-22, unit 6: lines calling
+`assertAssigned`, `scopeFor`, `mayReachGroup` or `reachableGroupIds` outside specs; the same count on
+`6dabdb8` gives 22). The tenth is `manage/task-drafts` (`TASK-2`); `reachableGroupIds` is a fifth,
+additive method for list reads that restrict in the query. It 404s rather than 403s, with a message
+identical to a genuine miss.
 
 (Corrected from "eight" on 2026-09-19. The nine are `announcements`, `groups`,
 `manage/assessment-authoring`, `manage/grading`, `manage/manage-live-sessions`,

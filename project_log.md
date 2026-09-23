@@ -3751,3 +3751,44 @@ bug fix turned into an authorization regression in one commit, and only the revi
 
 **Unit 5 is `COMPLETE`** on the reviewer's `APPROVED`. Final counts: 576 unit, 244 e2e, 125
 integration, frontend `tsc` 0. Unit 6 (`TASK-7`) is next, in a new chat per CLAUDE.md §14.
+
+---
+
+## 2026-09-22 — Unit 6: tasks and the draft library, executed (awaiting review)
+
+The planner scoped six questions out of unit 6 rather than guess at them. The user ruled on all six
+before execution, each as recommended (`D-28`…`D-33`), so all eleven slices were built:
+- **6a–6d**: migration `018`, the draft library, authoring from a draft, and `GET /staff/tasks`.
+- **6f–6k**: visibility, the marker, the targeting write, attachment audience, submission modes and
+  status.
+- **6e**: the four screens, last, against the finished API.
+
+**Migration `018` ran on real PostgreSQL 15.19 before any repository code existed**, with two rulings
+folded in first:
+- `visibility` stores only `published | hidden`;
+- `submission_modes` is a column.
+
+`scheduled` turned out to be a label, not a state. A published task with a future window already
+reads to a student as locked-with-a-date, so storing `scheduled` would have given one fact two
+sources.
+
+**Unit 6 found and closed an existence oracle.** A real task on another course said
+`Course not found or not assigned to you`, and a made-up id said `Assessment not found`. Both were
+404s, but the body told them apart. They are one string now, asserted `===` in unit and e2e specs.
+
+**Unit 6 narrowed `AUTH-6` (`D-33`).** Assistants can no longer target a group they do not hold, and
+the authoring picker lists only their groups. The new task list and the draft routes were built at
+the group grain from the start. Re-aiming a task that is also set for a cohort the assistant cannot
+see is refused (403). The old behaviour replaced the whole audience and silently dropped that cohort.
+
+**One ruling hit edges nobody had ruled on.** They were recorded, not invented. The staff status
+(`D-30`) is `null`, never a guess, in two cases:
+- a task is past due with nothing submitted;
+- different groups' own due dates disagree about whether the task is past due.
+
+Final counts:
+- backend: 653 unit, 291 e2e;
+- integration: 145, 0 skipped;
+- frontend: `tsc` 0, eslint 0.
+
+The unit is `[~]` until the reviewer's verdict. A browser pass of the four screens is still owed.

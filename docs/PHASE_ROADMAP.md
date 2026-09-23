@@ -437,13 +437,18 @@ decision. `F5-2` and `F5-4`, both unit-4 polish. `F5-6`, an open question about 
 
 ---
 
-### Chat unit 6 — Tasks and the draft library `[ ]`
+### Chat unit 6 — Tasks and the draft library `[~]` in progress — executed 2026-09-22, awaiting review
+
+> **Status set by the executor, deliberately `[~]`, not `[x]`.** All eleven slices (6a–6k) are
+> committed on `redesign` (`6dabdb8..HEAD`); the user ruled `B-1`…`B-6` as `D-28`…`D-33`. Only the
+> coordinator marks this unit complete, after `redesign-reviewer`'s verdict. Two `D-30` edges are
+> recorded as open questions, not invented (`docs/phases/unit-6/EXECUTION_NOTES.md`).
 
 **Scope** `TASK-1` … `TASK-7`. The `visibility` enum distinct from the availability window;
 `task_drafts`; authoring from a draft; attachments; submission settings; marker assignment; the
 global task list and the authoring screens.
 **Depends on** units 1, 2, 4.
-**Care** `visibility` (`published | scheduled | hidden`) is **not** the availability window. Status
+**Care** `visibility` (`published | hidden` since `D-28`; `scheduled` is derived) is **not** the availability window. Status
 stays server-derived (`CLAUDE.md` §6). Targeting **stays multi-group** — one group is the common case,
 not the rule.
 **Exit** universal, plus `API_SPEC.yaml` updated for every new route.

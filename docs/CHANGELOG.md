@@ -1394,3 +1394,30 @@ and `B-4` add or narrow columns, both were folded into migration `018` before it
 `groups.service.ts`, `upload-types.ts`; `API_SPEC.yaml`, `DATABASE_PLAN.md`, `DOMAIN_MODEL.md`,
 `PRODUCT_SPEC.md`, `AUTHORIZATION_MODEL.md`, `IMPLEMENTATION_PLAN.md`. Slice detail:
 `docs/phases/unit-6/EXECUTION_NOTES.md`.
+
+---
+
+## 2026-09-22 — Unit 6: assumptions taken without a blocker, and one oracle closed
+
+**Context.** Beyond the six rulings above, `PHASE_PLAN.md` §8 took four assumptions the reviewer may
+overrule, and one finding changed existing behaviour. Recorded as decisions so they are not mistaken
+for accidents.
+
+- **A-1: a draft's `courseId` is fixed after creation.** `PATCH /staff/task-drafts/:id` does not
+  accept it (the DTO omits it and the whitelist strips it). Moving a draft between courses would need
+  a two-course scope check for no product reason.
+- **A-2: authoring from a draft copies content in the form; the body is authoritative.** `draftId` is
+  provenance and bumps `usedCount` in the same transaction. The server merges nothing from the draft,
+  so "copied, never linked live" (`DOMAIN_MODEL.md` §4) holds by construction.
+- **A-3: at most 10 attachments** per task or draft. A storage bound, not a product rule.
+- **A-4: filters narrow, they do not address.** An unreachable or unknown `courseId`/`groupId`
+  *filter* on `GET /staff/task-drafts` or `GET /staff/tasks` answers `200 []`, identically.
+- **Existence oracle closed (plan finding 2).** Before unit 6, a real task on an unreachable course
+  answered `PATCH`/`DELETE /staff/assessments/:id` and `POST …/targets` with
+  `Course not found or not assigned to you`, and a nonexistent id with `Assessment not found`: both
+  404, different bodies. Both now say `Assessment not found` (`ASSESSMENT_NOT_FOUND`, asserted `===`).
+- **No own-only rule on drafts.** `AUTHORIZATION_MODEL.md` §3 grants the assistant "Manage the draft
+  library" without the blog's "own only" qualifier, so any staff member in scope edits any draft in
+  scope. Stated so nobody adds a creator check by analogy with the blog.
+
+**Affected.** `task-drafts.service.ts`, `assessment-authoring.service.ts`, the DTOs, `API_SPEC.yaml`.

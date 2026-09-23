@@ -289,9 +289,24 @@ this scale round trips and row volume matter and query counts mostly do not.
 (destructive, `DOM-0`) · `013` **group collapse + group columns** (destructive, one-way,
 `DOM-1`/`DOM-2`) · `014` `users.status` (registration approval, `DOM-4`) **+** student profile fields
 (`DOM-3`) · `015` **assistant scope tables + data move** (`AUTH-2`, destructive, **applied and verified**) ·
-`016` task drafts + assessment columns · `017` annotations + submission columns ·
-`018` sessions rework · `019` attendance enum · `020` weekly reports ·
-`021` announcements (group audience, media, draft) · `022` notification preferences + mail deliveries
+`016` mail deliveries (**applied**, unit 3) · `017` assistant invitations (**applied**, unit 5) ·
+`018` **task drafts + assessment columns** (**applied and verified**, unit 6) · `019` annotations +
+submission columns · `020` sessions rework · `021` attendance enum · `022` weekly reports ·
+`023` announcements (group audience, media, draft) · `024` notification preferences
+
+**Renumbered 2026-09-22, unit 6.** The list had assigned `016` to task drafts, but `016` shipped as
+`mail_deliveries` and `017` as `assistant_invitations`, so every planned entry shifts: task drafts
+take `018` and the rest follow in their old order. The trailing "mail deliveries" half of the old
+`022` was already built as `016`, so `024` is notification preferences alone.
+
+**`018` ran 2026-09-22 against real PostgreSQL 15.19 (`postgres:15-alpine`) from an empty schema**,
+before any repository code was written, and again at the unit's close: 001–018 applied in order,
+integration suite 145 passed, 0 skipped. It is purely additive. Two user rulings were folded in
+before its first run rather than given a `019`: `D-28` narrowed the `visibility` CHECK to
+`('published','hidden')` with no `publish_at`, and `D-31` added `submission_modes TEXT[]`. Its
+post-conditions are asserted against the catalog (`describe('migration 018')`): the columns and
+their precision, the `(course_id, type)` index, and the CHECKs refusing `'hiden'`, `'scheduled'`, an
+attachments object, a negative `used_count`, a blank title and an unknown submission mode.
 
 **`014` ran 2026-09-20 (unit 2 slice 2b-i), against real PostgreSQL 15 from an empty schema**, 14
 migrations applied in order and the integration suite green at 103 tests, 0 skipped. It is purely

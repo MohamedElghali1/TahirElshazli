@@ -152,7 +152,7 @@ Backend TypeScript is `strict: true`, `module: nodenext`, `target: ES2023`, with
 
 ```
 npm run dev                  # both services, no database needed
-npm test                     # backend unit — 576 tests, 36 files
+npm test                     # backend unit — 653 tests, 39 files
 npm run test:e2e             # backend e2e
 npm run test:integration     # backend integration; SKIPS ITSELF without TEST_DATABASE_URL
 npm run lint                 # frontend eslint + backend oxlint
@@ -230,9 +230,9 @@ destroyed live code (`docs/phases/unit-4/REVIEW_4D.md`). Do not read `SHELL-4`'s
 ("delete `components/app/*`, `components/site/*`") as still describing the directory's contents —
 verify against the actual consumer graph before treating either directory as legacy again.
 
-The backend **is** green and must stay green: **576 unit / 36 files, 244 e2e, 125 integration**
-(against real PostgreSQL, 001–017 from an empty schema) as of the unit-5 closure, 2026-09-22
-(`docs/phases/unit-5/FOLLOW_UP_CLOSURE.md`).
+The backend **is** green and must stay green: **653 unit / 39 files, 291 e2e, 145 integration**
+(against real PostgreSQL 15.19, 001–018 from an empty schema) as of the unit-6 execution, 2026-09-22
+(`docs/phases/unit-6/EXECUTION_NOTES.md`; unit 6 is `[~]`, awaiting review).
 
 ---
 
@@ -338,7 +338,8 @@ withheld verbs. The durable rules:
   (`all_groups | assigned_groups`). Stored as a column, never inferred from a row count — "no
   assignment rows" must never be ambiguous between "everything" and "not set up yet".
 - **`StaffScopeService` is the single place that decides** whether a staff member may reach a
-  resource. **Nine** services call it, across 21 call sites. Its interface and behaviour are a contract
+  resource. **Ten** services call it, across 29 call sites (unit 6 recount; method in
+  `ARCHITECTURE.md` §2.4). Its interface and behaviour are a contract
   (`staff-scope.service.spec.ts`); `AUTH-2` rewrote its internals from course-scoped to group-scoped
   on 2026-09-20 and **changed neither** — the seven contract cases passed unmodified.
 - **Scope is held at the group grain.** `assistant_scopes` (how wide) + `assistant_group_assignments`
@@ -350,8 +351,11 @@ withheld verbs. The durable rules:
 - **Enforcement is at the group grain only where the route *names* a group.** `D-10` scoped the
   `/staff/groups/*` routes; a route naming a **course** still calls `assertAssigned(courseId)`, which
   after `015` no longer implies group scope — one held cohort reaches the whole course's roster,
-  submission queue, analytics and assessment targeting. Pre-existing, ruled on as `D-23` (narrow to
-  held groups) and open as task `AUTH-6`. **Until it lands, do not read a "group scope" statement in
+  submission queue and analytics. Pre-existing, ruled on as `D-23` (narrow to held groups) and open as
+  task `AUTH-6`. **Unit 6 (`D-33`) closed the targeting write and the course group list**; `AUTH-6`'s
+  remainder is the roster, submissions, analytics, the per-course assessment list, and `PATCH`/`DELETE`
+  of a task shared with an unheld group. `GET /staff/tasks` and the draft routes were built at the
+  group grain from birth. **Until it lands, do not read a "group scope" statement in
   `AUTHORIZATION_MODEL.md` as describing the course-named routes**, and do not add a new
   course-grained staff route without saying which grain it is on.
 - **Object-level authorization is not optional.** A role check alone — "is this user an assistant?" —
@@ -417,8 +421,8 @@ A security claim needs a test that proves the unauthorized case fails (§10).
   a gate, not a nicety: migrations 001–008 were each verified this way and **every single first run
   found something** — including the audit log silently ending after page one, because
   `created_at` was microsecond `TIMESTAMPTZ` while the JavaScript cursor carried only milliseconds.
-  **As of 2026-09-22, 001–017 have all run from an empty schema** (`FOLLOW_UP_CLOSURE.md`). Keep it
-  that way: authoring a migration on top of an unverified one buries whatever it gets wrong. Without
+  **As of 2026-09-22, 001–018 have all run from an empty schema**, on `postgres:15-alpine` (15.19)
+  for `018` (`docs/phases/unit-6/EXECUTION_NOTES.md`). Keep it that way: authoring a migration on top of an unverified one buries whatever it gets wrong. Without
   Docker, a local `postgres` cluster pointed at by `TEST_DATABASE_URL` is enough.
 - **Destructive migrations validate existing data first and raise rather than guess.** The
   `group_courses → groups.course_id` collapse must abort if any group holds two courses; silently
