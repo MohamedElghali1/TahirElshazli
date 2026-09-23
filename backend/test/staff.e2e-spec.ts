@@ -313,6 +313,99 @@ describe('Staff and admin API (e2e)', () => {
     });
   });
 
+  describe('marking annotations over HTTP (MARK-1)', () => {
+    const stroke = { kind: 'stroke', path: [{ x: 10, y: 20 }, { x: 15, y: 25 }] };
+
+    it('creates, lists, updates and deletes for an assigned TA', async () => {
+      const created = await request(app.getHttpServer())
+        .post('/staff/submissions/sub-1/annotations')
+        .set(bearer(assignedTaToken))
+        .send(stroke)
+        .expect(201);
+      expect(created.body).toMatchObject({
+        submissionId: 'sub-1',
+        kind: 'stroke',
+        authorId: 'assistant-1',
+      });
+
+      const listed = await request(app.getHttpServer())
+        .get('/staff/submissions/sub-1/annotations')
+        .set(bearer(assignedTaToken))
+        .expect(200);
+      expect(listed.body.map((a: { id: string }) => a.id)).toContain(created.body.id);
+
+      const updated = await request(app.getHttpServer())
+        .patch(`/staff/annotations/${created.body.id}`)
+        .set(bearer(assignedTaToken))
+        .send({ colour: '#00FF00' })
+        .expect(200);
+      expect(updated.body.colour).toBe('#00FF00');
+
+      await request(app.getHttpServer())
+        .delete(`/staff/annotations/${created.body.id}`)
+        .set(bearer(assignedTaToken))
+        .expect(204);
+    });
+
+    it('404s an out-of-scope submission with the same body as a nonexistent one', async () => {
+      const outOfScope = await request(app.getHttpServer())
+        .get('/staff/submissions/sub-1/annotations')
+        .set(bearer(unassignedTaToken))
+        .expect(404);
+      const nonexistent = await request(app.getHttpServer())
+        .get('/staff/submissions/sub-does-not-exist/annotations')
+        .set(bearer(unassignedTaToken))
+        .expect(404);
+      expect(outOfScope.body.message).toBe(nonexistent.body.message);
+    });
+
+    it('D-45: a second staff member cannot edit or delete someone else\'s annotation', async () => {
+      const created = await request(app.getHttpServer())
+        .post('/staff/submissions/sub-1/annotations')
+        .set(bearer(assignedTaToken))
+        .send({ kind: 'pin', x: 50, y: 50 })
+        .expect(201);
+
+      // The teacher holds course-1 unscoped - this proves D-45 has no
+      // teacher/admin override, not merely that scope was denied.
+      await request(app.getHttpServer())
+        .patch(`/staff/annotations/${created.body.id}`)
+        .set(bearer(adminToken))
+        .send({ body: 'not mine to change' })
+        .expect(403);
+      await request(app.getHttpServer())
+        .delete(`/staff/annotations/${created.body.id}`)
+        .set(bearer(adminToken))
+        .expect(403);
+    });
+
+    it('rejects a stroke without a path and a pin without x/y at the boundary', async () => {
+      await request(app.getHttpServer())
+        .post('/staff/submissions/sub-1/annotations')
+        .set(bearer(assignedTaToken))
+        .send({ kind: 'stroke' })
+        .expect(400);
+      await request(app.getHttpServer())
+        .post('/staff/submissions/sub-1/annotations')
+        .set(bearer(assignedTaToken))
+        .send({ kind: 'pin' })
+        .expect(400);
+    });
+
+    it('rejects an out-of-range coordinate at the DTO boundary', async () => {
+      await request(app.getHttpServer())
+        .post('/staff/submissions/sub-1/annotations')
+        .set(bearer(assignedTaToken))
+        .send({ kind: 'pin', x: 150, y: 50 })
+        .expect(400);
+      await request(app.getHttpServer())
+        .post('/staff/submissions/sub-1/annotations')
+        .set(bearer(assignedTaToken))
+        .send({ kind: 'pin', x: 10, y: -5 })
+        .expect(400);
+    });
+  });
+
   describe('live-session scheduling is teacher-only over HTTP', () => {
     /** A week out, so it lands in the student's "upcoming" list whenever this runs. */
     const soon = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();

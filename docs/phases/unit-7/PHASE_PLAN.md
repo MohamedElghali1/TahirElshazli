@@ -74,7 +74,7 @@ leaving the column NULL would have removed, on deploy, every mark every student 
 |---|---|---|
 | **7a** | Migration `020`; interface types + 8 methods; **both** repository drivers | `[~]` memory driver done; Postgres driver delegated |
 | **7b** | `MARK-6` — submit-time mode enforcement, multi-file, `link_url` validation | `[x]` split 7b-i / 7b-ii, both landed |
-| **7c** | `MARK-1` — annotation service, 4 routes, authz, audit actions | `[ ]` |
+| **7c** | `MARK-1` — annotation service, 4 routes, authz; **no audit actions** (`D-44` moves them to 7d's save) | `[x]` |
 | **7d** | `MARK-2` — save vs save-and-return; student visibility moves to `returnedAt` | `[ ]` |
 | **7e** | `MARK-3` — submissions for one task **including non-submitters** | `[ ]` |
 | **7f** | `MARK-4` + `MARK-5` — marking view: canvas overlay, toolbar, marker/eraser | `[ ]` |

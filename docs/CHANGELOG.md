@@ -1655,3 +1655,41 @@ the slice's tests stranded in an untracked scratch file rather than the spec; a 
 replacement character; and several deleted comments, including the one explaining why
 `GradingService.grade` resolves the course from the submission rather than the URL — the §5.11 IDOR
 defence. The comments were restored from git rather than rewritten.
+
+## 2026-09-23 — `D-44` and `D-45`: annotation audit grain, and who may erase a mark
+
+Slice 7c builds `MARK-1` — the four annotation routes over the `submission_annotations` table `020`
+created. Two questions the documents did not answer had to be decided first (`CLAUDE.md` §13).
+
+**`D-44`: annotations are audited per *save*, not per mutation. Slice 7c writes no audit entry at
+all.** §7 says to audit every mutating staff action, and a literal reading would log every brush
+stroke: a freehand marking pass writes 50–200 of them per paper, so across ~300 students the audit
+log becomes mostly strokes and the real events — a mark recorded, a report sent — become unfindable
+in it. The audit log is also the one table §6 names as genuinely growing, so flooding it has a cost
+beyond readability. The entry therefore belongs to the Save action in slice 7d, and the annotation
+routes deliberately call `AuditService` not at all.
+
+**`D-45`: an annotation may be edited or deleted only by its author. No teacher or admin override.**
+`authorId` already existed for this — the interface's own comment says "the eraser clears its
+author's own strokes only, so this is load-bearing." The marking is evidence of who said what, and an
+override would let a teacher silently erase an assistant's work with nothing recording it (which,
+under `D-44`, nothing would). **This is the one place in the codebase where a teacher is refused
+something an assistant may do**, so it is stated here rather than left to be inferred.
+
+Its refusal is a **403, not the usual 404** — §7's own exception: the annotation is on the caller's
+own list, it came back from `GET .../annotations`, and a 404 would make the marking screen lie about
+a row it is currently showing.
+
+**Found in review, not by the implementer's tests: `fileId` was unchecked against its submission.**
+An annotation carries a nullable `fileId` naming which of up-to-five files it is drawn on. The
+foreign key proves only that the file exists *somewhere*, so a marker legitimately holding one
+submission could pin an annotation to a **different** submission's photo — drawn on one student's
+work and stored against another's. Scope does not catch it, because the caller does hold the
+submission they named. Now checked in the service against that submission's own files; `null` stays
+allowed as the pre-`020` single-file case. The test was proved able to fail with the guard disabled
+before it was kept (§10).
+
+Pipeline note: 7c restored the implementer/reviewer split that 7b-ii lost — a Sonnet subagent
+implemented, this session reviewed and re-ran every gate independently. The `fileId` gap is what
+that split bought this time; the implementer flagged it as a concern in its own report rather than
+fixing it, which is the correct behaviour for an implementer working to a fixed scope.
