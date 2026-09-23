@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
+  ArrayUnique,
   IsArray,
   IsBoolean,
   IsIn,
@@ -33,6 +34,9 @@ const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 
 /** `D-28`. `scheduled` is derived, never accepted. */
 const TASK_VISIBILITIES = ['published', 'hidden'] as const;
+
+/** `D-31`. PDF upload, a Google Doc link, a photo of written work. */
+const SUBMISSION_MODES = ['pdf_upload', 'doc_link', 'photo_upload'] as const;
 
 /**
  * One targeted group, with an optional window override.
@@ -223,6 +227,20 @@ export class CreateAssessmentDto {
   @MaxLength(64)
   @Matches(ID_PATTERN)
   markerId?: string | null;
+
+  /**
+   * `D-31`: which modes the task accepts, each at most once. Omitted is `[]`
+   * ("not stated"): the task's `allowedFileTypes` govern the upload as before.
+   */
+  @IsOptionalNotNull()
+  @IsArray()
+  @ArrayMaxSize(SUBMISSION_MODES.length)
+  @ArrayUnique()
+  @IsIn(SUBMISSION_MODES, {
+    each: true,
+    message: 'each submission mode must be pdf_upload, doc_link or photo_upload',
+  })
+  submissionModes?: (typeof SUBMISSION_MODES)[number][];
 }
 
 /** Every field optional; `undefined` leaves it alone. */
@@ -340,6 +358,17 @@ export class UpdateAssessmentDto {
   @MaxLength(64)
   @Matches(ID_PATTERN)
   markerId?: string | null;
+
+  /** `D-31`. Replaces the whole set; `[]` is "not stated". */
+  @IsOptionalNotNull()
+  @IsArray()
+  @ArrayMaxSize(SUBMISSION_MODES.length)
+  @ArrayUnique()
+  @IsIn(SUBMISSION_MODES, {
+    each: true,
+    message: 'each submission mode must be pdf_upload, doc_link or photo_upload',
+  })
+  submissionModes?: (typeof SUBMISSION_MODES)[number][];
 
   /**
    * `type`, `courseId` and `draftId` are deliberately absent. `draftId` is

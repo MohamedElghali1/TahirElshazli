@@ -862,4 +862,31 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
       expect(staff?.attachments.map((a) => a.audience)).toEqual(['students', 'students', 'staff']);
     });
   });
+
+  /** `D-31` (B-4 → B). */
+  describe('submission modes (D-31)', () => {
+    it('round-trips the modes on create and update, and records them on the audit entries', async () => {
+      const created = await authoring.create('course-1', ADMIN, {
+        ...TASK,
+        submissionModes: ['pdf_upload', 'photo_upload'],
+      });
+      expect(created.submissionModes).toEqual(['pdf_upload', 'photo_upload']);
+      const updated = await authoring.update(created.id, ADMIN, { submissionModes: ['doc_link'] });
+      expect(updated.submissionModes).toEqual(['doc_link']);
+
+      const log = await entries();
+      expect(log.find((e) => e.action === 'assessment.created')?.after).toMatchObject({
+        submissionModes: 'pdf_upload,photo_upload',
+      });
+      const edit = log.find((e) => e.action === 'assessment.updated');
+      expect(edit?.before).toMatchObject({ submissionModes: 'pdf_upload,photo_upload' });
+      expect(edit?.after).toMatchObject({ submissionModes: 'doc_link' });
+    });
+
+    it('defaults to [] ("not stated") and leaves the upload rules governing as before', async () => {
+      const created = await authoring.create('course-1', ADMIN, TASK);
+      expect(created.submissionModes).toEqual([]);
+      expect(created.allowedFileTypes).toEqual(['application/pdf']);
+    });
+  });
 });

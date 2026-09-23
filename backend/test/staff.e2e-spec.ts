@@ -2473,4 +2473,48 @@ describe('Staff and admin API (e2e)', () => {
       expect(config.body.allowedMimeTypes).not.toContain('image/svg+xml');
     });
   });
+
+  describe('submission modes (D-31)', () => {
+    const server = () => app.getHttpServer();
+    const base = {
+      title: 'E2E modes task',
+      type: 'homework',
+      availableFrom: '2026-01-01T00:00:00.000Z',
+      availableTo: '2099-01-01T00:00:00.000Z',
+      dueAt: '2098-01-01T00:00:00.000Z',
+      maxScore: 10,
+      allowedFileTypes: ['application/pdf'],
+      maxFileSizeBytes: 1048576,
+      targets: [{ groupId: 'group-1' }],
+    };
+
+    it('threads submissionModes through create and PATCH', async () => {
+      const task = await request(server())
+        .post('/staff/courses/course-1/assessments')
+        .set(bearer(adminToken))
+        .send({ ...base, submissionModes: ['pdf_upload', 'photo_upload'] })
+        .expect(201);
+      expect(task.body.submissionModes).toEqual(['pdf_upload', 'photo_upload']);
+      const patched = await request(server())
+        .patch(`/staff/assessments/${task.body.id}`)
+        .set(bearer(adminToken))
+        .send({ submissionModes: [] })
+        .expect(200);
+      expect(patched.body.submissionModes).toEqual([]);
+      await request(server()).delete(`/staff/assessments/${task.body.id}`).set(bearer(adminToken)).expect(204);
+    });
+
+    it.each([
+      ['an unknown mode', ['fax']],
+      ['a repeated mode', ['pdf_upload', 'pdf_upload']],
+      ['null', null],
+      ['a string', 'pdf_upload'],
+    ])('refuses %s with 400', async (_label, submissionModes) => {
+      await request(server())
+        .post('/staff/courses/course-1/assessments')
+        .set(bearer(adminToken))
+        .send({ ...base, submissionModes })
+        .expect(400);
+    });
+  });
 });

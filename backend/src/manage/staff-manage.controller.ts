@@ -209,6 +209,7 @@ export class StaffManageController {
       allowResubmission: body.allowResubmission,
       visibility: body.visibility,
       markerId: body.markerId,
+      submissionModes: body.submissionModes,
     });
   }
 

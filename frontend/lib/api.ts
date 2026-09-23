@@ -56,6 +56,7 @@ import type {
   StaffBlogPost,
   AttachmentInput,
   StaffTask,
+  SubmissionMode,
   TaskDraft,
   TaskVisibility,
   TaskDraftUpdate,
@@ -696,6 +697,8 @@ export const api = {
         visibility?: TaskVisibility;
         /** Teacher/admin only (an assistant gets 403). Null: whoever opens it first. */
         markerId?: string | null;
+        /** `D-31`. Each at most once; omitted is `[]`, "not stated". */
+        submissionModes?: SubmissionMode[];
       },
     ) =>
       request<AuthoredAssessment>(`/staff/courses/${courseId}/assessments`, {
@@ -728,6 +731,8 @@ export const api = {
         visibility?: TaskVisibility;
         /** Teacher/admin only; must qualify for the current audience (400). */
         markerId?: string | null;
+        /** Replaces the whole set. */
+        submissionModes?: SubmissionMode[];
       },
     ) =>
       request<AuthoredAssessment>(`/staff/assessments/${assessmentId}`, {

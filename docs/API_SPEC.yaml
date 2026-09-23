@@ -603,6 +603,12 @@ components:
         # non-null value is a 403. The named user must be the teacher, an admin,
         # or an ACTIVE assistant who reaches every targeted group - else 400.
         markerId: { type: [string, 'null'] }
+        # `D-31`. Each at most once. Omitted is `[]` ("not stated").
+        submissionModes:
+          type: array
+          uniqueItems: true
+          maxItems: 3
+          items: { $ref: '#/components/schemas/SubmissionMode' }
 
     # `PATCH /staff/assessments/{assessmentId}`. Every field optional and never
     # null. `type`, `courseId` and `draftId` are not patchable.
@@ -634,6 +640,12 @@ components:
         # is a 403. Checked against the task's current audience (400); re-aiming
         # the task later does not clear it.
         markerId: { type: [string, 'null'] }
+        # `D-31`. Replaces the whole set.
+        submissionModes:
+          type: array
+          uniqueItems: true
+          maxItems: 3
+          items: { $ref: '#/components/schemas/SubmissionMode' }
 
     # --- Marking -----------------------------------------------------------
     Annotation:

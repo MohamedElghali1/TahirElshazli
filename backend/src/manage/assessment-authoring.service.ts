@@ -24,6 +24,7 @@ import type {
   Attachment,
   NewAssessmentTarget,
   StoredAssessment,
+  SubmissionMode,
   TaskVisibility,
 } from '../assessments/interfaces/assessment-repository.interface.js';
 import { ASSESSMENT_REPOSITORY } from '../assessments/interfaces/assessment-repository.interface.js';
@@ -180,6 +181,11 @@ export interface CreateAssessmentInput {
    * the teacher and admins may name someone.
    */
   markerId?: string | null;
+  /**
+   * `D-31`: which modes the task accepts. Omitted is `[]`, "not stated". The
+   * multi-file model behind `photo_upload` is unit 7's.
+   */
+  submissionModes?: SubmissionMode[];
 }
 
 /**
@@ -189,12 +195,7 @@ export interface CreateAssessmentInput {
  * stored on the assessment, so it cannot ride along in `AssessmentUpdate` -
  * that type is the repository's contract and every field on it is a column.
  */
-export type UpdateAssessmentInput = Omit<
-  AssessmentUpdate,
-  // Each of these has a rule of its own and is admitted by the slice that
-  // enforces it - never passed through unchecked.
-  'submissionModes'
-> & {
+export type UpdateAssessmentInput = AssessmentUpdate & {
   googleForm?: string;
 };
 
@@ -616,7 +617,7 @@ export class AssessmentAuthoringService {
         visibility: input.visibility ?? 'published',
         markerId: input.markerId ?? null,
         allowResubmission: input.allowResubmission ?? true,
-        submissionModes: [],
+        submissionModes: input.submissionModes ?? [],
         draftId: input.draftId ?? null,
         attachments: input.attachments ?? [],
       });
@@ -664,6 +665,8 @@ export class AssessmentAuthoringService {
           allowResubmission: assessment.allowResubmission,
           visibility: assessment.visibility,
           markerId: assessment.markerId,
+          // Flat and scalar, as every snapshot here is.
+          submissionModes: assessment.submissionModes.join(','),
         },
       });
       return { ...assessment, targets };
@@ -757,6 +760,7 @@ export class AssessmentAuthoringService {
           allowResubmission: before.allowResubmission,
           visibility: before.visibility,
           markerId: before.markerId,
+          submissionModes: before.submissionModes.join(','),
         },
         after: {
           title: after.title,
@@ -767,6 +771,7 @@ export class AssessmentAuthoringService {
           allowResubmission: after.allowResubmission,
           visibility: after.visibility,
           markerId: after.markerId,
+          submissionModes: after.submissionModes.join(','),
         },
       });
       return { ...after, targets: await this.assessmentRepo.findTargets(assessmentId) };
