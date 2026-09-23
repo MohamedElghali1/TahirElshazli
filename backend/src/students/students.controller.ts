@@ -26,6 +26,7 @@ import { ChangePasswordDto } from './dto/change-password.dto.js';
 import type { JwtPayload } from '../auth/jwt.strategy.js';
 import { ALLOWED_AVATAR_MIME_TYPES, AVATAR_MAX_UPLOAD_BYTES } from '../common/storage/upload-types.js';
 import { UploadsService } from '../common/storage/uploads.service.js';
+import type { UploadedFileLike } from '../common/storage/uploads.service.js';
 
 @Controller('students')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -75,7 +76,7 @@ export class StudentsController {
     }),
   )
   async uploadMyAvatar(
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile() file: UploadedFileLike | undefined,
     @Request() req: { user: JwtPayload },
   ): Promise<StudentProfileView> {
     if (file && !ALLOWED_AVATAR_MIME_TYPES.includes(file.mimetype?.toLowerCase())) {
