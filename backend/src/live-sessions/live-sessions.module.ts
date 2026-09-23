@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
-import { LiveSessionsController } from './live-sessions.controller.js';
+import { StudentSessionsController } from './student-sessions.controller.js';
+import { StudentSessionsService } from './student-sessions.service.js';
 import { LiveSessionsService } from './live-sessions.service.js';
 import type { LiveSessionRepository } from './interfaces/live-session-repository.interface.js';
 import { LIVE_SESSION_REPOSITORY } from './interfaces/live-session-repository.interface.js';
@@ -17,13 +18,15 @@ import { EnrollmentsModule } from '../enrollments/enrollments.module.js';
  * `GROUP_REPOSITORY` is not imported here: `GroupDataModule` is `@Global()`
  * (`CLAUDE.md` §5) precisely so consumers like `LiveSessionsService` - which
  * now has to translate a course into its group to serve the legacy
- * course-keyed reads - can inject it without an import edge.
+ * course-keyed reads - and `StudentSessionsService` - which reads a student's
+ * own group memberships directly - can inject it without an import edge.
  */
 @Module({
   imports: [AuthModule, EnrollmentsModule],
-  controllers: [LiveSessionsController],
+  controllers: [StudentSessionsController],
   providers: [
     LiveSessionsService,
+    StudentSessionsService,
     InMemoryLiveSessionRepository,
     PostgresLiveSessionRepository,
     InMemoryAttendanceRepository,

@@ -333,17 +333,23 @@ describe('Staff and admin API (e2e)', () => {
       scheduledId = created.body.id;
       expect(scheduledId).toBeDefined();
 
-      // The student surface reads the same table via course-1. That is the entire point
-      // of scheduling, so it is asserted rather than assumed.
+      // The student surface reads the same table via group-1 (course-1's
+      // group). That is the entire point of scheduling, so it is asserted
+      // rather than assumed.
+      const from = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const to = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
       const studentView = await request(app.getHttpServer())
-        .get('/courses/course-1/live-sessions')
+        .get(`/students/me/timetable?from=${from}&to=${to}`)
         .set(bearer(studentToken))
         .expect(200);
 
-      const scheduled = studentView.body.upcoming.find(
+      const scheduled = studentView.body.find(
         (s: { id: string }) => s.id === scheduledId,
       );
       expect(scheduled).toMatchObject({ title: 'Scheduled over HTTP' });
+      // Scheduled a week out - well outside the T-30 release window, so the
+      // meeting link is not on the wire at all (`PHASE_PLAN.md` §3.4).
+      expect('meetingLink' in scheduled).toBe(false);
       expect(
         (new Date(scheduled.endsAt).getTime() -
           new Date(scheduled.scheduledAt).getTime()) /

@@ -10,6 +10,11 @@ import { ATTENDANCE_REPOSITORY } from './interfaces/attendance-repository.interf
 import type { GroupRepository } from '../groups/interfaces/group-repository.interface.js';
 import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interface.js';
 import { EnrollmentsService } from '../enrollments/enrollments.service.js';
+import {
+  isStudentVisible,
+  toStudentSessionView,
+  type StudentSessionView,
+} from './student-session-view.js';
 
 export interface LiveSessionListResponse {
   upcoming: LiveSession[];
@@ -102,15 +107,31 @@ export class LiveSessionsService {
     return { upcoming, past };
   }
 
-  /** The session the Home banner points at: the next one that has not ended yet. */
+  /**
+   * The session the Home banner points at: the next one that has not ended yet.
+   *
+   * **Returns the student allow-list view, never the row.** Both dashboards
+   * (`GET /courses/:id/dashboard` and `GET /dashboard`) hand this straight to a
+   * student, so returning a `LiveSession` here leaked `privateNotes` and an
+   * unwithheld `meetingLink` through two routes that S4 never named - the same
+   * leak the student timetable was rebuilt to close, surviving in a sibling
+   * caller. Serialising at the source is what stops the next caller
+   * reintroducing it.
+   *
+   * Unpublished and hidden sessions are filtered out for the same reason: a
+   * draft-timetable date must not surface on the Home banner.
+   */
   async getNextSession(
     courseId: string,
     studentId: string,
-  ): Promise<LiveSession | null> {
+  ): Promise<StudentSessionView | null> {
     await this.enrollmentsService.assertEnrolled(courseId, studentId);
     const now = new Date();
     const sessions = await this.sessionsForCourse(courseId);
-    return sessions.find((s) => !this.hasEnded(s, now)) ?? null;
+    const next = sessions
+      .filter(isStudentVisible)
+      .find((s) => !this.hasEnded(s, now));
+    return next ? toStudentSessionView(next, now) : null;
   }
 
   /** Internal: callers (CoursesService.getProgress) assert enrollment first. */

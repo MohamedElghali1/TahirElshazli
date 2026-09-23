@@ -11,7 +11,7 @@ import { LiveSessionsService } from '../live-sessions/live-sessions.service.js';
 import { ReportsService } from '../reports/reports.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import type { NotificationListResponse } from '../notifications/notifications.service.js';
-import type { LiveSession } from '../live-sessions/interfaces/live-session-repository.interface.js';
+import type { StudentSessionView } from '../live-sessions/student-session-view.js';
 import { deriveStats } from './dashboard.service.js';
 import type { DashboardStats } from './dashboard.service.js';
 
@@ -32,7 +32,8 @@ export interface StudentHomeEntry {
   course: CourseListItem;
   stats: DashboardStats;
   quickAccess: MaterialCounts;
-  nextLiveSession: LiveSession | null;
+  /** The student allow-list view, never the row - see `LiveSessionsService.getNextSession`. */
+  nextLiveSession: StudentSessionView | null;
   assessments: AssessmentListItem[];
 }
 

@@ -129,7 +129,7 @@ const EXPECTED: Record<string, readonly Role[]> = {
   ClassmatesController: [Role.Student],
   CoursesController: [Role.Student],
   DashboardController: [Role.Student],
-  LiveSessionsController: [Role.Student],
+  StudentSessionsController: [Role.Student],
   MaterialsController: [Role.Student],
   RecordingsController: [Role.Student],
   ReportsController: [Role.Student],

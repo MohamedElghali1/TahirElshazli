@@ -163,7 +163,8 @@ describe('Student API (e2e)', () => {
     ['/courses/course-1/materials'],
     ['/courses/course-1/reports/summary'],
     ['/courses/course-1/reports/documents'],
-    ['/courses/course-1/live-sessions'],
+    ['/students/me/timetable?from=2026-01-01T00:00:00Z&to=2027-01-01T00:00:00Z'],
+    ['/students/me/attendance'],
     ['/notifications'],
   ])('requires a token for %s', async (path) => {
     await request(app.getHttpServer()).get(path).expect(401);
@@ -180,7 +181,8 @@ describe('Student API (e2e)', () => {
     ['/courses/course-1/materials'],
     ['/courses/course-1/reports/summary'],
     ['/courses/course-1/reports/documents'],
-    ['/courses/course-1/live-sessions'],
+    ['/students/me/timetable?from=2026-01-01T00:00:00Z&to=2027-01-01T00:00:00Z'],
+    ['/students/me/attendance'],
     ['/notifications'],
   ])('serves %s with a token', async (path) => {
     await request(app.getHttpServer()).get(path).set(auth()).expect(200);
@@ -240,6 +242,65 @@ describe('Student API (e2e)', () => {
     expect(entry.stats).toEqual(perCourse.body.stats);
     expect(entry.quickAccess).toEqual(perCourse.body.quickAccess);
     expect(entry.nextLiveSession).toEqual(perCourse.body.nextLiveSession);
+  });
+
+  // Both dashboards hand `nextLiveSession` straight to a student. They took the
+  // raw row until the S4 review, which leaked `privateNotes` and an unwithheld
+  // `meetingLink` through two routes the timetable rebuild never touched - the
+  // same leak, surviving in a sibling caller. This asserts the allow-list on
+  // both, so a future change cannot quietly hand the row back.
+  it('serves nextLiveSession through the student allow-list on both dashboards', async () => {
+    const staffFields = ['privateNotes', 'assistantId', 'isVisible', 'state'];
+
+    // The fixtures' sessions have all ended, so one has to exist in the future
+    // for `nextLiveSession` to be populated at all. 45 minutes out puts it
+    // outside the T-30 window too, so the link must stay withheld below.
+    const teacherLogin = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: 'teacher@example.com', password: 'password123' })
+      .expect(200);
+    await request(app.getHttpServer())
+      .post('/staff/groups/group-1/sessions')
+      .set({ Authorization: `Bearer ${teacherLogin.body.accessToken}` })
+      .send({
+        title: 'Dashboard allow-list probe',
+        meetingLink: 'https://zoom.us/j/50505050505',
+        privateNotes: 'Staff eyes only - must never reach a student.',
+        scheduledAt: new Date(Date.now() + 45 * 60 * 1000).toISOString(),
+        endsAt: new Date(Date.now() + 105 * 60 * 1000).toISOString(),
+      })
+      .expect(201);
+
+    const home = await request(app.getHttpServer())
+      .get('/dashboard')
+      .set(auth())
+      .expect(200);
+    const perCourse = await request(app.getHttpServer())
+      .get('/courses/course-1/dashboard')
+      .set(auth())
+      .expect(200);
+
+    const views = [
+      perCourse.body.nextLiveSession,
+      ...home.body.entries.map(
+        (e: { nextLiveSession: unknown }) => e.nextLiveSession,
+      ),
+    ].filter((v): v is Record<string, unknown> => v !== null && v !== undefined);
+
+    // Every seeded session is dated before this branch's "today", so without
+    // the session scheduled above `nextLiveSession` is null everywhere and this
+    // whole test passes while asserting nothing. Guarding the count is what
+    // keeps it honest - and is how the null-fixture problem was found.
+    expect(views.length).toBeGreaterThan(0);
+
+    for (const view of views) {
+      for (const field of staffFields) {
+        expect(field in view).toBe(false);
+      }
+      // The fixtures schedule nothing inside the T-30 window, so the link is
+      // withheld here too - absent, not null (`PHASE_PLAN.md` §3.4).
+      expect('meetingLink' in view).toBe(false);
+    }
   });
 
   it('carries the same assessment list the per-course endpoint serves', async () => {
@@ -450,13 +511,25 @@ describe('Student API (e2e)', () => {
       ['/courses/course-2/materials'],
       ['/courses/course-2/reports/summary'],
       ['/courses/course-2/reports/documents'],
-      ['/courses/course-2/live-sessions'],
-      ['/courses/course-2/live-sessions/next'],
     ])('denies %s to a student not enrolled in that course', async (path) => {
       await request(app.getHttpServer())
         .get(path)
         .set({ Authorization: `Bearer ${otherToken}` })
         .expect(404);
+    });
+
+    it('never places another course’s sessions on this student’s timetable - there is no route shape to deny, so this is asserted on the response instead', async () => {
+      // student-2 sits in group-1 (course-1) only; group-2 studies course-2.
+      // `GET /students/me/timetable` takes no course or group id from the
+      // caller (`PHASE_PLAN.md` §3.2), so there is nothing to 404 - the proof
+      // is that group-2's sessions never appear in the body at all.
+      const res = await request(app.getHttpServer())
+        .get('/students/me/timetable?from=2020-01-01T00:00:00Z&to=2030-01-01T00:00:00Z')
+        .set({ Authorization: `Bearer ${otherToken}` })
+        .expect(200);
+      expect(
+        res.body.every((s: { groupId: string }) => s.groupId !== 'group-2'),
+      ).toBe(true);
     });
 
     it('lists only the courses the caller is actually enrolled in', async () => {
@@ -665,12 +738,19 @@ describe('Student API (e2e)', () => {
         .expect(400);
     });
 
-    it('never leaks a Zoom link for an unenrolled course', async () => {
+    it('never places a group-2 (course-2) session id on this student’s timetable', async () => {
+      // student-2 is not a member of group-2, so nothing group-2's owns can
+      // reach their timetable - not a 404 (there is no course id on this
+      // route to 404 against), a positive absence check on the body. Session
+      // ids double as a stand-in for "any of that group's data at all",
+      // including whatever meeting link it would otherwise carry.
       const res = await request(app.getHttpServer())
-        .get('/courses/course-2/live-sessions')
+        .get('/students/me/timetable?from=2020-01-01T00:00:00Z&to=2030-01-01T00:00:00Z')
         .set({ Authorization: `Bearer ${otherToken}` })
-        .expect(404);
-      expect(JSON.stringify(res.body)).not.toContain('zoom.us');
+        .expect(200);
+      expect(res.body.map((s: { id: string }) => s.id)).not.toEqual(
+        expect.arrayContaining(['sess-4', 'sess-5', 'sess-6']),
+      );
     });
   });
 
@@ -724,6 +804,79 @@ describe('Student API (e2e)', () => {
           single.body.progress.attendancePercentage,
         );
       }
+    });
+  });
+
+  describe('student timetable and attendance (unit 8, S4)', () => {
+    it('never leaks privateNotes, by name, on the student timetable', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/students/me/timetable?from=2020-01-01T00:00:00Z&to=2030-01-01T00:00:00Z')
+        .set(auth())
+        .expect(200);
+      expect(res.body.length).toBeGreaterThan(0);
+      for (const session of res.body) {
+        expect('privateNotes' in session).toBe(false);
+      }
+    });
+
+    it('never leaks privateNotes, by name, on the student attendance history', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/students/me/attendance')
+        .set(auth())
+        .expect(200);
+      expect(res.body.history.length).toBeGreaterThan(0);
+      for (const row of res.body.history) {
+        expect('privateNotes' in row).toBe(false);
+      }
+    });
+
+    it('withholds the meeting link until T-30, absent rather than null', async () => {
+      const teacherLogin = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ email: 'teacher@example.com', password: 'password123' })
+        .expect(200);
+      const teacherToken = teacherLogin.body.accessToken;
+
+      const from = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const farAway = new Date(Date.now() + 45 * 60 * 1000).toISOString(); // scheduled 45 min out
+      const endsAt = new Date(Date.now() + 105 * 60 * 1000).toISOString();
+
+      const created = await request(app.getHttpServer())
+        .post('/staff/groups/group-1/sessions')
+        .set({ Authorization: `Bearer ${teacherToken}` })
+        .send({
+          title: 'T-30 e2e probe',
+          meetingLink: 'https://zoom.us/j/40404040404',
+          scheduledAt: farAway,
+          endsAt,
+        })
+        .expect(201);
+
+      const res = await request(app.getHttpServer())
+        .get(`/students/me/timetable?from=${from}&to=${endsAt}`)
+        .set(auth())
+        .expect(200);
+      const session = res.body.find((s: { id: string }) => s.id === created.body.id);
+      expect(session).toBeDefined();
+      // scheduledAt is 45 minutes out - outside the 30-minute release window.
+      expect('meetingLink' in session).toBe(false);
+    });
+
+    it('breaks present, late and absent into three separate counts, never folding late into either', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/students/me/attendance')
+        .set(auth())
+        .expect(200);
+      expect(res.body).toMatchObject({
+        present: expect.any(Number),
+        late: expect.any(Number),
+        absent: expect.any(Number),
+        expected: expect.any(Number),
+        percentage: expect.any(Number),
+      });
+      expect(res.body.expected).toBeGreaterThanOrEqual(
+        res.body.present + res.body.absent,
+      );
     });
   });
 
@@ -816,7 +969,8 @@ describe('Student API (e2e)', () => {
       '/courses/course-1/dashboard',
       '/courses/course-1/recordings',
       '/courses/course-1/materials',
-      '/courses/course-1/live-sessions',
+      '/students/me/timetable?from=2026-01-01T00:00:00Z&to=2027-01-01T00:00:00Z',
+      '/students/me/attendance',
       '/courses/course-1/reports/summary',
       '/courses/course-1/classmates',
       '/courses/course-1/announcements',

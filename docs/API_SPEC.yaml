@@ -715,6 +715,29 @@ components:
         isVisible:    { type: boolean, default: true }
         state:        { type: string, enum: [planned, published], default: published }
 
+    StudentSession:
+      type: object
+      description: >
+        The student's own view of a session (`GET /students/me/timetable`,
+        unit 8 `SESS-6`) — an explicit allow-list, not `Session` minus staff
+        fields. `assistantId`, `privateNotes`, `isVisible` and `state` never
+        appear here; only `published` and `isVisible: true` sessions reach
+        this endpoint at all, so those two fields would be constant if present.
+      required: [id, groupId, title, scheduledAt, endsAt]
+      properties:
+        id:          { $ref: '#/components/schemas/Id' }
+        groupId:     { $ref: '#/components/schemas/Id' }
+        title:       { type: string }
+        scheduledAt: { type: string, format: date-time }
+        endsAt:      { type: string, format: date-time }
+        description: { type: [string, 'null'] }
+        meetingLink:
+          type: string
+          description: >
+            Present only when `now` is within [scheduledAt - 30min, endsAt].
+            Absent from the payload otherwise — not `null`, the key itself is
+            not serialized.
+
     AttendanceEntry:
       type: object
       required: [studentId, status]
@@ -2163,27 +2186,65 @@ paths:
   /students/me/timetable:
     get:
       tags: [student]
-      summary: The student's own week
+      summary: The student's own week, across every group they belong to
       description: >
-        A meeting link is omitted from the payload until 30 minutes before the
-        session starts — enforced server-side, not by hiding a button.
+        `[REPLACE]`s `GET /courses/:id/live-sessions` and `.../next` (unit 8,
+        `SESS-6`) — a session belongs to a group, not a course, and a
+        student's timetable is every group they sit in, never a course id
+        taken from the caller. Only `state: published` and `isVisible: true`
+        sessions are returned. `meetingLink` is omitted from the payload
+        entirely — not `null` — until 30 minutes before `scheduledAt`, and
+        again once `endsAt` has passed; enforced server-side, not by hiding a
+        button.
       x-roles: [student]
       parameters:
-        - { name: from, in: query, schema: { type: string, format: date } }
-        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: from, in: query, required: true, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date-time } }
       responses:
         '200':
           description: OK
           content:
             application/json:
-              schema: { type: array, items: { $ref: '#/components/schemas/Session' } }
+              schema: { type: array, items: { $ref: '#/components/schemas/StudentSession' } }
+        '400': { $ref: '#/components/responses/BadRequest' }
 
   /students/me/attendance:
     get:
       tags: [student]
+      summary: The student's own attendance history and projection
+      description: >
+        `[REPLACE]`d the attendance half of `GET /courses/:id/live-sessions`
+        (unit 8, `SESS-7`). `percentage` is `present / expected`, where
+        `expected` is the `published` sessions of the student's groups that
+        have already ended — computed on every read, never stored. `late`
+        counts as neither `present` nor `absent`; `history` lists every
+        expected session with the student's own mark, or `null` when never
+        marked.
       x-roles: [student]
       responses:
-        '200': { description: OK }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  present:    { type: integer }
+                  late:       { type: integer }
+                  absent:     { type: integer }
+                  expected:   { type: integer }
+                  percentage: { type: integer }
+                  history:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        sessionId:   { $ref: '#/components/schemas/Id' }
+                        groupId:     { $ref: '#/components/schemas/Id' }
+                        title:       { type: string }
+                        scheduledAt: { type: string, format: date-time }
+                        status:      { type: string, enum: [present, late, absent, null] }
+                        markedAt:    { type: string, format: date-time, nullable: true }
 
   /students/me/reports:
     get:

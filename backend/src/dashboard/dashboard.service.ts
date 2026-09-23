@@ -11,7 +11,7 @@ import type { MaterialCounts } from '../materials/materials.service.js';
 import { LiveSessionsService } from '../live-sessions/live-sessions.service.js';
 import { ReportsService } from '../reports/reports.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
-import type { LiveSession } from '../live-sessions/interfaces/live-session-repository.interface.js';
+import type { StudentSessionView } from '../live-sessions/student-session-view.js';
 
 export interface DashboardStats {
   /** Homework the student still owes: type homework, open, nothing submitted. */
@@ -56,7 +56,8 @@ export interface DashboardResponse {
   };
   progress: CourseProgress;
   stats: DashboardStats;
-  nextLiveSession: LiveSession | null;
+  /** The student allow-list view, never the row - see `LiveSessionsService.getNextSession`. */
+  nextLiveSession: StudentSessionView | null;
   quickAccess: MaterialCounts;
   unreadNotifications: number;
 }
