@@ -43,9 +43,6 @@ describe('Announcements Unit & Integration', () => {
   let notifications: NotificationsService;
   let mail: MailService;
   let users: InMemoryUserRepository;
-  let groups: InMemoryGroupRepository;
-  let courses: InMemoryCourseRepository;
-  let enrollments: InMemoryEnrollmentRepository;
   let scopeRepo: InMemoryAssistantScopeRepository;
 
   beforeEach(async () => {
@@ -77,23 +74,13 @@ describe('Announcements Unit & Integration', () => {
     notifications = module.get(NotificationsService);
     mail = module.get(MailService);
     users = module.get<InMemoryUserRepository>(USER_REPOSITORY);
-    groups = module.get<InMemoryGroupRepository>(GROUP_REPOSITORY);
-    courses = module.get<InMemoryCourseRepository>(COURSE_REPOSITORY);
-    enrollments = module.get<InMemoryEnrollmentRepository>(ENROLLMENT_REPOSITORY);
     scopeRepo = module.get<InMemoryAssistantScopeRepository>(ASSISTANT_SCOPE_REPOSITORY);
 
-    await users.create({ id: 'assistant-1', email: 'a1@example.com', passwordHash: 'x', name: 'A1', role: Role.Assistant, status: 'active' });
-    await users.create({ id: 'assistant-2', email: 'a2@example.com', passwordHash: 'x', name: 'A2', role: Role.Assistant, status: 'active' });
-    await users.create({ id: 'teacher-1', email: 't@example.com', passwordHash: 'x', name: 'T1', role: Role.Teacher, status: 'active' });
-    await users.create({ id: 'student-1', email: 's1@example.com', passwordHash: 'x', name: 'S1', role: Role.Student, status: 'active' });
-    await users.create({ id: 'student-2', email: 's2@example.com', passwordHash: 'x', name: 'S2', role: Role.Student, status: 'active' });
-    
-    await courses.create({ id: 'course-1', title: 'C1', syllabus: '', isPublished: true });
-    await enrollments.create({ courseId: 'course-1', studentId: 'student-1', enrolledAt: new Date().toISOString() });
+    // The in-memory repositories seed `assistant-1`/`assistant-2`, `teacher-1`,
+    // `student-1`/`student-2`, `course-1`, `group-1`, `group-2` and group-1's
+    // two memberships under these exact ids, so only the scope assignment -
+    // which is what this suite is actually about - is set up here.
     await scopeRepo.assignGroup('assistant-1', 'group-1', 'teacher-1');
-    
-    await groups.create({ id: 'group-1', courseId: 'course-1', name: 'G1', assistantId: 'assistant-1' });
-    await groups.addMember('group-1', 'student-1');
   });
 
   it('audience parse/encode round-trip for group', () => {
@@ -124,7 +111,6 @@ describe('Announcements Unit & Integration', () => {
     const reach = await staff.previewReach('group:group-1', ASSIGNED_TA);
     expect(reach.reach).toBe(2);
     
-    await groups.create({ id: 'group-2', courseId: 'course-1', name: 'G2', assistantId: 'assistant-2' });
     await expect(staff.previewReach('group:group-2', ASSIGNED_TA)).rejects.toThrow(NotFoundException);
     const err = await staff.previewReach('group:group-2', ASSIGNED_TA).catch(e => e.message);
     expect(err).toBe('Group not found'); // exact match
@@ -170,14 +156,15 @@ describe('Announcements Unit & Integration', () => {
   });
 
   it('TA posting to unheld group -> 404', async () => {
-    await groups.create({ id: 'group-2', courseId: 'course-1', name: 'G2', assistantId: 'assistant-2' });
     const err = await staff.createGroupDraft('group-2', MESSAGE, ASSIGNED_TA).catch(e => e.message);
     expect(err).toBe('Group not found');
   });
 
   it('TA calling /admin/announcements/:id/publish -> 403 (through service check)', async () => {
     const draft = await admin.createDraft({ ...MESSAGE, audience: 'course:course-1' }, ADMIN);
-    await expect(service.publish(draft.id, ASSIGNED_TA.user)).rejects.toThrow(ForbiddenException);
+    await expect(
+      service.publish(draft.id, { id: ASSIGNED_TA.user.sub, role: ASSIGNED_TA.user.role }),
+    ).rejects.toThrow(ForbiddenException);
   });
 
   it('assistant calling updateDraft with platform-wide audience -> 403', async () => {
