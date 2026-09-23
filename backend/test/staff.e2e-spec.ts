@@ -305,6 +305,66 @@ describe('Staff and admin API (e2e)', () => {
       });
     });
 
+    it('keeps a mark hidden from the student until it is returned, then reveals it (MARK-2)', async () => {
+      // sub-2 was graded (score 16) by the test above and never returned - the
+      // exact state this route exists for.
+      const beforeReturn = await request(app.getHttpServer())
+        .get('/assessments/assess-4')
+        .set(bearer(studentToken))
+        .expect(200);
+      expect(beforeReturn.body.status).toBe('submitted');
+      expect(beforeReturn.body.score).toBeNull();
+
+      await request(app.getHttpServer())
+        .post('/staff/submissions/sub-2/return')
+        .set(bearer(assignedTaToken))
+        .expect(200);
+
+      const afterReturn = await request(app.getHttpServer())
+        .get('/assessments/assess-4')
+        .set(bearer(studentToken))
+        .expect(200);
+      expect(afterReturn.body.status).toBe('corrected');
+      expect(afterReturn.body.score).toBe(16);
+
+      const log = await request(app.getHttpServer())
+        .get('/admin/audit-log?action=submission.returned')
+        .set(bearer(adminToken))
+        .expect(200);
+      expect(log.body.entries[0]).toMatchObject({
+        actorId: 'assistant-1',
+        actorRole: 'assistant',
+        targetId: 'sub-2',
+      });
+    });
+
+    it('refuses to return a submission with no mark yet, with 409', async () => {
+      // Every seeded fixture but sub-2 (now marked, above) already carries a
+      // mark, so a fresh submission is the only ungraded one available here.
+      const submitted = await request(app.getHttpServer())
+        .post('/assessments/assess-1/submissions')
+        .set(bearer(studentToken))
+        .send({ fileUrl: 'https://storage.example.com/submissions/e2e-return-409.pdf' })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post(`/staff/submissions/${submitted.body.id}/return`)
+        .set(bearer(adminToken))
+        .expect(409);
+    });
+
+    it('refuses a return outside the TA scope, byte-identical to a nonexistent submission', async () => {
+      const outOfScope = await request(app.getHttpServer())
+        .post('/staff/submissions/sub-2/return')
+        .set(bearer(unassignedTaToken))
+        .expect(404);
+      const nonexistent = await request(app.getHttpServer())
+        .post('/staff/submissions/sub-nope/return')
+        .set(bearer(unassignedTaToken))
+        .expect(404);
+      expect(outOfScope.body.message).toBe(nonexistent.body.message);
+    });
+
     it('lets the teacher publish a recording that students then see', async () => {
       const created = await request(app.getHttpServer())
         .post('/admin/courses/course-1/recordings')

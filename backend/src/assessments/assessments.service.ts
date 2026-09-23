@@ -278,7 +278,9 @@ export class AssessmentsService {
     now: Date,
     hasExternalResult = false,
   ): AssessmentStatus {
-    if (submission?.correctedAt) {
+    // `MARK-2`: `corrected` is what the student reads once the mark is
+    // released, not once it exists - `returnedAt`, not `correctedAt`.
+    if (submission?.returnedAt) {
       return 'corrected';
     }
     if (submission) {
@@ -323,7 +325,9 @@ export class AssessmentsService {
       now,
       hasExternalResult,
     );
-    const score = submission?.correctedAt ? submission.score : null;
+    // `MARK-2`: same gate as `computeStatus` above - a mark exists the moment
+    // it is corrected, but the student only sees it once it is returned.
+    const score = submission?.returnedAt ? submission.score : null;
     return {
       id: assessment.id,
       courseId: assessment.courseId,
@@ -488,6 +492,10 @@ export class AssessmentsService {
       // The UI must never offer a button the server refuses: a one-shot task
       // (`allowResubmission: false`) that already has a submission is closed
       // to this student exactly as `submitAssessment` below treats it.
+      // Deliberately `correctedAt`, not `returnedAt` (`MARK-2`): this guards
+      // *mutation*, not visibility - once a mark exists a resubmission would
+      // overwrite what the marker is working from, whether or not it has been
+      // handed back yet. Same rule as `submitAssessment`'s own check below.
       canSubmit:
         this.isWithinWindow(assessment, now) &&
         submission?.correctedAt == null &&
@@ -502,10 +510,15 @@ export class AssessmentsService {
             submittedAt: submission.submittedAt,
             lastSubmittedAt: submission.lastSubmittedAt,
             updatedAt: submission.updatedAt,
-            score: submission.correctedAt ? submission.score : null,
-            correctedAt: submission.correctedAt,
-            feedback: submission.feedback,
-            annotatedFileUrl: submission.annotatedFileUrl,
+            // `MARK-2`: everything the marker wrote stays hidden until
+            // `returnedAt` is stamped, so a marked-but-unreturned submission
+            // reads exactly as it did before it was marked.
+            score: submission.returnedAt ? submission.score : null,
+            correctedAt: submission.returnedAt ? submission.correctedAt : null,
+            feedback: submission.returnedAt ? submission.feedback : null,
+            annotatedFileUrl: submission.returnedAt
+              ? submission.annotatedFileUrl
+              : null,
             revisions: await this.assessmentRepo.findRevisions(
               submission.id,
               studentId,
@@ -742,7 +755,8 @@ export class AssessmentsService {
         type: assessment.type,
         topics: assessment.topics,
         maxScore: assessment.maxScore,
-        score: submission?.correctedAt ? submission.score : null,
+        // `MARK-2`: the weekly report is a student/parent-visible read too.
+        score: submission?.returnedAt ? submission.score : null,
         status: this.computeStatus(
           assessment,
           submission,

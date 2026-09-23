@@ -128,6 +128,19 @@ export class StaffManageController {
   }
 
   /**
+   * `MARK-2`: release a saved mark to the student. Same no-course-id-in-path
+   * reasoning as `grade` above.
+   */
+  @Post('submissions/:submissionId/return')
+  @HttpCode(HttpStatus.OK)
+  async returnSubmission(
+    @Param('submissionId') submissionId: string,
+    @Request() req: { user: JwtPayload },
+  ): Promise<GradingQueueItem> {
+    return this.grading.returnToStudent(submissionId, this.actor(req));
+  }
+
+  /**
    * The overlay's data (`MARK-1`, `D-2`): every mark drawn on a submission, in
    * one page-percentage coordinate space. No course id in the path, same
    * reasoning as `grade` above - resolved from the submission's own

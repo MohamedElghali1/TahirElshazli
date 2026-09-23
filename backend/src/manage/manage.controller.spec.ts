@@ -1,7 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { TASK_DRAFT_REPOSITORY } from './interfaces/task-draft-repository.interface.js';
 import { InMemoryTaskDraftRepository } from './repositories/in-memory-task-draft.repository.js';
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { StaffManageController } from './staff-manage.controller.js';
 import { AdminManageController } from './admin-manage.controller.js';
 import { ManageService } from './manage.service.js';
@@ -348,6 +353,76 @@ describe('Manage surface', () => {
       const page = await audit.find({ limit: 10 });
       const entry = page.entries.find((e) => e.action === 'submission.graded');
       expect(entry).toMatchObject({ actorId: 'admin-1', actorRole: 'admin' });
+    });
+  });
+
+  describe('POST /staff/submissions/:id/return (MARK-2)', () => {
+    it('refuses to return a submission that has not been marked', async () => {
+      await expect(
+        staff.returnSubmission('sub-2', ASSIGNED_TA),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('stamps returnedAt once a mark exists', async () => {
+      await staff.grade('sub-2', { score: 14 }, ASSIGNED_TA);
+      const before = await assessments.findSubmissionById('sub-2');
+      expect(before?.returnedAt).toBeNull();
+
+      const result = await staff.returnSubmission('sub-2', ASSIGNED_TA);
+      expect(result.correctedAt).not.toBeNull();
+      const after = await assessments.findSubmissionById('sub-2');
+      expect(after?.returnedAt).not.toBeNull();
+    });
+
+    it('re-stamps returnedAt on a re-return after a re-mark', async () => {
+      await staff.grade('sub-2', { score: 14 }, ASSIGNED_TA);
+      await staff.returnSubmission('sub-2', ASSIGNED_TA);
+      const first = await assessments.findSubmissionById('sub-2');
+
+      await staff.grade('sub-2', { score: 16 }, ASSIGNED_TA);
+      await staff.returnSubmission('sub-2', ASSIGNED_TA);
+      const second = await assessments.findSubmissionById('sub-2');
+
+      expect(second?.returnedAt).not.toBeNull();
+      expect(
+        new Date(second!.returnedAt!).getTime(),
+      ).toBeGreaterThanOrEqual(new Date(first!.returnedAt!).getTime());
+    });
+
+    it('refuses a submission belonging to a course the assistant does not hold', async () => {
+      await staff.grade('sub-2', { score: 14 }, ASSIGNED_TA);
+      await expect(
+        staff.returnSubmission('sub-2', UNASSIGNED_TA),
+      ).rejects.toThrow(NotFoundException);
+      const after = await assessments.findSubmissionById('sub-2');
+      expect(after?.returnedAt).toBeNull();
+    });
+
+    it('gives a held-but-wrong submission and a nonexistent one the same body', async () => {
+      await staff.grade('sub-2', { score: 14 }, ASSIGNED_TA);
+      const outOfScope = await staff
+        .returnSubmission('sub-2', UNASSIGNED_TA)
+        .catch((error: Error) => error.message);
+      const nonexistent = await staff
+        .returnSubmission('sub-nope', UNASSIGNED_TA)
+        .catch((error: Error) => error.message);
+      expect(outOfScope).toBe(nonexistent);
+    });
+
+    it('writes an audit entry naming the actor', async () => {
+      await staff.grade('sub-2', { score: 14 }, ASSIGNED_TA);
+      await staff.returnSubmission('sub-2', ASSIGNED_TA);
+      const page = await audit.find({ limit: 10 });
+      const entry = page.entries.find((e) => e.action === 'submission.returned');
+      expect(entry).toMatchObject({
+        actorId: 'assistant-1',
+        actorRole: 'assistant',
+        targetType: 'assessment_submission',
+        targetId: 'sub-2',
+        courseId: 'course-1',
+      });
+      expect(entry?.before).toMatchObject({ returnedAt: null });
+      expect(entry?.after?.returnedAt).not.toBeNull();
     });
   });
 

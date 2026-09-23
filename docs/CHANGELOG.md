@@ -1823,3 +1823,55 @@ author-supplied text never becomes markup. Announcement bodies render as paragra
 
 Removed before commit: an unrequested debounced search box over the announcement list. §1's scale
 numbers are the test — a list this size does not get search furniture.
+
+## 2026-09-23 — `MARK-2`: a mark existing and a student seeing it become two things
+
+Slice 7d separates **Save** from **Save and return**. `correctedAt` says a mark exists; `returnedAt`
+says the student may see it. Until now they were the same instant, so a marker could not put a paper
+down half-marked without the student reading it.
+
+`POST /staff/submissions/:submissionId/return` is the release, beside `.../grade`. It shares
+`grade`'s authorization shape through an extracted `resolveScoped` — the course comes from the
+submission's own assessment, never a URL parameter (§5.11) — and refuses a submission with no mark
+with **409**, a state conflict rather than a bad request: the id is fine, the state is not.
+
+**The risky half was the visibility flip, and the distinction that mattered is that not every
+`correctedAt` read is a visibility decision.** Two of them guard *mutation*, not sight —
+`canSubmit` and `submitAssessment`'s own refusal both stop a student overwriting work the marker is
+mid-way through, which must hold whether or not the mark has been handed back. Those keep
+`correctedAt`; the rest move to `returnedAt`, and both now carry a comment saying which they are so
+the next reader does not "fix" one into the other.
+
+**Gated beyond the brief, correctly.** The brief enumerated the score sites. The implementer also
+gated `feedback`, `annotatedFileUrl` and the exposed `correctedAt` itself, on the grounds that
+hiding the number while showing the marker's written feedback and the annotated copy leaks the
+substance of the mark and leaves `MARK-2` half-done. Adopted — a marked-but-unreturned submission
+must read to a student exactly as it did before it was marked, and a visible "corrected on"
+timestamp for a mark they cannot see is its own tell.
+
+**`getPerformanceEntries` was the one with teeth.** It feeds the weekly report, which under `RPT-*`
+emails a child's marks to a parent and cannot be unsent (§8). Had it kept reading `correctedAt`, a
+half-finished marking pass could have reached a parent's inbox. It reads `returnedAt`.
+
+**`submission.returned` is a new `AuditAction`** — union, the query DTO's exhaustive `Record`, and a
+spec asserting the entry. It earns its own action rather than riding on `submission.graded` because
+releasing is a separate decision with a student-visible consequence. This does **not** reopen
+`D-44`: annotations are still audited per save, not per mutation.
+
+**A correction to the brief, found by the implementer:** it claimed the in-memory fixtures already
+contained a marked-but-unreturned submission. They do not — all six have `returnedAt === correctedAt`
+or both null. The tests build that state themselves. Recorded because the wrong version of that
+claim would have produced tests that pass while asserting nothing about the case the slice exists
+for.
+
+### Unrelated, found while reviewing 7d: the backend typecheck is broken on `redesign`
+
+`npx tsc --noEmit` reports **29 errors** on HEAD (`635f62b`), none from unit 7 — measured both with
+and without 7d's diff by stashing, 29 either way. They sit in `settings/`, `announcements/` and
+`students/`, and they are signature drift: `id` no longer exists on the user/course/group creation
+types and `StaffActor` gained a required `id`, without the three calling modules being updated.
+
+`CLAUDE.md` §4.1 makes zero the thing to gate on, so this is a regression in the shared branch
+rather than a cosmetic issue. Recorded here, not fixed: it is outside unit 7's scope (§12 — record
+what you find and move on), and the modules belong to units that landed while unit 7 was in
+progress.

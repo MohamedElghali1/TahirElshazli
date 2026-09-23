@@ -1785,6 +1785,7 @@ paths:
       responses:
         '200': { description: Returned }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
       x-audit: submission.returned
 
   # --- Mark book ----------------------------------------------------------

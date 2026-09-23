@@ -25,6 +25,10 @@ export type AuditAction =
   // The first TA mutation the log covers. §5.4 names grading explicitly, and
   // it is the action a student is most likely to dispute.
   | 'submission.graded'
+  // `MARK-2`: handing marked work back is a separate decision from marking it,
+  // and a student-visible one the moment it happens - so it earns its own
+  // entry rather than riding along with `submission.graded`.
+  | 'submission.returned'
   // Teacher-only writes (§2.2 grants a TA materials, not recordings), but
   // logged on the same terms: an admin action that changes what students can
   // see is history worth keeping.

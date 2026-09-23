@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   NotFoundException,
@@ -196,31 +197,10 @@ export class GradingService {
     input: GradeInput,
   ): Promise<GradingQueueItem> {
     return this.db.runInTransaction(async () => {
-      const submission = await this.assessmentRepo.findSubmissionById(submissionId);
-      // 404 rather than 403 for a submission outside the actor's scope, so a TA
-      // cannot probe for which submission ids exist. Same posture as
-      // `assertAssigned`, and the reason both branches say the same thing.
-      if (!submission) {
-        throw new NotFoundException('Submission not found');
-      }
-      const assessment = await this.assessmentRepo.findById(submission.assessmentId);
-      if (!assessment) {
-        throw new NotFoundException('Submission not found');
-      }
-      // Rethrown under the submission's own wording rather than passed through.
-      // `assertAssigned` says "Course not found or not assigned to you", which on
-      // this route is a different sentence from the "Submission not found" two
-      // lines up - and two different 404 bodies is exactly the existence oracle
-      // the status code was chosen to avoid: a real id on someone else's course
-      // would read differently from a made-up one.
-      try {
-        await this.scope.assertAssigned(assessment.courseId, actor);
-      } catch (error) {
-        if (error instanceof NotFoundException) {
-          throw new NotFoundException('Submission not found');
-        }
-        throw error;
-      }
+      const { submission, assessment } = await this.resolveScoped(
+        submissionId,
+        actor,
+      );
 
       if (input.score < 0 || input.score > assessment.maxScore) {
         // Checked here rather than in the DTO because the ceiling is per
@@ -262,36 +242,133 @@ export class GradingService {
         after: { score: graded.score, correctedAt: graded.correctedAt },
       });
 
-      const student = await this.userRepo.findById(graded.studentId);
-      return {
-        submissionId: graded.id,
-        assessmentId: assessment.id,
-        assessmentTitle: assessment.title,
-        assessmentType: assessment.type,
-        maxScore: assessment.maxScore,
-        studentId: graded.studentId,
-        studentName: student?.name ?? 'Unknown',
-        studentEmail: student?.email ?? '',
-        submittedAt: graded.submittedAt,
-        lastSubmittedAt: graded.lastSubmittedAt,
-        fileUrl: graded.fileUrl,
-        answerText: graded.answerText,
-        linkUrl: graded.linkUrl,
-        files: (await this.assessmentRepo.findFilesForSubmissions([graded.id])).map(f => ({
-          fileUrl: f.fileUrl,
-          displayName: f.displayName,
-          position: f.position,
-        })).sort((a, b) => a.position - b.position),
-        annotatedFileUrl: graded.annotatedFileUrl,
-        score: graded.score,
-        feedback: graded.feedback,
-        correctedAt: graded.correctedAt,
-        status: graded.correctedAt === null ? 'awaiting' : 'graded',
-        isLate:
-          new Date(graded.lastSubmittedAt).getTime() >
-          new Date(assessment.dueAt).getTime(),
-      };
+      return this.toQueueItem(assessment, graded);
     });
+  }
+
+  /**
+   * `MARK-2`: hand marked work back to the student. Separate from `grade`
+   * because saving a mark and releasing it are two decisions - a marker can
+   * put a task down half-marked without the student seeing it.
+   *
+   * Same authorization shape as `grade`: the course is resolved from the
+   * submission's own assessment, never from a URL parameter, and an
+   * out-of-scope submission 404s under the submission's own wording.
+   */
+  async returnToStudent(
+    submissionId: string,
+    actor: StaffActor,
+  ): Promise<GradingQueueItem> {
+    return this.db.runInTransaction(async () => {
+      const { submission, assessment } = await this.resolveScoped(
+        submissionId,
+        actor,
+      );
+
+      // Releasing nothing is not a meaningful action - a state conflict
+      // (§6: 409), not a 400, because the submission id is fine and the
+      // problem is what state it is in.
+      if (submission.correctedAt === null) {
+        throw new ConflictException('This submission has not been marked yet');
+      }
+
+      const before = { returnedAt: submission.returnedAt };
+
+      const returned = await this.assessmentRepo.returnSubmission(submissionId);
+      if (!returned) {
+        // Deleted between the read and the write.
+        throw new NotFoundException('Submission not found');
+      }
+
+      // §5.4: the point at which a student may see their mark is a staff
+      // mutation with a student-visible consequence, same posture as grading.
+      await this.audit.record({
+        actorId: actor.id,
+        actorRole: actorRoleOf(actor),
+        action: 'submission.returned',
+        targetType: 'assessment_submission',
+        targetId: submissionId,
+        courseId: assessment.courseId,
+        before,
+        after: { returnedAt: returned.returnedAt },
+      });
+
+      return this.toQueueItem(assessment, returned);
+    });
+  }
+
+  /**
+   * Resolves and scope-checks a submission by id, for `grade` and
+   * `returnToStudent` alike - the course comes from the submission's own
+   * assessment, never from a URL parameter (§5.11), and both routes give an
+   * out-of-scope submission the same body as a nonexistent one.
+   */
+  private async resolveScoped(
+    submissionId: string,
+    actor: StaffActor,
+  ): Promise<{ submission: StoredSubmission; assessment: StoredAssessment }> {
+    const submission = await this.assessmentRepo.findSubmissionById(submissionId);
+    // 404 rather than 403 for a submission outside the actor's scope, so a TA
+    // cannot probe for which submission ids exist. Same posture as
+    // `assertAssigned`, and the reason both branches say the same thing.
+    if (!submission) {
+      throw new NotFoundException('Submission not found');
+    }
+    const assessment = await this.assessmentRepo.findById(submission.assessmentId);
+    if (!assessment) {
+      throw new NotFoundException('Submission not found');
+    }
+    // Rethrown under the submission's own wording rather than passed through.
+    // `assertAssigned` says "Course not found or not assigned to you", which on
+    // this route is a different sentence from the "Submission not found" two
+    // lines up - and two different 404 bodies is exactly the existence oracle
+    // the status code was chosen to avoid: a real id on someone else's course
+    // would read differently from a made-up one.
+    try {
+      await this.scope.assertAssigned(assessment.courseId, actor);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw new NotFoundException('Submission not found');
+      }
+      throw error;
+    }
+    return { submission, assessment };
+  }
+
+  /** The shared response shape for `grade` and `returnToStudent`. */
+  private async toQueueItem(
+    assessment: StoredAssessment,
+    submission: StoredSubmission,
+  ): Promise<GradingQueueItem> {
+    const student = await this.userRepo.findById(submission.studentId);
+    return {
+      submissionId: submission.id,
+      assessmentId: assessment.id,
+      assessmentTitle: assessment.title,
+      assessmentType: assessment.type,
+      maxScore: assessment.maxScore,
+      studentId: submission.studentId,
+      studentName: student?.name ?? 'Unknown',
+      studentEmail: student?.email ?? '',
+      submittedAt: submission.submittedAt,
+      lastSubmittedAt: submission.lastSubmittedAt,
+      fileUrl: submission.fileUrl,
+      answerText: submission.answerText,
+      linkUrl: submission.linkUrl,
+      files: (await this.assessmentRepo.findFilesForSubmissions([submission.id])).map(f => ({
+        fileUrl: f.fileUrl,
+        displayName: f.displayName,
+        position: f.position,
+      })).sort((a, b) => a.position - b.position),
+      annotatedFileUrl: submission.annotatedFileUrl,
+      score: submission.score,
+      feedback: submission.feedback,
+      correctedAt: submission.correctedAt,
+      status: submission.correctedAt === null ? 'awaiting' : 'graded',
+      isLate:
+        new Date(submission.lastSubmittedAt).getTime() >
+        new Date(assessment.dueAt).getTime(),
+    };
   }
 }
 

@@ -25,6 +25,7 @@ const OTHER_STUDENT = {
 
 describe('AssessmentsController', () => {
   let controller: AssessmentsController;
+  let assessmentsRepo: InMemoryAssessmentRepository;
 
   beforeEach(async () => {
     // Status is derived from "now" vs. the stored window, so pin the clock.
@@ -60,6 +61,7 @@ describe('AssessmentsController', () => {
       .compile();
 
     controller = module.get<AssessmentsController>(AssessmentsController);
+    assessmentsRepo = module.get(ASSESSMENT_REPOSITORY);
   });
 
   afterEach(() => {
@@ -109,6 +111,71 @@ describe('AssessmentsController', () => {
     expect(corrected).toMatchObject({ score: 35, maxScore: 40, scorePercentage: 88 });
     // Submitted-but-unmarked work must not leak a score.
     expect(items.find((a) => a.id === 'assess-4')?.score).toBeNull();
+  });
+
+  describe('MARK-2: returnedAt gates what the student sees', () => {
+    it('reads a marked-but-unreturned submission exactly as before marking', async () => {
+      // assess-4/sub-2 starts submitted-but-ungraded; mark it without returning.
+      await assessmentsRepo.gradeSubmission('sub-2', {
+        score: 14,
+        feedback: 'Careful with units.',
+        annotatedFileUrl: undefined,
+      });
+
+      const items = await controller.listAssessments('course-1', {}, STUDENT);
+      expect(items.find((a) => a.id === 'assess-4')).toMatchObject({
+        status: 'submitted',
+        score: null,
+      });
+
+      const detail = await controller.getAssessmentDetail('assess-4', STUDENT);
+      expect(detail.status).toBe('submitted');
+      expect(detail.submission).toMatchObject({
+        score: null,
+        correctedAt: null,
+        feedback: null,
+      });
+    });
+
+    it('reveals the mark once the submission is returned', async () => {
+      await assessmentsRepo.gradeSubmission('sub-2', {
+        score: 14,
+        feedback: 'Careful with units.',
+        annotatedFileUrl: undefined,
+      });
+      await assessmentsRepo.returnSubmission('sub-2');
+
+      const items = await controller.listAssessments('course-1', {}, STUDENT);
+      expect(items.find((a) => a.id === 'assess-4')).toMatchObject({
+        status: 'corrected',
+        score: 14,
+      });
+
+      const detail = await controller.getAssessmentDetail('assess-4', STUDENT);
+      expect(detail.status).toBe('corrected');
+      expect(detail.submission).toMatchObject({
+        score: 14,
+        feedback: 'Careful with units.',
+      });
+      expect(detail.submission?.correctedAt).not.toBeNull();
+    });
+
+    it('still blocks resubmission by correctedAt alone, unreturned or not', async () => {
+      await assessmentsRepo.gradeSubmission('sub-2', {
+        score: 14,
+        feedback: null,
+        annotatedFileUrl: undefined,
+      });
+      // Not returned - the student cannot see the mark, but the marker's work
+      // must still be protected from an overwrite mid-review.
+      await expect(
+        controller.submitAssessment(
+          'assess-4',
+          { fileUrl: 'https://storage.example.com/submissions/moles-v2.pdf' },
+          STUDENT,
+        ),
+      ).rejects.toThrow('already been corrected');
+    });
   });
 
   it('should flag an unsubmitted past-due item as overdue', async () => {

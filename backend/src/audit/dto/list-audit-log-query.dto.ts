@@ -27,6 +27,7 @@ const AUDIT_ACTION_VALUES: Record<AuditAction, true> = {
   'course_staff.assigned': true,
   'course_staff.unassigned': true,
   'submission.graded': true,
+  'submission.returned': true,
   'recording.created': true,
   'recording.updated': true,
   'recording.deleted': true,
