@@ -586,6 +586,77 @@ export interface GradingQueueItem {
   isLate: boolean;
 }
 
+/* --- marking (manage/marking.service.ts, unit 7) ------------------------- */
+
+/** One uploaded file of a submission (`D-39`). */
+export interface SubmissionFile {
+  url: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
+/** Where one student stands on one task. Server-derived. */
+export type SubmissionStatus = 'not_submitted' | 'submitted' | 'marked' | 'returned';
+
+/**
+ * A file of a submission as the marking view renders it. Server-derived: the
+ * client never decides what may be drawn on (`D-41`). `link` is a pasted URL,
+ * shown as "Open original" and graded without mark-up.
+ */
+export interface SubmissionDocument {
+  url: string;
+  kind: 'image' | 'pdf' | 'file' | 'link';
+  annotatable: boolean;
+}
+
+export interface TaskSubmissionRow {
+  studentId: string;
+  studentName: string;
+  groupId: string;
+  groupName: string;
+  submissionId: string | null;
+  status: SubmissionStatus;
+  dueAt: string;
+  isLate: boolean;
+  isOverdue: boolean;
+  fileUrl: string | null;
+  files: SubmissionFile[];
+  documents: SubmissionDocument[];
+  answerText: string | null;
+  lastSubmittedAt: string | null;
+  score: number | null;
+  feedback: string | null;
+  correctedAt: string | null;
+  returnedAt: string | null;
+  annotationCount: number;
+  staleAnnotationCount: number;
+}
+
+/** One group's figures. Never summed across groups. */
+export interface TaskSubmissionGroup {
+  groupId: string;
+  groupName: string;
+  memberCount: number;
+  notSubmitted: number;
+  submitted: number;
+  marked: number;
+  returned: number;
+}
+
+export interface TaskSubmissions {
+  assessmentId: string;
+  courseId: string;
+  title: string;
+  maxScore: number;
+  dueAt: string;
+  workType: WorkType;
+  submissionModes: SubmissionMode[];
+  markerId: string | null;
+  markerName: string | null;
+  groups: TaskSubmissionGroup[];
+  rows: TaskSubmissionRow[];
+}
+
 /** Cohort-wide averages per task (CLAUDE.md 5.6) - was it hard or easy? */
 export interface AssessmentAverage {
   assessmentId: string;

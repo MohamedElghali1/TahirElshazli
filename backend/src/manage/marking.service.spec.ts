@@ -1,6 +1,12 @@
 import { Test } from '@nestjs/testing';
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import { MarkingService, RETURN_NEEDS_MARK } from './marking.service.js';
+import {
+  MarkingService,
+  QUEUE_NOT_HANDED_IN_HERE,
+  RETURN_NEEDS_MARK,
+  documentsOf,
+} from './marking.service.js';
+import { ASSESSMENT_NOT_FOUND } from './assessment-authoring.service.js';
 import { SubmissionAccessService, SUBMISSION_NOT_FOUND } from './submission-access.service.js';
 import { StaffScopeService } from '../staff/staff-scope.service.js';
 import { ASSISTANT_SCOPE_REPOSITORY } from '../staff/interfaces/assistant-scope-repository.interface.js';
@@ -68,6 +74,7 @@ describe('MarkingService', () => {
   let marking: MarkingService;
   let assessments: InMemoryAssessmentRepository;
   let groups: InMemoryGroupRepository;
+  let annotations: InMemorySubmissionAnnotationRepository;
   let audit: AuditService;
   /** course-1; student-2 moved out of group-1 into it. */
   let group3: string;
@@ -95,6 +102,7 @@ describe('MarkingService', () => {
     marking = module.get(MarkingService);
     assessments = module.get(ASSESSMENT_REPOSITORY);
     groups = module.get(GROUP_REPOSITORY);
+    annotations = module.get(SUBMISSION_ANNOTATION_REPOSITORY);
     audit = module.get(AuditService);
 
     group3 = (
@@ -198,6 +206,133 @@ describe('MarkingService', () => {
       await assessments.gradeSubmission(sub.id, { score: 5, feedback: null, annotatedFileUrl: undefined });
       expect(await notFound(marking.returnSubmission(sub.id, A1))).toBe(SUBMISSION_NOT_FOUND);
       expect((await marking.returnSubmission(sub.id, TEACHER)).returnedAt).not.toBeNull();
+    });
+  });
+  describe('the per-task queue (MARK-3)', () => {
+    it('lists every targeted student, submitted or not, with the four statuses', async () => {
+      const task = await assessments.create({ ...TASK, title: 'Queue' });
+      await assessments.setTargets(task.id, [{ groupId: 'group-1' }, { groupId: group3 }]);
+      const s1 = await assessments.createSubmission(task.id, 'student-1', null, 'work');
+      const view = await marking.queue(task.id, TEACHER);
+      expect(view.rows.map((r) => [r.studentId, r.status])).toEqual(
+        expect.arrayContaining([['student-1', 'submitted'], ['student-2', 'not_submitted']]),
+      );
+      expect(view.rows.find((r) => r.studentId === 'student-2')!.submissionId).toBeNull();
+
+      await assessments.gradeSubmission(s1.id, { score: 3, feedback: null, annotatedFileUrl: undefined });
+      expect((await marking.queue(task.id, TEACHER)).rows.find((r) => r.studentId === 'student-1')!.status).toBe('marked');
+      await assessments.returnSubmission(s1.id);
+      const returned = (await marking.queue(task.id, TEACHER)).rows.find((r) => r.studentId === 'student-1')!;
+      expect(returned.status).toBe('returned');
+      expect(returned.score).toBe(3);
+    });
+
+    it('derives lateness and overdue from each student’s own group deadline', async () => {
+      const task = await assessments.create({ ...TASK, title: 'Deadlines', dueAt: '2098-01-01T00:00:00.000Z' });
+      // group-3 had a deadline in the past; group-1 inherits the far-future one.
+      await assessments.setTargets(task.id, [
+        { groupId: 'group-1' },
+        { groupId: group3, dueAt: '2026-01-02T00:00:00.000Z' },
+      ]);
+      await assessments.createSubmission(task.id, 'student-1', null, 'on time');
+      const rows = (await marking.queue(task.id, TEACHER)).rows;
+      const s1 = rows.find((r) => r.studentId === 'student-1')!;
+      const s2 = rows.find((r) => r.studentId === 'student-2')!;
+      expect(s1).toMatchObject({ isLate: false, isOverdue: false, dueAt: '2098-01-01T00:00:00.000Z' });
+      expect(s2).toMatchObject({ isLate: false, isOverdue: true, dueAt: '2026-01-02T00:00:00.000Z' });
+    });
+
+    it('shows a student in two reachable groups once, under the earliest placement', async () => {
+      await groups.addMember({ groupId: group3, studentId: 'student-1', assignedBy: 'teacher-1' });
+      const task = await assessments.create({ ...TASK, title: 'Twice placed' });
+      await assessments.setTargets(task.id, [{ groupId: 'group-1' }, { groupId: group3 }]);
+      const view = await marking.queue(task.id, TEACHER);
+      const mine = view.rows.filter((r) => r.studentId === 'student-1');
+      expect(mine).toHaveLength(1);
+      expect(mine[0]!.groupId).toBe('group-1');
+      // Counted in BOTH groups' figures: each is a fact about that group.
+      const g3 = view.groups.find((g) => g.groupId === group3)!;
+      expect(g3).toMatchObject({ memberCount: 2, notSubmitted: 2 });
+    });
+
+    it('narrows a scoped assistant to their groups: no unheld member, id or name', async () => {
+      const task = await assessments.create({ ...TASK, title: 'Narrowed' });
+      await assessments.setTargets(task.id, [{ groupId: 'group-1' }, { groupId: group3 }]);
+      await assessments.createSubmission(task.id, 'student-2', null, 'theirs');
+      const view = await marking.queue(task.id, A1);
+      expect(view.rows.map((r) => r.studentId)).toEqual(['student-1']);
+      expect(view.groups.map((g) => g.groupId)).toEqual(['group-1']);
+      const wire = JSON.stringify(view);
+      expect(wire).not.toContain(group3);
+      expect(wire).not.toContain('Group three');
+      expect(wire).not.toContain('student-2');
+      expect(wire).not.toContain('Sara Ahmed');
+    });
+
+    it('counts per group, and never across groups', async () => {
+      const task = await assessments.create({ ...TASK, title: 'Counts' });
+      await assessments.setTargets(task.id, [{ groupId: 'group-1' }, { groupId: group3 }]);
+      await assessments.createSubmission(task.id, 'student-2', null, 'x');
+      const view = await marking.queue(task.id, TEACHER);
+      expect(view.groups).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ groupId: 'group-1', memberCount: 1, notSubmitted: 1, submitted: 0 }),
+          expect.objectContaining({ groupId: group3, memberCount: 1, notSubmitted: 0, submitted: 1 }),
+        ]),
+      );
+      expect(Object.keys(view)).not.toContain('total');
+    });
+
+    it('answers 409 for work not handed in here', async () => {
+      const task = await assessments.create({ ...TASK, title: 'Form', workType: 'google_form' });
+      await assessments.setTargets(task.id, [{ groupId: 'group-1' }]);
+      await expect(marking.queue(task.id, TEACHER)).rejects.toThrow(QUEUE_NOT_HANDED_IN_HERE);
+      await expect(marking.queue(task.id, TEACHER)).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('404s an unreachable task with the same body as a missing one, before the 409', async () => {
+      const task = await assessments.create({ ...TASK, title: 'Group three form', workType: 'link' });
+      await assessments.setTargets(task.id, [{ groupId: group3 }]);
+      const missing = await notFound(marking.queue('nope', A1));
+      expect(missing).toBe(ASSESSMENT_NOT_FOUND);
+      expect((await notFound(marking.queue(task.id, A1))) === missing).toBe(true);
+      expect((await notFound(marking.queue(task.id, A2))) === missing).toBe(true);
+    });
+
+    it('counts current and stale annotations, and derives documents server-side', async () => {
+      const task = await assessments.create({ ...TASK, title: 'Stale' });
+      await assessments.setTargets(task.id, [{ groupId: 'group-1' }]);
+      const sub = await assessments.createSubmission(task.id, 'student-1', null, null, [
+        { url: '/uploads/old.png', mimeType: 'image/png', sizeBytes: 1 },
+      ]);
+      await annotations.create({ submissionId: sub.id, fileUrl: '/uploads/old.png', page: 1, kind: 'tick', xPercent: 1, yPercent: 1, text: '', path: null, createdBy: 'teacher-1' });
+      await assessments.updateSubmission(sub.id, 'student-1', null, undefined, [
+        { url: '/uploads/new.pdf', mimeType: 'application/pdf', sizeBytes: 2 },
+      ]);
+      await annotations.create({ submissionId: sub.id, fileUrl: '/uploads/new.pdf', page: 2, kind: 'cross', xPercent: 1, yPercent: 1, text: '', path: null, createdBy: 'teacher-1' });
+      const row = (await marking.queue(task.id, TEACHER)).rows.find((r) => r.studentId === 'student-1')!;
+      expect(row).toMatchObject({ annotationCount: 1, staleAnnotationCount: 1 });
+      expect(row.documents).toEqual([{ url: '/uploads/new.pdf', kind: 'pdf', annotatable: true }]);
+    });
+  });
+
+  describe('documentsOf', () => {
+    it('marks a pasted link unannotatable and a stored image or PDF annotatable', () => {
+      expect(documentsOf({ fileUrl: 'https://docs.google.com/x', files: [] })).toEqual([
+        { url: 'https://docs.google.com/x', kind: 'link', annotatable: false },
+      ]);
+      expect(
+        documentsOf({
+          fileUrl: null,
+          files: [
+            { url: '/uploads/a.jpg', mimeType: 'image/jpeg', sizeBytes: 1 },
+            { url: '/uploads/b.txt', mimeType: 'text/plain', sizeBytes: 1 },
+          ],
+        }),
+      ).toEqual([
+        { url: '/uploads/a.jpg', kind: 'image', annotatable: true },
+        { url: '/uploads/b.txt', kind: 'file', annotatable: false },
+      ]);
     });
   });
 });

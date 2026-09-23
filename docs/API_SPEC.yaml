@@ -175,6 +175,9 @@ components:
     AssessmentType:   { type: string, enum: [homework, assignment, quiz] }
     ReportStatus:     { type: string, enum: [new, under_review, reviewed, sent] }
     AnnotationKind:   { type: string, enum: [comment, tick, cross] }
+    # Where one student stands on one task (unit 7), derived on every read:
+    # no submission / submitted, no mark / mark saved / mark returned.
+    SubmissionStatus: { type: string, enum: [not_submitted, submitted, marked, returned] }
 
     # --- People ------------------------------------------------------------
     # The TARGET shape, filled in by `PEOPLE-1` (unit 5). What the server emits
@@ -677,6 +680,87 @@ components:
         yPercent: { type: number, minimum: 0, maximum: 100 }
         kind:     { $ref: '#/components/schemas/AnnotationKind' }
         text:     { type: string, maxLength: 2000 }
+
+    # One uploaded file of a submission (`D-39`). `url` is server-minted by
+    # `POST /assessments/{id}/files`; `mimeType` is re-derived from it.
+    SubmissionFile:
+      type: object
+      required: [url, mimeType, sizeBytes]
+      properties:
+        url:       { type: string, maxLength: 2048 }
+        mimeType:  { type: string }
+        sizeBytes: { type: integer, minimum: 0 }
+
+    # A file of a submission as the marking view renders it - server-derived.
+    # `image`/`pdf` are platform-stored and annotatable; `file` is platform-
+    # stored but not renderable; `link` is a pasted URL, graded without mark-up
+    # (`D-41`).
+    SubmissionDocument:
+      type: object
+      required: [url, kind, annotatable]
+      properties:
+        url:         { type: string }
+        kind:        { type: string, enum: [image, pdf, file, link] }
+        annotatable: { type: boolean }
+
+    TaskSubmissionRow:
+      type: object
+      required: [studentId, studentName, groupId, groupName, submissionId, status, dueAt,
+                 isLate, isOverdue, fileUrl, files, documents, answerText, lastSubmittedAt,
+                 score, feedback, correctedAt, returnedAt, annotationCount, staleAnnotationCount]
+      properties:
+        studentId:       { $ref: '#/components/schemas/Id' }
+        studentName:     { type: string, description: Name only - no email. }
+        groupId:         { $ref: '#/components/schemas/Id', description: 'The earliest placement among the caller''s reachable targeted groups (A-7).' }
+        groupName:       { type: string }
+        submissionId:    { type: [string, 'null'] }
+        status:          { $ref: '#/components/schemas/SubmissionStatus' }
+        dueAt:           { type: string, format: date-time, description: 'This student''s own deadline (their resolving group''s override, or the task''s).' }
+        isLate:          { type: boolean }
+        isOverdue:       { type: boolean, description: No submission and past this student's deadline. }
+        fileUrl:         { type: [string, 'null'] }
+        files:           { type: array, items: { $ref: '#/components/schemas/SubmissionFile' } }
+        documents:       { type: array, items: { $ref: '#/components/schemas/SubmissionDocument' } }
+        answerText:      { type: [string, 'null'] }
+        lastSubmittedAt: { type: [string, 'null'], format: date-time }
+        score:           { type: [integer, 'null'] }
+        feedback:        { type: [string, 'null'] }
+        correctedAt:     { type: [string, 'null'], format: date-time }
+        returnedAt:      { type: [string, 'null'], format: date-time }
+        annotationCount:      { type: integer, description: Marks on the files the submission carries now. }
+        staleAnnotationCount: { type: integer, description: 'Marks on files a resubmission replaced (`D-42` (c)); kept.' }
+
+    # Per reachable targeted group. Counted over that group's own members, so
+    # a figure is the same for every viewer who can see the group. There is
+    # deliberately no cross-group total.
+    TaskSubmissionGroup:
+      type: object
+      required: [groupId, groupName, memberCount, notSubmitted, submitted, marked, returned]
+      properties:
+        groupId:      { $ref: '#/components/schemas/Id' }
+        groupName:    { type: string }
+        memberCount:  { type: integer }
+        notSubmitted: { type: integer }
+        submitted:    { type: integer }
+        marked:       { type: integer }
+        returned:     { type: integer }
+
+    TaskSubmissions:
+      type: object
+      required: [assessmentId, courseId, title, maxScore, dueAt, workType, submissionModes,
+                 markerId, markerName, groups, rows]
+      properties:
+        assessmentId:    { $ref: '#/components/schemas/Id' }
+        courseId:        { $ref: '#/components/schemas/Id' }
+        title:           { type: string }
+        maxScore:        { type: integer }
+        dueAt:           { type: string, format: date-time }
+        workType:        { $ref: '#/components/schemas/WorkType' }
+        submissionModes: { type: array, items: { $ref: '#/components/schemas/SubmissionMode' } }
+        markerId:        { type: [string, 'null'], description: '`D-43`: advisory; set by the first saved mark when unclaimed.' }
+        markerName:      { type: [string, 'null'] }
+        groups:          { type: array, items: { $ref: '#/components/schemas/TaskSubmissionGroup' } }
+        rows:            { type: array, items: { $ref: '#/components/schemas/TaskSubmissionRow' } }
 
     # One grading row: the course queue's item, and what `/grade` and `/return`
     # answer (unit 7). `status` is `awaiting | graded` - a saved mark is graded;
@@ -1715,15 +1799,25 @@ paths:
       tags: [marking]
       summary: Submissions for one task, including students who have not submitted
       description: >
-        The "Not submitted" row is the absence of a submission computed against
-        the targeted groups' membership — it is not a stored state. This answers
-        the long-open question of how a missed task is represented.
+        `MARK-3` (unit 7). The "Not submitted" row is the absence of a submission
+        computed against the targeted groups' membership — it is not a stored
+        state. Group grain: only the caller's reachable targeted groups appear,
+        restricted in the reads; a task the caller reaches through no target is a
+        404 byte-identical to a missing id (`Assessment not found`). A student in
+        two reachable targeted groups is one row. 409 for `link`/`google_form`
+        work (assumption A-6): nothing is handed in here. Also the marking view's
+        read (A-14) - there is no one-submission GET.
       x-roles: [assistant, teacher, admin]
       parameters:
         - { name: assessmentId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
       responses:
-        '200': { description: OK }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskSubmissions' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   /staff/submissions/{submissionId}/annotations:
     parameters:

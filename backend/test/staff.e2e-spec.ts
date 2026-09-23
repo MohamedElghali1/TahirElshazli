@@ -2875,4 +2875,59 @@ describe('Staff and admin API (e2e)', () => {
       expect(res.body.returnedAt).not.toBeNull();
     });
   });
+
+  describe('unit 7: the per-task queue (MARK-3)', () => {
+    const server = () => app.getHttpServer();
+    let shared = '';
+    beforeAll(async () => {
+      await unit7Setup('queue');
+      shared = (
+        await request(server()).post('/staff/courses/course-1/assessments').set(bearer(adminToken))
+          .send({ ...unit7Task, title: 'E2E unit 7 shared task', targets: [{ groupId: 'group-1' }, { groupId: unit7.group3 }] }).expect(201)
+      ).body.id;
+    });
+
+    it.each([
+      ['the teacher', () => adminToken],
+      ['the full admin', () => fullAdminToken],
+    ])('shows %s every targeted student, non-submitters included', async (_l, token) => {
+      const res = await request(server()).get(`/staff/assessments/${shared}/submissions`).set(bearer(token())).expect(200);
+      const ids = res.body.rows.map((r: { studentId: string }) => r.studentId).sort();
+      expect(ids).toEqual(['student-1', 'student-2']);
+      expect(res.body.rows.every((r: { status: string }) => r.status === 'not_submitted')).toBe(true);
+      expect(res.body.groups.map((g: { groupId: string }) => g.groupId).sort()).toEqual(['group-1', unit7.group3].sort());
+      // Name, never email.
+      expect(JSON.stringify(res.body)).not.toContain('@example.com');
+    });
+
+    it('narrows assistant-1 to group-1: no group-3 id or name anywhere', async () => {
+      const res = await request(server()).get(`/staff/assessments/${shared}/submissions`).set(bearer(assignedTaToken)).expect(200);
+      expect(res.body.groups.map((g: { groupId: string }) => g.groupId)).toEqual(['group-1']);
+      expect(res.body.rows.every((r: { groupId: string }) => r.groupId === 'group-1')).toBe(true);
+      expect(JSON.stringify(res.body)).not.toContain(unit7.group3);
+    });
+
+    it('404s a group-3-only task for assistant-1 and any task for assistant-2, equal to a missing id', async () => {
+      const gone = await request(server()).get('/staff/assessments/nope/submissions').set(bearer(assignedTaToken)).expect(404);
+      const unheld = await request(server()).get(`/staff/assessments/${unit7.g3Task}/submissions`).set(bearer(assignedTaToken)).expect(404);
+      const nothing = await request(server()).get(`/staff/assessments/${shared}/submissions`).set(bearer(unassignedTaToken)).expect(404);
+      expect(gone.body.message).toBe('Assessment not found');
+      expect(JSON.stringify(unheld.body) === JSON.stringify(gone.body)).toBe(true);
+      expect(JSON.stringify(nothing.body) === JSON.stringify(gone.body)).toBe(true);
+    });
+
+    it('refuses a student token, and requires a token', async () => {
+      await request(server()).get(`/staff/assessments/${shared}/submissions`).set(bearer(studentToken)).expect(403);
+      await request(server()).get(`/staff/assessments/${shared}/submissions`).expect(401);
+    });
+
+    it('answers 409 for a link task', async () => {
+      const link = (
+        await request(server()).post('/staff/courses/course-1/assessments').set(bearer(adminToken))
+          .send({ ...unit7Task, title: 'E2E unit 7 link', workType: 'link', externalUrl: 'https://example.com/work', targets: [{ groupId: 'group-1' }] }).expect(201)
+      ).body.id;
+      const res = await request(server()).get(`/staff/assessments/${link}/submissions`).set(bearer(adminToken)).expect(409);
+      expect(res.body.message).toMatch(/not handed in here/);
+    });
+  });
 });

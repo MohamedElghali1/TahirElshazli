@@ -58,6 +58,7 @@ import type {
   StaffTask,
   StaffTaskStatus,
   SubmissionMode,
+  TaskSubmissions,
   TaskDraft,
   TaskVisibility,
   TaskDraftUpdate,
@@ -600,6 +601,21 @@ export const api = {
         token,
         body,
       }),
+
+    /**
+     * Hand marked work back (`MARK-2`). Saving a mark and returning it are two
+     * calls on purpose: if this one fails the paper is saved-not-returned, and
+     * the screen must say so.
+     */
+    returnSubmission: (token: string, submissionId: string) =>
+      request<GradingQueueItem>(`/staff/submissions/${submissionId}/return`, {
+        method: 'POST',
+        token,
+      }),
+
+    /** Every targeted student on one task, submitted or not (`MARK-3`). */
+    taskSubmissions: (token: string, assessmentId: string) =>
+      request<TaskSubmissions>(`/staff/assessments/${assessmentId}/submissions`, { token }),
 
     recordings: (token: string, courseId: string) =>
       request<StaffRecording[]>(`/staff/courses/${courseId}/recordings`, { token }),
