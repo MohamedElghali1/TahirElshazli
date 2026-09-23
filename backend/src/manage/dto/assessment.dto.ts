@@ -3,6 +3,7 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsISO8601,
   IsInt,
@@ -16,6 +17,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { IsOptionalNotNull } from '../../common/validators/is-optional-not-null.js';
+import { AttachmentDto, MAX_ATTACHMENTS } from './attachment.dto.js';
 
 /** The id alphabet this schema uses, matching `AssignStaffDto.userId`. */
 const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
@@ -172,6 +174,33 @@ export class CreateAssessmentDto {
   @ValidateNested({ each: true })
   @Type(() => AssessmentTargetDto)
   targets!: AssessmentTargetDto[];
+
+  /**
+   * The draft this task was started from (`TASK-3`). Provenance only - the
+   * body above is authoritative and nothing is merged from the draft. A draft
+   * that is missing, on another course or unreachable is one identical 404.
+   */
+  @IsOptionalNotNull()
+  @IsString()
+  @MaxLength(64)
+  @Matches(ID_PATTERN)
+  draftId?: string;
+
+  /** A passage, an audio file, a mark scheme (`TASK-4`). At most ten. */
+  @IsOptionalNotNull()
+  @IsArray()
+  @ArrayMaxSize(MAX_ATTACHMENTS)
+  @ValidateNested({ each: true })
+  @Type(() => AttachmentDto)
+  attachments?: AttachmentDto[];
+
+  /**
+   * `false` makes the task one-shot: a second submission is a 409. Omitted is
+   * `true`, today's rule - resubmission until the window ends (`D-31`).
+   */
+  @IsOptionalNotNull()
+  @IsBoolean()
+  allowResubmission?: boolean;
 }
 
 /** Every field optional; `undefined` leaves it alone. */
@@ -262,8 +291,21 @@ export class UpdateAssessmentDto {
   @MaxLength(512)
   googleForm?: string;
 
+  /** Replaces the whole list, like `allowedFileTypes`. `[]` clears it. */
+  @IsOptionalNotNull()
+  @IsArray()
+  @ArrayMaxSize(MAX_ATTACHMENTS)
+  @ValidateNested({ each: true })
+  @Type(() => AttachmentDto)
+  attachments?: AttachmentDto[];
+
+  @IsOptionalNotNull()
+  @IsBoolean()
+  allowResubmission?: boolean;
+
   /**
-   * `type` and `courseId` are deliberately absent.
+   * `type`, `courseId` and `draftId` are deliberately absent. `draftId` is
+   * provenance, set once at creation.
    *
    * Changing the course would move the task out from under the scoping check
    * that let the caller edit it and strand its targets and submissions - the

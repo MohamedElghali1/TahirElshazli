@@ -1,6 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { AssessmentAuthoringService } from './assessment-authoring.service.js';
+import { TASK_DRAFT_REPOSITORY } from './interfaces/task-draft-repository.interface.js';
+import { InMemoryTaskDraftRepository } from './repositories/in-memory-task-draft.repository.js';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { AssessmentAuthoringService, ASSESSMENT_NOT_FOUND } from './assessment-authoring.service.js';
+import { TASK_DRAFT_NOT_FOUND } from './task-drafts.service.js';
+import type { TaskDraftRepository } from './interfaces/task-draft-repository.interface.js';
 import { AssessmentsController } from '../assessments/assessments.controller.js';
 import { AssessmentsService } from '../assessments/assessments.service.js';
 import { ASSESSMENT_REPOSITORY } from '../assessments/interfaces/assessment-repository.interface.js';
@@ -56,6 +60,7 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
   let student: AssessmentsController;
   let audit: AuditService;
   let groups: InMemoryGroupRepository;
+  let drafts: TaskDraftRepository;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -81,6 +86,8 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
         // Google stack in would make these tests depend on an OAuth client they
         // have no business knowing about.
         { provide: EXTERNAL_WORK_BINDER, useValue: { bindExternal: async () => {} } },
+        // The draft library (`TASK-3`): authoring from a draft bumps its count.
+        { provide: TASK_DRAFT_REPOSITORY, useClass: InMemoryTaskDraftRepository },
         { provide: ENROLLMENT_REPOSITORY, useClass: InMemoryEnrollmentRepository },
         { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },
         {
@@ -100,6 +107,7 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
     student = module.get(AssessmentsController);
     audit = module.get(AuditService);
     groups = module.get(GROUP_REPOSITORY);
+    drafts = module.get(TASK_DRAFT_REPOSITORY);
   });
 
   const entries = async () => (await audit.find({ limit: 50 })).entries;
@@ -292,6 +300,166 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
       await expect(
         authoring.remove('assess-3', ADMIN),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  /** Rejects with a 404 and returns its message, for `===` comparisons. */
+  const notFoundMessage = async (promise: Promise<unknown>): Promise<string> => {
+    try {
+      await promise;
+    } catch (error) {
+      expect(error).toBeInstanceOf(NotFoundException);
+      return (error as NotFoundException).message;
+    }
+    throw new Error('expected a 404');
+  };
+
+  const newDraft = (courseId = 'course-1') =>
+    drafts.create({
+      courseId,
+      type: 'homework',
+      workType: 'file_upload',
+      title: 'Draft passage',
+      description: '',
+      instructions: 'From the library.',
+      attachments: [{ url: '/uploads/passage.pdf', name: 'Passage', mimeType: null, sizeBytes: null }],
+      createdBy: 'teacher-1',
+    });
+
+  describe('authoring from a draft (TASK-3)', () => {
+    it('create from a draft increments usedCount by one and records draftId on assessment.created', async () => {
+      const draft = await newDraft();
+      const created = await authoring.create('course-1', TA, { ...TASK, draftId: draft.id });
+      expect(created.draftId).toBe(draft.id);
+      expect((await drafts.findById(draft.id))?.usedCount).toBe(1);
+
+      const entry = (await entries()).find((e) => e.action === 'assessment.created');
+      expect(entry?.after).toMatchObject({ draftId: draft.id, attachmentCount: 0, allowResubmission: true });
+    });
+
+    it('create with a draft from another course throws TASK_DRAFT_NOT_FOUND === missing draft', async () => {
+      const elsewhere = await newDraft('course-2');
+      const denied = await notFoundMessage(
+        authoring.create('course-1', ADMIN, { ...TASK, draftId: elsewhere.id }),
+      );
+      const gone = await notFoundMessage(
+        authoring.create('course-1', ADMIN, { ...TASK, draftId: 'draft-nope' }),
+      );
+      expect(denied).toBe(TASK_DRAFT_NOT_FOUND);
+      expect(denied === gone).toBe(true);
+      // The foreign draft's count is untouched.
+      expect((await drafts.findById(elsewhere.id))?.usedCount).toBe(0);
+    });
+
+    it('the request body is authoritative: nothing is merged from the draft (A-2)', async () => {
+      const draft = await newDraft();
+      const created = await authoring.create('course-1', ADMIN, { ...TASK, draftId: draft.id });
+      expect(created.title).toBe(TASK.title);
+      expect(created.instructions).toBe(TASK.instructions);
+      expect(created.attachments).toEqual([]);
+    });
+
+    it('editing a draft after authoring does not change the task (copy, not link)', async () => {
+      const draft = await newDraft();
+      const created = await authoring.create('course-1', ADMIN, {
+        ...TASK,
+        draftId: draft.id,
+        title: draft.title,
+        attachments: draft.attachments,
+      });
+      await drafts.update(draft.id, { title: 'Draft, rewritten', attachments: [] });
+      await drafts.remove(draft.id);
+      const list = await authoring.list('course-1', ADMIN);
+      const task = list.find((a) => a.id === created.id);
+      expect(task?.title).toBe('Draft passage');
+      expect(task?.attachments).toHaveLength(1);
+    });
+  });
+
+  describe('attachments and allowResubmission (TASK-4, TASK-5)', () => {
+    it('attachments and allowResubmission round-trip; assessment.updated before/after carry them and do not alias', async () => {
+      const attachments = [
+        { url: '/uploads/scheme.pdf', name: 'Mark scheme', mimeType: 'application/pdf', sizeBytes: 5 },
+      ];
+      const created = await authoring.create('course-1', ADMIN, {
+        ...TASK,
+        attachments,
+        allowResubmission: false,
+      });
+      expect(created.attachments).toEqual(attachments);
+      expect(created.allowResubmission).toBe(false);
+
+      const updated = await authoring.update(created.id, ADMIN, {
+        attachments: [],
+        allowResubmission: true,
+      });
+      expect(updated.attachments).toEqual([]);
+      expect(updated.allowResubmission).toBe(true);
+
+      const entry = (await entries()).find((e) => e.action === 'assessment.updated');
+      expect(entry?.before).toMatchObject({ attachmentCount: 1, allowResubmission: false });
+      expect(entry?.after).toMatchObject({ attachmentCount: 0, allowResubmission: true });
+      expect(entry?.before).not.toEqual(entry?.after);
+    });
+
+    it('allowResubmission false: a second submission is 409 and canSubmit is false after the first', async () => {
+      const created = await authoring.create('course-1', ADMIN, {
+        ...TASK,
+        availableFrom: '2026-01-01T00:00:00Z',
+        availableTo: '2099-01-01T00:00:00Z',
+        dueAt: '2098-01-01T00:00:00Z',
+        allowResubmission: false,
+      });
+      const open = await student.getAssessmentDetail(created.id, STUDENT_1);
+      expect(open.canSubmit).toBe(true);
+
+      await student.submitAssessment(created.id, { answerText: 'first' }, STUDENT_1);
+      await expect(
+        student.submitAssessment(created.id, { answerText: 'second' }, STUDENT_1),
+      ).rejects.toBeInstanceOf(ConflictException);
+      const closed = await student.getAssessmentDetail(created.id, STUDENT_1);
+      expect(closed.canSubmit).toBe(false);
+      expect(closed.submission?.answerText).toBe('first');
+    });
+
+    it('allowResubmission true: resubmission unchanged until window end', async () => {
+      const created = await authoring.create('course-1', ADMIN, {
+        ...TASK,
+        availableFrom: '2026-01-01T00:00:00Z',
+        availableTo: '2099-01-01T00:00:00Z',
+        // Past due, window still open: the cut-off is the window end (D-31).
+        dueAt: '2026-01-02T00:00:00Z',
+      });
+      await student.submitAssessment(created.id, { answerText: 'first' }, STUDENT_1);
+      await student.submitAssessment(created.id, { answerText: 'second' }, STUDENT_1);
+      const detail = await student.getAssessmentDetail(created.id, STUDENT_1);
+      expect(detail.submission?.answerText).toBe('second');
+      expect(detail.canSubmit).toBe(true);
+    });
+  });
+
+  describe('the existence oracle on /staff/assessments/:id (finding 2)', () => {
+    it('loadInScope: an out-of-scope assessment 404 body === a missing id, on update, delete and re-target', async () => {
+      // A real task on course-2, which assistant-1 cannot reach.
+      const elsewhere = await authoring.create('course-2', ADMIN, {
+        ...TASK,
+        targets: [{ groupId: 'group-2' }],
+      });
+
+      const cases: Array<[Promise<unknown>, Promise<unknown>]> = [
+        [authoring.update(elsewhere.id, TA, { title: 'x' }), authoring.update('nope', TA, { title: 'x' })],
+        [authoring.remove(elsewhere.id, TA), authoring.remove('nope', TA)],
+        [
+          authoring.setTargets(elsewhere.id, TA, [{ groupId: 'group-1' }]),
+          authoring.setTargets('nope', TA, [{ groupId: 'group-1' }]),
+        ],
+      ];
+      for (const [outOfScope, missing] of cases) {
+        const denied = await notFoundMessage(outOfScope);
+        const gone = await notFoundMessage(missing);
+        expect(denied).toBe(ASSESSMENT_NOT_FOUND);
+        expect(denied === gone).toBe(true);
+      }
     });
   });
 });

@@ -54,9 +54,11 @@ import type {
   BlogPostStatus,
   PublicBlogPost,
   StaffBlogPost,
+  AttachmentInput,
   TaskDraft,
   TaskDraftUpdate,
   TaskDraftWrite,
+  WorkType,
   UploadConfig,
   UploadResult,
 } from './types';
@@ -666,8 +668,18 @@ export const api = {
         maxScore: number;
         allowedFileTypes: string[];
         maxFileSizeBytes: number;
+        workType?: WorkType;
+        /** Required when `workType` is `link`. */
+        externalUrl?: string;
+        /** A Google Form editing link, required when `workType` is `google_form`. */
+        googleForm?: string;
         /** Required and non-empty: a task set for nobody is invisible. */
         targets: AssessmentTargetInput[];
+        /** Provenance only; bumps the draft's `usedCount`. The body is authoritative. */
+        draftId?: string;
+        attachments?: AttachmentInput[];
+        /** Omitted is `true`: resubmission until the window ends. */
+        allowResubmission?: boolean;
       },
     ) =>
       request<AuthoredAssessment>(`/staff/courses/${courseId}/assessments`, {
@@ -690,6 +702,12 @@ export const api = {
         maxScore?: number;
         allowedFileTypes?: string[];
         maxFileSizeBytes?: number;
+        workType?: WorkType;
+        externalUrl?: string;
+        googleForm?: string;
+        /** Replaces the whole list; `[]` clears it. */
+        attachments?: AttachmentInput[];
+        allowResubmission?: boolean;
       },
     ) =>
       request<AuthoredAssessment>(`/staff/assessments/${assessmentId}`, {

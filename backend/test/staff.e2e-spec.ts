@@ -1840,4 +1840,174 @@ describe('Staff and admin API (e2e)', () => {
         .expect(200);
     });
   });
+
+  describe('authoring from a draft, attachments and allowResubmission (TASK-3..5)', () => {
+    const server = () => app.getHttpServer();
+    const task = {
+      title: 'E2E 6c task',
+      type: 'homework',
+      availableFrom: '2026-01-01T00:00:00.000Z',
+      availableTo: '2099-01-01T00:00:00.000Z',
+      dueAt: '2098-01-01T00:00:00.000Z',
+      maxScore: 10,
+      allowedFileTypes: ['application/pdf'],
+      maxFileSizeBytes: 1048576,
+      targets: [{ groupId: 'group-1' }],
+    };
+    const created: string[] = [];
+    afterAll(async () => {
+      for (const id of created) {
+        await request(server()).delete(`/staff/assessments/${id}`).set(bearer(adminToken));
+      }
+    });
+
+    it('authors from a draft: 201, and the draft usedCount is +1 on a follow-up GET', async () => {
+      const draft = await request(server())
+        .post('/staff/task-drafts')
+        .set(bearer(assignedTaToken))
+        .send({ courseId: 'course-1', type: 'homework', title: 'E2E library item' })
+        .expect(201);
+      const res = await request(server())
+        .post('/staff/courses/course-1/assessments')
+        .set(bearer(assignedTaToken))
+        .send({ ...task, draftId: draft.body.id })
+        .expect(201);
+      created.push(res.body.id);
+      expect(res.body.draftId).toBe(draft.body.id);
+
+      const library = await request(server())
+        .get('/staff/task-drafts?courseId=course-1')
+        .set(bearer(assignedTaToken))
+        .expect(200);
+      expect(library.body.find((d: { id: string }) => d.id === draft.body.id)?.usedCount).toBe(1);
+    });
+
+    it('404s a foreign draft with a body identical to a missing one', async () => {
+      const foreign = await request(server())
+        .post('/staff/task-drafts')
+        .set(bearer(adminToken))
+        .send({ courseId: 'course-2', type: 'homework', title: 'E2E course-2 draft' })
+        .expect(201);
+      const denied = await request(server())
+        .post('/staff/courses/course-1/assessments')
+        .set(bearer(adminToken))
+        .send({ ...task, draftId: foreign.body.id })
+        .expect(404);
+      const gone = await request(server())
+        .post('/staff/courses/course-1/assessments')
+        .set(bearer(adminToken))
+        .send({ ...task, draftId: 'draft-nope' })
+        .expect(404);
+      expect(JSON.stringify(denied.body) === JSON.stringify(gone.body)).toBe(true);
+      expect(denied.body.message).toBe('Task draft not found');
+    });
+
+    it('threads attachments and allowResubmission through create, and both through PATCH', async () => {
+      const attachments = [{ url: 'https://example.com/passage.pdf', name: 'Passage' }];
+      const res = await request(server())
+        .post('/staff/courses/course-1/assessments')
+        .set(bearer(adminToken))
+        .send({ ...task, attachments, allowResubmission: false })
+        .expect(201);
+      created.push(res.body.id);
+      expect(res.body.attachments).toEqual([{ ...attachments[0], mimeType: null, sizeBytes: null }]);
+      expect(res.body.allowResubmission).toBe(false);
+
+      const patched = await request(server())
+        .patch(`/staff/assessments/${res.body.id}`)
+        .set(bearer(adminToken))
+        .send({ attachments: [], allowResubmission: true })
+        .expect(200);
+      expect(patched.body.attachments).toEqual([]);
+      expect(patched.body.allowResubmission).toBe(true);
+
+      await request(server())
+        .patch(`/staff/assessments/${res.body.id}`)
+        .set(bearer(adminToken))
+        .send({ allowResubmission: null })
+        .expect(400);
+      await request(server())
+        .patch(`/staff/assessments/${res.body.id}`)
+        .set(bearer(adminToken))
+        .send({ attachments: [{ url: 'javascript:alert(1)', name: 'x' }] })
+        .expect(400);
+    });
+
+    it('a student gets 409 on a second submission to a one-shot task', async () => {
+      // Its own cohort: earlier describes move student-1 in and out of group-1,
+      // and this test must not depend on which of them ran last.
+      const cohort = await request(server())
+        .post('/admin/groups')
+        .set(bearer(adminToken))
+        .send({ name: 'E2E - one-shot cohort', courseId: 'course-1' })
+        .expect(201);
+      await request(server())
+        .post(`/staff/groups/${cohort.body.id}/members`)
+        .set(bearer(adminToken))
+        .send({ studentId: 'student-1' })
+        .expect(201);
+      const res = await request(server())
+        .post('/staff/courses/course-1/assessments')
+        .set(bearer(adminToken))
+        .send({ ...task, targets: [{ groupId: cohort.body.id }], allowResubmission: false })
+        .expect(201);
+      created.push(res.body.id);
+      await request(server())
+        .post(`/assessments/${res.body.id}/submissions`)
+        .set(bearer(studentToken))
+        .send({ answerText: 'first' })
+        .expect(201);
+      await request(server())
+        .post(`/assessments/${res.body.id}/submissions`)
+        .set(bearer(studentToken))
+        .send({ answerText: 'second' })
+        .expect(409);
+      const detail = await request(server())
+        .get(`/assessments/${res.body.id}`)
+        .set(bearer(studentToken))
+        .expect(200);
+      expect(detail.body.canSubmit).toBe(false);
+    });
+  });
+
+  describe('existence oracle on /staff/assessments/:id', () => {
+    const server = () => app.getHttpServer();
+    let elsewhere: string;
+    beforeAll(async () => {
+      const res = await request(server())
+        .post('/staff/courses/course-2/assessments')
+        .set(bearer(adminToken))
+        .send({
+          title: 'E2E course-2 task',
+          type: 'homework',
+          availableFrom: '2026-01-01T00:00:00.000Z',
+          availableTo: '2099-01-01T00:00:00.000Z',
+          dueAt: '2098-01-01T00:00:00.000Z',
+          maxScore: 10,
+          allowedFileTypes: ['application/pdf'],
+          maxFileSizeBytes: 1048576,
+          targets: [{ groupId: 'group-2' }],
+        })
+        .expect(201);
+      elsewhere = res.body.id;
+    });
+    afterAll(async () => {
+      await request(server()).delete(`/staff/assessments/${elsewhere}`).set(bearer(adminToken));
+    });
+
+    it.each([
+      ['PATCH', 'patch', '', { title: 'x' }],
+      ['DELETE', 'delete', '', undefined],
+      ['POST targets', 'post', '/targets', { targets: [{ groupId: 'group-1' }] }],
+    ] as const)('%s: a course-2 task for assistant-1 === a nonexistent id', async (_l, method, suffix, body) => {
+      const call = (id: string) => {
+        const req = request(server())[method](`/staff/assessments/${id}${suffix}`).set(bearer(assignedTaToken));
+        return (body ? req.send(body) : req).expect(404);
+      };
+      const denied = await call(elsewhere);
+      const gone = await call('nope');
+      expect(JSON.stringify(denied.body) === JSON.stringify(gone.body)).toBe(true);
+      expect(denied.body.message).toBe('Assessment not found');
+    });
+  });
 });

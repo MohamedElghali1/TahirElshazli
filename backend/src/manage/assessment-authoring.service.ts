@@ -12,6 +12,7 @@ import type {
   AssessmentTarget,
   AssessmentType,
   AssessmentUpdate,
+  Attachment,
   NewAssessmentTarget,
   StoredAssessment,
 } from '../assessments/interfaces/assessment-repository.interface.js';
@@ -25,6 +26,20 @@ import type {
   WorkType,
 } from '../assessments/interfaces/work-repository.interface.js';
 import { EXTERNAL_WORK_BINDER } from '../assessments/interfaces/work-repository.interface.js';
+import type { TaskDraftRepository } from './interfaces/task-draft-repository.interface.js';
+import { TASK_DRAFT_REPOSITORY } from './interfaces/task-draft-repository.interface.js';
+import { TASK_DRAFT_NOT_FOUND } from './task-drafts.service.js';
+
+/**
+ * The message a task that does not exist **and** a task on a course the caller
+ * cannot reach both get, on every `/staff/assessments/:id` route.
+ *
+ * Before unit 6 these differed: a missing id said `Assessment not found` and a
+ * real-but-unreachable one said `Course not found or not assigned to you` -
+ * both 404, but the body was an existence oracle over the assessment id space
+ * (unit-6 plan, finding 2). One exported `const`, asserted `===` in the specs.
+ */
+export const ASSESSMENT_NOT_FOUND = 'Assessment not found';
 
 /** An assessment as the authoring screen sees it: the task and its audience. */
 export interface AuthoredAssessment extends StoredAssessment {
@@ -61,6 +76,16 @@ export interface CreateAssessmentInput {
    */
   googleForm?: string;
   targets: NewAssessmentTarget[];
+  /**
+   * The draft this task was started from (`TASK-3`). **Provenance only**: the
+   * request body is authoritative and the server merges nothing from the draft
+   * (assumption A-2) - "start from a draft prefills" is the form's job. It
+   * increments the draft's `usedCount` in the same transaction.
+   */
+  draftId?: string;
+  attachments?: Attachment[];
+  /** Defaults to `true`, which is today's rule. */
+  allowResubmission?: boolean;
 }
 
 /**
@@ -70,7 +95,12 @@ export interface CreateAssessmentInput {
  * stored on the assessment, so it cannot ride along in `AssessmentUpdate` -
  * that type is the repository's contract and every field on it is a column.
  */
-export type UpdateAssessmentInput = AssessmentUpdate & {
+export type UpdateAssessmentInput = Omit<
+  AssessmentUpdate,
+  // Each of these has a rule of its own and is admitted by the slice that
+  // enforces it - never passed through unchecked.
+  'visibility' | 'markerId' | 'submissionModes'
+> & {
   googleForm?: string;
 };
 
@@ -112,6 +142,9 @@ export class AssessmentAuthoringService {
      */
     @Inject(EXTERNAL_WORK_BINDER)
     private readonly binder: ExternalWorkBinder,
+    /** The draft library, for `usedCount` on authoring from a draft. */
+    @Inject(TASK_DRAFT_REPOSITORY)
+    private readonly draftRepo: TaskDraftRepository,
   ) {}
 
   /**
@@ -213,18 +246,32 @@ export class AssessmentAuthoringService {
     }
   }
 
-  /** Loads an assessment and proves the caller may act on its course (§5.11). */
+  /**
+   * Loads an assessment and proves the caller may act on its course (§5.11).
+   *
+   * A missing id and a real task on an unreachable course both throw
+   * `ASSESSMENT_NOT_FOUND`. The route names a task, not a course, so the
+   * course's own message would be describing something the caller never sent -
+   * and it was an existence oracle (unit-6 plan, finding 2).
+   */
   private async loadInScope(
     assessmentId: string,
     actor: StaffActor,
   ): Promise<StoredAssessment> {
     const assessment = await this.assessmentRepo.findById(assessmentId);
     if (!assessment) {
-      throw new NotFoundException('Assessment not found');
+      throw new NotFoundException(ASSESSMENT_NOT_FOUND);
     }
     // Scoped on the assessment's *own* courseId, never on one supplied by the
     // client - the same rule `AssessmentsService.loadForStudent` follows.
-    await this.scope.assertAssigned(assessment.courseId, actor);
+    try {
+      await this.scope.assertAssigned(assessment.courseId, actor);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw new NotFoundException(ASSESSMENT_NOT_FOUND);
+      }
+      throw error;
+    }
     return assessment;
   }
 
@@ -256,6 +303,19 @@ export class AssessmentAuthoringService {
       const workType = input.workType ?? 'file_upload';
       this.assertWorkTypePayload(workType, input);
 
+      // Authoring from a draft (`TASK-3`). Incremented BEFORE the insert on
+      // purpose: the UPDATE takes the draft's row lock, so a concurrent delete
+      // cannot race the `draft_id` FK below, and a failure anywhere later rolls
+      // the count back with everything else (proved on Postgres only - the
+      // memory driver has no rollback). Scoped to this course, so a draft that
+      // is missing, on another course, or unreachable is one identical 404.
+      if (input.draftId !== undefined) {
+        const draft = await this.draftRepo.incrementUsedCount(input.draftId, courseId);
+        if (!draft) {
+          throw new NotFoundException(TASK_DRAFT_NOT_FOUND);
+        }
+      }
+
       const assessment = await this.assessmentRepo.create({
         courseId,
         lessonId: input.lessonId,
@@ -274,14 +334,13 @@ export class AssessmentAuthoringService {
         // Only a `link` task stores a URL here. A Google Form's address is
         // resolved against Google and written as a binding instead - see below.
         externalUrl: workType === 'link' ? (input.externalUrl ?? null) : null,
-        // The unit-6 settings at their migration defaults (018). Later slices
-        // thread the request's values through here.
+        // The unit-6 settings. Later slices thread the rest of them through.
         visibility: 'published',
         markerId: null,
-        allowResubmission: true,
+        allowResubmission: input.allowResubmission ?? true,
         submissionModes: [],
-        draftId: null,
-        attachments: [],
+        draftId: input.draftId ?? null,
+        attachments: input.attachments ?? [],
       });
 
       // Binding talks to Google, so it happens *inside* the transaction on
@@ -322,6 +381,9 @@ export class AssessmentAuthoringService {
           // §5.4's snapshots are flat and scalar on purpose, and "who was this
           // set for" is the question a dispute actually turns on.
           targetGroups: targets.map((target) => target.groupId).join(','),
+          draftId: assessment.draftId,
+          attachmentCount: assessment.attachments.length,
+          allowResubmission: assessment.allowResubmission,
         },
       });
       return { ...assessment, targets };
@@ -371,7 +433,7 @@ export class AssessmentAuthoringService {
             : columns.externalUrl,
       });
       if (!after) {
-        throw new NotFoundException('Assessment not found');
+        throw new NotFoundException(ASSESSMENT_NOT_FOUND);
       }
 
       // Re-bind when a form was supplied, or when the task has just become a
@@ -397,12 +459,16 @@ export class AssessmentAuthoringService {
           dueAt: before.dueAt,
           availableTo: before.availableTo,
           maxScore: before.maxScore,
+          attachmentCount: before.attachments.length,
+          allowResubmission: before.allowResubmission,
         },
         after: {
           title: after.title,
           dueAt: after.dueAt,
           availableTo: after.availableTo,
           maxScore: after.maxScore,
+          attachmentCount: after.attachments.length,
+          allowResubmission: after.allowResubmission,
         },
       });
       return { ...after, targets: await this.assessmentRepo.findTargets(assessmentId) };

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   NotFoundException,
@@ -387,8 +388,13 @@ export class AssessmentsService {
       allowedFileTypes: assessment.allowedFileTypes,
       maxFileSizeBytes: assessment.maxFileSizeBytes,
       work,
+      // The UI must never offer a button the server refuses: a one-shot task
+      // (`allowResubmission: false`) that already has a submission is closed
+      // to this student exactly as `submitAssessment` below treats it.
       canSubmit:
-        this.isWithinWindow(assessment, now) && submission?.correctedAt == null,
+        this.isWithinWindow(assessment, now) &&
+        submission?.correctedAt == null &&
+        !(submission && !assessment.allowResubmission),
       submission: submission
         ? {
             id: submission.id,
@@ -451,6 +457,14 @@ export class AssessmentsService {
       assessmentId,
       studentId,
     );
+    // A one-shot task. A state conflict rather than a bad request (CLAUDE.md
+    // §6: 409), and checked before the correction rule so a student is told
+    // the rule that actually applies. With `allowResubmission: true` - the
+    // default - nothing here changes: resubmission runs until window end, not
+    // `dueAt` (`D-31`).
+    if (existing && !assessment.allowResubmission) {
+      throw new ConflictException('This task accepts one submission only.');
+    }
     if (!existing) {
       return this.assessmentRepo.createSubmission(
         assessmentId,

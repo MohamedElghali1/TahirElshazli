@@ -160,6 +160,8 @@ components:
     SessionMode:  { type: string, enum: [on_ground, online] }
     AttendanceStatus: { type: string, enum: [present, absent, late] }
     TaskVisibility:   { type: string, enum: [published, scheduled, hidden] }
+    # How a student may hand the work in (`D-31`). Multi-file is unit 7's.
+    SubmissionMode:   { type: string, enum: [pdf_upload, doc_link, photo_upload] }
     WorkType:         { type: string, enum: [file_upload, link, google_form] }
     AssessmentType:   { type: string, enum: [homework, assignment, quiz] }
     ReportStatus:     { type: string, enum: [new, under_review, reviewed, sent] }
@@ -463,6 +465,129 @@ components:
         name:      { type: string, minLength: 1, maxLength: 200 }
         mimeType:  { type: [string, 'null'], maxLength: 120 }
         sizeBytes: { type: [integer, 'null'], minimum: 0 }
+
+    # --- Authoring (`/staff/courses/{courseId}/assessments`, `/staff/assessments/*`)
+    # Added in unit 6: these routes were `[MODIFY]` in `API_GAP_ANALYSIS.md`
+    # with no entry here at all.
+    AssessmentTarget:
+      type: object
+      required: [id, assessmentId, groupId, availableFrom, availableTo, dueAt]
+      properties:
+        id:            { $ref: '#/components/schemas/Id' }
+        assessmentId:  { $ref: '#/components/schemas/Id' }
+        groupId:       { $ref: '#/components/schemas/Id' }
+        # OVERRIDES of the task's own window. Null means inherit.
+        availableFrom: { type: [string, 'null'], format: date-time }
+        availableTo:   { type: [string, 'null'], format: date-time }
+        dueAt:         { type: [string, 'null'], format: date-time }
+
+    AssessmentTargetInput:
+      type: object
+      required: [groupId]
+      properties:
+        groupId:       { $ref: '#/components/schemas/Id' }
+        availableFrom: { type: string, format: date-time }
+        availableTo:   { type: string, format: date-time }
+        dueAt:         { type: string, format: date-time }
+
+    # A task as the authoring screens see it: every stored field plus its full
+    # audience. `visibility`, `markerId`, `allowResubmission`, `submissionModes`,
+    # `draftId` and `attachments` are unit 6 (migration 018).
+    AuthoredAssessment:
+      type: object
+      required: [id, courseId, lessonId, title, description, instructions, type, topics,
+                 availableFrom, availableTo, dueAt, maxScore, allowedFileTypes,
+                 maxFileSizeBytes, workType, externalUrl, visibility, markerId,
+                 allowResubmission, submissionModes, draftId, attachments, createdAt, targets]
+      properties:
+        id:          { $ref: '#/components/schemas/Id' }
+        courseId:    { $ref: '#/components/schemas/Id' }
+        lessonId:    { type: [string, 'null'] }
+        title:       { type: string }
+        description: { type: string }
+        instructions: { type: string }
+        type:        { $ref: '#/components/schemas/AssessmentType' }
+        topics:      { type: array, items: { type: string } }
+        availableFrom: { type: string, format: date-time }
+        availableTo:   { type: string, format: date-time }
+        dueAt:         { type: string, format: date-time }
+        maxScore:      { type: integer }
+        allowedFileTypes: { type: array, items: { type: string } }
+        maxFileSizeBytes: { type: integer }
+        workType:    { $ref: '#/components/schemas/WorkType' }
+        externalUrl: { type: [string, 'null'] }
+        visibility:  { $ref: '#/components/schemas/TaskVisibility' }
+        markerId:    { type: [string, 'null'] }
+        # `true` (the default) is today's rule: resubmission until window END,
+        # not `dueAt` (`D-31`). `false` makes a second submission a 409.
+        allowResubmission: { type: boolean }
+        submissionModes: { type: array, items: { $ref: '#/components/schemas/SubmissionMode' } }
+        # Provenance only - the content was COPIED from the draft, never linked.
+        # Null once the draft is deleted.
+        draftId:     { type: [string, 'null'] }
+        attachments: { type: array, items: { $ref: '#/components/schemas/Attachment' } }
+        createdAt:   { type: string, format: date-time }
+        targets:     { type: array, items: { $ref: '#/components/schemas/AssessmentTarget' } }
+
+    # `POST /staff/courses/{courseId}/assessments`. The body is authoritative:
+    # `draftId` records provenance and bumps the draft's `usedCount`, and the
+    # server merges nothing from the draft (assumption A-2).
+    AssessmentWrite:
+      type: object
+      required: [title, type, availableFrom, availableTo, dueAt, maxScore,
+                 allowedFileTypes, maxFileSizeBytes, targets]
+      properties:
+        title:        { type: string, minLength: 1, maxLength: 200 }
+        description:  { type: string, maxLength: 1000 }
+        instructions: { type: string, maxLength: 5000 }
+        type:         { $ref: '#/components/schemas/AssessmentType' }
+        topics:       { type: array, maxItems: 20, items: { type: string, maxLength: 80 } }
+        lessonId:     { $ref: '#/components/schemas/Id' }
+        availableFrom: { type: string, format: date-time }
+        availableTo:   { type: string, format: date-time }
+        dueAt:         { type: string, format: date-time }
+        maxScore:      { type: integer, minimum: 1, maximum: 1000 }
+        allowedFileTypes: { type: array, minItems: 1, maxItems: 20, items: { type: string } }
+        maxFileSizeBytes: { type: integer, minimum: 1, maximum: 104857600 }
+        workType:    { $ref: '#/components/schemas/WorkType' }
+        externalUrl: { type: string, maxLength: 2048 }
+        googleForm:  { type: string, minLength: 8, maxLength: 512 }
+        targets:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items: { $ref: '#/components/schemas/AssessmentTargetInput' }
+        draftId:     { $ref: '#/components/schemas/Id' }
+        attachments:
+          type: array
+          maxItems: 10
+          items: { $ref: '#/components/schemas/Attachment' }
+        allowResubmission: { type: boolean, default: true }
+
+    # `PATCH /staff/assessments/{assessmentId}`. Every field optional and never
+    # null. `type`, `courseId` and `draftId` are not patchable.
+    AssessmentPatch:
+      type: object
+      properties:
+        title:        { type: string, minLength: 1, maxLength: 200 }
+        description:  { type: string, maxLength: 1000 }
+        instructions: { type: string, maxLength: 5000 }
+        topics:       { type: array, maxItems: 20, items: { type: string, maxLength: 80 } }
+        availableFrom: { type: string, format: date-time }
+        availableTo:   { type: string, format: date-time }
+        dueAt:         { type: string, format: date-time }
+        maxScore:      { type: integer, minimum: 1, maximum: 1000 }
+        allowedFileTypes: { type: array, minItems: 1, maxItems: 20, items: { type: string } }
+        maxFileSizeBytes: { type: integer, minimum: 1, maximum: 104857600 }
+        workType:    { $ref: '#/components/schemas/WorkType' }
+        externalUrl: { type: string, maxLength: 2048 }
+        googleForm:  { type: string, minLength: 8, maxLength: 512 }
+        # Replaces the whole list; `[]` clears it.
+        attachments:
+          type: array
+          maxItems: 10
+          items: { $ref: '#/components/schemas/Attachment' }
+        allowResubmission: { type: boolean }
 
     # --- Marking -----------------------------------------------------------
     Annotation:
@@ -1235,6 +1360,131 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
       x-audit: task_draft.deleted
+
+  # --- Authoring ------------------------------------------------------------
+  # Added in unit 6 (they changed, and had no entry). All three `{assessmentId}`
+  # routes answer a task on an unreachable course with a 404 body IDENTICAL to
+  # a nonexistent id (`Assessment not found`) - before unit 6 the first said
+  # `Course not found or not assigned to you`, an existence oracle.
+  /staff/courses/{courseId}/assessments:
+    parameters:
+      - { name: courseId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    get:
+      tags: [tasks]
+      summary: Every task on one course, with its full audience
+      description: >
+        Course-grained (`AUTH-6` remainder): one held cohort reaches every task on
+        the course. The group-grain list is `GET /staff/tasks`.
+      x-roles: [assistant, teacher, admin]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/AuthoredAssessment' } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [tasks]
+      x-roles: [assistant, teacher, admin]
+      description: >
+        A `draftId` that is missing, on another course, or unreachable is one
+        identical 404 (`Task draft not found`); authoring from a draft adds one to
+        its `usedCount` in the same transaction.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssessmentWrite' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthoredAssessment' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-audit: assessment.created
+
+  /staff/assessments/{assessmentId}:
+    parameters:
+      - { name: assessmentId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    patch:
+      tags: [tasks]
+      x-roles: [assistant, teacher, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssessmentPatch' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthoredAssessment' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-audit: assessment.updated
+    delete:
+      tags: [tasks]
+      x-roles: [assistant, teacher, admin]
+      description: Refused with 400 once anything has been submitted.
+      responses:
+        '204': { description: Deleted }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-audit: assessment.deleted
+
+  /staff/assessments/{assessmentId}/targets:
+    parameters:
+      - { name: assessmentId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    post:
+      tags: [tasks]
+      summary: Replace the whole audience (a set, not a diff)
+      x-roles: [assistant, teacher, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targets]
+              properties:
+                targets:
+                  type: array
+                  minItems: 1
+                  maxItems: 50
+                  items: { $ref: '#/components/schemas/AssessmentTargetInput' }
+      responses:
+        '201':
+          description: The task with its new audience
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthoredAssessment' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-audit: assessment.targeted
+
+  # --- The student's task routes (only what unit 6 changed) ------------------
+  /assessments/{assessmentId}/submissions:
+    parameters:
+      - { name: assessmentId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    post:
+      tags: [tasks]
+      summary: Submit, or resubmit while the window is open
+      description: >
+        A second submission to a task with `allowResubmission: false` is a 409
+        (unit 6). With `true`, resubmission runs until the window ends, as before.
+      x-roles: [student]
+      responses:
+        '201': { description: Created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   /staff/tasks:
     get:

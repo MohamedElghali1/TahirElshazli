@@ -268,6 +268,16 @@ export type AssessmentType = 'homework' | 'assignment' | 'quiz';
  * what it is *for* (migration 010). What the design calls Document vs Google Form.
  */
 export type WorkType = 'file_upload' | 'link' | 'google_form';
+
+/**
+ * Whether students can see a task at all (`D-28`). Two stored values: a
+ * `scheduled` task is a published one whose window has not opened, and the
+ * server derives that label - it is never stored or sent.
+ */
+export type TaskVisibility = 'published' | 'hidden';
+
+/** How a student may hand the work in (`D-31`). */
+export type SubmissionMode = 'pdf_upload' | 'doc_link' | 'photo_upload';
 export type AssessmentStatus = 'locked' | 'available' | 'submitted' | 'corrected';
 
 export interface AssessmentListItem {
@@ -959,6 +969,17 @@ export interface AuthoredAssessment {
   maxScore: number;
   allowedFileTypes: string[];
   maxFileSizeBytes: number;
+  workType: WorkType;
+  /** Where a `link` task points; null for every other work type. */
+  externalUrl: string | null;
+  visibility: TaskVisibility;
+  /** Who marks it. Null is "whoever opens it first" (`D-32`). */
+  markerId: string | null;
+  allowResubmission: boolean;
+  submissionModes: SubmissionMode[];
+  /** The draft it was authored from - provenance only, copied not linked. */
+  draftId: string | null;
+  attachments: Attachment[];
   createdAt: string;
   targets: AssessmentTarget[];
 }

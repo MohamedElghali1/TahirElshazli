@@ -1,4 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { TASK_DRAFT_REPOSITORY } from './interfaces/task-draft-repository.interface.js';
+import { InMemoryTaskDraftRepository } from './repositories/in-memory-task-draft.repository.js';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { StaffManageController } from './staff-manage.controller.js';
 import { AdminManageController } from './admin-manage.controller.js';
@@ -134,6 +136,8 @@ describe('Manage surface', () => {
         // Google stack in would make these tests depend on an OAuth client they
         // have no business knowing about.
         { provide: EXTERNAL_WORK_BINDER, useValue: { bindExternal: async () => {} } },
+        // The draft library (`TASK-3`): authoring from a draft bumps its count.
+        { provide: TASK_DRAFT_REPOSITORY, useClass: InMemoryTaskDraftRepository },
         { provide: RECORDING_REPOSITORY, useClass: InMemoryRecordingRepository },
         { provide: LIVE_SESSION_REPOSITORY, useClass: InMemoryLiveSessionRepository },
         { provide: USER_REPOSITORY, useClass: InMemoryUserRepository },

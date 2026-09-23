@@ -185,6 +185,9 @@ export class StaffManageController {
       externalUrl: body.externalUrl,
       googleForm: body.googleForm,
       targets: body.targets,
+      draftId: body.draftId,
+      attachments: body.attachments,
+      allowResubmission: body.allowResubmission,
     });
   }
 
