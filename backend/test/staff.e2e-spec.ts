@@ -4,6 +4,7 @@ import request from 'supertest';
 import type { Server } from 'node:http';
 import { AppModule } from './../src/app.module.js';
 import { WORK_REPOSITORY, type WorkRepository } from './../src/assessments/interfaces/work-repository.interface.js';
+import { ASSESSMENT_REPOSITORY, type AssessmentRepository } from './../src/assessments/interfaces/assessment-repository.interface.js';
 import { RATE_LIMIT_STORE } from './../src/common/rate-limit/rate-limit.interface.js';
 import type {
   RateLimitDecision,
@@ -2928,6 +2929,97 @@ describe('Staff and admin API (e2e)', () => {
       ).body.id;
       const res = await request(server()).get(`/staff/assessments/${link}/submissions`).set(bearer(adminToken)).expect(409);
       expect(res.body.message).toMatch(/not handed in here/);
+    });
+  });
+
+  describe('unit 7: annotations (MARK-1, D-42)', () => {
+    const server = () => app.getHttpServer();
+    const PHOTO = '/uploads/bbbbbbbb-0000-4000-8000-000000000001.png';
+    const tick = { fileUrl: PHOTO, page: 1, kind: 'tick', xPercent: 12.5, yPercent: 40 };
+    let paper = '';
+    let unheldPaper = '';
+    beforeAll(async () => {
+      await unit7Setup('annotations');
+      // The student upload route is slice 7i; here the paper's file is placed
+      // through the repository so these cases test the annotation routes alone.
+      const repo = app.get<AssessmentRepository>(ASSESSMENT_REPOSITORY);
+      const file = [{ url: PHOTO, mimeType: 'image/png', sizeBytes: 10 }];
+      await repo.updateSubmission(unit7.mine, 'student-1', null, undefined, file);
+      await repo.updateSubmission(unit7.theirs, 'student-2', null, undefined, file);
+      paper = unit7.mine;
+      unheldPaper = unit7.theirs;
+    });
+
+    it('lets assistant-1 draw on a group-1 paper and the teacher see it with the author name', async () => {
+      const created = await request(server()).post(`/staff/submissions/${paper}/annotations`).set(bearer(assignedTaToken)).send(tick).expect(201);
+      expect(created.body).toMatchObject({ kind: 'tick', xPercent: 12.5, createdBy: 'assistant-1', createdByName: 'Nour Hassan' });
+      const list = await request(server()).get(`/staff/submissions/${paper}/annotations`).set(bearer(adminToken)).expect(200);
+      expect(list.body.map((a: { id: string }) => a.id)).toContain(created.body.id);
+    });
+
+    it('persists a stroke and moves and erases one\'s own mark', async () => {
+      const stroke = await request(server()).post(`/staff/submissions/${paper}/annotations`).set(bearer(adminToken))
+        .send({ ...tick, kind: 'highlight', path: [[10, 10], [20, 12], [30, 14]] }).expect(201);
+      expect(stroke.body.path).toEqual([[10, 10], [20, 12], [30, 14]]);
+      const moved = await request(server()).patch(`/staff/submissions/${paper}/annotations/${stroke.body.id}`).set(bearer(adminToken))
+        .send({ yPercent: 50, kind: 'tick' }).expect(200);
+      // `kind` is stripped by the whitelist, never applied.
+      expect(moved.body).toMatchObject({ kind: 'highlight', yPercent: 50 });
+      await request(server()).delete(`/staff/submissions/${paper}/annotations/${stroke.body.id}`).set(bearer(adminToken)).expect(204);
+      const log = await request(server()).get(`/admin/audit-log?action=submission.annotated&targetId=${paper}`).set(bearer(adminToken)).expect(200);
+      expect(log.body.entries.length).toBeGreaterThanOrEqual(3);
+    });
+
+    it('refuses to let assistant-1 erase the teacher\'s mark (403), and the mark survives', async () => {
+      const teachers = await request(server()).post(`/staff/submissions/${paper}/annotations`).set(bearer(adminToken)).send(tick).expect(201);
+      const res = await request(server()).delete(`/staff/submissions/${paper}/annotations/${teachers.body.id}`).set(bearer(assignedTaToken)).expect(403);
+      expect(res.body.message).toBe('You can only change or erase your own marks.');
+      await request(server()).patch(`/staff/submissions/${paper}/annotations/${teachers.body.id}`).set(bearer(assignedTaToken)).send({ xPercent: 1 }).expect(403);
+      const list = await request(server()).get(`/staff/submissions/${paper}/annotations`).set(bearer(adminToken)).expect(200);
+      expect(list.body.map((a: { id: string }) => a.id)).toContain(teachers.body.id);
+    });
+
+    it('404s a mark id from another paper exactly like a missing one', async () => {
+      const elsewhere = await request(server()).post(`/staff/submissions/${unheldPaper}/annotations`).set(bearer(adminToken)).send(tick).expect(201);
+      const gone = await request(server()).delete(`/staff/submissions/${paper}/annotations/nope`).set(bearer(adminToken)).expect(404);
+      const wrong = await request(server()).delete(`/staff/submissions/${paper}/annotations/${elsewhere.body.id}`).set(bearer(adminToken)).expect(404);
+      expect(gone.body.message).toBe('Annotation not found');
+      expect(JSON.stringify(wrong.body) === JSON.stringify(gone.body)).toBe(true);
+    });
+
+    it.each([
+      ['GET', 'get', '', undefined],
+      ['POST', 'post', '', tick],
+      ['PATCH', 'patch', '/some-id', { xPercent: 1 }],
+      ['DELETE', 'delete', '/some-id', undefined],
+    ] as const)('%s: an out-of-scope paper is a 404 equal to a missing submission, for both scoped assistants', async (_l, method, suffix, body) => {
+      const call = (id: string, token: string) => {
+        const req = request(server())[method](`/staff/submissions/${id}/annotations${suffix}`).set(bearer(token));
+        return (body ? req.send(body) : req).expect(404);
+      };
+      const gone = await call('nope', assignedTaToken);
+      expect(gone.body.message).toBe('Submission not found');
+      expect(JSON.stringify((await call(unheldPaper, assignedTaToken)).body) === JSON.stringify(gone.body)).toBe(true);
+      expect(JSON.stringify((await call(paper, unassignedTaToken)).body) === JSON.stringify(gone.body)).toBe(true);
+    });
+
+    it('refuses a student token on every annotation route', async () => {
+      await request(server()).get(`/staff/submissions/${paper}/annotations`).set(bearer(studentToken)).expect(403);
+      await request(server()).post(`/staff/submissions/${paper}/annotations`).set(bearer(studentToken)).send(tick).expect(403);
+      await request(server()).delete(`/staff/submissions/${paper}/annotations/x`).set(bearer(studentToken)).expect(403);
+    });
+
+    it('validates the body: an eraser kind, a bad point, a file not on the paper', async () => {
+      await request(server()).post(`/staff/submissions/${paper}/annotations`).set(bearer(adminToken)).send({ ...tick, kind: 'eraser' }).expect(400);
+      await request(server()).post(`/staff/submissions/${paper}/annotations`).set(bearer(adminToken)).send({ ...tick, kind: 'pen', path: [[1, 1], [1, 200]] }).expect(400);
+      const res = await request(server()).post(`/staff/submissions/${paper}/annotations`).set(bearer(adminToken)).send({ ...tick, fileUrl: '/uploads/elsewhere.png' }).expect(400);
+      expect(res.body.message).toBe('That file is not part of this submission.');
+    });
+
+    it('D-42 (b): allows marking up a returned paper', async () => {
+      await request(server()).post(`/staff/submissions/${paper}/grade`).set(bearer(adminToken)).send({ score: 12 }).expect(200);
+      await request(server()).post(`/staff/submissions/${paper}/return`).set(bearer(adminToken)).expect(200);
+      await request(server()).post(`/staff/submissions/${paper}/annotations`).set(bearer(adminToken)).send(tick).expect(201);
     });
   });
 });

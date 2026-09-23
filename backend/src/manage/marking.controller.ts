@@ -1,9 +1,12 @@
 import {
+  Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   Post,
   Request,
 } from '@nestjs/common';
@@ -11,7 +14,12 @@ import { Roles } from '../auth/roles.decorator.js';
 import { STAFF_ALL } from '../auth/staff-roles.js';
 import type { JwtPayload } from '../auth/jwt.strategy.js';
 import type { GradingQueueItem } from './grading.service.js';
-import { MarkingService, type TaskSubmissions } from './marking.service.js';
+import {
+  MarkingService,
+  type AnnotationView,
+  type TaskSubmissions,
+} from './marking.service.js';
+import { AnnotationPatchDto, AnnotationWriteDto } from './dto/annotation.dto.js';
 
 /**
  * `/staff/*` marking routes (unit 7): return, the per-task queue, and the
@@ -42,6 +50,62 @@ export class MarkingController {
     @Request() req: { user: JwtPayload },
   ): Promise<TaskSubmissions> {
     return this.marking.queue(assessmentId, this.actor(req));
+  }
+
+  /** Everything drawn on one paper (`MARK-1`), with each author's name. */
+  @Get('submissions/:submissionId/annotations')
+  async listAnnotations(
+    @Param('submissionId') submissionId: string,
+    @Request() req: { user: JwtPayload },
+  ): Promise<AnnotationView[]> {
+    return this.marking.listAnnotations(submissionId, this.actor(req));
+  }
+
+  /** One mark, persisted as drawn - the view never holds unsaved strokes (DoD 9). */
+  @Post('submissions/:submissionId/annotations')
+  @HttpCode(HttpStatus.CREATED)
+  async createAnnotation(
+    @Param('submissionId') submissionId: string,
+    @Body() body: AnnotationWriteDto,
+    @Request() req: { user: JwtPayload },
+  ): Promise<AnnotationView> {
+    return this.marking.createAnnotation(submissionId, this.actor(req), {
+      fileUrl: body.fileUrl,
+      page: body.page,
+      kind: body.kind,
+      xPercent: body.xPercent,
+      yPercent: body.yPercent,
+      text: body.text,
+      path: body.path,
+    });
+  }
+
+  /** Move or re-word one's own mark. 403 for another person's (`D-42` (a)). */
+  @Patch('submissions/:submissionId/annotations/:annotationId')
+  async updateAnnotation(
+    @Param('submissionId') submissionId: string,
+    @Param('annotationId') annotationId: string,
+    @Body() body: AnnotationPatchDto,
+    @Request() req: { user: JwtPayload },
+  ): Promise<AnnotationView> {
+    return this.marking.updateAnnotation(submissionId, annotationId, this.actor(req), {
+      page: body.page,
+      xPercent: body.xPercent,
+      yPercent: body.yPercent,
+      text: body.text,
+      path: body.path,
+    });
+  }
+
+  /** The eraser: one's own mark, hard-deleted. */
+  @Delete('submissions/:submissionId/annotations/:annotationId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async removeAnnotation(
+    @Param('submissionId') submissionId: string,
+    @Param('annotationId') annotationId: string,
+    @Request() req: { user: JwtPayload },
+  ): Promise<void> {
+    await this.marking.removeAnnotation(submissionId, annotationId, this.actor(req));
   }
 
   /** Hand marked work back to the student (`MARK-2`). 409 when unmarked. */

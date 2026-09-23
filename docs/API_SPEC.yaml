@@ -174,7 +174,9 @@ components:
     WorkType:         { type: string, enum: [file_upload, link, google_form] }
     AssessmentType:   { type: string, enum: [homework, assignment, quiz] }
     ReportStatus:     { type: string, enum: [new, under_review, reviewed, sent] }
-    AnnotationKind:   { type: string, enum: [comment, tick, cross] }
+    # `D-2`: pins (comment, tick, cross) and freehand strokes (pen, highlight).
+    # The eraser is not a kind - erasing is DELETE (A-10).
+    AnnotationKind:   { type: string, enum: [comment, tick, cross, pen, highlight] }
     # Where one student stands on one task (unit 7), derived on every read:
     # no submission / submitted, no mark / mark saved / mark returned.
     SubmissionStatus: { type: string, enum: [not_submitted, submitted, marked, returned] }
@@ -657,29 +659,85 @@ components:
           items: { $ref: '#/components/schemas/SubmissionMode' }
 
     # --- Marking -----------------------------------------------------------
+    # `[x%, y%]` from the page box's physical top-left.
+    AnnotationPoint:
+      type: array
+      minItems: 2
+      maxItems: 2
+      items: { type: number, minimum: 0, maximum: 100 }
+
+    # A mark on one page of one file of a submission (`MARK-1`, `D-2`). Data,
+    # never a flattened file. `path` is present exactly for pen/highlight.
     Annotation:
       type: object
-      required: [id, submissionId, page, xPercent, yPercent, kind, text]
+      required: [id, submissionId, fileUrl, page, xPercent, yPercent, kind, text, path,
+                 createdBy, createdByName, createdAt, updatedAt]
       properties:
-        id:           { $ref: '#/components/schemas/Id' }
-        submissionId: { $ref: '#/components/schemas/Id' }
-        page:         { type: integer, minimum: 1 }
-        xPercent:     { type: number, minimum: 0, maximum: 100 }
-        yPercent:     { type: number, minimum: 0, maximum: 100 }
-        kind:         { $ref: '#/components/schemas/AnnotationKind' }
-        text:         { type: string, maxLength: 2000 }
-        createdBy:    { $ref: '#/components/schemas/Id' }
-        createdAt:    { type: string, format: date-time }
+        id:            { $ref: '#/components/schemas/Id' }
+        submissionId:  { $ref: '#/components/schemas/Id' }
+        fileUrl:       { type: string, description: Which file of the submission it was drawn on (A-11). }
+        page:          { type: integer, minimum: 1, maximum: 500 }
+        xPercent:      { type: number, minimum: 0, maximum: 100 }
+        yPercent:      { type: number, minimum: 0, maximum: 100 }
+        kind:          { $ref: '#/components/schemas/AnnotationKind' }
+        text:          { type: string, minLength: 0, maxLength: 2000, description: 'Non-blank for a comment; usually empty otherwise.' }
+        path:
+          type: [array, 'null']
+          minItems: 2
+          maxItems: 2000
+          items: { $ref: '#/components/schemas/AnnotationPoint' }
+        createdBy:     { $ref: '#/components/schemas/Id' }
+        createdByName: { type: string }
+        createdAt:     { type: string, format: date-time }
+        updatedAt:     { type: string, format: date-time }
 
-    AnnotationWrite:
+    # What the student receives on a RETURNED paper: no author (field minimisation).
+    StudentAnnotation:
       type: object
-      required: [page, xPercent, yPercent, kind, text]
+      required: [id, fileUrl, page, xPercent, yPercent, kind, text, path]
       properties:
-        page:     { type: integer, minimum: 1 }
+        id:       { $ref: '#/components/schemas/Id' }
+        fileUrl:  { type: string }
+        page:     { type: integer, minimum: 1, maximum: 500 }
         xPercent: { type: number, minimum: 0, maximum: 100 }
         yPercent: { type: number, minimum: 0, maximum: 100 }
         kind:     { $ref: '#/components/schemas/AnnotationKind' }
         text:     { type: string, maxLength: 2000 }
+        path:
+          type: [array, 'null']
+          items: { $ref: '#/components/schemas/AnnotationPoint' }
+
+    AnnotationWrite:
+      type: object
+      required: [fileUrl, page, xPercent, yPercent, kind]
+      properties:
+        fileUrl:  { type: string, minLength: 1, maxLength: 2048, description: 'One of the submission''s current, platform-stored files (400 otherwise).' }
+        page:     { type: integer, minimum: 1, maximum: 500 }
+        xPercent: { type: number, minimum: 0, maximum: 100 }
+        yPercent: { type: number, minimum: 0, maximum: 100 }
+        kind:     { $ref: '#/components/schemas/AnnotationKind' }
+        text:     { type: string, maxLength: 2000, default: '' }
+        path:
+          type: array
+          minItems: 2
+          maxItems: 2000
+          description: Required for pen/highlight, refused for a pin.
+          items: { $ref: '#/components/schemas/AnnotationPoint' }
+
+    # An edit. `kind` and `fileUrl` are not editable (delete and create instead);
+    # none of these is nullable.
+    AnnotationPatch:
+      type: object
+      properties:
+        page:     { type: integer, minimum: 1, maximum: 500 }
+        xPercent: { type: number, minimum: 0, maximum: 100 }
+        yPercent: { type: number, minimum: 0, maximum: 100 }
+        text:     { type: string, maxLength: 2000 }
+        path:
+          type: array
+          minItems: 2
+          maxItems: 2000
+          items: { $ref: '#/components/schemas/AnnotationPoint' }
 
     # One uploaded file of a submission (`D-39`). `url` is server-minted by
     # `POST /assessments/{id}/files`; `mimeType` is re-derived from it.
@@ -1820,6 +1878,12 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
 
   /staff/submissions/{submissionId}/annotations:
+    description: >
+      `MARK-1` (unit 7). Group grain, like `/grade` and `/return`: an out-of-scope
+      paper is a 404 byte-identical to a missing submission, answered before any
+      400/403. Only a platform-stored image or PDF the submission carries NOW can
+      be marked up (`D-41`); a pasted link is graded with a mark and feedback.
+      Marking up a returned paper is allowed and audited (`D-42` (b)).
     parameters:
       - { name: submissionId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
     get:
@@ -1827,12 +1891,18 @@ paths:
       x-roles: [assistant, teacher, admin]
       responses:
         '200':
-          description: OK
+          description: OK, ordered by (page, createdAt, id)
           content:
             application/json:
               schema: { type: array, items: { $ref: '#/components/schemas/Annotation' } }
+        '404': { $ref: '#/components/responses/NotFound' }
     post:
       tags: [marking]
+      summary: Draw one mark (persisted as drawn)
+      description: >
+        400 for a file not on this submission, a file the platform does not
+        store, an incoherent mark (a stroke without a path, a pin with one, a
+        blank comment) or a paper already carrying 500 marks (A-11).
       x-roles: [assistant, teacher, admin]
       requestBody:
         required: true
@@ -1845,9 +1915,16 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Annotation' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
       x-audit: submission.annotated
 
   /staff/submissions/{submissionId}/annotations/{annotationId}:
+    description: >
+      Only the mark's author may change or erase it (`D-42` (a)) - a 403, not a
+      404, because the mark is on the caller's screen; the teacher is not
+      exempt. An `annotationId` that belongs to another paper is a 404 whose
+      body is identical to a missing one (`Annotation not found`).
     parameters:
       - { name: submissionId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
       - { name: annotationId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
@@ -1858,14 +1935,26 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/AnnotationWrite' }
+            schema: { $ref: '#/components/schemas/AnnotationPatch' }
       responses:
-        '200': { description: OK }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Annotation' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-audit: submission.annotated
     delete:
       tags: [marking]
+      summary: The eraser - a hard delete of one's own mark
       x-roles: [assistant, teacher, admin]
       responses:
         '204': { description: Deleted }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-audit: submission.annotated
 
   /staff/submissions/{submissionId}/grade:
     post:

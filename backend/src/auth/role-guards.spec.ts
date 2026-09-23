@@ -351,9 +351,12 @@ describe('the authorization boundary', () => {
       // AUTH-3's narrowing, and `StaffGroupsController.removeMember` was in
       // this list before it. They may delete any draft in the library on a
       // course they reach - `AUTHORIZATION_MODEL.md` §3 grants "Manage the
-      // draft library" with no own-only rule (unit 6, `TASK-2`).
+      // draft library" with no own-only rule (unit 6, `TASK-2`). They may
+      // erase a mark on a paper - the eraser - but only one they drew
+      // (`D-42` (a), `MarkingService.ownAnnotation`), on a paper they reach.
       expect(assistantDeletes.sort()).toEqual(
         [
+          'MarkingController.removeAnnotation',
           'StaffBlogController.remove',
           'StaffManageController.deleteAssessment',
           'TaskDraftsController.remove',

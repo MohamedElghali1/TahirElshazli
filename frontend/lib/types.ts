@@ -595,6 +595,45 @@ export interface SubmissionFile {
   sizeBytes: number;
 }
 
+/** Pins and freehand strokes (`D-2`). The eraser is a DELETE, not a kind. */
+export type AnnotationKind = 'comment' | 'tick' | 'cross' | 'pen' | 'highlight';
+
+/** `[x%, y%]` from the page box's physical top-left. */
+export type AnnotationPoint = [number, number];
+
+/** A mark as staff see it (`MARK-1`). */
+export interface Annotation {
+  id: string;
+  submissionId: string;
+  fileUrl: string;
+  page: number;
+  kind: AnnotationKind;
+  xPercent: number;
+  yPercent: number;
+  text: string;
+  path: AnnotationPoint[] | null;
+  createdBy: string;
+  createdByName: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** What the student receives on a returned paper: no author. */
+export type StudentAnnotation = Omit<Annotation, 'submissionId' | 'createdBy' | 'createdByName' | 'createdAt' | 'updatedAt'>;
+
+export interface AnnotationWrite {
+  fileUrl: string;
+  page: number;
+  kind: AnnotationKind;
+  xPercent: number;
+  yPercent: number;
+  text?: string;
+  path?: AnnotationPoint[];
+}
+
+/** `kind` and `fileUrl` are not editable: delete and create instead. */
+export type AnnotationPatch = Partial<Pick<AnnotationWrite, 'page' | 'xPercent' | 'yPercent' | 'text' | 'path'>>;
+
 /** Where one student stands on one task. Server-derived. */
 export type SubmissionStatus = 'not_submitted' | 'submitted' | 'marked' | 'returned';
 

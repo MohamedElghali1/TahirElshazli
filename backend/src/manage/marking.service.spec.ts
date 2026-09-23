@@ -1,6 +1,11 @@
 import { Test } from '@nestjs/testing';
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import {
+  ANNOTATION_FILE_MISMATCH,
+  ANNOTATION_FILE_NOT_STORED,
+  ANNOTATION_NOT_FOUND,
+  ANNOTATION_NOT_YOURS,
+  MAX_ANNOTATIONS_PER_SUBMISSION,
   MarkingService,
   QUEUE_NOT_HANDED_IN_HERE,
   RETURN_NEEDS_MARK,
@@ -333,6 +338,125 @@ describe('MarkingService', () => {
         { url: '/uploads/a.jpg', kind: 'image', annotatable: true },
         { url: '/uploads/b.txt', kind: 'file', annotatable: false },
       ]);
+    });
+  });
+  describe('annotations (MARK-1, D-42)', () => {
+    const PHOTO = '/uploads/aaaaaaaa-0000-4000-8000-000000000001.png';
+    const tick = { fileUrl: PHOTO, page: 1, kind: 'tick' as const, xPercent: 10, yPercent: 20 };
+
+    /** student-1's paper on a group-1 task, carrying one stored photo. */
+    async function paper() {
+      const task = await assessments.create({ ...TASK, title: 'Marked up' });
+      await assessments.setTargets(task.id, [{ groupId: 'group-1' }, { groupId: group3 }]);
+      const sub = await assessments.createSubmission(task.id, 'student-1', null, null, [
+        { url: PHOTO, mimeType: 'image/png', sizeBytes: 10 },
+      ]);
+      const theirs = await assessments.createSubmission(task.id, 'student-2', null, null, [
+        { url: PHOTO, mimeType: 'image/png', sizeBytes: 10 },
+      ]);
+      return { sub, theirs };
+    }
+
+    it('creates, lists with the author name, updates and erases, auditing each write', async () => {
+      const { sub } = await paper();
+      const created = await marking.createAnnotation(sub.id, A1, tick);
+      expect(created).toMatchObject({ kind: 'tick', createdBy: 'assistant-1', createdByName: 'Nour Hassan', text: '', path: null });
+
+      const stroke = await marking.createAnnotation(sub.id, TEACHER, {
+        ...tick, kind: 'pen', path: [[10, 20], [11, 21], [12, 22]],
+      });
+      expect(stroke.path).toHaveLength(3);
+      expect((await marking.listAnnotations(sub.id, TEACHER)).map((a) => a.id)).toEqual([created.id, stroke.id]);
+
+      const moved = await marking.updateAnnotation(sub.id, created.id, A1, { xPercent: 55 });
+      expect(moved.xPercent).toBe(55);
+      await marking.removeAnnotation(sub.id, stroke.id, TEACHER);
+      expect((await marking.listAnnotations(sub.id, TEACHER)).map((a) => a.id)).toEqual([created.id]);
+
+      const logged = await entries('submission.annotated');
+      expect(logged).toHaveLength(4);
+      // The entry for the edit: `before` is the stored mark BEFORE the move -
+      // not an alias of `after` (CLAUDE.md §9).
+      const edit = logged.find((e) => e.before !== null && e.after !== null)!;
+      expect(edit.before).toMatchObject({ annotationId: created.id, xPercent: 10 });
+      expect(edit.after).toMatchObject({ annotationId: created.id, xPercent: 55 });
+      const erase = logged.find((e) => e.after === null)!;
+      expect(erase.before).toMatchObject({ annotationId: stroke.id, kind: 'pen', pathPoints: 3 });
+      expect(logged.every((e) => e.targetType === 'assessment_submission' && e.targetId === sub.id)).toBe(true);
+    });
+
+    it('refuses a file this submission does not carry, and a pasted link', async () => {
+      const { sub } = await paper();
+      await expect(marking.createAnnotation(sub.id, TEACHER, { ...tick, fileUrl: '/uploads/other.png' }))
+        .rejects.toThrow(ANNOTATION_FILE_MISMATCH);
+      const task = await assessments.create({ ...TASK, title: 'Link' });
+      await assessments.setTargets(task.id, [{ groupId: 'group-1' }]);
+      const link = await assessments.createSubmission(task.id, 'student-1', 'https://docs.google.com/d/1', null);
+      await expect(marking.createAnnotation(link.id, TEACHER, { ...tick, fileUrl: 'https://docs.google.com/d/1' }))
+        .rejects.toThrow(ANNOTATION_FILE_NOT_STORED);
+    });
+
+    it('refuses an incoherent mark with a 400', async () => {
+      const { sub } = await paper();
+      await expect(marking.createAnnotation(sub.id, TEACHER, { ...tick, kind: 'pen' })).rejects.toBeInstanceOf(BadRequestException);
+      await expect(marking.createAnnotation(sub.id, TEACHER, { ...tick, path: [[1, 1], [2, 2]] })).rejects.toBeInstanceOf(BadRequestException);
+      await expect(marking.createAnnotation(sub.id, TEACHER, { ...tick, kind: 'comment', text: '  ' })).rejects.toBeInstanceOf(BadRequestException);
+      const pin = await marking.createAnnotation(sub.id, TEACHER, tick);
+      // Coherence is re-checked against the STORED kind on an edit.
+      await expect(marking.updateAnnotation(sub.id, pin.id, TEACHER, { path: [[1, 1], [2, 2]] })).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('caps a paper at the storage bound', async () => {
+      const { sub } = await paper();
+      for (let i = 0; i < MAX_ANNOTATIONS_PER_SUBMISSION; i += 1) {
+        await annotations.create({ submissionId: sub.id, fileUrl: PHOTO, page: 1, kind: 'tick', xPercent: 1, yPercent: 1, text: '', path: null, createdBy: 'teacher-1' });
+      }
+      await expect(marking.createAnnotation(sub.id, TEACHER, tick)).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('D-42 (a): only the author may change or erase a mark - 403, even for the teacher', async () => {
+      const { sub } = await paper();
+      const teachers = await marking.createAnnotation(sub.id, TEACHER, tick);
+      const assistants = await marking.createAnnotation(sub.id, A1, tick);
+      await expect(marking.removeAnnotation(sub.id, teachers.id, A1)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(marking.removeAnnotation(sub.id, teachers.id, A1)).rejects.toThrow(ANNOTATION_NOT_YOURS);
+      await expect(marking.updateAnnotation(sub.id, assistants.id, TEACHER, { xPercent: 1 })).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(marking.removeAnnotation(sub.id, assistants.id, ADMIN)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(await marking.listAnnotations(sub.id, TEACHER)).toHaveLength(2);
+    });
+
+    it('D-42 (b): marking up a returned paper is allowed, and audited', async () => {
+      const { sub } = await paper();
+      await assessments.gradeSubmission(sub.id, { score: 5, feedback: null, annotatedFileUrl: undefined });
+      await assessments.returnSubmission(sub.id);
+      const late = await marking.createAnnotation(sub.id, TEACHER, tick);
+      await marking.updateAnnotation(sub.id, late.id, TEACHER, { yPercent: 99 });
+      expect(await entries('submission.annotated')).toHaveLength(2);
+    });
+
+    it('404s a mark id from another paper exactly like a missing one', async () => {
+      const { sub } = await paper();
+      const other = await paper();
+      const elsewhere = await marking.createAnnotation(other.sub.id, TEACHER, tick);
+      const missing = await notFound(marking.removeAnnotation(sub.id, 'nope', TEACHER));
+      expect(missing).toBe(ANNOTATION_NOT_FOUND);
+      expect((await notFound(marking.removeAnnotation(sub.id, elsewhere.id, TEACHER))) === missing).toBe(true);
+      expect((await notFound(marking.updateAnnotation(sub.id, elsewhere.id, TEACHER, { xPercent: 1 }))) === missing).toBe(true);
+    });
+
+    it('answers an out-of-scope paper with the submission 404 before any 403', async () => {
+      const { theirs } = await paper();
+      const mark = await marking.createAnnotation(theirs.id, TEACHER, tick);
+      const missing = await notFound(marking.listAnnotations('nope', A1));
+      for (const call of [
+        marking.listAnnotations(theirs.id, A1),
+        marking.createAnnotation(theirs.id, A1, tick),
+        marking.updateAnnotation(theirs.id, mark.id, A1, { xPercent: 1 }),
+        marking.removeAnnotation(theirs.id, mark.id, A1),
+        marking.listAnnotations(theirs.id, A2),
+      ]) {
+        expect((await notFound(call)) === missing).toBe(true);
+      }
     });
   });
 });

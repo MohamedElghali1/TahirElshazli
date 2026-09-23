@@ -59,6 +59,9 @@ import type {
   StaffTaskStatus,
   SubmissionMode,
   TaskSubmissions,
+  Annotation,
+  AnnotationPatch,
+  AnnotationWrite,
   TaskDraft,
   TaskVisibility,
   TaskDraftUpdate,
@@ -612,6 +615,33 @@ export const api = {
         method: 'POST',
         token,
       }),
+
+    /**
+     * Marks on a paper (`MARK-1`). Each stroke or pin is POSTed as it is
+     * finished, so nothing important lives only in the browser. Only the
+     * author may PATCH or DELETE a mark (403 otherwise, `D-42`).
+     */
+    annotations: {
+      list: (token: string, submissionId: string) =>
+        request<Annotation[]>(`/staff/submissions/${submissionId}/annotations`, { token }),
+      create: (token: string, submissionId: string, body: AnnotationWrite) =>
+        request<Annotation>(`/staff/submissions/${submissionId}/annotations`, {
+          method: 'POST',
+          token,
+          body,
+        }),
+      update: (token: string, submissionId: string, annotationId: string, body: AnnotationPatch) =>
+        request<Annotation>(`/staff/submissions/${submissionId}/annotations/${annotationId}`, {
+          method: 'PATCH',
+          token,
+          body,
+        }),
+      remove: (token: string, submissionId: string, annotationId: string) =>
+        request<void>(`/staff/submissions/${submissionId}/annotations/${annotationId}`, {
+          method: 'DELETE',
+          token,
+        }),
+    },
 
     /** Every targeted student on one task, submitted or not (`MARK-3`). */
     taskSubmissions: (token: string, assessmentId: string) =>
