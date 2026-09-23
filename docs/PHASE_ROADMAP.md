@@ -484,16 +484,27 @@ not the rule.
 
 ---
 
-### Chat unit 7 — Marking and the mark book `[ ]`
+### Chat unit 7 — Marking and the mark book `[~]` **built, awaiting review — NOT complete**
 
-**Scope** `MARK-1` … `MARK-4`, `BOOK-1` … `BOOK-3`.
+**Status 2026-09-23: `[~]`.** Built on `redesign` `6657c7a..HEAD` (local, not pushed); artifacts in
+`docs/phases/unit-7/`. The user ran the pipeline without the agent harness: the coordinator did the
+planning pass (Revision 1 of `PHASE_PLAN.md`), the implementation and the review itself, in sequence.
+**It cannot close while `MARK-6` is blocked** (§2, condition 9), unless the user moves `MARK-6` out.
+
+**Rulings** `D-40`…`D-46` (`B-3`…`B-9`). `D-38`/`D-39` (`B-1`/`B-2`, the `MARK-6` design) were
+accepted and **withdrawn** the same day; the question is escalated to the user.
+
+**Scope** `MARK-1` … `MARK-6`, `BOOK-1` … `BOOK-3`, plus `TASK-F3` and part of `TASK-F4`.
 **Depends on** unit 6.
-**Care** each annotation is **data** — page, x%, y%, kind, text — not a flattened file. The original
-submission stays **immutable**; the marked copy is a new artifact beside it. **Save** (annotations
-only) is distinct from **Save and return** (`returned_at`; the student sees it). The queue must show
-**non-submitters** — this is the answer to the old "no `missed` status" gap. **A missing mark is an
-em-dash, never `0`.**
-**Blocked within scope** `MARK-5` — decision `D-2` (flattened PDF vs rendered overlay).
+**Care** each annotation is **data** — page, x%, y%, kind, text, and freehand stroke paths — not a
+flattened file. The original submission stays **immutable**; the marked copy is a new artifact beside
+it. **Save** (annotations only) is distinct from **Save and return** (`returned_at`; the student sees
+it). The queue must show **non-submitters** — this is the answer to the old "no `missed` status" gap.
+**A missing mark is an em-dash, never `0`.**
+**`MARK-5` is not blocked:** `D-2` closed 2026-09-20 as a rendered overlay (the old "Blocked within
+scope `MARK-5`" line here was stale and is removed).
+**Blocked within scope** `MARK-6` — `B-1` (what each submission mode admits) and `B-2` (student
+upload and the up-to-five-photo set). Escalated, not decided.
 
 ---
 

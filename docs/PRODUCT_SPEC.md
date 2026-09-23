@@ -93,20 +93,30 @@ changes:
 Grading (score + feedback) exists and is audited. The design adds **in-platform annotation**, which
 `CLAUDE.md` §5.5 has always required and which has never been built:
 
-- Tools: comment, tick, cross (plus pen and highlight in the toolbar).
-- Each annotation is **data** — page, x%, y%, kind, text — not a flattened file.
+- Tools: comment, tick, cross, pen and highlight, and an eraser that removes the teacher's own marks
+  (`D-2`'s "marker and eraser"; the eraser deletes a mark, it never edits the page).
+- Each annotation is **data** — page, x%, y%, kind, text, and a freehand stroke's path — not a
+  flattened file.
 - **Save** (annotations only) is distinct from **Save and return** (the student sees it).
-- "Include this mark in the weekly report" toggle.
+- "Include this mark in the weekly report" toggle — **deferred to the weekly-reports unit** (unit 7,
+  assumption A-5): nothing reads it before then.
 - The original submission stays immutable; the marked copy is a new artifact beside it.
-- `[UNCERTAIN]` Does the student receive a flattened **PDF**, or the same overlay rendered in the
-  viewer? The former needs a server-side PDF library. **Decision required.**
+- **Closed (`D-2`):** the student receives the **same overlay**, rendered over the original. No
+  server-side PDF library; a flattened download is additive and out of scope. PDFs are drawn in the
+  browser with pdf.js (`D-40`).
+- **Built in unit 7**, with one limit stated plainly: only files the platform stores can be marked up
+  (`D-41`), and no student route stores one until `MARK-6` (`B-1`/`B-2`, open) and, in production, an
+  R2 storage driver.
 
 The grading queue must also show **non-submitters** ("Not submitted"), which the design shows and the
 current queue cannot express — this is `CLAUDE.md` §11's open "no `missed` status" question, answered.
 
 ### 2.3 Mark book `[NEW]`
-Student × task grid per group, with a term total, horizontal scroll past ~6 columns, a sticky student
-column, and CSV export. **A missing mark is an em-dash, never `0`** — stated once per screen.
+Student × task grid per group, with a total, horizontal scroll past ~6 columns, a sticky student
+column, and CSV export. The total is **"Average of marked work"** (`D-45`): there is no term in the
+model, so it is course-to-date, over work marked in the platform, with missing work excluded rather
+than counted as 0. Google Form quiz scores appear as their own mirrored columns (`D-46`). Built in
+unit 7. **A missing mark is an em-dash, never `0`** — stated once per screen.
 Derivable from the existing grading queue; needs a route and a screen.
 
 ### 2.4 Weekly reports `[NEW]` — the largest new subsystem
@@ -243,8 +253,10 @@ mirrored data says when it last checked, amber for a queue and red only for fail
 
 | # | Question | Blocks |
 |---|---|---|
-| 1 | Redis for device/session management, or drop the Security tab? | `AUTH-5` |
-| 2 | Marked copy: flattened PDF, or rendered overlay? | `MARK-*` |
-| 3 | Report generation: scheduled, on-demand, or both? | `RPT-*` |
-| 4 | Are `students.mode`, session `mode` and `learning_mode` really three axes? | `DOM-3`, `SESS-*` |
-| 5 | Confirm fixtures are regenerated rather than migrated. | `DOM-1`, `DOM-4` |
+| 1 | ~~Redis for device/session management, or drop the Security tab?~~ **Closed `D-1`: dropped.** | ~~`AUTH-5`~~ |
+| 2 | ~~Marked copy: flattened PDF, or rendered overlay?~~ **Closed `D-2`: rendered overlay.** | `MARK-*` |
+| 3 | ~~Report generation: scheduled, on-demand, or both?~~ **Closed `D-3`: on demand.** | `RPT-*` |
+| 4 | ~~Are `students.mode`, session `mode` and `learning_mode` really three axes?~~ **Closed `D-4`/`D-9`: none.** | `DOM-3`, `SESS-*` |
+| 5 | ~~Confirm fixtures are regenerated rather than migrated.~~ **Closed `D-5`: regenerated.** | `DOM-1`, `DOM-4` |
+| 6 | **Open (unit 7, `B-1`):** what each submission mode (`PDF upload`, `Google Doc link`, `photo`) admits at submit time, and whether a typed answer survives on a task that states modes. | `MARK-6` |
+| 7 | **Open (unit 7, `B-2`):** may students upload files directly (a PDF, up to five photos); what happens while storage is off in production; does a resubmission replace the whole photo set. | `MARK-6` |

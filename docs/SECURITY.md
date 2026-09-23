@@ -90,10 +90,39 @@ The profile photo is the first upload a student can perform. It needs its own ti
 images only, smaller cap, its own rate limit — rather than widening `@Roles` on the staff endpoint.
 Widening the existing route would also give students PDF and video upload.
 
-### 2.5 PDF annotations
-Stored as coordinates and text, not as a rewritten file, which removes a whole class of file-parsing
-risk. The text is staff-authored and rendered to students: **escape it; never
-`dangerouslySetInnerHTML`.** Same rule `CLAUDE.md` §5.19 applies to blog bodies.
+**Submissions (unit 7): still no student upload.** `PRODUCT_SPEC` §2.1 promises PDF and photo
+hand-ins, but whether and how students upload is `B-2`, **open** and escalated. Until it is ruled, a
+submission is a pasted public URL (`IsPublicHttpUrl`), and no student-reachable `FileInterceptor`
+exists — a reviewer should grep for one. When `B-2` is ruled, the route gets the tighter contract
+above, not a widened staff endpoint.
+
+### 2.5 PDF annotations — **BUILT 2026-09-23 (unit 7)**
+Stored as coordinates, text and stroke points, not as a rewritten file, which removes a whole class of
+file-parsing risk on the server: **no server-side PDF library** (`D-2`). The text is staff-authored and
+rendered to students: **escape it; never `dangerouslySetInnerHTML`** — all marking screens render it
+as React text nodes (grep-checked). Same rule `CLAUDE.md` §5.19 applies to blog bodies.
+- **Only platform-stored files are drawn on** (`D-41`). A pasted third-party URL is never fetched by
+  the API (no SSRF-shaped proxy) and never auto-loaded into a staff browser (no IP leak to a host the
+  student chose); it is graded with a mark and feedback and offered as "Open original".
+- **PDFs are rendered in the browser by pdf.js** (`D-40`), pinned exact at 6.3.289 — past 4.2.67, the
+  fix for CVE-2024-4367 (arbitrary JavaScript via a crafted font). From v5 the eval-based font path it
+  abused is gone. Lazy-loaded on the marking routes only; worker bundled from the app's own origin.
+  Keep it pinned and on the dependency audit.
+- **Helmet's `Cross-Origin-Resource-Policy: same-origin` is kept.** It blocks a cross-origin `<img>`
+  of `/uploads/*` (the web app is a different origin from the API), so the marking screens fetch the
+  file through CORS (not subject to CORP; the allow-list already names the web origin) and draw it
+  from a `blob:` URL. The header was **not** relaxed. Other `<img src={mediaSrc(...)}>` uses may be
+  affected (`MARK-F4`).
+- Validation: every annotation field is decorated; stroke points are validated per element
+  (`IsPointList`, each `[x, y]` in 0–100, 2–2000 points); kind/path/text coherence is re-checked in the
+  service and by two CHECKs in `019`.
+
+### 2.5a Mark-book CSV export (`BOOK-3`, unit 7)
+Student names are typed by students and task titles by staff; a CSV opened in a spreadsheet runs a
+cell that starts with `=`, `+`, `-` or `@`. Every field starting with one of those, a TAB or a CR is
+prefixed with `'` (formula-injection neutralisation), then RFC 4180-quoted. Names only, no email. The
+`Content-Disposition` filename is minted from the stored group id — never the group's name, never the
+raw path parameter. Scoped like every group read (`GROUP_NOT_FOUND` 404). A read, so not audited.
 
 ### 2.6 Google OAuth sign-in (decision 9)
 The largest auth change, sequenced last. Non-negotiables when it lands: validate `state` (the

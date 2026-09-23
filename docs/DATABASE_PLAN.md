@@ -57,8 +57,8 @@ would be a one-way door for no benefit.
 | `assessments` | `submission_modes` | `TEXT[] NOT NULL DEFAULT '{}' CHECK (submission_modes <@ ARRAY['pdf_upload','doc_link','photo_upload'])` — `018`, **added by `D-31`** | Submission settings; multi-file is unit 7's |
 | `assessments` | `draft_id` | `TEXT REFERENCES task_drafts(id) ON DELETE SET NULL` — `018` | Provenance, not a live link |
 | `assessments` | `attachments` | `JSONB NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(attachments) = 'array')` — `018`, **added by unit 6** (it was missing here; `API_GAP_ANALYSIS.md` A4/B3 require attachments on the task itself). Each element carries `audience` (`D-29`). | Copied from a draft, a handful per task, so JSONB rather than a child table |
-| `assessment_submissions` | `returned_at` | `TIMESTAMPTZ(3)` | Save ≠ save-and-return |
-| `assessment_submissions` | `include_in_report` | `BOOLEAN NOT NULL DEFAULT true` | Marking view toggle |
+| `assessment_submissions` | `returned_at` | `TIMESTAMPTZ(3)` | Save ≠ save-and-return. **Applied in `019`** (unit 7): backfilled `:= corrected_at`; `CHECK (returned_at IS NULL OR corrected_at IS NOT NULL)` |
+| `assessment_submissions` | `include_in_report` | `BOOLEAN NOT NULL DEFAULT true` | Marking view toggle. **Deferred to the weekly-reports migration** (unit 7 assumption A-5): nothing reads it before then |
 
 **On `visibility`.** It must be a separate column, not inferred: status derived purely from
 timestamps cannot express "hidden". **`D-28` (2026-09-22) narrowed it to `published | hidden`.** The
@@ -78,7 +78,7 @@ has a submission is refused (409).
 | `assistant_group_assignments` | `id`, `user_id`, `group_id`, `assigned_by`, `assigned_at`, `UNIQUE(user_id, group_id)` | Rows exist only when scope is `assigned_groups`. Index on `user_id`. |
 | `assistant_invitations` | `id`, `email`, `role`, `scope`, `group_ids TEXT[]`, `token UNIQUE`, `expires_at`, `accepted_at`, `invited_by` | Single-use; accepting creates the user and its scope in one transaction. |
 | `task_drafts` | `id`, `course_id`, `type`, `work_type`, `title`, `description`, `instructions`, `attachments JSONB`, `used_count INT NOT NULL DEFAULT 0`, `created_by`, `created_at`, `updated_at` (both `TIMESTAMPTZ(3)`) | The reuse library. Migration `018`. `created_at` added by unit 6 (the §9 convention; this list was shorthand). |
-| `submission_annotations` | `id`, `submission_id CASCADE`, `page INT`, `x_percent NUMERIC(5,2)`, `y_percent NUMERIC(5,2)`, `kind CHECK IN ('comment','tick','cross')`, `text`, `created_by`, `created_at` | Stored as **data**, not a flattened file — which is what makes them editable and deletable. Index `(submission_id, page)`. |
+| `submission_annotations` | **As applied in `019` (unit 7), per `D-2`:** `id`, `submission_id CASCADE`, `file_url` (which file the mark is on; survives a resubmission), `page INT 1–500`, `kind CHECK IN ('comment','tick','cross','pen','highlight')`, `x_percent`/`y_percent NUMERIC(5,2) 0–100`, `text ≤ 2000` (non-blank for a comment), `path JSONB` (a stroke's `[[x%,y%],…]`, 2–2000 points, present exactly for `pen`/`highlight`), `created_by RESTRICT`, `created_at`, `updated_at` (`TIMESTAMPTZ(3)`) | Stored as **data**, not a flattened file — which is what makes them editable and deletable. Index `(submission_id, page)`. `NUMERIC` arrives as a string; the repository parses it. |
 | `weekly_reports` | `id`, `student_id`, `group_id`, `course_id`, `week_number INT`, `period_start DATE`, `period_end DATE`, `generated_at`, `status CHECK IN ('new','under_review','reviewed','sent')`, `assigned_assistant_id`, `assistant_note`, `teacher_note`, `reviewed_by`, `reviewed_at`, `sent_at`, `sent_to`, `file_url`, `UNIQUE(student_id, week_number)` | The flagship new entity. Index `(group_id, week_number, status)`. |
 | `notification_preferences` | `user_id PK`, four booleans | |
 | `mail_deliveries` | `id`, `to_email`, `template`, `related_type`, `related_id`, `sent_at TIMESTAMPTZ(3)`, `status`, `error` | Emailing a child's marks to a parent is PII egress; it must be reconstructable. |
@@ -291,7 +291,7 @@ this scale round trips and row volume matter and query counts mostly do not.
 (`DOM-3`) · `015` **assistant scope tables + data move** (`AUTH-2`, destructive, **applied and verified**) ·
 `016` mail deliveries (**applied**, unit 3) · `017` assistant invitations (**applied**, unit 5) ·
 `018` **task drafts + assessment columns** (**applied and verified**, unit 6) · `019` annotations +
-submission columns · `020` sessions rework · `021` attendance enum · `022` weekly reports ·
+submission columns (**applied and verified**, unit 7; `MARK-6`'s multi-file columns deliberately **not** in it — `B-1`/`B-2` open, they become `020` and the rest shift) · `020` sessions rework · `021` attendance enum · `022` weekly reports ·
 `023` announcements (group audience, media, draft) · `024` notification preferences
 
 **Renumbered 2026-09-22, unit 6.** The list had assigned `016` to task drafts, but `016` shipped as

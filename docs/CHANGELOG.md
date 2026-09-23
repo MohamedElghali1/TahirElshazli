@@ -1514,3 +1514,97 @@ different marker → 403; clearing a set marker → 403 (unit).
 
 **Also filed:** `TASK-F3` (align the submissions-delete refusal to 409) and `TASK-F4` (Postgres
 work/credential integration coverage, `tallyResults` first).
+
+---
+
+## 2026-09-23 — Unit 7 (marking and the mark book): rulings `D-40`…`D-46`, `D-38`/`D-39` withdrawn
+
+The unit-7 plan (`docs/phases/unit-7/PHASE_PLAN.md` §8) escalated nine blockers. The user accepted all
+nine recommendations, then — the same day, before anything of `MARK-6` shipped — **withdrew `B-1` and
+`B-2`** with the instruction to escalate the `MARK-6` design question rather than decide it.
+
+### `D-38`, `D-39` — `B-1`, `B-2` (`MARK-6`): **accepted, then withdrawn**
+Recorded so the ids are not reused and so the history of migration `019` is readable. Both remain
+**open blockers**, escalated to the user:
+- `B-1`: what each submission mode (`pdf_upload | doc_link | photo_upload`) admits at submit time, and
+  whether a typed answer survives on a task that states modes.
+- `B-2`: whether students may upload files directly, what happens while file storage is off in
+  production, and whether a resubmission replaces the whole photo set.
+A stopped executor had folded a `files JSONB` column into `019` under them; it was **removed** before
+`019` ran anywhere but disposable test databases, so `019` was edited in place. Whatever is decided
+becomes `020`.
+
+### `D-40` — `B-3`: the web app may use `pdfjs-dist` (reading A)
+Pinned exact at **6.3.289** (past 4.2.67, the CVE-2024-4367 floor), lazy-loaded on the marking routes
+only, worker bundled from the app's own origin. From v5 pdf.js has no `isEvalSupported` path, so the
+flag the plan named no longer exists. **Contradicts** `redesign-mapping.md`'s "none go in"; that line is
+narrowed, not the ruling. `@napi-rs/canvas` arrives as pdf.js's Node-only optional dependency; the
+browser never loads it.
+
+### `D-41` — `B-4`: only platform-stored files are annotatable (reading A)
+A pasted URL is graded with a mark and feedback and shown as "Open original": fetching it would be an
+SSRF-shaped proxy, auto-loading it would leak staff IPs. **Consequence, stated plainly:** with `B-2`
+open no student route can store a file, so no real submission is annotatable yet in any environment;
+in production it also needs an R2 driver (`MARK-F1`, not built).
+
+### `D-42` — `B-5`: annotation authorship and lifecycle
+(a) Only a mark's author may change or erase it — a 403, since the mark is on the caller's screen.
+(b) **Marking up a returned paper is allowed and audited**, like a re-grade; the student sees it at
+once. (c) Resubmission rules unchanged; marks on a replaced file are kept and counted as stale.
+
+### `D-43` — `B-6`: the marker is advisory; the first mark claims (reading A)
+The first saved mark **or** first annotation on a task with no marker names the actor, when they
+qualify under `D-32`'s rule (teacher, admin, or an active assistant reaching every targeted group).
+Atomic, audited as `assessment.updated`. Never on a read (`GET` never mutates). An assistant reaching
+only some targeted groups saves the mark and the task stays unclaimed — the claim writes nothing
+`D-32` would refuse to name directly. The tasks list reads "First to mark", not "First to open".
+
+### `D-44` — `B-7`: `/grade` and the course queue move to the group grain (reading A)
+`POST /staff/submissions/:id/grade` was course-grained and **missing from `AUTH-6`'s remainder list**;
+it now uses the same gate as `/return` and the annotation routes. `GET /staff/courses/:id/submissions`
+narrows its **items** to held groups in the query. Its per-task **averages stay course-wide** for every
+viewer — the recorded residue, as `D-35`'s was — because narrowing them makes a number change with who
+is looking (`D-23`). The course tab gains Return and Save and return.
+
+### `D-45` — `B-8`: the mark book's total is "Average of marked work" (reading (a))
+The mean of a student's per-task shares over work **marked in the platform** (saved or returned), with
+no term (none exists in the model) and never labelled "term". **Interaction with `D-46`, recorded:**
+`D-45` says "`GROUP-4`'s arithmetic", which counts only platform submissions, so mirrored Google Form
+scores are shown as columns but **not** averaged; the mark book and the group report agree. If the
+teacher expects quizzes inside the average, that is a new ruling, not a fix.
+
+### `D-46` — `B-9`: Google Form scores appear in the mark book (reading (b))
+Labelled mirrored, with the form's last sync time and its unmatched-response count. Each cell is the
+student's **latest** matched response, chosen in the query (`findLatestScoresForStudents`, both drivers)
+— which surfaced `MARK-F2`: the older per-student analytics read picks the *oldest* on Postgres.
+
+### Assumptions taken without a blocker (plan §8, A-1…A-14), kept
+A-1 the backfill `returned_at := corrected_at`; A-2 the resubmission freeze stays on `corrected_at`;
+A-3 return needs a mark (409), a re-return is a no-op with no second audit entry; A-4 a re-grade after
+return is visible at once; A-5 `includeInReport` deferred to unit 9 (removed from the `/return` body);
+A-6 the per-task queue is 409 for link and form work; A-7 one row per student at their earliest
+reachable placement, lateness by their own resolving group; A-8 staff see saved-not-returned marks in
+the mark book, hidden tasks excluded; A-9 CSV names only, not audited; A-10 kinds
+`comment | tick | cross | pen | highlight`, the eraser is a DELETE; A-11 storage bounds (page ≤ 500,
+text ≤ 2000, 2–2000 points, ≤ 500 marks per paper); A-12 one `submission.annotated` action; A-13 the
+annotation repository in `assessments/`, the service in `manage/`; A-14 no one-submission GET.
+
+### Closed
+`TASK-F3`: deleting a task with submissions is now **409**, agreeing with `D-36`'s own refusal.
+
+### Document conflicts found while planning (plan, "Conflicts between documents")
+1. `PHASE_ROADMAP.md` unit 7 said `MARK-5` was blocked by `D-2`, which closed 2026-09-20 — fixed.
+2. `PRODUCT_SPEC.md` §2.2/§10 and `DOMAIN_MODEL.md` §4 still called the overlay question open — fixed.
+3. `DATABASE_PLAN.md` §3, `DOMAIN_MODEL.md` §4 and `API_SPEC.yaml` allowed only comment/tick/cross, no
+   stroke path; `D-2` includes freehand strokes — amended to `D-2`.
+4. `includeInReport` sat on `/return` in `API_SPEC` and on `/grade` in `API_GAP_ANALYSIS` A7, which also
+   modelled save-without-return as a flag — two operations kept, `includeInReport` deferred (A-5).
+5. Non-submitters: `API_GAP_ANALYSIS` A7 put them on the course queue, B4 and `API_SPEC` on the per-task
+   route — the per-task route only.
+6. `markbook.csv` was in `API_GAP_ANALYSIS` B5 but not `API_SPEC` — added.
+7. `MARK-1` "4 routes" vs `API_GAP_ANALYSIS`'s 6 — both right about different sets; no change.
+8. `AUTHORIZATION_MODEL.md` §4 and `CLAUDE.md` §7 left `/grade` off `AUTH-6`'s list — closed by `D-44`.
+9. Tool names: `PRODUCT_SPEC` "pen and highlight" vs `D-2` "marker and eraser" — both kept (A-10).
+10. `redesign-mapping.md` "none go in" vs `D-40` — narrowed.
+11. `PRODUCT_SPEC.md` §2.1 promises PDF and photo upload; no student upload exists — open as `B-2`.
+12. `ARCHITECTURE.md` §6 places annotations in `manage/` — refined by A-13.

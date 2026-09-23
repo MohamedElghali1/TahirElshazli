@@ -3816,3 +3816,31 @@ unit stays `[~]`.
   coordinator did not observe it; it is recorded as the user's verification.
 - **Status.** Unit 6 is `[x]`. Unit 7 (marking and the mark book) is next, and inherits `MARK-6` and
   `TASK-F3`.
+
+## 2026-09-23 — Unit 7: marking and the mark book (built; awaiting review)
+
+**How it ran.** The planner agent drafted the plan; its first two runs died (a rate limit, then a
+revoked token) and the third finished. The user accepted all nine of its blockers' recommendations,
+then asked for the pipeline to run **without the agent harness** and for the `MARK-6` design question
+to be **escalated rather than decided**. The coordinator stopped the executor agent mid-run (it had
+committed 7a–7f), kept its work, re-did the planning pass itself, verified each commit, took `MARK-6`
+back out, finished the unit, and ran the review as a separate pass.
+
+**What exists now.**
+- Teachers and assistants draw on a student's paper — ticks, crosses, numbered comments, pen and
+  highlighter strokes, an eraser for their own marks — and every mark is data over the untouched
+  original, saved as it is drawn. PDFs render in the browser with pdf.js.
+- Saving a mark and returning it are two actions. The student sees nothing until the work is
+  returned; then they see the mark, the feedback and the marked-up paper.
+- A per-task list shows every student the task was set for, including those who never handed it in.
+- The mark book: each group's students against its tasks, Google Form quiz scores copied in and
+  labelled as such, an "average of marked work", a missing mark as an em-dash, and a CSV export that
+  is safe to open in Excel with Arabic names.
+- Grading and the course submission queue are now scoped to the assistant's own groups.
+
+**What is honestly not there.** No real student submission can be marked up yet: students cannot
+upload files (`MARK-6`, open), and production has no file storage until an R2 driver exists. The
+marking screens were proven against a file placed by hand.
+
+**Counts.** 735 unit / 43 files, 330 e2e, 173 integration (0 skipped, PostgreSQL 15.19, 001–019 from
+an empty schema). Frontend `tsc` 0, lint 0. Node v26.8.1.
