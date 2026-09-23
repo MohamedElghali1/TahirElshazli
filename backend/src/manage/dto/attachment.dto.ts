@@ -1,4 +1,4 @@
-import { IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { IsMediaUrl } from '../../common/validators/is-media-url.validator.js';
 
 /**
@@ -40,4 +40,12 @@ export class AttachmentDto {
   @Min(0)
   @Max(1024 * 1024 * 1024)
   sizeBytes: number | null = null;
+
+  /**
+   * `D-29`: who it is for. **Required, with no default** - defaulting a mark
+   * scheme to `students` is exactly the mistake this field exists to prevent,
+   * so the author has to say.
+   */
+  @IsIn(['students', 'staff'], { message: 'audience must be students or staff' })
+  audience!: 'students' | 'staff';
 }

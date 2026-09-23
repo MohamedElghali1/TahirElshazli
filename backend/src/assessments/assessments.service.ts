@@ -10,6 +10,7 @@ import type {
   AssessmentStatus,
   AssessmentType,
   AssessmentRepository,
+  Attachment,
   StoredAssessment,
   TaskVisibility,
   StoredSubmission,
@@ -73,8 +74,16 @@ export interface SubmissionView {
   revisions: SubmissionRevision[];
 }
 
+/** An attachment as a student receives it: the audience is implied. */
+export type StudentAttachment = Omit<Attachment, 'audience'>;
+
 export interface AssessmentDetail extends AssessmentListItem {
   instructions: string;
+  /**
+   * Only the `students` attachments (`D-29`). A `staff` one - a mark scheme -
+   * is never in this response.
+   */
+  attachments: StudentAttachment[];
   availableTo: string;
   allowedFileTypes: string[];
   maxFileSizeBytes: number;
@@ -400,6 +409,16 @@ export class AssessmentsService {
     return {
       ...this.toListItem(assessment, submission, now, hasExternalResult),
       instructions: assessment.instructions,
+      // Filtered here, on the only student read that carries attachments, and
+      // mapped field by field so nothing else on the stored element travels.
+      attachments: assessment.attachments
+        .filter((a) => a.audience === 'students')
+        .map((a) => ({
+          url: a.url,
+          name: a.name,
+          mimeType: a.mimeType,
+          sizeBytes: a.sizeBytes,
+        })),
       availableTo: assessment.availableTo,
       allowedFileTypes: assessment.allowedFileTypes,
       maxFileSizeBytes: assessment.maxFileSizeBytes,

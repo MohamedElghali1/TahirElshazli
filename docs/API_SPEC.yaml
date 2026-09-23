@@ -462,14 +462,19 @@ components:
     # `/uploads/<name>` path or a public http(s) URL - `javascript:` and `data:`
     # are refused (`IsMediaUrl`), and the URL is never fetched server-side.
     # `mimeType` and `sizeBytes` are display-only.
+    # `audience` (`D-29`) is REQUIRED with no default: a mark scheme defaulted to
+    # `students` is the mistake it exists to prevent. The student read returns
+    # only `students` attachments. It governs what the API returns, not access
+    # to the file - `/uploads/*` is unauthenticated until signed URLs on R2.
     Attachment:
       type: object
-      required: [url, name]
+      required: [url, name, audience]
       properties:
         url:       { type: string, maxLength: 2048 }
         name:      { type: string, minLength: 1, maxLength: 200 }
         mimeType:  { type: [string, 'null'], maxLength: 120 }
         sizeBytes: { type: [integer, 'null'], minimum: 0 }
+        audience:  { type: string, enum: [students, staff] }
 
     # --- Authoring (`/staff/courses/{courseId}/assessments`, `/staff/assessments/*`)
     # Added in unit 6: these routes were `[MODIFY]` in `API_GAP_ANALYSIS.md`
@@ -1558,6 +1563,38 @@ paths:
       responses:
         '200': { description: OK }
         '404': { $ref: '#/components/responses/NotFound' }
+
+  /assessments/{assessmentId}:
+    get:
+      tags: [tasks]
+      summary: One task as the student sees it
+      description: >
+        Carries `attachments` - ONLY those whose `audience` is `students`
+        (`D-29`), each without the `audience` field. A `hidden` task (`D-28`) is a
+        404 whose body is identical to a nonexistent id. `canSubmit` is false once
+        a one-shot task (`allowResubmission: false`) has a submission.
+      x-roles: [student]
+      parameters:
+        - { name: assessmentId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200': { description: OK }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /staff/uploads:
+    post:
+      tags: [uploads]
+      summary: Upload one file to the configured storage driver
+      description: >
+        The whitelist gained `audio/mpeg` (.mp3) and `audio/mp4` (.m4a) for task
+        attachments (`D-29`). The response `kind` is `image | video | audio | file`
+        - the upload's own vocabulary, no longer the blog's; the blog refuses
+        `audio`. Still no SVG, HTML or anything executable. 503 when
+        `STORAGE_DRIVER=none`.
+      x-roles: [assistant, teacher, admin]
+      responses:
+        '201': { description: Stored }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '503': { description: Uploads are not configured on this server }
 
   /assessments/{assessmentId}/submissions:
     parameters:

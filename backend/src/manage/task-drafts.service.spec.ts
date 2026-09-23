@@ -29,7 +29,7 @@ const DRAFT = {
   title: 'Reading passage: rates',
   instructions: 'Read and answer.',
   attachments: [
-    { url: '/uploads/passage.pdf', name: 'Passage', mimeType: 'application/pdf', sizeBytes: 12 },
+    { url: '/uploads/passage.pdf', name: 'Passage', mimeType: 'application/pdf', sizeBytes: 12, audience: 'students' as const },
   ],
 };
 

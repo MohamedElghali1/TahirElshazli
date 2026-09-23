@@ -57,7 +57,7 @@ describe('InMemoryAssessmentRepository: unit-6 columns', () => {
       markerId: 'teacher-1',
       allowResubmission: false,
       submissionModes: ['photo_upload'],
-      attachments: [{ url: '/uploads/a.pdf', name: 'A', mimeType: null, sizeBytes: null }],
+      attachments: [{ url: '/uploads/a.pdf', name: 'A', mimeType: null, sizeBytes: null, audience: 'students' }],
     });
     await repo.setTargets(created.id, [{ groupId: 'group-1' }]);
     const targeted = await repo.findByIdForGroups(created.id, ['group-1']);
@@ -76,11 +76,11 @@ describe('InMemoryAssessmentRepository: unit-6 columns', () => {
   it('never aliases attachments between a read and the stored row (CLAUDE.md §9)', async () => {
     const created = await repo.create({
       ...NEW_TASK,
-      attachments: [{ url: '/uploads/a.pdf', name: 'Before', mimeType: null, sizeBytes: null }],
+      attachments: [{ url: '/uploads/a.pdf', name: 'Before', mimeType: null, sizeBytes: null, audience: 'students' }],
     });
     const before = await repo.findById(created.id);
     await repo.update(created.id, {
-      attachments: [{ url: '/uploads/a.pdf', name: 'After', mimeType: null, sizeBytes: null }],
+      attachments: [{ url: '/uploads/a.pdf', name: 'After', mimeType: null, sizeBytes: null, audience: 'students' }],
     });
     expect(before?.attachments[0]?.name).toBe('Before');
 

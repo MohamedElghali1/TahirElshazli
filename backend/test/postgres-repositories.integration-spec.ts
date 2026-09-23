@@ -1990,8 +1990,8 @@ describeIfDb('Postgres repositories', () => {
 
     it('creates a draft and round-trips attachments JSONB', async () => {
       const attachments = [
-        { url: '/uploads/passage.pdf', name: 'Passage', mimeType: 'application/pdf', sizeBytes: 1234 },
-        { url: 'https://example.com/a.mp3', name: 'Listening', mimeType: null, sizeBytes: null },
+        { url: '/uploads/passage.pdf', name: 'Passage', mimeType: 'application/pdf', sizeBytes: 1234, audience: 'students' as const },
+        { url: 'https://example.com/a.mp3', name: 'Listening', mimeType: null, sizeBytes: null, audience: 'students' as const },
       ];
       const created = await drafts().create({ ...base, attachments });
       expect(created.usedCount).toBe(0);
@@ -2068,7 +2068,7 @@ describeIfDb('Postgres repositories', () => {
 
     it('create and update round-trip visibility, allow_resubmission, submission_modes, draft_id, attachments and marker_id', async () => {
       const attachments = [
-        { url: '/uploads/scheme.pdf', name: 'Mark scheme', mimeType: 'application/pdf', sizeBytes: 99 },
+        { url: '/uploads/scheme.pdf', name: 'Mark scheme', mimeType: 'application/pdf', sizeBytes: 99, audience: 'staff' as const },
       ];
       const created = await repo().create({
         ...NEW_TASK,
@@ -2142,7 +2142,7 @@ describeIfDb('Postgres repositories', () => {
         markerId: 'teacher-1',
         allowResubmission: false,
         submissionModes: ['photo_upload'],
-        attachments: [{ url: '/uploads/a.pdf', name: 'A', mimeType: null, sizeBytes: null }],
+        attachments: [{ url: '/uploads/a.pdf', name: 'A', mimeType: null, sizeBytes: null, audience: 'students' as const }],
       });
       await repo().setTargets(created.id, [{ groupId: 'group-1' }]);
       const expected = {
@@ -2151,7 +2151,7 @@ describeIfDb('Postgres repositories', () => {
         allowResubmission: false,
         submissionModes: ['photo_upload'],
         draftId: null,
-        attachments: [{ url: '/uploads/a.pdf', name: 'A', mimeType: null, sizeBytes: null }],
+        attachments: [{ url: '/uploads/a.pdf', name: 'A', mimeType: null, sizeBytes: null, audience: 'students' as const }],
       };
       const listed = (await repo().findByCourseForGroups('course-1', ['group-1'])).find(
         (a) => a.id === created.id,

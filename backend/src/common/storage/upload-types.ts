@@ -1,5 +1,3 @@
-import type { BlogMediaKind } from '../../blog/interfaces/blog-repository.interface.js';
-
 /**
  * What may be uploaded, and what it is stored as.
  *
@@ -13,7 +11,8 @@ import type { BlogMediaKind } from '../../blog/interfaces/blog-repository.interf
  * §5.8 makes allowed types *configurable per assignment*. That rule is about
  * student submissions and does not reach here: a teacher's blog gallery is one
  * surface with one audience, and the reason to constrain it is a security one
- * rather than a pedagogical one.
+ * rather than a pedagogical one. The same table serves task attachments
+ * (unit 6), which is why it carries audio and why `kind` is not the blog's.
  *
  * Three deliberate omissions, each of which someone will eventually ask for:
  *
@@ -26,11 +25,22 @@ import type { BlogMediaKind } from '../../blog/interfaces/blog-repository.interf
  *   whose contents cannot be checked is not a validated upload; it is an
  *   unvalidated one with a content type attached.
  */
+/**
+ * What kind of thing an upload is, decided from the validated MIME type.
+ *
+ * **Its own vocabulary, not the blog's** (`D-29`, unit 6). It used to be typed
+ * `BlogMediaKind`, which made the storage layer speak one consumer's language:
+ * task attachments needed audio, and the blog has no audio kind. A consumer
+ * maps this onto its own kinds and refuses what it cannot render - the blog
+ * editor refuses `audio` rather than posting it to a DTO that would 400.
+ */
+export type UploadKind = 'image' | 'video' | 'audio' | 'file';
+
 export interface UploadType {
   /** The extension the file is stored under. No leading dot. */
   extension: string;
-  /** How the blog renders it, so the caller does not have to guess from MIME. */
-  kind: BlogMediaKind;
+  /** What it is, so the caller does not have to guess from MIME. */
+  kind: UploadKind;
 }
 
 export const ALLOWED_UPLOAD_TYPES: Readonly<Record<string, UploadType>> = {
@@ -44,6 +54,11 @@ export const ALLOWED_UPLOAD_TYPES: Readonly<Record<string, UploadType>> = {
   // QuickTime, because a phone recording of a results morning is what this is
   // actually for and iOS produces .mov.
   'video/quicktime': { extension: 'mov', kind: 'video' },
+  // Listening tasks (`D-29`): a recording attached to a task. Both are
+  // non-executable containers served with nosniff. `audio/mp4` is the .m4a an
+  // iPhone voice memo produces; `audio/mpeg` is .mp3.
+  'audio/mpeg': { extension: 'mp3', kind: 'audio' },
+  'audio/mp4': { extension: 'm4a', kind: 'audio' },
   'application/pdf': { extension: 'pdf', kind: 'file' },
   'text/plain': { extension: 'txt', kind: 'file' },
 };

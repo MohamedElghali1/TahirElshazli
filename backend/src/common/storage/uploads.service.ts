@@ -10,9 +10,9 @@ import { FILE_STORAGE } from './file-storage.interface.js';
 import {
   ALLOWED_UPLOAD_MIME_TYPES,
   ALLOWED_UPLOAD_TYPES,
+  type UploadKind,
   MAX_UPLOAD_BYTES,
 } from './upload-types.js';
-import type { BlogMediaKind } from '../../blog/interfaces/blog-repository.interface.js';
 
 /**
  * The one thing a multipart upload gives us, typed here rather than imported.
@@ -30,8 +30,8 @@ export interface UploadedFileLike {
 }
 
 export interface UploadResult extends StoredFile {
-  /** What the blog should render it as, decided from the validated MIME type. */
-  kind: BlogMediaKind;
+  /** What it is, decided from the validated MIME type - see `UploadKind`. */
+  kind: UploadKind;
 }
 
 /**

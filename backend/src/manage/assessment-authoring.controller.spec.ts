@@ -343,7 +343,7 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
       title: 'Draft passage',
       description: '',
       instructions: 'From the library.',
-      attachments: [{ url: '/uploads/passage.pdf', name: 'Passage', mimeType: null, sizeBytes: null }],
+      attachments: [{ url: '/uploads/passage.pdf', name: 'Passage', mimeType: null, sizeBytes: null, audience: 'students' }],
       createdBy: 'teacher-1',
     });
 
@@ -400,7 +400,7 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
   describe('attachments and allowResubmission (TASK-4, TASK-5)', () => {
     it('attachments and allowResubmission round-trip; assessment.updated before/after carry them and do not alias', async () => {
       const attachments = [
-        { url: '/uploads/scheme.pdf', name: 'Mark scheme', mimeType: 'application/pdf', sizeBytes: 5 },
+        { url: '/uploads/scheme.pdf', name: 'Mark scheme', mimeType: 'application/pdf', sizeBytes: 5, audience: 'staff' as const },
       ];
       const created = await authoring.create('course-1', ADMIN, {
         ...TASK,
@@ -834,6 +834,32 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
       await scopes.setScope('assistant-2', 'all_groups');
       const wide = await authoring.create('course-1', OTHER_TA, { ...TASK, targets: [{ groupId: group3 }] });
       await authoring.setTargets(wide.id, OTHER_TA, [{ groupId: 'group-1' }]);
+    });
+  });
+
+  /** `D-29` (B-2 → B): who an attachment is for. */
+  describe('attachment audience (D-29)', () => {
+    it('the student detail carries only the students attachments', async () => {
+      const created = await authoring.create('course-1', ADMIN, {
+        ...TASK,
+        availableFrom: '2026-01-01T00:00:00Z',
+        availableTo: '2099-01-01T00:00:00Z',
+        dueAt: '2098-01-01T00:00:00Z',
+        attachments: [
+          { url: '/uploads/passage.pdf', name: 'Passage', mimeType: 'application/pdf', sizeBytes: 10, audience: 'students' },
+          { url: '/uploads/listening.mp3', name: 'Listening', mimeType: 'audio/mpeg', sizeBytes: 20, audience: 'students' },
+          { url: '/uploads/scheme.pdf', name: 'Mark scheme', mimeType: 'application/pdf', sizeBytes: 30, audience: 'staff' },
+        ],
+      });
+      const detail = await student.getAssessmentDetail(created.id, STUDENT_1);
+      expect(detail.attachments).toEqual([
+        { url: '/uploads/passage.pdf', name: 'Passage', mimeType: 'application/pdf', sizeBytes: 10 },
+        { url: '/uploads/listening.mp3', name: 'Listening', mimeType: 'audio/mpeg', sizeBytes: 20 },
+      ]);
+      expect(JSON.stringify(detail)).not.toContain('scheme.pdf');
+      // Staff still see all three.
+      const staff = (await authoring.list('course-1', ADMIN)).find((a) => a.id === created.id);
+      expect(staff?.attachments.map((a) => a.audience)).toEqual(['students', 'students', 'staff']);
     });
   });
 });

@@ -21,6 +21,18 @@ export type TaskVisibility = 'published' | 'hidden';
 export type SubmissionMode = 'pdf_upload' | 'doc_link' | 'photo_upload';
 
 /**
+ * Who an attachment is for (`D-29`). A passage or a recording is for
+ * `students`; a mark scheme is for `staff`. The student read returns only
+ * `students` attachments.
+ *
+ * This governs what the **API returns**, not access to the file itself: while
+ * files are served from `/uploads/*` without authentication (`SECURITY.md` §4),
+ * anyone holding a `staff` attachment's URL can fetch it. Signed URLs on R2 are
+ * what close that; production is `STORAGE_DRIVER=none` until then.
+ */
+export type AttachmentAudience = 'students' | 'staff';
+
+/**
  * A file or link that travels with a task or a draft - a passage, an audio
  * file, a mark scheme (`PRODUCT_SPEC.md` §2.1). A value object stored as a
  * JSONB array element, never a row of its own.
@@ -34,6 +46,7 @@ export interface Attachment {
   name: string;
   mimeType: string | null;
   sizeBytes: number | null;
+  audience: AttachmentAudience;
 }
 
 export interface StoredAssessment {

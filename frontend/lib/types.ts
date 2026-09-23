@@ -328,6 +328,8 @@ export interface SubmissionView {
 
 export interface AssessmentDetail extends AssessmentListItem {
   instructions: string;
+  /** Only the `students` attachments (`D-29`); the audience is implied. */
+  attachments: Omit<Attachment, 'audience'>[];
   availableTo: string;
   allowedFileTypes: string[];
   maxFileSizeBytes: number;
@@ -1027,14 +1029,26 @@ export interface Attachment {
   name: string;
   mimeType: string | null;
   sizeBytes: number | null;
+  /**
+   * Who it is for (`D-29`). The student read returns only `students` ones; a
+   * mark scheme is `staff`. This decides what the API returns, not who can
+   * fetch the file - see `SECURITY.md` §4 on `/uploads/*`.
+   */
+  audience: AttachmentAudience;
 }
 
-/** An attachment as a form sends it; the two display fields may be omitted. */
+export type AttachmentAudience = 'students' | 'staff';
+
+/**
+ * An attachment as a form sends it. The display fields may be omitted;
+ * `audience` may not - the API has no default for it, on purpose.
+ */
 export interface AttachmentInput {
   url: string;
   name: string;
   mimeType?: string | null;
   sizeBytes?: number | null;
+  audience: AttachmentAudience;
 }
 
 /**
@@ -1157,12 +1171,18 @@ export interface BlogMediaInput {
   sizeBytes?: number;
 }
 
-/** What `POST /staff/uploads` answers with, ready to become a `BlogMediaInput`. */
+/**
+ * What an upload is, decided by the server from the validated MIME type
+ * (`D-29`). Not the blog's vocabulary: the blog has no `audio`, and refuses it.
+ */
+export type UploadKind = 'image' | 'video' | 'audio' | 'file';
+
+/** What `POST /staff/uploads` answers with. */
 export interface UploadResult {
   url: string;
   sizeBytes: number;
   mimeType: string;
-  kind: BlogMediaKind;
+  kind: UploadKind;
 }
 
 /**

@@ -1662,7 +1662,7 @@ describe('Staff and admin API (e2e)', () => {
       type: 'homework',
       title: 'E2E draft',
       instructions: 'Read the passage.',
-      attachments: [{ url: '/uploads/passage.pdf', name: 'Passage' }],
+      attachments: [{ url: '/uploads/passage.pdf', name: 'Passage', audience: 'students' }],
     };
     const server = () => app.getHttpServer();
 
@@ -1686,7 +1686,7 @@ describe('Staff and admin API (e2e)', () => {
         title: 'E2E draft',
         usedCount: 0,
         createdBy: 'assistant-1',
-        attachments: [{ url: '/uploads/passage.pdf', name: 'Passage', mimeType: null, sizeBytes: null }],
+        attachments: [{ url: '/uploads/passage.pdf', name: 'Passage', mimeType: null, sizeBytes: null, audience: 'students' }],
       });
 
       const listed = await request(server())
@@ -1797,12 +1797,12 @@ describe('Staff and admin API (e2e)', () => {
       const post = (body: object) =>
         request(server()).post('/staff/task-drafts').set(bearer(adminToken)).send(body);
       await post({ ...draft, title: '   ' }).expect(400);
-      await post({ ...draft, attachments: [{ url: 'javascript:alert(1)', name: 'x' }] }).expect(400);
-      await post({ ...draft, attachments: [{ url: 'data:text/html,hi', name: 'x' }] }).expect(400);
+      await post({ ...draft, attachments: [{ url: 'javascript:alert(1)', name: 'x', audience: 'students' }] }).expect(400);
+      await post({ ...draft, attachments: [{ url: 'data:text/html,hi', name: 'x', audience: 'students' }] }).expect(400);
       await post({ ...draft, instructions: null }).expect(400);
       await post({
         ...draft,
-        attachments: Array.from({ length: 11 }, (_, i) => ({ url: `/uploads/f${i}.pdf`, name: `f${i}` })),
+        attachments: Array.from({ length: 11 }, (_, i) => ({ url: `/uploads/f${i}.pdf`, name: `f${i}`, audience: 'students' })),
       }).expect(400);
     });
 
@@ -1903,7 +1903,7 @@ describe('Staff and admin API (e2e)', () => {
     });
 
     it('threads attachments and allowResubmission through create, and both through PATCH', async () => {
-      const attachments = [{ url: 'https://example.com/passage.pdf', name: 'Passage' }];
+      const attachments = [{ url: 'https://example.com/passage.pdf', name: 'Passage', audience: 'students' }];
       const res = await request(server())
         .post('/staff/courses/course-1/assessments')
         .set(bearer(adminToken))
@@ -1929,7 +1929,7 @@ describe('Staff and admin API (e2e)', () => {
       await request(server())
         .patch(`/staff/assessments/${res.body.id}`)
         .set(bearer(adminToken))
-        .send({ attachments: [{ url: 'javascript:alert(1)', name: 'x' }] })
+        .send({ attachments: [{ url: 'javascript:alert(1)', name: 'x', audience: 'students' }] })
         .expect(400);
     });
 
@@ -2408,6 +2408,69 @@ describe('Staff and admin API (e2e)', () => {
       expect(ta.body.map((g: { id: string }) => g.id)).toEqual(['group-1']);
       const teacher = await request(server()).get('/staff/courses/course-1/groups').set(bearer(adminToken)).expect(200);
       expect(teacher.body.map((g: { id: string }) => g.id)).toEqual(expect.arrayContaining(['group-1', group3]));
+    });
+  });
+
+  describe('attachment audience (D-29) and audio uploads', () => {
+    const server = () => app.getHttpServer();
+    it('returns only students attachments to the student, and refuses an attachment with no audience', async () => {
+      const cohort = (
+        await request(server())
+          .post('/admin/groups')
+          .set(bearer(adminToken))
+          .send({ name: 'E2E - audience cohort', courseId: 'course-1' })
+          .expect(201)
+      ).body.id;
+      await request(server())
+        .post(`/staff/groups/${cohort}/members`)
+        .set(bearer(adminToken))
+        .send({ studentId: 'student-1' })
+        .expect(201);
+      const base = {
+        title: 'E2E audience task',
+        type: 'homework',
+        availableFrom: '2026-01-01T00:00:00.000Z',
+        availableTo: '2099-01-01T00:00:00.000Z',
+        dueAt: '2098-01-01T00:00:00.000Z',
+        maxScore: 10,
+        allowedFileTypes: ['application/pdf'],
+        maxFileSizeBytes: 1048576,
+        targets: [{ groupId: cohort }],
+      };
+      await request(server())
+        .post('/staff/courses/course-1/assessments')
+        .set(bearer(adminToken))
+        .send({ ...base, attachments: [{ url: '/uploads/a.pdf', name: 'No audience' }] })
+        .expect(400);
+      await request(server())
+        .post('/staff/task-drafts')
+        .set(bearer(adminToken))
+        .send({ courseId: 'course-1', type: 'homework', title: 'x', attachments: [{ url: '/uploads/a.pdf', name: 'A', audience: 'everyone' }] })
+        .expect(400);
+
+      const task = await request(server())
+        .post('/staff/courses/course-1/assessments')
+        .set(bearer(adminToken))
+        .send({
+          ...base,
+          attachments: [
+            { url: 'https://example.com/passage.pdf', name: 'Passage', audience: 'students' },
+            { url: 'https://example.com/scheme.pdf', name: 'Mark scheme', audience: 'staff' },
+          ],
+        })
+        .expect(201);
+      const detail = await request(server()).get(`/assessments/${task.body.id}`).set(bearer(studentToken)).expect(200);
+      expect(detail.body.attachments).toEqual([
+        { url: 'https://example.com/passage.pdf', name: 'Passage', mimeType: null, sizeBytes: null },
+      ]);
+      expect(JSON.stringify(detail.body)).not.toContain('scheme.pdf');
+      await request(server()).delete(`/staff/assessments/${task.body.id}`).set(bearer(adminToken)).expect(204);
+    });
+
+    it('advertises the two audio types in the staff upload config', async () => {
+      const config = await request(server()).get('/staff/uploads/config').set(bearer(assignedTaToken)).expect(200);
+      expect(config.body.allowedMimeTypes).toEqual(expect.arrayContaining(['audio/mpeg', 'audio/mp4']));
+      expect(config.body.allowedMimeTypes).not.toContain('image/svg+xml');
     });
   });
 });

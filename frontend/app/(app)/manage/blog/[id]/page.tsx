@@ -479,7 +479,14 @@ function UploadField({
     try {
       const result = await api.staff.upload(token, file);
       // `kind` comes back from the server, decided from the MIME type it
-      // validated - not guessed here from the extension.
+      // validated - not guessed here from the extension. The upload whitelist
+      // also serves task attachments, so it carries audio, which a post
+      // cannot show (`D-29`): refuse it here rather than send a media item
+      // the blog's own API would reject.
+      if (result.kind === 'audio') {
+        setError('Audio files can be attached to tasks, not to posts.');
+        return;
+      }
       onUploaded({
         kind: result.kind,
         url: result.url,
@@ -508,7 +515,7 @@ function UploadField({
           // A convenience only. The server validates the type against its own
           // whitelist regardless, because `accept` is a file-dialog filter and
           // not a control (CLAUDE.md §8).
-          accept={config.allowedMimeTypes.join(',')}
+          accept={config.allowedMimeTypes.filter((m) => !m.startsWith('audio/')).join(',')}
           onChange={pick}
           disabled={busy}
           className="text-base text-fg-2 file:me-3 file:rounded-md file:border file:border-border-medium file:bg-surface-2 file:px-3 file:py-2 file:text-xs file:text-fg"
