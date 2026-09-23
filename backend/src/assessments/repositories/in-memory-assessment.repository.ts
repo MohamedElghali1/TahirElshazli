@@ -789,6 +789,7 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
     studentId: string,
     fileUrl: string | null,
     answerText: string | null,
+    linkUrl: string | null,
   ): Promise<StoredSubmission> {
     const now = new Date().toISOString();
     const submission: StoredSubmission = {
@@ -804,7 +805,7 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       correctedAt: null,
       feedback: null,
       annotatedFileUrl: null,
-      linkUrl: null,
+      linkUrl,
       returnedAt: null,
     };
     this.submissions.push(submission);
@@ -816,6 +817,7 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
     studentId: string,
     fileUrl: string | undefined,
     answerText: string | undefined,
+    linkUrl: string | undefined,
   ): Promise<StoredSubmission | null> {
     const submission = this.submissions.find(
       (s) => s.id === submissionId && s.studentId === studentId,
@@ -843,6 +845,9 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
     }
     if (answerText !== undefined) {
       submission.answerText = answerText;
+    }
+    if (linkUrl !== undefined) {
+      submission.linkUrl = linkUrl;
     }
     submission.lastSubmittedAt = now;
     submission.updatedAt = now;

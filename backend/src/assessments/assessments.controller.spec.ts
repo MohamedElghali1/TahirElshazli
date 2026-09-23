@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AssessmentsController } from './assessments.controller.js';
 import { AssessmentsService } from './assessments.service.js';
+import { DatabaseService } from '../database/database.service.js';
+import { DATABASE_POOL } from '../database/database.tokens.js';
 import { ASSESSMENT_REPOSITORY } from './interfaces/assessment-repository.interface.js';
 import { InMemoryAssessmentRepository } from './repositories/in-memory-assessment.repository.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
@@ -40,6 +42,8 @@ describe('AssessmentsController', () => {
         { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },
         StudentGroupsService,
         AssessmentsService,
+        { provide: DATABASE_POOL, useValue: null },
+        DatabaseService,
         { provide: ASSESSMENT_REPOSITORY, useClass: InMemoryAssessmentRepository },
         // Work types and mirrored external results. The real implementation
         // rather than a stub, for the same reason as the group repository
@@ -352,6 +356,12 @@ describe('AssessmentsController', () => {
           { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },
           StudentGroupsService,
           AssessmentsService,
+          // `submitAssessment` wraps its writes in a transaction, so the
+          // service needs the real DatabaseService. A null pool puts it in the
+          // memory passthrough documented in `CLAUDE.md` §9 - no rollback, and
+          // the multi-file tests below say where that matters.
+          { provide: DATABASE_POOL, useValue: null },
+          DatabaseService,
           { provide: ASSESSMENT_REPOSITORY, useClass: InMemoryAssessmentRepository },
           { provide: WORK_REPOSITORY, useClass: InMemoryWorkRepository },
         ],
@@ -663,5 +673,157 @@ describe('AssessmentsController', () => {
         ),
       ).resolves.toBeDefined();
     });
+
+    /**
+     * Multi-file submission and `linkUrl` (slice 7b-ii; `D-39`, `D-42`, `D-43`).
+     *
+     * These run against the in-memory driver, where `runInTransaction` is a
+     * passthrough with no rollback (`CLAUDE.md` §9). That is not a gap for the
+     * refusal cases below, because **every file is validated before the
+     * transaction opens** - a bad file is refused before anything is written,
+     * rather than written and rolled back. True mid-transaction rollback is
+     * only provable against real PostgreSQL and is not claimed here.
+     */
+    describe('multi-file and linkUrl', () => {
+      const FILE = (n: string) => ({
+        fileUrl: `https://storage.example.com/submissions/${n}`,
+        displayName: n,
+      });
+
+      it('persists several files in order, with 0-based positions', async () => {
+        const task = await createTargeted({});
+        await controller.submitAssessment(
+          task.id,
+          { files: [FILE('a.pdf'), FILE('b.pdf'), FILE('c.pdf')] },
+          STUDENT,
+        );
+        const detail = await controller.getAssessmentDetail(task.id, STUDENT);
+        expect(detail.submission?.files).toHaveLength(3);
+        expect(detail.submission?.files.map((f) => f.position)).toEqual([0, 1, 2]);
+        expect(detail.submission?.files.map((f) => f.displayName)).toEqual([
+          'a.pdf',
+          'b.pdf',
+          'c.pdf',
+        ]);
+      });
+
+      it('accepts five files and refuses six (`D-43`)', async () => {
+        const five = await createTargeted({});
+        await expect(
+          controller.submitAssessment(
+            five.id,
+            { files: ['a', 'b', 'c', 'd', 'e'].map((n) => FILE(`${n}.pdf`)) },
+            STUDENT,
+          ),
+        ).resolves.toBeDefined();
+
+        const six = await createTargeted({});
+        await expect(
+          controller.submitAssessment(
+            six.id,
+            { files: ['a', 'b', 'c', 'd', 'e', 'f'].map((n) => FILE(`${n}.pdf`)) },
+            STUDENT,
+          ),
+        ).rejects.toThrow(/at most 5 files/i);
+      });
+
+      it('refuses the whole submission when one file among several is bad, and writes nothing', async () => {
+        const task = await createTargeted({
+          allowedFileTypes: ['application/pdf'],
+        });
+        await expect(
+          controller.submitAssessment(
+            task.id,
+            { files: [FILE('good.pdf'), FILE('bad.png'), FILE('also-good.pdf')] },
+            STUDENT,
+          ),
+        ).rejects.toThrow('File 2');
+
+        // Not merely "it threw": nothing may have been persisted. No
+        // submission row at all, so no files either.
+        const detail = await controller.getAssessmentDetail(task.id, STUDENT);
+        expect(detail.submission).toBeNull();
+      });
+
+      it('replaces the previous file set on resubmission rather than appending', async () => {
+        const task = await createTargeted({});
+        await controller.submitAssessment(
+          task.id,
+          { files: [FILE('v1-a.pdf'), FILE('v1-b.pdf'), FILE('v1-c.pdf')] },
+          STUDENT,
+        );
+        await controller.submitAssessment(
+          task.id,
+          { files: [FILE('v2-a.pdf'), FILE('v2-b.pdf')] },
+          STUDENT,
+        );
+        const detail = await controller.getAssessmentDetail(task.id, STUDENT);
+        expect(detail.submission?.files).toHaveLength(2);
+        expect(detail.submission?.files.map((f) => f.displayName)).toEqual([
+          'v2-a.pdf',
+          'v2-b.pdf',
+        ]);
+        expect(detail.submission?.files.map((f) => f.position)).toEqual([0, 1]);
+      });
+
+      it('accepts an https link and refuses an http one (`D-39`)', async () => {
+        const ok = await createTargeted({});
+        await expect(
+          controller.submitAssessment(
+            ok.id,
+            { linkUrl: 'https://docs.example.com/essay' },
+            STUDENT,
+          ),
+        ).resolves.toBeDefined();
+        const detail = await controller.getAssessmentDetail(ok.id, STUDENT);
+        expect(detail.submission?.linkUrl).toBe('https://docs.example.com/essay');
+
+        // http is refused by the DTO's IsPublicHttpUrl in production; the
+        // service check is the copy that matters and is asserted directly.
+        const bad = await createTargeted({});
+        await expect(
+          controller.submitAssessment(
+            bad.id,
+            { linkUrl: 'http://docs.example.com/essay' },
+            STUDENT,
+          ),
+        ).rejects.toThrow(/https/i);
+      });
+
+      it('leaves an existing link alone when a resubmission omits it', async () => {
+        const task = await createTargeted({});
+        await controller.submitAssessment(
+          task.id,
+          { linkUrl: 'https://docs.example.com/first' },
+          STUDENT,
+        );
+        await controller.submitAssessment(
+          task.id,
+          { answerText: 'Adding a note, leaving the link.' },
+          STUDENT,
+        );
+        const detail = await controller.getAssessmentDetail(task.id, STUDENT);
+        expect(detail.submission?.linkUrl).toBe('https://docs.example.com/first');
+        expect(detail.submission?.answerText).toBe(
+          'Adding a note, leaving the link.',
+        );
+      });
+
+      it('leaves a single-fileUrl submission working unchanged', async () => {
+        // The regression guard: every submission made before this slice used
+        // the scalar `fileUrl` and carries no `submission_files` rows.
+        const task = await createTargeted({});
+        await controller.submitAssessment(
+          task.id,
+          { fileUrl: 'https://storage.example.com/submissions/legacy.pdf' },
+          STUDENT,
+        );
+        const detail = await controller.getAssessmentDetail(task.id, STUDENT);
+        expect(detail.submission?.fileUrl).toContain('legacy.pdf');
+        expect(detail.submission?.files).toEqual([]);
+        expect(detail.submission?.linkUrl).toBeNull();
+      });
+    });
   });
 });
+

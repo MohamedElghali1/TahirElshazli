@@ -460,6 +460,7 @@ export interface AssessmentRepository {
     studentId: string,
     fileUrl: string | null,
     answerText: string | null,
+    linkUrl: string | null,
   ): Promise<StoredSubmission>;
   /**
    * Replaces the student's answer, archiving the previous content as a revision.
@@ -480,6 +481,7 @@ export interface AssessmentRepository {
     studentId: string,
     fileUrl: string | undefined,
     answerText: string | undefined,
+    linkUrl: string | undefined,
   ): Promise<StoredSubmission | null>;
   findRevisions(
     submissionId: string,

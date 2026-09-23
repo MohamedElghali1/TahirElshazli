@@ -752,13 +752,14 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
     studentId: string,
     fileUrl: string | null,
     answerText: string | null,
+    linkUrl: string | null,
   ): Promise<StoredSubmission> {
     const row = await this.db.queryOne<SubmissionRow>(
       `INSERT INTO assessment_submissions
-         (id, assessment_id, student_id, file_url, answer_text)
-       VALUES ($1, $2, $3, $4, $5)
+         (id, assessment_id, student_id, file_url, answer_text, link_url)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING ${SUBMISSION_COLUMNS}`,
-      [randomUUID(), assessmentId, studentId, fileUrl, answerText],
+      [randomUUID(), assessmentId, studentId, fileUrl, answerText, linkUrl],
     );
     return toSubmission(row!);
   }
@@ -768,6 +769,7 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
     studentId: string,
     fileUrl: string | undefined,
     answerText: string | undefined,
+    linkUrl: string | undefined,
   ): Promise<StoredSubmission | null> {
     // Archiving the old content and overwriting it must be one unit. Half of
     // this is a submission whose previous version was lost, which is exactly
@@ -808,9 +810,10 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
         `UPDATE assessment_submissions
          SET file_url          = CASE WHEN $2::boolean THEN $3::text ELSE file_url END,
              answer_text       = CASE WHEN $4::boolean THEN $5::text ELSE answer_text END,
+             link_url          = CASE WHEN $6::boolean THEN $7::text ELSE link_url END,
              last_submitted_at = now(),
              updated_at        = now()
-         WHERE id = $1 AND student_id = $6
+         WHERE id = $1 AND student_id = $8
          RETURNING ${SUBMISSION_COLUMNS}`,
         [
           submissionId,
@@ -818,6 +821,8 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
           fileUrl ?? null,
           answerText !== undefined,
           answerText ?? null,
+          linkUrl !== undefined,
+          linkUrl ?? null,
           studentId,
         ],
       );

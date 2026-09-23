@@ -26,6 +26,7 @@ import type {
 } from './interfaces/work-repository.interface.js';
 import { WORK_REPOSITORY } from './interfaces/work-repository.interface.js';
 import { ALLOWED_UPLOAD_TYPES } from '../common/storage/upload-types.js';
+import { DatabaseService } from '../database/database.service.js';
 
 /**
  * What each file-bearing submission mode admits, as extensions.
@@ -44,6 +45,15 @@ import { ALLOWED_UPLOAD_TYPES } from '../common/storage/upload-types.js';
  * Extensions still come from `ALLOWED_UPLOAD_TYPES`, so the MIME-to-extension
  * mapping is stated in exactly one place.
  */
+/**
+ * `D-43`: the ceiling on files in one submission.
+ *
+ * `D-40` wrote five as a property of `photo_upload`; the user generalised it to
+ * every multi-file submission, so a task that states no mode cannot accept an
+ * unbounded count. Stated once and used by both the DTO and the service.
+ */
+export const MAX_SUBMISSION_FILES = 5;
+
 const MODE_EXTENSIONS: Record<
   Exclude<SubmissionMode, 'doc_link'>,
   ReadonlySet<string>
@@ -101,6 +111,8 @@ export interface SubmissionView {
   id: string;
   fileUrl: string | null;
   answerText: string | null;
+  linkUrl: string | null;
+  files: { fileUrl: string; displayName: string; position: number }[];
   submittedAt: string;
   lastSubmittedAt: string;
   updatedAt: string;
@@ -204,6 +216,7 @@ export class AssessmentsService {
      * load) and never writes a result.
      */
     @Inject(WORK_REPOSITORY) private readonly work: WorkRepository,
+    private readonly db: DatabaseService,
   ) {}
 
   /**
@@ -444,6 +457,17 @@ export class AssessmentsService {
     const work = await this.describeWork(assessment, studentId);
     const hasExternalResult =
       work.kind === 'google_form' ? work.completed : false;
+
+    let files: { fileUrl: string; displayName: string; position: number }[] = [];
+    if (submission) {
+      const submissionFiles = await this.assessmentRepo.findFilesForSubmissions([submission.id]);
+      files = submissionFiles.map(f => ({
+        fileUrl: f.fileUrl,
+        displayName: f.displayName,
+        position: f.position,
+      })).sort((a, b) => a.position - b.position);
+    }
+
     return {
       ...this.toListItem(assessment, submission, now, hasExternalResult),
       instructions: assessment.instructions,
@@ -473,6 +497,8 @@ export class AssessmentsService {
             id: submission.id,
             fileUrl: submission.fileUrl,
             answerText: submission.answerText,
+            linkUrl: submission.linkUrl,
+            files,
             submittedAt: submission.submittedAt,
             lastSubmittedAt: submission.lastSubmittedAt,
             updatedAt: submission.updatedAt,
@@ -493,12 +519,18 @@ export class AssessmentsService {
    * Creates a submission, or replaces the student's existing one while the
    * availability window is still open and nothing has been marked yet - the
    * "edit before the deadline" case. Once corrected, the submission is frozen.
+   *
+   * The whole thing runs in one transaction because a submission row and its
+   * `submission_files` are one fact: a row that commits without its files is a
+   * submission whose evidence is missing, and the student has no way to know.
    */
   async submitAssessment(
     assessmentId: string,
     studentId: string,
     fileUrl: string | undefined,
     answerText: string | undefined,
+    files: { fileUrl: string; displayName: string }[] | undefined,
+    linkUrl: string | undefined,
   ): Promise<StoredSubmission> {
     const assessment = await this.loadForStudent(assessmentId, studentId);
     // Only file-upload work is submitted through this platform. A form is
@@ -520,20 +552,43 @@ export class AssessmentsService {
         'Assessment is not currently available for submission',
       );
     }
-    if (!fileUrl && !answerText) {
+    if (!fileUrl && !answerText && (!files || files.length === 0) && !linkUrl) {
       throw new BadRequestException(
-        'At least one of fileUrl or answerText must be provided',
+        'At least one of fileUrl, answerText, files, or linkUrl must be provided',
       );
     }
 
-    // File-type and mode enforcement. Only applies when the student is
-    // actually handing in a file - a text-only answer skips every check here.
-    if (fileUrl) {
+    // `D-43`: five, for every multi-file submission rather than only for
+    // `photo_upload`, so no task can accept an unbounded upload count. The DTO
+    // carries the same cap; this is the copy that matters, because the DTO
+    // stops a malformed request and the service is where the invariant lives
+    // (`CLAUDE.md` §5).
+    if (files && files.length > MAX_SUBMISSION_FILES) {
+      throw new BadRequestException(
+        `A submission may carry at most ${MAX_SUBMISSION_FILES} files.`,
+      );
+    }
+
+    // `D-39`: the scheme check is here and not a SQL CHECK, so there is one
+    // copy of the rule rather than one per driver plus one in the schema.
+    if (linkUrl && !linkUrl.toLowerCase().startsWith('https://')) {
+      throw new BadRequestException('A submitted link must use https.');
+    }
+
+    /**
+     * The per-file gate. Both the singular `fileUrl` and every entry in
+     * `files` route through this, so the two paths cannot drift apart - which
+     * they would the moment the rules were written out twice.
+     *
+     * `index` is present only for the plural path, and exists so a refusal
+     * names *which* file failed; with five photos, "that file type" alone
+     * leaves the student guessing.
+     */
+    const checkFile = (url: string, index?: number) => {
       // Strip any query string or fragment before reading the extension, so a
       // URL like `/uploads/hw.pdf?token=x` is not treated as having the
-      // extension `pdf?token=x`. A path like `/uploads/no-ext` yields an empty
-      // string from the split, which we handle below.
-      const cleanPath = fileUrl.split('?')[0].split('#')[0];
+      // extension `pdf?token=x`.
+      const cleanPath = url.split('?')[0].split('#')[0];
       const parts = cleanPath.split('.');
       // Anything after the last dot, or '' when there is no dot and when the
       // URL ends in one. This splits the whole path rather than the last
@@ -547,14 +602,12 @@ export class AssessmentsService {
           ? parts[parts.length - 1].toLowerCase()
           : '';
 
+      const prefix = index !== undefined ? `File ${index + 1}: ` : '';
+
       // --- 1. allowedFileTypes enforcement ---
       // Empty allowedFileTypes means "no per-task narrowing" - accept anything
       // the global whitelist allows. A non-empty list restricts to those types.
       if (assessment.allowedFileTypes.length > 0) {
-        // Map each allowed MIME through the whitelist to its server-minted
-        // extension. Only MIMEs that are in the global whitelist can produce a
-        // valid extension; anything else is silently skipped (the global check
-        // on upload would have already prevented such a file from being stored).
         const allowedExts = new Set(
           assessment.allowedFileTypes
             .map((mime) => ALLOWED_UPLOAD_TYPES[mime.toLowerCase()]?.extension)
@@ -562,17 +615,16 @@ export class AssessmentsService {
         );
         if (!submittedExt || !allowedExts.has(submittedExt)) {
           throw new BadRequestException(
-            `This task only accepts files of type: ${assessment.allowedFileTypes.join(', ')}.`,
+            `${prefix}This task only accepts files of type: ${assessment.allowedFileTypes.join(', ')}.`
           );
         }
       }
 
       // --- 2. submissionModes enforcement, file side only ---
-      // Empty submissionModes means "not stated" - enforce nothing, exactly as
-      // before. `doc_link` is deliberately excluded from file-mode enforcement:
-      // link submission requires a repository signature change scoped to a
-      // later slice, so a task that states only `doc_link` is treated the same
-      // as "not stated" here and falls through to the allowedFileTypes check.
+      // Empty submissionModes means "not stated" - enforce nothing. `doc_link`
+      // is excluded from the *file* modes because it governs the link, not the
+      // upload: a task stating only `doc_link` still accepts a file (`D-39`),
+      // so it falls through to the allowedFileTypes check above.
       const fileModes = assessment.submissionModes.filter(
         (m): m is Exclude<SubmissionMode, 'doc_link'> =>
           m === 'pdf_upload' || m === 'photo_upload',
@@ -585,50 +637,80 @@ export class AssessmentsService {
         if (!passesMode) {
           const modeNames = fileModes.join(', ');
           throw new BadRequestException(
-            `This task's submission mode (${modeNames}) does not permit that file type.`,
+            `${prefix}This task's submission mode (${modeNames}) does not permit that file type.`
           );
         }
       }
+    };
+
+    if (fileUrl) checkFile(fileUrl);
+    if (files) {
+      files.forEach((f, i) => checkFile(f.fileUrl, i));
     }
 
-
-    const existing = await this.assessmentRepo.findSubmission(
-      assessmentId,
-      studentId,
-    );
-    // A one-shot task. A state conflict rather than a bad request (CLAUDE.md
-    // §6: 409), and checked before the correction rule so a student is told
-    // the rule that actually applies. With `allowResubmission: true` - the
-    // default - nothing here changes: resubmission runs until window end, not
-    // `dueAt` (`D-31`).
-    if (existing && !assessment.allowResubmission) {
-      throw new ConflictException('This task accepts one submission only.');
-    }
-    if (!existing) {
-      return this.assessmentRepo.createSubmission(
+    return this.db.runInTransaction(async () => {
+      const existing = await this.assessmentRepo.findSubmission(
         assessmentId,
         studentId,
-        fileUrl ?? null,
-        answerText ?? null,
       );
-    }
-    if (existing.correctedAt) {
-      throw new BadRequestException(
-        'This submission has already been corrected and can no longer be changed',
-      );
-    }
-    // Passed through as-is rather than coerced to null: an edit that supplies
-    // only one field must leave the other one standing.
-    const updated = await this.assessmentRepo.updateSubmission(
-      existing.id,
-      studentId,
-      fileUrl,
-      answerText,
-    );
-    if (!updated) {
-      throw new NotFoundException('Submission not found');
-    }
-    return updated;
+
+      // A one-shot task. A state conflict rather than a bad request (CLAUDE.md
+      // §6: 409), and checked before the correction rule so a student is told
+      // the rule that actually applies. With `allowResubmission: true` - the
+      // default - nothing here changes: resubmission runs until window end, not
+      // `dueAt` (`D-31`).
+      if (existing && !assessment.allowResubmission) {
+        throw new ConflictException('This task accepts one submission only.');
+      }
+
+      let submission: StoredSubmission;
+
+      if (!existing) {
+        submission = await this.assessmentRepo.createSubmission(
+          assessmentId,
+          studentId,
+          fileUrl ?? null,
+          answerText ?? null,
+          linkUrl ?? null,
+        );
+      } else {
+        if (existing.correctedAt) {
+          throw new BadRequestException(
+            'This submission has already been corrected and can no longer be changed',
+          );
+        }
+        // Passed through as-is rather than coerced to null: an edit that
+        // supplies only one field must leave the others standing. That is why
+        // `linkUrl` is `undefined`-meaning-untouched here and `null` on create.
+        const updated = await this.assessmentRepo.updateSubmission(
+          existing.id,
+          studentId,
+          fileUrl,
+          answerText,
+          linkUrl,
+        );
+        if (!updated) {
+          throw new NotFoundException('Submission not found');
+        }
+        submission = updated;
+      }
+
+      // `undefined` leaves an existing file set alone, for the same reason the
+      // scalar fields do. An explicit empty array is a deliberate "remove them
+      // all" and does reach the repository, which replaces wholesale.
+      if (files) {
+        await this.assessmentRepo.replaceSubmissionFiles(
+          submission.id,
+          files.map((f, i) => ({
+            fileUrl: f.fileUrl,
+            displayName: f.displayName,
+            position: i,
+          })),
+        );
+      }
+
+      return submission;
+    });
   }
 
   /** Internal: callers (ReportsService) assert enrollment first. */

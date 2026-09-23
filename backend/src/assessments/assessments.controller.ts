@@ -58,6 +58,8 @@ export class AssessmentsController {
       req.user.sub,
       dto.fileUrl,
       dto.answerText,
+      dto.files,
+      dto.linkUrl,
     );
   }
 }

@@ -903,6 +903,7 @@ describeIfDb('Postgres repositories', () => {
         'student-1',
         'https://storage.example.com/first.pdf',
         null,
+        null,
       );
 
       const updated = await repo.updateSubmission(
@@ -910,6 +911,7 @@ describeIfDb('Postgres repositories', () => {
         'student-1',
         undefined,
         'typed answer',
+        undefined,
       );
       // fileUrl was not supplied, so the uploaded file must survive.
       expect(updated?.fileUrl).toBe('https://storage.example.com/first.pdf');
@@ -933,6 +935,7 @@ describeIfDb('Postgres repositories', () => {
           'student-1',
           'x',
           'y',
+          undefined,
         ),
       ).toBeNull();
     });
@@ -941,7 +944,13 @@ describeIfDb('Postgres repositories', () => {
       const repo = new PostgresAssessmentRepository(db);
       // sub-1 belongs to student-1. Holding its id must not be enough.
       expect(
-        await repo.updateSubmission('sub-1', 'student-2', 'evil.pdf', undefined),
+        await repo.updateSubmission(
+          'sub-1',
+          'student-2',
+          'evil.pdf',
+          undefined,
+          undefined,
+        ),
       ).toBeNull();
       expect(await repo.findRevisions('sub-1', 'student-2')).toEqual([]);
       // And the real owner's content is untouched.

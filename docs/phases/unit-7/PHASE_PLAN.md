@@ -8,6 +8,19 @@ delegated to Sonnet subagents, one slice at a time, both sides on the ponytail s
 reviewer and the implementer are different agents, which is the property that mattered in units 1-6
 and is preserved.
 
+**Amended twice on the day, and the second amendment cost the property above.** The user first
+switched the implementer from a Sonnet subagent to Antigravity (`agy-delegate`). That ran 7b-i and
+it worked as intended — the review caught a real defect the implementer's own tests could not see
+(`D-41`, the `pdf_upload`/`.txt` widening). Partway through **7b-ii, every agy model hit its quota**:
+`claude-opus-4-6-thinking`, then `claude-sonnet-4-6`, then the `gemini-3.1-pro-high` fallback, all
+returning `Resets in ~167h`. The Gemini run was truncated mid-slice, leaving a partial tree.
+
+On the user's instruction the orchestrator finished 7b-ii itself. **For that slice the implementer
+and the reviewer are the same agent**, which is strictly weaker than every slice before it. Recorded
+here rather than left implicit, because the phase record should not imply a review that did not
+happen. Slices 7c onward should restore the split — either agy quota returning, or a Sonnet
+subagent as this plan originally specified.
+
 ---
 
 ## 1. Migration number
@@ -60,7 +73,7 @@ leaving the column NULL would have removed, on deploy, every mark every student 
 | Slice | Content | Status |
 |---|---|---|
 | **7a** | Migration `020`; interface types + 8 methods; **both** repository drivers | `[~]` memory driver done; Postgres driver delegated |
-| **7b** | `MARK-6` — submit-time mode enforcement, multi-file, `link_url` validation | `[ ]` |
+| **7b** | `MARK-6` — submit-time mode enforcement, multi-file, `link_url` validation | `[x]` split 7b-i / 7b-ii, both landed |
 | **7c** | `MARK-1` — annotation service, 4 routes, authz, audit actions | `[ ]` |
 | **7d** | `MARK-2` — save vs save-and-return; student visibility moves to `returnedAt` | `[ ]` |
 | **7e** | `MARK-3` — submissions for one task **including non-submitters** | `[ ]` |

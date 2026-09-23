@@ -1613,3 +1613,45 @@ the `kind <> 'stroke' OR path IS NOT NULL` pair; `returned_at` as `timestamptz`,
 is **met**. The **backfill's behaviour is not yet proven**: that run was bare `psql`, so the three
 vitest integration tests (`describe('migration 020')`) did not execute, and on an empty schema the
 `UPDATE` touches zero rows regardless. Those still need a seeded run.
+
+## 2026-09-23 — `D-42` and `D-43`: multi-file submission and its two open questions
+
+Slice 7b-ii wires `submission_files` (built by 7a and until now written by nothing) and `link_url`
+(stored since `020` and until now unsettable) into the submit path. Two things the documents did not
+answer had to be decided before it could be built, rather than guessed (`CLAUDE.md` §13).
+
+**`D-42`: `display_name` is client-supplied and length-capped.** The browser sends `File.name`; it is
+stored as text and shown back to whoever marks the work. This does **not** weaken §8's "the client
+filename is never read" rule, which is about the *stored path*: the path is still a server-minted
+UUID whose extension comes from the validated MIME, and `display_name` never reaches the filesystem
+or a URL. `020`'s own column comment already anticipated this. The column is `TEXT`, so the DTO's
+255 is the only bound on it — which is the right place for one.
+
+**`D-43`: the five-file cap applies to every multi-file submission, not only `photo_upload`.**
+`D-40` wrote five as a property of that one mode, which left a task stating no mode accepting an
+unbounded count. Generalised, stated once as `MAX_SUBMISSION_FILES`, and enforced in **both** the
+DTO and the service — the DTO stops a malformed request, the service is where the invariant lives
+(§5).
+
+**Validation runs before the transaction opens, and that is load-bearing.** Every file is checked
+before any write, so a bad file among five good ones is refused with nothing written at all, rather
+than written and rolled back. That is what makes the "writes nothing" case provable on the memory
+driver, where `runInTransaction` is a passthrough with no rollback (§9). True mid-transaction
+rollback remains provable only against real PostgreSQL and is **not** claimed by these tests.
+
+**On how this slice was built, recorded because the record should not imply more review than
+happened.** Antigravity was the implementer for 7b-i and was quota-blocked mid-way through 7b-ii —
+both Claude labels and then the Gemini fallback, all returning `Resets in ~167h`. The orchestrator
+finished 7b-ii directly on the user's instruction, so for this slice **the implementer and the
+reviewer are the same agent**. That is weaker than every slice before it, and it is the property
+that caught the `pdf_upload` defect one slice earlier.
+
+What the truncated delegation left behind, found and fixed rather than inherited: a `linkUrl`
+referenced in SQL but missing from the Postgres method signature; `updateSubmission` never
+implementing it at all; **the in-memory driver hardcoding `linkUrl: null`, which `tsc` cannot see** —
+TypeScript accepts a method with fewer parameters than its interface, so a driver silently
+discarding a field compiles clean; the wrong DI token (`'PG_POOL'` for `Symbol(DATABASE_POOL)`);
+the slice's tests stranded in an untracked scratch file rather than the spec; a `§` corrupted to a
+replacement character; and several deleted comments, including the one explaining why
+`GradingService.grade` resolves the course from the submission rather than the URL — the §5.11 IDOR
+defence. The comments were restored from git rather than rewritten.

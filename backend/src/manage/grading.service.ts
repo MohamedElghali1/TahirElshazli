@@ -34,6 +34,8 @@ export interface GradingQueueItem {
   lastSubmittedAt: string;
   fileUrl: string | null;
   answerText: string | null;
+  linkUrl: string | null;
+  files: { fileUrl: string; displayName: string; position: number }[];
   annotatedFileUrl: string | null;
   score: number | null;
   feedback: string | null;
@@ -107,6 +109,24 @@ export class GradingService {
     const assessmentById = new Map(assessments.map((a) => [a.id, a]));
     const studentById = new Map(students.map((u) => [u.id, u]));
 
+    const filesBySubmissionId = new Map<string, { fileUrl: string; displayName: string; position: number }[]>();
+    if (submissions.length > 0) {
+      const allFiles = await this.assessmentRepo.findFilesForSubmissions(submissions.map((s) => s.id));
+      for (const f of allFiles) {
+        if (!filesBySubmissionId.has(f.submissionId)) {
+          filesBySubmissionId.set(f.submissionId, []);
+        }
+        filesBySubmissionId.get(f.submissionId)!.push({
+          fileUrl: f.fileUrl,
+          displayName: f.displayName,
+          position: f.position,
+        });
+      }
+      for (const files of filesBySubmissionId.values()) {
+        files.sort((a, b) => a.position - b.position);
+      }
+    }
+
     const items = submissions.flatMap((submission): GradingQueueItem[] => {
       const assessment = assessmentById.get(submission.assessmentId);
       const student = studentById.get(submission.studentId);
@@ -130,6 +150,8 @@ export class GradingService {
           lastSubmittedAt: submission.lastSubmittedAt,
           fileUrl: submission.fileUrl,
           answerText: submission.answerText,
+          linkUrl: submission.linkUrl,
+          files: filesBySubmissionId.get(submission.id) ?? [],
           annotatedFileUrl: submission.annotatedFileUrl,
           score: submission.score,
           feedback: submission.feedback,
@@ -150,7 +172,8 @@ export class GradingService {
       // Newest work first - the queue is worked from the top.
       items: items.sort(
         (a, b) =>
-          new Date(b.lastSubmittedAt).getTime() - new Date(a.lastSubmittedAt).getTime(),
+          new Date(b.lastSubmittedAt).getTime() -
+          new Date(a.lastSubmittedAt).getTime(),
       ),
       assessments: assessments.map((assessment) =>
         averageFor(assessment, submissions),
@@ -253,6 +276,12 @@ export class GradingService {
         lastSubmittedAt: graded.lastSubmittedAt,
         fileUrl: graded.fileUrl,
         answerText: graded.answerText,
+        linkUrl: graded.linkUrl,
+        files: (await this.assessmentRepo.findFilesForSubmissions([graded.id])).map(f => ({
+          fileUrl: f.fileUrl,
+          displayName: f.displayName,
+          position: f.position,
+        })).sort((a, b) => a.position - b.position),
         annotatedFileUrl: graded.annotatedFileUrl,
         score: graded.score,
         feedback: graded.feedback,

@@ -4,6 +4,8 @@ import { ReportsService } from './reports.service.js';
 import { REPORT_REPOSITORY } from './interfaces/report-repository.interface.js';
 import { InMemoryReportRepository } from './repositories/in-memory-report.repository.js';
 import { AssessmentsService } from '../assessments/assessments.service.js';
+import { DatabaseService } from '../database/database.service.js';
+import { DATABASE_POOL } from '../database/database.tokens.js';
 import { ASSESSMENT_REPOSITORY } from '../assessments/interfaces/assessment-repository.interface.js';
 import { WORK_REPOSITORY } from '../assessments/interfaces/work-repository.interface.js';
 import { InMemoryWorkRepository } from '../assessments/repositories/in-memory-work.repository.js';
@@ -53,6 +55,8 @@ describe('ReportsController', () => {
         StudentGroupsService,
         ReportsService,
         AssessmentsService,
+        { provide: DATABASE_POOL, useValue: null },
+        DatabaseService,
         CoursesService,
         RecordingsService,
         LiveSessionsService,
