@@ -484,12 +484,15 @@ not the rule.
 
 ---
 
-### Chat unit 7 — Marking and the mark book `[~]` **built, awaiting review — NOT complete**
+### Chat unit 7 — Marking and the mark book `[~]` **reviewed `APPROVED WITH FOLLOW-UP` — NOT complete**
 
 **Status 2026-09-23: `[~]`.** Built on `redesign` `6657c7a..HEAD` (local, not pushed); artifacts in
 `docs/phases/unit-7/`. The user ran the pipeline without the agent harness: the coordinator did the
 planning pass (Revision 1 of `PHASE_PLAN.md`), the implementation and the review itself, in sequence.
 **It cannot close while `MARK-6` is blocked** (§2, condition 9), unless the user moves `MARK-6` out.
+**Review** (`REVIEW_7.md`, 2026-09-23): `APPROVED WITH FOLLOW-UP`. Two findings fixed (`R-1`, `R-2`).
+Open conditions: `B-1`/`B-2` ruled and `MARK-6` built (or moved out), and the browser pass
+(`EXECUTION_NOTES.md` §8), which stopped at sign-in and needs the user.
 
 **Rulings** `D-40`…`D-46` (`B-3`…`B-9`). `D-38`/`D-39` (`B-1`/`B-2`, the `MARK-6` design) were
 accepted and **withdrawn** the same day; the question is escalated to the user.

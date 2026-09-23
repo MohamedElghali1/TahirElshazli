@@ -286,7 +286,7 @@ way:
 existence oracle on `PATCH`/`DELETE /staff/assessments/:id` and `POST …/targets` (plan finding 2).
 
 ### Phase 8 — Marking
-Unit 7, 2026-09-23. `[~]` = built and tested, **awaiting `redesign-reviewer`** (`docs/phases/unit-7/`). Rulings `D-40`…`D-46`; `D-38`/`D-39` withdrawn (`CHANGELOG.md`).
+Unit 7, 2026-09-23. `[~]` = built and tested, reviewed **`APPROVED WITH FOLLOW-UP`** (`docs/phases/unit-7/REVIEW_7.md`): open until `MARK-6` is ruled and built (or moved out) and the browser pass is done. Rulings `D-40`…`D-46`; `D-38`/`D-39` withdrawn (`CHANGELOG.md`).
 
 `MARK-1` `[~]` `submission_annotations` (migration `019`, both drivers) + 4 routes (list, create, update, delete), `submission.annotated` audit; author-only edit/erase, allowed after return (`D-42`); the first annotation claims an unclaimed task (`D-43`) ·
 `MARK-2` `[~]` Save and return are two operations: `POST /staff/submissions/:id/return` (`returned_at`, `submission.returned` audit); one `isReturnedToStudent` predicate across the five student reads; `019` backfills `returned_at := corrected_at` ·
