@@ -13,9 +13,8 @@ file lands in the one commit after `aafafd4`.
 **Status:** all eleven slices are built, **6a → 6b → 6c → 6d → 6f → 6g → 6h → 6i → 6j → 6k → 6e**.
 The unit stays `[~]` in `PHASE_ROADMAP.md`; completion is the coordinator's call after review.
 
-**Stopped and recorded, not invented:**
-- Two `D-30` edges (§Blockers).
-- Two smaller open points.
+**Stopped on four points.** The user ruled on all four after execution: two became code (`D-34`,
+`D-35`) and two became tasks. See §Rulings after execution.
 
 ---
 
@@ -174,7 +173,8 @@ clears the marker. The scope read is cached per marker, so there is no per-task 
 - It is judged over each group's own due date and every submission, so it is identical for every
   viewer.
 
-**Where the ruling does not reach, it returns `null`** (§Blockers). A `null` status matches no filter.
+**As built at `3b6eae1`, it returned `null` where the ruling did not reach.** After `D-34`/`D-35`
+it is total: a fourth status, `closed`, and the latest due date drives it (§Rulings after execution).
 
 **The counts.** `countSubmissionsByAssessments` (both drivers) does one `GROUP BY`, and its counts are
 never returned to a client.
@@ -187,7 +187,7 @@ never returned to a client.
 - One `Panel` with a `TableToolbar` (search, course, group, status) and a `Table`. Every filter is a
   server query parameter.
 - Columns: title, type, course, set for, due, work, visibility, status, marker.
-- A `null` status renders as an em-dash. Marker drift is an amber tag.
+- Status is a tag, including `Closed` (`D-34`). Marker drift is an amber tag.
 
 **`/manage/tasks/new[?course=&draft=]` and `/manage/tasks/[id]`** share `task-form.tsx`, built to the
 single-panel `TaskAuthoring` shape.
@@ -238,7 +238,7 @@ See §Documents updated.
 6. **An admin cannot pick the teacher as marker from the form.** `GET /admin/assistants` returns
    assistants and admins, and no staff-reachable route returns the teacher's id. The teacher can
    pick themselves ("you"). An existing teacher marker is preserved and shown. No route was added,
-   since that is scope. It is flagged in §Blockers.
+   since that is scope. The user accepted this as follow-up `TASK-F1`.
 7. **The `setTargets` 403 applies even to a task a scoped caller cannot see on `/staff/tasks`** (a
    task set only for unheld groups on a course they reach). The per-course list, `AUTH-6`'s
    remainder, still shows it, so the "on their screen" basis for 403 holds there. The body confirms
@@ -265,40 +265,73 @@ See §Documents updated.
 
 ---
 
-## Blockers hit: stopped and recorded, not invented
+## Rulings after execution (user, 2026-09-22)
 
-**B-3a: status of a task past due with no submissions at all.**
-- Readings:
-  - (a) `marked`: "all graded" holds vacuously.
-  - (b) not `marked`: nothing was marked; perhaps a fourth state such as "closed" or "missed".
-- Impact:
-  - (a) makes a task nobody handed in read as done.
-  - (b) needs a label nobody named.
-- Built: `status: null`, matching no filter, rendered as an em-dash.
-- External work (`link`, `google_form`) has no submission rows, so past due it always lands here.
-  Does "marked" for a Google Form mean its results have synced?
-- Blocks: part of `TASK-6`'s filter semantics. The task stays `[~]`.
+I stopped on four points during execution. The user has ruled on all four. Two of the rulings
+changed code, in the commit after `9c6e00f`; the other two are recorded as tasks.
 
-**B-3b: a task whose groups' own due dates disagree** (one group past due, another not).
-- Readings:
-  - use the latest due date (`open` until everyone is due);
-  - use the earliest;
-  - show per group.
-- Built: `null`.
-- A task with no `dueAt` cannot occur (`due_at` is NOT NULL).
+| Point | Ruling | Where it went |
+|---|---|---|
+| **B-3a**: status of a task past due with no submissions at all | **`D-34`**: a fourth status, `closed` ("nothing to mark"). This includes link and Google Form work, which has no submission rows. | Code: the enum, DTO `@IsIn`, `API_SPEC.yaml` `StaffTaskStatus`, `lib/types.ts`, the task list's tag and filter. Tests: a unit derivation case, e2e `?status=closed`. The 400 probe now uses `archived`. |
+| **B-3b**: groups whose own due dates disagree | **`D-35`**: the latest due date drives the status. A task stays `open` until every targeted group is past its own due date, then becomes `marking`, `marked` or `closed`. | Code: `staffTaskStatusOf` takes the maximum of the resolved due dates. Tests: a unit case (mixed → `open`; all past → the three), and an e2e task with a future override that is `open`, then `closed` once the override moves into the past. |
+| **B-4 remainder**: what submission modes do at submit time | **Moved to unit 7.** | `IMPLEMENTATION_PLAN.md` `MARK-6`, beside the multi-file model. No code. |
+| **B-5 remainder**: an admin naming the teacher as marker | **Accepted for now.** The teacher picks themselves, and an existing teacher marker is preserved. | `IMPLEMENTATION_PLAN.md` follow-up `TASK-F1`. No code. |
 
-**B-4 remainder: what the submission modes *do* at submit time.**
-- `D-31` stores them. Nothing says whether `doc_link` should admit a student URL as `fileUrl`, or
-  whether `pdf_upload` should narrow `allowedFileTypes`.
-- Built: stored, returned to staff, **not enforced and not on the student detail**. That is left to
-  unit 7 with the multi-file model.
+**`status` is now total, never null.** The derivation takes the maximum over at least one due date:
+the task's own when no target overrides it. Past that date, the submission count picks exactly one
+of `closed`, `marking` or `marked`. I found no remaining null case. The type is non-nullable in both
+the backend and the frontend.
 
-**B-5 remainder: an admin naming the teacher as marker.** It needs a staff-reachable way to learn the
-teacher's id. Deviation 6.
+**Recorded** in `CHANGELOG.md` as `D-34` and `D-35`, with the two follow-ups placed in the same
+entry.
 
 ---
 
 ## Tests (real output)
+
+**The rerun after `D-34`/`D-35`** is the current state. The original runs follow it for the record.
+
+```
+$ node -v
+v26.8.1
+
+$ npm test
+ Test Files  39 passed (39)
+      Tests  653 passed (653)
+   Start at  19:46:43
+   Duration  4.01s (transform 1.86s, setup 0ms, import 11.22s, tests 11.04s, environment 3ms)
+
+
+$ npm run test:e2e
+ Test Files  4 passed (4)
+      Tests  292 passed (292)
+   Start at  19:46:47
+   Duration  7.72s (transform 345ms, setup 0ms, import 1.41s, tests 6.09s, environment 0ms)
+
+
+$ TEST_DATABASE_URL=postgresql://dev:devpassword@localhost:55432/tahirelshazli_test npm run test:integration
+[Nest] 64867  - 09/22/2026, 7:46:57 PM     LOG [MigrationRunner] Applied 018_task_drafts_and_task_settings.sql
+ Test Files  1 passed (1)
+      Tests  145 passed (145)
+   Duration  3.03s (transform 102ms, setup 0ms, import 182ms, tests 2.76s, environment 0ms)
+
+$ docker exec tahir-unit6-pg psql -U dev -d tahirelshazli_test -tAc "select version()"
+PostgreSQL 15.19 on aarch64-unknown-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+
+$ cd frontend && npx tsc --noEmit; echo "exit $?"
+exit 0
+
+$ cd frontend && npx eslint .; echo "exit $?"
+exit 0
+
+$ npm run lint > /dev/null 2>&1; echo "exit $?"
+exit 0
+```
+
+Unit stays at 653 because the two `null` cases were replaced by two ruled cases. e2e is 292: one new
+`D-35` test.
+
+**The original runs, before the rulings:**
 
 Integration run immediately after `018` was written, before any repository code:
 
@@ -439,6 +472,15 @@ GET :3000/manage/tasks/drafts -> 200
 GET :3000/manage/tasks/30cf61df-4762-49e3-9957-25b5eb15cb0d -> 200
 ```
 
+**The `"null":2` above predates `D-34`/`D-35`.** A read-only re-check against the coordinator's
+running stack (memory driver, hot-reloaded, so its data differs from the run above):
+
+```
+teacher GET /staff/tasks -> 8 tasks; statuses={"closed":2,"marked":5,"marking":1}
+teacher GET /staff/tasks?status=closed -> 200
+teacher GET /staff/tasks?status=archived -> 400
+```
+
 **The four screen routes return 200 from `next dev`.** They are client components, so that proves
 they compile and serve, not that they render correctly. **A browser pass (teacher and assistant-1,
 LTR and RTL with `ليلى فهمي`) is still owed**, for the coordinator.
@@ -471,7 +513,8 @@ The size utility is only `text-base` (13px). Headings versus captions use tint (
 ## Not done, and why
 
 - **The browser pass of the four screens.** Assigned to the coordinator.
-- **The `D-30` edges, modes enforcement, and the admin-picks-teacher marker.** §Blockers.
+- **Modes enforcement** is unit 7's (`MARK-6`). **The admin-picks-teacher marker** is follow-up
+  `TASK-F1`. Both are ruled; see §Rulings after execution.
 - **`AUTH-6` remainder.** Out of scope by the plan.
 - **Retiring `manage/courses/[id]/assessments/page.tsx`.** Superseded, not deleted, per the plan. It
   still works: every new field is optional there, except that an attachment now needs `audience`,
@@ -531,8 +574,10 @@ The size utility is only `text-base` (13px). Headings versus captions use tint (
 1. **Deviation 2** (hidden tasks also leave reports and `studentWork`) and **deviation 4**
    (viewer-independent derivations reading unheld targets). Both are interpretations. Check them
    against `D-28`/`D-23`.
-2. **`D-30`'s null edges.** Confirm that `null` rather than a guess is acceptable until ruled, and
-   that the list's em-dash is the right rendering.
+2. **`D-34`/`D-35` were implemented after my own review pass**, in one small commit. Check that
+   `closed` is right for link and Google Form work past due. Their results live in
+   `external_results`, not submissions, so such a task is `closed` even when every student
+   answered the form.
 3. **The 6e screens have not been seen in a browser.** tsc and eslint are clean and the data paths
    are verified by curl, but layout, RTL and the draft-prefill effect are unobserved.
 4. **The old per-course assessments page** now fails to add attachments without an audience. It

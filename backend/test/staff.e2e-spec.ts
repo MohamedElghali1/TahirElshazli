@@ -2520,22 +2520,57 @@ describe('Staff and admin API (e2e)', () => {
 
   describe('the staff task status (D-30)', () => {
     const server = () => app.getHttpServer();
-    it('derives status on GET /staff/tasks and filters by it; null matches no filter', async () => {
+
+    it('keeps a task open until every group is past its own due date (D-35)', async () => {
+      const task = await request(server())
+        .post('/staff/courses/course-1/assessments')
+        .set(bearer(adminToken))
+        .send({
+          title: 'E2E mixed due',
+          type: 'homework',
+          availableFrom: '2026-01-01T00:00:00.000Z',
+          availableTo: '2099-01-01T00:00:00.000Z',
+          dueAt: '2026-02-01T00:00:00.000Z',
+          maxScore: 10,
+          allowedFileTypes: ['application/pdf'],
+          maxFileSizeBytes: 1048576,
+          // group-1 inherits the past due date; the override is in the future.
+          targets: [{ groupId: 'group-1', dueAt: '2098-01-01T00:00:00.000Z' }],
+        })
+        .expect(201);
+      let res = await request(server()).get('/staff/tasks').set(bearer(adminToken)).expect(200);
+      expect(res.body.find((t: { id: string }) => t.id === task.body.id).status).toBe('open');
+
+      // Move the override into the past too: every group is now past due and
+      // nothing was submitted.
+      await request(server())
+        .post(`/staff/assessments/${task.body.id}/targets`)
+        .set(bearer(adminToken))
+        .send({ targets: [{ groupId: 'group-1', dueAt: '2026-03-01T00:00:00.000Z' }] })
+        .expect(201);
+      res = await request(server()).get('/staff/tasks').set(bearer(adminToken)).expect(200);
+      expect(res.body.find((t: { id: string }) => t.id === task.body.id).status).toBe('closed');
+      await request(server()).delete(`/staff/assessments/${task.body.id}`).set(bearer(adminToken)).expect(204);
+    });
+    it('derives status on GET /staff/tasks and filters by it; never null', async () => {
       const all = await request(server()).get('/staff/tasks').set(bearer(adminToken)).expect(200);
       const statusOf = (id: string) => all.body.find((t: { id: string }) => t.id === id)?.status;
       expect(statusOf('assess-3')).toBe('marked');
-      expect(statusOf('assess-2')).toBeNull();
-      for (const status of ['open', 'marking', 'marked']) {
+      expect(statusOf('assess-2')).toBe('closed');
+      expect(all.body.every((t: { status: string | null }) => typeof t.status === 'string')).toBe(true);
+      for (const status of ['open', 'marking', 'marked', 'closed']) {
         const res = await request(server()).get(`/staff/tasks?status=${status}`).set(bearer(adminToken)).expect(200);
         expect(res.body.every((t: { status: string }) => t.status === status)).toBe(true);
-        expect(res.body.map((t: { id: string }) => t.id)).not.toContain('assess-2');
       }
+      // `D-34`: past due, nothing submitted.
+      const closed = await request(server()).get('/staff/tasks?status=closed').set(bearer(adminToken)).expect(200);
+      expect(closed.body.map((t: { id: string }) => t.id)).toContain('assess-2');
       // No per-row counts ride along (D-30).
       expect(Object.keys(all.body[0])).not.toEqual(expect.arrayContaining(['submittedCount']));
     });
 
     it('refuses a status that is not one of the three, and never takes one on a write', async () => {
-      await request(server()).get('/staff/tasks?status=closed').set(bearer(adminToken)).expect(400);
+      await request(server()).get('/staff/tasks?status=archived').set(bearer(adminToken)).expect(400);
       // A client status on PATCH is stripped, not honoured: the response still
       // carries no stored status field at all.
       const patched = await request(server())

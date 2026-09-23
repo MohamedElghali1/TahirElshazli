@@ -3781,13 +3781,12 @@ the authoring picker lists only their groups. The new task list and the draft ro
 the group grain from the start. Re-aiming a task that is also set for a cohort the assistant cannot
 see is refused (403). The old behaviour replaced the whole audience and silently dropped that cohort.
 
-**One ruling hit edges nobody had ruled on.** They were recorded, not invented. The staff status
-(`D-30`) is `null`, never a guess, in two cases:
-- a task is past due with nothing submitted;
-- different groups' own due dates disagree about whether the task is past due.
+**One ruling hit edges nobody had ruled on.** They were recorded, not invented, and the user then
+ruled on them: a task past due with nothing submitted is `closed` (`D-34`), and the latest due date
+across the task's groups drives the status (`D-35`). The staff status is now never null.
 
 Final counts:
-- backend: 653 unit, 291 e2e;
+- backend: 653 unit, 292 e2e (after the `D-34`/`D-35` rerun);
 - integration: 145, 0 skipped;
 - frontend: `tsc` 0, eslint 0.
 

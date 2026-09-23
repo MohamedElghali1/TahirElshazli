@@ -230,7 +230,7 @@ destroyed live code (`docs/phases/unit-4/REVIEW_4D.md`). Do not read `SHELL-4`'s
 ("delete `components/app/*`, `components/site/*`") as still describing the directory's contents —
 verify against the actual consumer graph before treating either directory as legacy again.
 
-The backend **is** green and must stay green: **653 unit / 39 files, 291 e2e, 145 integration**
+The backend **is** green and must stay green: **653 unit / 39 files, 292 e2e, 145 integration**
 (against real PostgreSQL 15.19, 001–018 from an empty schema) as of the unit-6 execution, 2026-09-22
 (`docs/phases/unit-6/EXECUTION_NOTES.md`; unit 6 is `[~]`, awaiting review).
 

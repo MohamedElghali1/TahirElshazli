@@ -78,8 +78,8 @@ export interface StaffTask extends StoredAssessment {
   targets: StaffTaskTarget[];
   /** Server-derived; see `VisibilityState`. */
   visibilityState: VisibilityState;
-  /** Server-derived (`D-30`); `null` where the ruling does not reach. */
-  status: StaffTaskStatus | null;
+  /** Server-derived (`D-30`, `D-34`, `D-35`); never null. */
+  status: StaffTaskStatus;
   /** The named marker's display name; null when `markerId` is null. */
   markerName: string | null;
   /**
@@ -131,26 +131,24 @@ export interface StaffTaskListFilter {
   courseId?: string;
   groupId?: string;
   search?: string;
-  /** `D-30`. A task whose status is `null` matches no status filter. */
+  /** `D-30`, `D-34`. */
   status?: StaffTaskStatus;
 }
 
 /**
- * The staff-side status of a task (`D-30`, reading a):
+ * The staff-side status of a task (`D-30`, completed by `D-34`/`D-35`):
  *
- * - `open`    - `now <= dueAt`;
- * - `marking` - past due, with any ungraded submission;
- * - `marked`  - past due, with every submission graded.
+ * - `open`    - `now <=` the **latest** due date among the targeted groups
+ *               (each group's override, or the task's own) - `D-35`;
+ * - `marking` - past that, with any ungraded submission;
+ * - `marked`  - past that, with every submission graded;
+ * - `closed`  - past that, with **no submission at all** (`D-34`) - nothing to
+ *               mark. Link and Google Form work, which has no submission rows
+ *               of its own, lands here once past due.
  *
- * **`null` where the ruling does not reach**, rather than a guess. Two such
- * edges are recorded in `docs/phases/unit-6/EXECUTION_NOTES.md` as open
- * questions: a task past due with **no submissions at all** (vacuously "all
- * graded", or not marked because nothing was marked?), and a task whose groups'
- * **own due dates disagree** about whether it is past due. External work
- * (`link`, `google_form`) has no submission rows of its own, so past due it
- * lands on the first edge. `dueAt` is NOT NULL, so "no due date" cannot occur.
+ * Total: every task has exactly one. `dueAt` is NOT NULL.
  */
-export type StaffTaskStatus = 'open' | 'marking' | 'marked';
+export type StaffTaskStatus = 'open' | 'marking' | 'marked' | 'closed';
 
 /**
  * `D-30`'s derivation, over the task's WHOLE audience and every submission -
@@ -161,20 +159,19 @@ export function staffTaskStatusOf(
   audience: readonly Pick<AssessmentTarget, 'dueAt'>[],
   submissions: { total: number; ungraded: number },
   now: Date,
-): StaffTaskStatus | null {
-  // Each group's own due date: its override, or the task's.
-  const dues = (audience.length > 0 ? audience : [{ dueAt: null }]).map(
-    (t) => new Date(t.dueAt ?? task.dueAt),
+): StaffTaskStatus {
+  // `D-35`: the LATEST of each group's own due date (its override, or the
+  // task's). A task stays open until every targeted group is past due.
+  const latest = Math.max(
+    ...(audience.length > 0 ? audience : [{ dueAt: null }]).map((t) =>
+      new Date(t.dueAt ?? task.dueAt).getTime(),
+    ),
   );
-  const open = dues.map((due) => now <= due);
-  if (open.every(Boolean)) {
+  if (now.getTime() <= latest) {
     return 'open';
   }
-  if (open.some(Boolean)) {
-    return null; // Unruled: past due for some groups, not for others.
-  }
   if (submissions.total === 0) {
-    return null; // Unruled: past due with nothing submitted.
+    return 'closed'; // `D-34`: past due, nothing to mark.
   }
   return submissions.ungraded > 0 ? 'marking' : 'marked';
 }

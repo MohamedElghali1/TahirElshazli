@@ -27,11 +27,12 @@ export class StaffTasksQueryDto {
   search?: string;
 
   /**
-   * `D-30`: derived on the server from the due date and the submissions -
-   * never a stored or client-supplied value. A task whose status is `null`
-   * (an edge the ruling does not reach) matches no filter.
+   * `D-30`/`D-34`/`D-35`: derived on the server from the latest due date and
+   * the submissions - never a stored or client-supplied value.
    */
   @IsOptional()
-  @IsIn(['open', 'marking', 'marked'], { message: 'status must be open, marking or marked' })
-  status?: 'open' | 'marking' | 'marked';
+  @IsIn(['open', 'marking', 'marked', 'closed'], {
+    message: 'status must be open, marking, marked or closed',
+  })
+  status?: 'open' | 'marking' | 'marked' | 'closed';
 }

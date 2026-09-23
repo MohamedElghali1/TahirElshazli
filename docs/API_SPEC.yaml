@@ -165,8 +165,9 @@ components:
     # What a staff screen shows: `scheduled` is DERIVED on the server for a
     # `published` task whose own `availableFrom` is in the future.
     VisibilityState:  { type: string, enum: [published, scheduled, hidden] }
-    # The staff-side status of a task (`D-30`), derived - see `GET /staff/tasks`.
-    StaffTaskStatus:  { type: string, enum: [open, marking, marked] }
+    # The staff-side status of a task (`D-30`, `D-34`, `D-35`), derived - see
+    # `GET /staff/tasks`.
+    StaffTaskStatus:  { type: string, enum: [open, marking, marked, closed] }
     # How a student may hand the work in (`D-31`). Multi-file is unit 7's.
     SubmissionMode:   { type: string, enum: [pdf_upload, doc_link, photo_upload] }
     WorkType:         { type: string, enum: [file_upload, link, google_form] }
@@ -560,12 +561,8 @@ components:
           properties:
             targets: { type: array, items: { $ref: '#/components/schemas/StaffTaskTarget' } }
             visibilityState: { $ref: '#/components/schemas/VisibilityState' }
-            # `D-30`. Null where the ruling does not reach: past due with no
-            # submissions, or groups whose own due dates disagree.
-            status:
-              oneOf:
-                - { $ref: '#/components/schemas/StaffTaskStatus' }
-                - { type: 'null' }
+            # `D-30`/`D-34`/`D-35`. Always one of the four.
+            status: { $ref: '#/components/schemas/StaffTaskStatus' }
             markerName: { type: [string, 'null'] }
             # `D-32`: the named marker no longer qualifies for the task's WHOLE
             # audience. Displayed, never silently repaired. A fact about the
@@ -1654,12 +1651,12 @@ paths:
         - name: status
           in: query
           description: >
-            `D-30`. Derived on the server, never stored: `open` = now <= dueAt;
-            `marking` = past due with any ungraded submission; `marked` = past due,
-            every submission graded. Judged over the task's WHOLE audience (each
-            group's own due date) and every submission, so identical for every
-            viewer. A task in a state the ruling does not reach has `status: null`
-            and matches no filter.
+            `D-30`/`D-34`/`D-35`. Derived on the server, never stored. `open` =
+            now <= the LATEST of the targeted groups' own due dates (override or
+            the task's); after that, `marking` = any ungraded submission, `marked`
+            = every submission graded, `closed` = no submission at all (link and
+            Google Form work included). Judged over the task's WHOLE audience and
+            every submission, so identical for every viewer. Never null.
           schema: { $ref: '#/components/schemas/StaffTaskStatus' }
         - { name: search, in: query, schema: { type: string, maxLength: 120 } }
       responses:

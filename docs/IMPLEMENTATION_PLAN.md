@@ -270,9 +270,11 @@ way:
 `TASK-2` `[~]` `task_drafts` (migration `018`, both drivers) + 4 routes + 3 audited actions (6a, 6b) ·
 `TASK-3` `[~]` Author from a draft (copies content, increments `usedCount`; body authoritative, A-2) (6c) ·
 `TASK-4` `[~]` Attachments on the task, per-attachment `audience`, audio uploads (`D-29`; 6c, 6i) ·
-`TASK-5` `[~]` `allowResubmission` (6c), `submissionModes` stored (`D-31`, 6j; enforcement and multi-file are unit 7's), marker assignment (`D-32`, 6g) ·
-`TASK-6` `[~]` Global `GET /staff/tasks`, group-grain (6d) + derived `status` filter (`D-30`, 6k; two unruled edges return `null` — see `docs/phases/unit-6/EXECUTION_NOTES.md`) ·
+`TASK-5` `[~]` `allowResubmission` (6c), `submissionModes` stored (`D-31`, 6j; enforcement moved to unit 7 as `MARK-6`, with the multi-file model), marker assignment (`D-32`, 6g; follow-up `TASK-F1` below) ·
+`TASK-6` `[~]` Global `GET /staff/tasks`, group-grain (6d) + derived `status` filter `open | marking | marked | closed` (`D-30`, completed by `D-34` `closed` and `D-35` latest due date; never null) ·
 `TASK-7` `[~]` Task list, authoring (new/edit) and draft-library screens (6e; browser pass pending)
+
+`TASK-F1` `[ ]` follow-up, **accepted for now (user, 2026-09-22)** — an admin cannot name the teacher as marker from the form: `GET /admin/assistants` returns assistants and admins, and no staff-reachable route exposes the teacher's id. The teacher picks themselves ("you"), and an existing teacher marker is preserved and shown. Revisit if an admin needs to assign Dr. Tahir.
 
 `[~]` = built and tested on 2026-09-22, awaiting `redesign-reviewer`. Unit 6 also closed the
 existence oracle on `PATCH`/`DELETE /staff/assessments/:id` and `POST …/targets` (plan finding 2).
@@ -282,6 +284,7 @@ existence oracle on `PATCH`/`DELETE /staff/assessments/:id` and `POST …/target
 `MARK-2` `[ ]` Split save from save-and-return (`returned_at`) ·
 `MARK-3` `[ ]` Submissions-for-one-task **including non-submitters** ·
 `MARK-4` `[ ]` Marking view (page, toolbar, annotation list, mark, feedback) ·
+`MARK-6` `[ ]` **Submission-mode enforcement + the multi-file model** (moved here from unit 6 by the user, 2026-09-22; `D-31`). Unit 6 stores `assessments.submission_modes` (`pdf_upload | doc_link | photo_upload`) but enforces nothing at submit time. Unit 7 decides what each mode admits (does `doc_link` accept a student URL as the submission? does `pdf_upload` narrow `allowedFileTypes`?) together with up-to-five photos on one submission, which changes per-file annotation ·
 `MARK-5` `[ ]` Marked-copy delivery — **rendered overlay** (`D-2`, closed). No server-side PDF library. **Annotations include freehand stroke paths, not only pins:** the teacher draws over the PDF with marker and eraser tools and never edits it; the eraser clears the teacher's own strokes only. Original stays immutable. A downloadable flattened PDF is additive and out of scope.
 
 ### Phase 9 — Mark book

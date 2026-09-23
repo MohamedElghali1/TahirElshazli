@@ -913,17 +913,24 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
       expect(staffTaskStatusOf({ dueAt: past }, [{ dueAt: future }], { total: 0, ungraded: 0 }, now)).toBe('open');
     });
 
-    it('is null, not a guess, past due with nothing submitted (unruled edge)', () => {
-      expect(staffTaskStatusOf({ dueAt: past }, [{ dueAt: null }], { total: 0, ungraded: 0 }, now)).toBeNull();
+    it('is closed past due with nothing submitted (D-34)', () => {
+      expect(staffTaskStatusOf({ dueAt: past }, [{ dueAt: null }], { total: 0, ungraded: 0 }, now)).toBe('closed');
     });
 
-    it('is null, not a guess, when groups’ due dates disagree about being past due (unruled edge)', () => {
+    it('lets the latest due date drive it: open until every group is past its own due date (D-35)', () => {
+      // One group past due, one not: still open, whatever is submitted.
       expect(
         staffTaskStatusOf({ dueAt: past }, [{ dueAt: null }, { dueAt: future }], { total: 2, ungraded: 0 }, now),
-      ).toBeNull();
+      ).toBe('open');
+      // Every group past due: the normal three.
+      const earlier = '2026-08-01T00:00:00Z';
+      const both = [{ dueAt: earlier }, { dueAt: null }];
+      expect(staffTaskStatusOf({ dueAt: past }, both, { total: 2, ungraded: 1 }, now)).toBe('marking');
+      expect(staffTaskStatusOf({ dueAt: past }, both, { total: 2, ungraded: 0 }, now)).toBe('marked');
+      expect(staffTaskStatusOf({ dueAt: past }, both, { total: 0, ungraded: 0 }, now)).toBe('closed');
     });
 
-    it('derives it on the list and filters by it; a null status matches no filter', async () => {
+    it('derives it on the list and filters by it; every task has one', async () => {
       // The seeds: assess-3 is past due with its one submission graded,
       // assess-4 past due with its one submission ungraded, assess-2 past due
       // with nothing submitted.
@@ -931,15 +938,14 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
       const statusOf = (id: string) => list.find((t) => t.id === id)?.status;
       expect(statusOf('assess-3')).toBe('marked');
       expect(statusOf('assess-4')).toBe('marking');
-      expect(statusOf('assess-2')).toBeNull();
+      expect(statusOf('assess-2')).toBe('closed');
+      expect(list.every((t) => t.status !== null && t.status !== undefined)).toBe(true);
 
-      const marking = await authoring.listForStaff(ADMIN, { status: 'marking' });
-      expect(marking.map((t) => t.id)).toContain('assess-4');
-      expect(marking.every((t) => t.status === 'marking')).toBe(true);
-      for (const status of ['open', 'marking', 'marked'] as const) {
-        const ids = (await authoring.listForStaff(ADMIN, { status })).map((t) => t.id);
-        expect(ids).not.toContain('assess-2');
+      for (const status of ['open', 'marking', 'marked', 'closed'] as const) {
+        const rows = await authoring.listForStaff(ADMIN, { status });
+        expect(rows.every((t) => t.status === status)).toBe(true);
       }
+      expect((await authoring.listForStaff(ADMIN, { status: 'closed' })).map((t) => t.id)).toContain('assess-2');
     });
 
     it('gives an assistant the same status the teacher sees (viewer-independent)', async () => {

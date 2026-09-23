@@ -39,6 +39,8 @@ const STATUS: Record<StaffTaskStatus, { label: string; tone: TagTone }> = {
   open: { label: 'Open', tone: 'blue' },
   marking: { label: 'Marking', tone: 'amber' },
   marked: { label: 'Marked', tone: 'green' },
+  // `D-34`: past due with nothing submitted - nothing to mark.
+  closed: { label: 'Closed', tone: 'gray' },
 };
 
 /**
@@ -115,8 +117,7 @@ export default function TasksPage() {
     },
     {
       label: 'Status',
-      // Null where `D-30` does not reach: an em-dash, never a guess.
-      render: (t) => (t.status ? <Tag tone={STATUS[t.status].tone}>{STATUS[t.status].label}</Tag> : '—'),
+      render: (t) => <Tag tone={STATUS[t.status].tone}>{STATUS[t.status].label}</Tag>,
     },
     {
       label: 'Marker',
@@ -179,6 +180,7 @@ export default function TasksPage() {
                     { value: 'open', label: 'Open' },
                     { value: 'marking', label: 'Marking' },
                     { value: 'marked', label: 'Marked' },
+                    { value: 'closed', label: 'Closed' },
                   ]}
                 />
               </>

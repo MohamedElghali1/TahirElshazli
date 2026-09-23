@@ -1421,3 +1421,31 @@ for accidents.
   scope. Stated so nobody adds a creator check by analogy with the blog.
 
 **Affected.** `task-drafts.service.ts`, `assessment-authoring.service.ts`, the DTOs, `API_SPEC.yaml`.
+
+---
+
+## 2026-09-22 — `D-34`, `D-35`: the two `D-30` edges, ruled after execution; two follow-ups placed
+
+**Context.** Unit 6's executor stopped on two cases `D-30` did not reach and returned `status: null`
+for them rather than guess (`docs/phases/unit-6/EXECUTION_NOTES.md`). The user ruled on 2026-09-22.
+
+### `D-34` — a fourth staff status, `closed`: past due with nothing to mark
+- A task past its (latest, `D-35`) due date with **zero submissions** is `closed`. That includes link
+  and Google Form work, which has no submission rows of its own.
+- Rejected: `marked` (a task nobody handed in would read as done).
+- Enum, DTO filter, `API_SPEC.yaml` `StaffTaskStatus`, `lib/types.ts` and the task list all carry it.
+
+### `D-35` — the latest due date drives the status
+- A task stays `open` until **every** targeted group is past its own due date (override, or the
+  task's). After that it is `marking`, `marked` or `closed` as normal.
+- Rejected: the earliest due date; a per-group status.
+- **Consequence:** with `D-34` and `D-35` the status is total — never null.
+
+### Placed, not built
+- **Submission-mode enforcement** (what `D-31`'s modes admit at submit time) moves to unit 7 as
+  `MARK-6`, beside the multi-file model.
+- **An admin naming the teacher as marker** is accepted as a limitation for now (`TASK-F1`): the
+  teacher picks themselves, and an existing teacher marker is preserved.
+
+**Affected.** `assessment-authoring.service.ts` (`staffTaskStatusOf`), `staff-tasks-query.dto.ts`,
+`API_SPEC.yaml`, `frontend/lib/types.ts`, `manage/tasks/page.tsx`, `IMPLEMENTATION_PLAN.md`.
