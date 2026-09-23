@@ -454,3 +454,101 @@ touched.
 4. File `TASK-F3`.
 
 `R1-1` may ride along with `TASK-F3`, or be recorded as accepted.
+
+---
+
+## Re-check 2 — 2026-09-22, the browser pass and the re-check-1 follow-ups
+
+**VERDICT: APPROVED WITH FOLLOW-UP**
+
+**The code is done. Only the browser pass stands between this and `APPROVED`.** Nothing in the
+code, tests or documentation is outstanding. The browser pass as reported does not meet the
+condition Re-check 1 set, and I will not stretch "check is clear" to cover what it did not say.
+
+The remaining verification is a few minutes of looking, listed exactly below. It needs no further
+code review from me.
+
+### Scope
+
+**Revision.** `redesign` at `71d604c`, range `6dabdb8..71d604c`.
+- `293745e` commits Re-check 1 unmodified. `git diff 293745e 71d604c -- REVIEW.md` is empty.
+- `8fe8350` covers `R1-1`, `TASK-F3` and `TASK-F4`.
+- `71d604c` records the browser pass.
+- No `.sql` or repository file changed after `cc76ee4`, so the integration result (146, 0 skipped,
+  which I ran myself in Re-check 1) stands.
+
+**Re-run by me at `71d604c`:**
+- `npm test`: **660 / 39 files**.
+- `npm run test:e2e`: **297 / 4 files**.
+- frontend `tsc --noEmit`: exit 0.
+
+The working tree is clean apart from this section.
+
+### Re-check-1 items
+
+| Item | Status |
+|---|---|
+| **`R1-1`** | **Closed.** Kept as a no-op, which is the option I offered. `D-32` is clarified in `CHANGELOG.md` as "an assistant may not *change* the marker". It is pinned both ways: the unit test covers same → 200 kept, different → 403, clear → 403; the e2e covers same → 200, different → 403. |
+| **`TASK-F3`** (submissions delete 400 → 409) | **Filed** in `IMPLEMENTATION_PLAN.md`, naming the e2e assertion that moves with it. Non-blocking, per my Re-check 1 ruling. |
+| **`TASK-F4`** (`PostgresWorkRepository`/`PostgresGoogleCredentialRepository` integration coverage, `tallyResults` first) | **Filed.** Non-blocking. |
+
+### The browser pass: does it meet the condition?
+
+**Partly. Not in full.**
+
+**What Re-check 1 named:**
+- all four screens;
+- as teacher **and** assistant-1;
+- in LTR **and** RTL, with `ليلى فهمي`;
+- including `F-2` (a retained group's own dates survive re-targeting) and `F-4` (no pre-selected
+  audience, and save blocked until chosen).
+
+**What is recorded** (`EXECUTION_NOTES.md` §Browser pass): the user signed in **as the teacher** and
+reported *"check is clear"*.
+- The report is not itemised.
+- The coordinator did not observe the screens.
+- I cannot sign in either, because entering a password is not an agent action.
+
+I take the user's report at face value for what it covers: **the four screens render and work for
+the teacher in the direction they used.** That is real evidence, and it retires the largest risk,
+which was that the screens had never been seen at all.
+
+It does not cover the following. **None of this is a security or authorization concern.** Every
+server boundary behind these screens is proven by refusal tests in both directions (round 1,
+Definition of Done 5 and 7). What remains is presentation, and the courtesy layer that
+`CLAUDE.md` §11 and `PHASE_PLAN.md` §4 require to be seen in a browser.
+
+### Verification that remains (the only follow-up)
+
+1. **RTL.** Show all four screens with `dir="rtl"`, with a long Arabic name visible (`ليلى فهمي`).
+   `CLAUDE.md` §11 says a layout check in `dir="rtl"` needs a browser, not a read. My round-1
+   review confirmed only by reading that the screens use logical properties.
+2. **As assistant-1** (`assistant@`, holds group-1):
+   - `/manage/tasks` lists only group-1 tasks, and "Set for" shows only held groups.
+   - Opening a task shared with an unheld group shows **no audience editor**: the targets are
+     read-only, with "Only the teacher can change who this is set for".
+   - The marker is shown read-only, with the amber drift tag where it applies.
+   - `/manage/tasks/new` offers only group-1.
+   - `/manage/tasks/drafts` loads.
+3. **`F-2`, as the teacher.** Give a task one group with its own due date, add a second group and
+   save. The first group's "Own window" line and date are still there after the reload.
+4. **`F-4`, as the teacher.** Add an attachment row. The audience reads "Choose…", Save is
+   disabled with the amber note, and it enables once a choice is made.
+
+**How this closes.** When the user, or anyone signed in, confirms 1–4 (a one-line "yes" per item
+is enough), the coordinator may record this review as **`APPROVED`** without sending it back to
+me.
+
+**If the user instead chooses to accept the teacher-only check as sufficient,** that is their call
+under `CLAUDE.md` §2.1, not mine. The coordinator should record it as the user's explicit waiver of
+items 1–4, rather than as a completed pass.
+
+### The nine `PHASE_ROADMAP.md` §2 conditions
+
+Every one holds except two, and both clear together when the remaining verification is recorded:
+- the reviewer verdict being `APPROVED` (condition 3);
+- the `TASK-7` browser item (Definition of Done 12, "RTL checked in a browser").
+
+After that:
+- unit 6 and TASK-1..7 may go to `[x]`;
+- `TASK-F1` … `F4`, `MARK-6` and the `AUTH-6` remainder stay open, as filed.
