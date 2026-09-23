@@ -57,7 +57,9 @@ export class PatchAnnouncementDraftDto {
   @IsOptional()
   @IsMediaUrl()
   mediaUrl?: string;
+}
 
+export class PatchAdminAnnouncementDraftDto extends PatchAnnouncementDraftDto {
   @IsOptional()
   @MaxLength(80)
   @Matches(AUDIENCE_PATTERN, {

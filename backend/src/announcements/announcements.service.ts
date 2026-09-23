@@ -136,6 +136,11 @@ export class AnnouncementsService {
       if (patch.audience !== undefined && !existing.publishedAt) {
         const parsed = parseAudience(patch.audience);
         if (!parsed) throw new BadRequestException('Unrecognised audience');
+        if (parsed.type === 'all_students' || parsed.type === 'all_tas') {
+          if (!isUnscopedStaffRole(actorRoleOf(actor))) {
+            throw new ForbiddenException('Only teachers and admins may target a platform-wide audience');
+          }
+        }
         if (parsed.courseId) await this.scope.assertAssigned(parsed.courseId, actor);
         if (parsed.groupId) {
           const canReach = await this.scope.mayReachGroup(parsed.groupId, actor);

@@ -1586,3 +1586,7 @@ the old rule, which had no way to hold one back.
 
 ### `B-ANN-1` — unit 10: TAs cannot publish announcements
 Fixed a bug introduced earlier in unit 10 where a TA assigned to a course or group could publish an announcement targeted at it through `/staff/.../publish` routes, bypassing teacher/admin review. The staff publish routes were removed, and the `publish()` service method now unconditionally enforces the `teacher` or `admin` role for all announcements, closing the loophole.
+
+### `B-ANN-2` — unit 10: TAs cannot retarget announcements to platform-wide audiences
+Fixed an authorization hole introduced by round 1's fix where `PatchAnnouncementDraftDto` gained an `audience` field for admin retargeting, but remained shared with the staff patch routes. Because `updateDraft()` only scoped course and group audiences, assistants could retarget their drafts to `all_students` or `all_tas`. Split the DTO into `PatchAnnouncementDraftDto` (staff, no audience) and `PatchAdminAnnouncementDraftDto` (admin only, carries audience), and added a belt-and-braces role check in `AnnouncementsService.updateDraft()`.
+

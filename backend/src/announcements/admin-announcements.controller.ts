@@ -22,7 +22,7 @@ import type { Announcement } from './interfaces/announcement-repository.interfac
 import {
   ListAnnouncementsQueryDto,
   PostAnnouncementDto,
-  PatchAnnouncementDraftDto,
+  PatchAdminAnnouncementDraftDto,
 } from './dto/post-announcement.dto.js';
 
 @Controller('admin')
@@ -62,7 +62,7 @@ export class AdminAnnouncementsController {
   @Patch('announcements/:id')
   async updateDraft(
     @Param('id') id: string,
-    @Body() body: PatchAnnouncementDraftDto,
+    @Body() body: PatchAdminAnnouncementDraftDto,
     @Request() req: { user: JwtPayload },
   ): Promise<Announcement> {
     return this.announcements.updateDraft(id, this.actor(req), body);

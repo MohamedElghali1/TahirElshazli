@@ -637,6 +637,22 @@ describe('Staff and admin API (e2e)', () => {
       expect(patched.body.audience).toBe('all_students');
     });
 
+    it('strips audience when an assistant patches a draft, leaving audience unchanged', async () => {
+      const draft = await request(app.getHttpServer())
+        .post('/staff/courses/course-1/announcements')
+        .set(bearer(assignedTaToken))
+        .send({ title: 'TA title', body: 'TA body' })
+        .expect(201);
+      expect(draft.body.audience).toBe('course:course-1');
+
+      const patched = await request(app.getHttpServer())
+        .patch(`/staff/courses/course-1/announcements/${draft.body.id}`)
+        .set(bearer(assignedTaToken))
+        .send({ audience: 'all_students' })
+        .expect(200);
+      expect(patched.body.audience).toBe('course:course-1');
+    });
+
     it('shows the admin every audience and the TA only their own course', async () => {
       const all = await request(app.getHttpServer())
         .get('/admin/announcements')

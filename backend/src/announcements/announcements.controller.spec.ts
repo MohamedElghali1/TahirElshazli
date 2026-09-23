@@ -179,6 +179,14 @@ describe('Announcements Unit & Integration', () => {
     await expect(service.publish(draft.id, ASSIGNED_TA.user)).rejects.toThrow(ForbiddenException);
   });
 
+  it('assistant calling updateDraft with platform-wide audience -> 403', async () => {
+    const draft = await staff.createGroupDraft('group-1', MESSAGE, ASSIGNED_TA);
+    const assistantActor = { id: ASSIGNED_TA.user.sub, role: ASSIGNED_TA.user.role };
+    await expect(
+      service.updateDraft(draft.id, assistantActor, { audience: 'all_students' }),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
   it('publish with MAIL_DRIVER=none -> propagates error (we simulate by making mail throw)', async () => {
     const draft = await admin.createDraft({ ...MESSAGE, audience: 'course:course-1' }, ADMIN);
     vi.mocked(mail.send).mockRejectedValueOnce(new Error('mail failed'));
