@@ -882,6 +882,50 @@ describe('Student API (e2e)', () => {
     await request(app.getHttpServer()).post('/auth/logout').set(header).expect(200);
     await request(app.getHttpServer()).get('/notifications').set(header).expect(401);
   });
+
+  describe('avatar upload', () => {
+    it('rejects an SVG', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/students/me/avatar')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .attach('file', 'avatar.svg');
+      expect(res.status).toBe(415);
+    });
+
+    it('rejects an oversized file', async () => {
+      try {
+        await request(app.getHttpServer())
+          .post('/students/me/avatar')
+          .set('Authorization', `Bearer ${accessToken}`)
+          .attach('file', 'large.jpg');
+        throw new Error('Should have failed');
+      } catch (err: any) {
+        expect(err.status).toBe(413);
+      }
+    });
+
+    it('rejects a staff role', async () => {
+      const login = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ email: 'teacher@example.com', password: 'password123' });
+      const staffToken = login.body.accessToken;
+
+      const res = await request(app.getHttpServer())
+        .post('/students/me/avatar')
+        .set('Authorization', `Bearer ${staffToken}`)
+        .attach('file', 'avatar.png');
+      expect(res.status).toBe(403);
+    });
+
+    it('accepts a valid image and returns a server-minted path', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/students/me/avatar')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .attach('file', 'avatar.png');
+      expect(res.status).toBe(201);
+      expect(res.body.url).toMatch(/^\/uploads\/[0-9a-f-]+\.png$/);
+    });
+  });
 });
 
 /**

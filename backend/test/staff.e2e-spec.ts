@@ -79,6 +79,8 @@ describe('Staff and admin API (e2e)', () => {
   describe('authentication and role gates', () => {
     it.each([
       '/staff/courses',
+        '/me/profile',
+        '/me/notification-preferences',
       '/staff/overview',
       '/staff/courses/course-1/roster',
       '/staff/courses/course-1/submissions',
@@ -95,6 +97,8 @@ describe('Staff and admin API (e2e)', () => {
 
     it.each([
       '/staff/courses',
+        '/me/profile',
+        '/me/notification-preferences',
       '/staff/overview',
       '/staff/courses/course-1/roster',
       '/staff/courses/course-1/submissions',

@@ -23,6 +23,7 @@ import { PostgresBlogRepository } from '../src/blog/repositories/postgres-blog.r
 import { PostgresMailDeliveryRepository } from '../src/mail/postgres-mail-delivery.repository.js';
 import { PostgresAssistantInvitationRepository } from '../src/manage/repositories/postgres-assistant-invitation.repository.js';
 import { PostgresTaskDraftRepository } from '../src/manage/repositories/postgres-task-draft.repository.js';
+import { PostgresNotificationPreferencesRepository } from '../src/settings/repositories/postgres-notification-preferences.repository.js';
 import type { NewAssessment } from '../src/assessments/interfaces/assessment-repository.interface.js';
 import { Role } from '../src/auth/roles.enum.js';
 
@@ -3083,4 +3084,42 @@ describeIfDb('migration 015 backfills the course grants it drops', () => {
       await drop(client, schema);
     }
   }, 60_000);
+
+  describe('notification preferences', () => {
+    it('returns the opt-out defaults when no row exists', async () => {
+      const repo = new PostgresNotificationPreferencesRepository(db);
+      const prefs = await repo.get('student-1'); // Student exists, but no prefs row
+      expect(prefs).toEqual({
+        submissions: true,
+        registrations: true,
+        unmatched: true,
+        weeklySummary: true,
+      });
+    });
+
+    it('upserts a row and updates it on conflict', async () => {
+      const repo = new PostgresNotificationPreferencesRepository(db);
+      
+      await repo.upsert('student-1', {
+        submissions: false,
+        registrations: true,
+        unmatched: false,
+        weeklySummary: false,
+      });
+      let prefs = await repo.get('student-1');
+      expect(prefs.submissions).toBe(false);
+      expect(prefs.registrations).toBe(true);
+
+      // Now conflict update
+      await repo.upsert('student-1', {
+        submissions: true,
+        registrations: false,
+        unmatched: true,
+        weeklySummary: false,
+      });
+      prefs = await repo.get('student-1');
+      expect(prefs.submissions).toBe(true);
+      expect(prefs.registrations).toBe(false);
+    });
+  });
 });

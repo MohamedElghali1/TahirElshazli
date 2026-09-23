@@ -179,6 +179,7 @@ export interface UserRepository {
    */
   setStatus(userId: string, status: UserStatus): Promise<void>;
   updatePassword(userId: string, passwordHash: string): Promise<void>;
+  updateName(userId: string, name: string): Promise<void>;
   createPasswordResetToken(
     userId: string,
     token: string,

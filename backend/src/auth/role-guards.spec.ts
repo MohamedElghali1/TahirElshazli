@@ -152,7 +152,7 @@ describe('the authorization boundary', () => {
     // `AdminCoursesController` (`DOM-5`) was the thirtieth; `AdminStaffController`
     // left with `course_staff_assignments` (`AUTH-2`), which is a net -1.
     // `TaskDraftsController` (`TASK-2`, unit 6) is the thirtieth again.
-    expect(CONTROLLERS).toHaveLength(30);
+    expect(CONTROLLERS).toHaveLength(31);
     const named = CONTROLLERS.map((c) => c.name);
     expect(new Set(named).size).toBe(named.length);
     for (const name of [

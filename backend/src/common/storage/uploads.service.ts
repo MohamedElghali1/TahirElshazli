@@ -49,7 +49,10 @@ export class UploadsService {
     @Inject(FILE_STORAGE) private readonly storage: FileStorage | null,
   ) {}
 
-  async store(file: UploadedFileLike | undefined): Promise<UploadResult> {
+  async store(
+    file: UploadedFileLike | undefined,
+    limits?: { maxBytes?: number; allowedTypes?: string[] },
+  ): Promise<UploadResult> {
     if (!this.storage) {
       // STORAGE_DRIVER=none, which is the production default. A 503 and not a
       // 500: the endpoint is understood and correct, the capability is simply
@@ -62,13 +65,16 @@ export class UploadsService {
       throw new BadRequestException('No file was uploaded.');
     }
 
+    const maxBytes = limits?.maxBytes ?? MAX_UPLOAD_BYTES;
+    const allowedTypes = limits?.allowedTypes ?? ALLOWED_UPLOAD_MIME_TYPES;
+
     // Re-checked against the buffer we actually hold, even though multer is
     // configured with the same ceiling. A limit enforced in one place is a
     // limit that depends on that place having been wired up correctly.
-    if (file.buffer.byteLength > MAX_UPLOAD_BYTES) {
+    if (file.buffer.byteLength > maxBytes) {
       throw new PayloadTooLargeException(
         `That file is larger than the ${Math.floor(
-          MAX_UPLOAD_BYTES / (1024 * 1024),
+          maxBytes / (1024 * 1024),
         )} MB limit.`,
       );
     }
@@ -84,10 +90,10 @@ export class UploadsService {
     // executes nothing, and because §8's "virus scan where feasible" is the
     // real answer and belongs with R2.
     const type = ALLOWED_UPLOAD_TYPES[file.mimetype.toLowerCase()];
-    if (!type) {
+    if (!type || !allowedTypes.includes(file.mimetype.toLowerCase())) {
       throw new BadRequestException(
         `Files of type "${file.mimetype}" are not accepted. Allowed: ` +
-          `${ALLOWED_UPLOAD_MIME_TYPES.join(', ')}.`,
+          `${allowedTypes.join(', ')}.`,
       );
     }
 

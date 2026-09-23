@@ -239,6 +239,13 @@ export class InMemoryUserRepository implements UserRepository {
     }
   }
 
+  async updateName(userId: string, name: string): Promise<void> {
+    const user = this.users.find((u) => u.id === userId);
+    if (user) {
+      user.name = name;
+    }
+  }
+
   async createPasswordResetToken(
     userId: string,
     token: string,

@@ -229,6 +229,13 @@ export class PostgresUserRepository implements UserRepository {
     ]);
   }
 
+  async updateName(userId: string, name: string): Promise<void> {
+    await this.db.query('UPDATE users SET name = $2 WHERE id = $1', [
+      userId,
+      name,
+    ]);
+  }
+
   async createPasswordResetToken(
     userId: string,
     token: string,

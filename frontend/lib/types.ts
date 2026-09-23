@@ -90,7 +90,7 @@ export interface AttendanceEntry {
  * halves are always present; a course with no sessions reports `0 of 0` rather
  * than serving a different shape.
  *
- * **Render them as two `Meter`s and never average them** (CLAUDE.md §11.1
+ * **Render them as two `Meter`s and never average them** (CLAUDE.md Ã‚Â§11.1
  * non-negotiable 2). `completionPercentage` and `attendancePercentage` measure
  * different things - watching the material and turning up - and one blended
  * figure would say neither. Grades never appear here at all: performance is
@@ -112,6 +112,7 @@ export interface CourseListItem {
   id: string;
   title: string;
   description: string;
+  slug: string;
   thumbnailUrl: string | null;
   teacherName: string;
   progress: CourseProgress;
@@ -258,7 +259,7 @@ export interface RecordingProgress {
 }
 
 /* --- assessments (assessments/assessments.service.ts) ---------------------
-   CLAUDE.md §5.10 - `status` is derived server-side from timestamps and
+   CLAUDE.md Ã‚Â§5.10 - `status` is derived server-side from timestamps and
    submission state. The client renders it and never recomputes it. */
 
 export type AssessmentType = 'homework' | 'assignment' | 'quiz';
@@ -329,7 +330,7 @@ export interface SubmissionView {
   score: number | null;
   correctedAt: string | null;
   feedback: string | null;
-  /** CLAUDE.md §5.5 - the annotated PDF is a new artifact beside the original. */
+  /** CLAUDE.md Ã‚Â§5.5 - the annotated PDF is a new artifact beside the original. */
   annotatedFileUrl: string | null;
   revisions: SubmissionRevision[];
 }
@@ -434,7 +435,7 @@ export type NotificationType =
   | 'live_session_soon'
   | 'assessment_available'
   /**
-   * Announcement fan-out (CLAUDE.md §5.14). Added by migration 005 on the
+   * Announcement fan-out (CLAUDE.md Ã‚Â§5.14). Added by migration 005 on the
    * backend and missing here until 2026-09-08 - which was not a cosmetic gap:
    * both notification screens index an icon map by this union, so the first
    * announcement a student received rendered `<undefined />` and took the page
@@ -715,7 +716,7 @@ export interface AssistantWrite {
  *
  * There is no compile-time link between the two files, so **adding an action
  * on the backend means adding it here too** - the same hand-mirroring hazard
- * CLAUDE.md §5.4 describes for the DTO's runtime arrays, one process boundary
+ * CLAUDE.md Ã‚Â§5.4 describes for the DTO's runtime arrays, one process boundary
  * further out.
  */
 export type AuditAction =
@@ -823,7 +824,7 @@ export interface PublicCourseDetail extends PublicCourseSummary {
 }
 
 /* ------------------------------------------------------------------------
-   Groups (CLAUDE.md §5.16) - the cohort a course is taught to.
+   Groups (CLAUDE.md Ã‚Â§5.16) - the cohort a course is taught to.
 
    A group is a class of students studying **one** course. It used to carry no
    courseId, with a `GroupCourse` join row saying what it studied; migration 013
@@ -886,7 +887,7 @@ export interface GroupPatch {
 
 /**
  * `GET /staff/groups/:id/report` (`GROUP-4`). Performance only - no
- * progress/completion figure sits beside it (CLAUDE.md §11.1). No PDF field:
+ * progress/completion figure sits beside it (CLAUDE.md Ã‚Â§11.1). No PDF field:
  * the browser's own print-to-PDF renders this data, there is no server-side
  * PDF file to link to.
  */
@@ -912,7 +913,7 @@ export interface GroupReport {
 }
 
 /**
- * The *staff* roster row. Carries an email; §5.17's student-facing classmate
+ * The *staff* roster row. Carries an email; Ã‚Â§5.17's student-facing classmate
  * list deliberately does not, and the two come from different endpoints so
  * widening one cannot widen the other.
  */
@@ -925,7 +926,7 @@ export interface GroupMemberView {
 }
 
 /**
- * What a student may see of another student (§5.17): a name, and nothing else.
+ * What a student may see of another student (Ã‚Â§5.17): a name, and nothing else.
  * Never an email, a mark, progress or attendance - a classmate list that
  * carries a grade is a leaderboard, which is a different product decision.
  */
@@ -948,11 +949,11 @@ export interface ClassmateGroup {
 }
 
 /* ------------------------------------------------------------------------
-   Authoring (CLAUDE.md §5.18) and targeting (§5.16).
+   Authoring (CLAUDE.md Ã‚Â§5.18) and targeting (Ã‚Â§5.16).
 
    A task is written **once** and aimed at one or more groups - the audience is
    per group, the task is not duplicated per group. So there is one assessment
-   row, one target row per group, and §5.6's "average across all students"
+   row, one target row per group, and Ã‚Â§5.6's "average across all students"
    stays one average over one task.
    ------------------------------------------------------------------------ */
 
@@ -1042,7 +1043,7 @@ export interface Attachment {
   /**
    * Who it is for (`D-29`). The student read returns only `students` ones; a
    * mark scheme is `staff`. This decides what the API returns, not who can
-   * fetch the file - see `SECURITY.md` §4 on `/uploads/*`.
+   * fetch the file - see `SECURITY.md` Ã‚Â§4 on `/uploads/*`.
    */
   audience: AttachmentAudience;
 }
@@ -1096,7 +1097,7 @@ export type TaskDraftUpdate = Partial<Omit<TaskDraftWrite, 'courseId'>>;
 
 /**
  * An announcement, as both the staff console and the student course page read
- * it. `audience` is the §6.1 wire form: `all_students`, `all_tas` or
+ * it. `audience` is the Ã‚Â§6.1 wire form: `all_students`, `all_tas` or
  * `course:<id>`.
  */
 export interface Announcement {
@@ -1113,7 +1114,7 @@ export interface Announcement {
 }
 
 /* ------------------------------------------------------------------------
-   The blog (CLAUDE.md §5.19) - Dr. Tahir's achievements, authored by the
+   The blog (CLAUDE.md Ã‚Â§5.19) - Dr. Tahir's achievements, authored by the
    teacher or an assistant and read by students and visitors alike.
 
    Two shapes, and the difference is what each reader is trusted with.
@@ -1204,4 +1205,19 @@ export interface UploadConfig {
   enabled: boolean;
   maxBytes: number;
   allowedMimeTypes: string[];
+}
+
+export interface StaffProfile {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  googleEmail: string | null;
+}
+
+export interface NotificationPreferences {
+  submissions: boolean;
+  registrations: boolean;
+  unmatched: boolean;
+  weeklySummary: boolean;
 }

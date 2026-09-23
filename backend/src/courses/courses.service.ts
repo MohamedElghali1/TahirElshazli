@@ -143,6 +143,7 @@ export class CoursesService {
       id: course.id,
       title: course.title,
       description: course.description,
+      slug: course.slug,
       thumbnailUrl: course.thumbnailUrl,
       teacherName: course.teacherName,
       progress: await this.getProgress(course.id, enrollment.studentId),
