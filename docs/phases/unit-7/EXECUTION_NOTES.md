@@ -4,12 +4,12 @@
 harness, 2026-09-23). **Branch:** `redesign`. **Range:** `6657c7a..c86f511`, plus the documentation
 commit that carries this file. Local, not pushed.
 
-**Read this first. No real student submission can be marked up yet, in any environment.** Mark-up
-works only on a file the platform stores (`D-41`). No student route can store one while `MARK-6` is
-open (`B-1`/`B-2`, escalated), and production stores nothing until an R2 driver exists (`MARK-F1`).
-The marking surface, image and PDF, was proven against a **manufactured** fixture: a submission
-whose `file_url` was set directly in a throwaway database to a file uploaded through the staff route.
-The unit tests and e2e place such files through the repository for the same reason.
+**Read this first.** Mark-up works only on a file the platform stores (`D-41`). Since slice 7i
+(`MARK-6`, below) students upload a PDF or up to five photos themselves, so on a server with file
+storage every uploaded hand-in can be marked up. **Production stores nothing** until an R2 driver exists
+(`MARK-F1`). Until then upload-mode tasks cannot be created there (`D-48` (b)), and a link hand-in is
+graded with a mark and feedback. The 7a–7h screens were first proven against a file placed by hand, and
+the user then reported the browser pass complete (§8). The 7i screens came after that pass (§10).
 
 ---
 
@@ -152,7 +152,11 @@ grep -rn "dangerouslySetInnerHTML" frontend/components/marking frontend/app/(app
 
 **Dependency:** `npm audit --workspace=frontend` → `found 0 vulnerabilities` after adding `pdfjs-dist`.
 
-## 8. Browser pass — PENDING
+## 8. Browser pass — REPORTED COMPLETE BY THE USER (7a–7h)
+
+**2026-09-23: the user reported this pass complete.** It was performed by the user, not observed by
+the coordinator; recorded as the user's verification, as unit 6's was. The original setup and list,
+kept for the record:
 
 A stack for it is running from a scratch build (API on `:3101`, Postgres database `tahir_browser`,
 web on `:3100`), with a manufactured image submission and a two-page PDF submission for student-1 on
@@ -176,3 +180,79 @@ the coordinator does not do, so **the user signs in**. Checks to make, and not y
 `DATABASE_PLAN.md`, `DOMAIN_MODEL.md`, `PRODUCT_SPEC.md`, `AUTHORIZATION_MODEL.md`, `SECURITY.md`,
 `ARCHITECTURE.md`, `redesign-mapping.md`, `project_log.md`, `CLAUDE.md` (§3 count, §4.1 counts and the
 stale "unit 6 awaiting review", §7 scope callers and `AUTH-6`, §9 migrations through `019`).
+
+## 10. Slice 7i — `MARK-6` (after the user's ruling)
+
+**Ruling.** `D-47`/`D-48`, the plan's recommendations (Revision 2 of `PHASE_PLAN.md` is the spec).
+
+**Commits.** `bec909f` (backend), `18717fc` (frontend), then the documentation commit.
+
+**What was built.**
+- **Migration `020`.** `files JSONB` (an array, at most 5) on submissions and revisions. It ran against
+  an empty database before any repository code, and 173 existing integration tests passed on it.
+- **Both drivers.** The executor's earlier file-set plumbing, restored by reversing the removal
+  commit's hunks, with `sizeBytes` dropped: the server cannot vouch for a size from a URL.
+- **`checkSubmission`** (`D-47`). A pure function, unit-tested in both directions.
+- **The student upload route** (`D-48` (a)). `UploadsService.store` gained narrowing-only rules.
+- **The author-time refusal and type derivation** (`D-48` (b), `D-47`).
+- **Staff side.** `documentsOf` lists the set, so marking and stale counts cover every file.
+- **Student side.** A mode-driven submit form, a marked copy per file, and file counts in history.
+- **Authoring form.** Upload modes are disabled without storage, and file types are hidden once modes
+  are chosen.
+
+**Deviations.**
+1. `020` is a new migration rather than an edit to `019`. `019` had shipped in verified form, and the
+   plan's rule is that an unverified base is never built on.
+2. Uploaded files are stored as `{url, mimeType}` only (no size).
+3. The frontend `work` union had never been mirrored (drift that predates unit 7). It is now.
+4. **A defect in earlier unit-7 work, caught here.** The mark-book test fixture in
+   `groups.controller.spec.ts` (`e46c5ea`) failed backend `tsc`. Vitest does not typecheck, and the
+   earlier verification ran frontend `tsc` only. Fixed in `bec909f`. Backend `tsc` is now part of the
+   recorded checks.
+
+**Verification — real output after `18717fc`:**
+```
+node v26.8.1
+redesign
+18717fc
+== unit
+ Test Files  44 passed (44)
+      Tests  748 passed (748)
+== e2e
+ Test Files  4 passed (4)
+      Tests  336 passed (336)
+== integration (fresh db)
+0                                   <- public tables immediately before the run
+[MigrationRunner] Applied 019_submission_annotations_and_return.sql
+[MigrationRunner] Applied 020_submission_files.sql
+ Test Files  1 passed (1)
+      Tests  176 passed (176)       <- 0 skipped
+PostgreSQL 15.19 on aarch64-unknown-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+019_submission_annotations_and_return.sql
+020_submission_files.sql
+== backend tsc
+exit 0
+== frontend tsc
+exit 0
+== lint
+lint exit 0
+== audit
+found 0 vulnerabilities
+```
+
+**New tests.**
+- Unit: `submission-rules.spec.ts` (10), `documentsOf` with a set, and the authoring derivation and
+  refusal.
+- e2e: six in `MARK-6`:
+  - upload happy path, with a traversal-shaped filename;
+  - wrong type, no-upload task, and SVG refused;
+  - untargeted task 404 `===` missing; staff 403; anonymous 401;
+  - a note alone, a link, or a foreign URL refused; whole-set replacement with the old set archived;
+  - one PDF on a PDF task and a link on a link task;
+  - staff mark up an uploaded photo.
+- Integration: three for `020`: the CHECK, the default, and round-trip plus whole-set archive.
+
+**Browser.** The 7i screens have **not** been seen in a browser: the student upload form, the file
+switcher in the marking view, and the authoring gate. The preview was not signed in when 7i finished.
+The scratch API was rebuilt with 7i and applied `020` to the browser database, so a signed-in check can
+use it as it is.

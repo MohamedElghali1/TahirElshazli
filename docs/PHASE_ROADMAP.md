@@ -489,7 +489,7 @@ not the rule.
 **Status 2026-09-23: `[~]`.** Built on `redesign` `6657c7a..HEAD` (local, not pushed); artifacts in
 `docs/phases/unit-7/`. The user ran the pipeline without the agent harness: the coordinator did the
 planning pass (Revision 1 of `PHASE_PLAN.md`), the implementation and the review itself, in sequence.
-**It cannot close while `MARK-6` is blocked** (§2, condition 9), unless the user moves `MARK-6` out.
+**`MARK-6` ruled and built the same day:** the user accepted the recommendations (`D-47`, `D-48`), slice 7i.
 **Review** (`REVIEW_7.md`, 2026-09-23): `APPROVED WITH FOLLOW-UP`. Two findings fixed (`R-1`, `R-2`).
 Open conditions: `B-1`/`B-2` ruled and `MARK-6` built (or moved out), and the browser pass
 (`EXECUTION_NOTES.md` §8), which stopped at sign-in and needs the user.
@@ -506,8 +506,8 @@ it). The queue must show **non-submitters** — this is the answer to the old "n
 **A missing mark is an em-dash, never `0`.**
 **`MARK-5` is not blocked:** `D-2` closed 2026-09-20 as a rendered overlay (the old "Blocked within
 scope `MARK-5`" line here was stale and is removed).
-**Blocked within scope** `MARK-6` — `B-1` (what each submission mode admits) and `B-2` (student
-upload and the up-to-five-photo set). Escalated, not decided.
+**`MARK-6`** — `B-1`/`B-2` escalated, then ruled by the user on the recommendations (`D-47`, `D-48`) and
+built as slice 7i (migration `020`).
 
 ---
 

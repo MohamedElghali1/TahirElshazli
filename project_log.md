@@ -3844,3 +3844,10 @@ marking screens were proven against a file placed by hand.
 
 **Counts.** 735 unit / 43 files, 330 e2e, 173 integration (0 skipped, PostgreSQL 15.19, 001–019 from
 an empty schema). Frontend `tsc` 0, lint 0. Node v26.8.1.
+
+**Later the same day — `MARK-6`.** The user ruled the submission-mode questions on the
+recommendations and reported the browser pass complete. Slice 7i followed: students now hand in by
+the task's mode — a PDF, up to five photos, or a Google Doc link — uploading straight into the
+platform on a route of their own, and staff mark up every file of a hand-in. On a server without file
+storage, a teacher cannot create a task that promises uploads. Counts: 748 unit / 44 files, 336 e2e,
+176 integration (0 skipped; 001–020 from an empty schema).

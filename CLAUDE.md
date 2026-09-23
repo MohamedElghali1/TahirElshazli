@@ -152,7 +152,7 @@ Backend TypeScript is `strict: true`, `module: nodenext`, `target: ES2023`, with
 
 ```
 npm run dev                  # both services, no database needed
-npm test                     # backend unit — 735 tests, 43 files
+npm test                     # backend unit — 748 tests, 44 files
 npm run test:e2e             # backend e2e
 npm run test:integration     # backend integration; SKIPS ITSELF without TEST_DATABASE_URL
 npm run lint                 # frontend eslint + backend oxlint
@@ -230,8 +230,8 @@ destroyed live code (`docs/phases/unit-4/REVIEW_4D.md`). Do not read `SHELL-4`'s
 ("delete `components/app/*`, `components/site/*`") as still describing the directory's contents —
 verify against the actual consumer graph before treating either directory as legacy again.
 
-The backend **is** green and must stay green: **735 unit / 43 files, 330 e2e, 173 integration**
-(against real PostgreSQL 15.19, 001–019 from an empty schema) as of unit 7's implementation, 2026-09-23
+The backend **is** green and must stay green: **748 unit / 44 files, 336 e2e, 176 integration**
+(against real PostgreSQL 15.19, 001–020 from an empty schema) as of unit 7's slice 7i, 2026-09-23
 (`docs/phases/unit-7/EXECUTION_NOTES.md`; unit 6 is `[x]`, unit 7 is `[~]`).
 
 ---
@@ -423,8 +423,8 @@ A security claim needs a test that proves the unauthorized case fails (§10).
   a gate, not a nicety: migrations 001–008 were each verified this way and **every single first run
   found something** — including the audit log silently ending after page one, because
   `created_at` was microsecond `TIMESTAMPTZ` while the JavaScript cursor carried only milliseconds.
-  **As of 2026-09-23, 001–019 have all run from an empty schema**, on `postgres:15-alpine` (15.19)
-  for `019` (`docs/phases/unit-7/EXECUTION_NOTES.md`), including a one-off check of `019`'s backfill on a
+  **As of 2026-09-23, 001–020 have all run from an empty schema**, on `postgres:15-alpine` (15.19)
+  for `019` and `020` (`docs/phases/unit-7/EXECUTION_NOTES.md`), including a one-off check of `019`'s backfill on a
   database populated before it ran. Keep it that way: authoring a migration on top of an unverified one buries whatever it gets wrong. Without
   Docker, a local `postgres` cluster pointed at by `TEST_DATABASE_URL` is enough.
 - **Destructive migrations validate existing data first and raise rather than guess.** The

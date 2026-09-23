@@ -105,8 +105,10 @@ Grading (score + feedback) exists and is audited. The design adds **in-platform 
   server-side PDF library; a flattened download is additive and out of scope. PDFs are drawn in the
   browser with pdf.js (`D-40`).
 - **Built in unit 7**, with one limit stated plainly: only files the platform stores can be marked up
-  (`D-41`), and no student route stores one until `MARK-6` (`B-1`/`B-2`, open) and, in production, an
-  R2 storage driver.
+  (`D-41`). Students upload a PDF or up to five photos on their own route (`MARK-6`, `D-47`/`D-48`), so
+  on a server with file storage every uploaded hand-in can be marked up. **In production that still
+  waits on an R2 storage driver** (`MARK-F1`); until then upload-mode tasks cannot be created there,
+  and a Google Doc link is graded with a mark and feedback.
 
 The grading queue must also show **non-submitters** ("Not submitted"), which the design shows and the
 current queue cannot express — this is `CLAUDE.md` §11's open "no `missed` status" question, answered.
@@ -258,5 +260,5 @@ mirrored data says when it last checked, amber for a queue and red only for fail
 | 3 | ~~Report generation: scheduled, on-demand, or both?~~ **Closed `D-3`: on demand.** | `RPT-*` |
 | 4 | ~~Are `students.mode`, session `mode` and `learning_mode` really three axes?~~ **Closed `D-4`/`D-9`: none.** | `DOM-3`, `SESS-*` |
 | 5 | ~~Confirm fixtures are regenerated rather than migrated.~~ **Closed `D-5`: regenerated.** | `DOM-1`, `DOM-4` |
-| 6 | **Open (unit 7, `B-1`):** what each submission mode (`PDF upload`, `Google Doc link`, `photo`) admits at submit time, and whether a typed answer survives on a task that states modes. | `MARK-6` |
-| 7 | **Open (unit 7, `B-2`):** may students upload files directly (a PDF, up to five photos); what happens while storage is off in production; does a resubmission replace the whole photo set. | `MARK-6` |
+| 6 | **Closed `D-47` (unit 7):** the modes are enforced — one PDF, 1–5 photos, or a link; a note never alone. Was: what each submission mode (`PDF upload`, `Google Doc link`, `photo`) admits at submit time, and whether a typed answer survives on a task that states modes. | `MARK-6` |
+| 7 | **Closed `D-48` (unit 7):** students upload directly on their own route; upload modes are refused while storage is off; a resubmission replaces the whole set; no HEIC. Was: may students upload files directly (a PDF, up to five photos); what happens while storage is off in production; does a resubmission replace the whole photo set. | `MARK-6` |

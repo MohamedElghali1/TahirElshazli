@@ -1608,3 +1608,32 @@ annotation repository in `assessments/`, the service in `manage/`; A-14 no one-s
 10. `redesign-mapping.md` "none go in" vs `D-40` — narrowed.
 11. `PRODUCT_SPEC.md` §2.1 promises PDF and photo upload; no student upload exists — open as `B-2`.
 12. `ARCHITECTURE.md` §6 places annotations in `manage/` — refined by A-13.
+
+---
+
+## 2026-09-23 — `MARK-6` ruled: `D-47`, `D-48` (unit 7, slice 7i)
+
+The user: *"Go with what you recommend for MARK-6."* `B-1` and `B-2` close on the plan's §8
+recommendations. They take **new ids** because `D-38`/`D-39` stay on record as accepted then withdrawn.
+
+### `D-47` — `B-1` (reading A): submission modes are the rule
+A task stating no modes keeps the old rule (a public link and/or a typed answer). A task stating modes
+takes exactly one mode per submission: `pdf_upload` = one uploaded PDF; `photo_upload` = 1–5 uploaded
+JPEG/PNG/WebP photos; `doc_link` = one public link. A typed answer goes with any of them as a note, never
+alone. `allowedFileTypes` is **derived** from the modes whenever modes are stated.
+
+### `D-48` — `B-2`: students upload directly; file sets
+(a) A student upload route, `POST /assessments/:id/files`, with its own contract (types from the modes,
+`min(task cap, 20 MB)`, its own rate limit). (b) Authoring refuses an upload mode while the server stores
+no files — never a quiet link in place of a promised file. (c) A resubmission replaces and archives the
+whole set. (d) No HEIC. Storage reading A: a `files JSONB` list (≤ 5) on submissions and revisions,
+migration **`020`**. `DATABASE_PLAN.md` §7 renumbered again: sessions rework is now `021`.
+
+### Assumption A-15, recorded for the reviewer
+The submit route accepts a file only if it is platform-stored and of the right type, but it does not
+prove the student uploaded it (`MARK-F5`). Equivalent to handing in someone else's file; no data exposed.
+
+### The browser pass for 7h
+Reported **complete by the user** on 2026-09-23. It was performed by the user, not observed by the
+coordinator. The 7i screens (the student upload form, the multi-file marking view, the authoring gate)
+came after it.

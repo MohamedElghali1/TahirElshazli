@@ -90,11 +90,25 @@ The profile photo is the first upload a student can perform. It needs its own ti
 images only, smaller cap, its own rate limit — rather than widening `@Roles` on the staff endpoint.
 Widening the existing route would also give students PDF and video upload.
 
-**Submissions (unit 7): still no student upload.** `PRODUCT_SPEC` §2.1 promises PDF and photo
-hand-ins, but whether and how students upload is `B-2`, **open** and escalated. Until it is ruled, a
-submission is a pasted public URL (`IsPublicHttpUrl`), and no student-reachable `FileInterceptor`
-exists — a reviewer should grep for one. When `B-2` is ruled, the route gets the tighter contract
-above, not a widened staff endpoint.
+**Submissions (unit 7, slice 7i, `D-48`) — BUILT.** `POST /assessments/:assessmentId/files` is the
+first student-reachable upload, with its own contract rather than a widened staff route:
+- `@Roles(Student)`, then `loadForStudent`: not enrolled, not targeted or hidden is a 404 identical to
+  a missing task. It also refuses (400) a task that is not uploaded work, is outside its window, or
+  states no upload mode.
+- Types **derived from the task's modes** (PDF; JPEG/PNG/WebP), a strict subset of the whitelist; no
+  HEIC, no GIF, no SVG. The ceiling is `min(task cap, 20 MB)`, enforced by multer (it stops reading)
+  and again in `UploadsService`. Server-minted name; the client filename is never read.
+- Its own rate limit (`STUDENT_UPLOAD_LIMIT`, 12/min per IP). The global guards and the rate limit run
+  **before** multer buffers a body, so an anonymous or non-student caller costs no memory. An
+  authenticated student can still make the server buffer up to 20 MB before the task check refuses,
+  12 times a minute. Recorded, not solved.
+- It attaches nothing. A file becomes work only when the submit route names it, and the submit route
+  accepts only platform-stored URLs whose server-minted type fits the mode.
+- **Residual (A-15, `MARK-F5`):** the submit route does not prove the student uploaded that file. A
+  student could name another platform file they can see, such as a task attachment or a classmate's
+  shared URL. That exposes no data, and the marker sees the file.
+- With `STORAGE_DRIVER=none` (production today) the route answers 503, and authoring refuses upload
+  modes (`D-48` (b)), so no task promises what the server cannot take.
 
 ### 2.5 PDF annotations — **BUILT 2026-09-23 (unit 7)**
 Stored as coordinates, text and stroke points, not as a rewritten file, which removes a whole class of

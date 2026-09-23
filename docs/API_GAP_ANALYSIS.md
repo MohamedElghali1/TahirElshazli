@@ -187,6 +187,7 @@ Task-results screen. It needs a frontend and nothing else.
 | Create / update / delete an annotation | `POST`/`PATCH`/`DELETE .../annotations[/:aid]` | `[BUILT]` ×3, unit 7 |
 | Save marks without returning | `POST /staff/submissions/:id/grade` — two operations, **not** a `return:false` flag | `[BUILT]` unit 7 |
 | Return to student | `POST /staff/submissions/:id/return` | `[BUILT]` unit 7 |
+| Student upload for a submission (`MARK-6`) | `POST /assessments/:id/files` | `[BUILT]` unit 7, slice 7i (`D-48`) |
 
 ## B5. Mark book
 

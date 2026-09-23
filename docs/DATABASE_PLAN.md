@@ -291,8 +291,12 @@ this scale round trips and row volume matter and query counts mostly do not.
 (`DOM-3`) · `015` **assistant scope tables + data move** (`AUTH-2`, destructive, **applied and verified**) ·
 `016` mail deliveries (**applied**, unit 3) · `017` assistant invitations (**applied**, unit 5) ·
 `018` **task drafts + assessment columns** (**applied and verified**, unit 6) · `019` annotations +
-submission columns (**applied and verified**, unit 7; `MARK-6`'s multi-file columns deliberately **not** in it — `B-1`/`B-2` open, they become `020` and the rest shift) · `020` sessions rework · `021` attendance enum · `022` weekly reports ·
-`023` announcements (group audience, media, draft) · `024` notification preferences
+submission columns (**applied and verified**, unit 7) · `020` **submission file sets** (`files JSONB` ≤ 5 on
+submissions and revisions, `D-48`; **applied and verified**, unit 7 slice 7i) · `021` sessions rework ·
+`022` attendance enum · `023` weekly reports · `024` announcements (group audience, media, draft) ·
+`025` notification preferences
+
+**Renumbered again 2026-09-23, unit 7.** `MARK-6`'s file set took `020`, so every later entry shifts by one.
 
 **Renumbered 2026-09-22, unit 6.** The list had assigned `016` to task drafts, but `016` shipped as
 `mail_deliveries` and `017` as `assistant_invitations`, so every planned entry shifts: task drafts
