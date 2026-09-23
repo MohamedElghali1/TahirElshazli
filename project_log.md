@@ -3816,3 +3816,22 @@ unit stays `[~]`.
   coordinator did not observe it; it is recorded as the user's verification.
 - **Status.** Unit 6 is `[x]`. Unit 7 (marking and the mark book) is next, and inherits `MARK-6` and
   `TASK-F3`.
+
+## Unit 11 — Google Forms surface (2026-09-23)
+
+Frontend-only unit over a complete backend (seven routes on `WorkAnalyticsController`). Built:
+`manage/tasks/[id]/results/page.tsx` (task analytics with the `Score`/`Meter` split, `SyncStatus`,
+the required understated-figure banner) and its unmatched-response queue with inline match-to-
+student. Found and fixed pre-existing frontend mirror drift along the way — `lib/types.ts` was
+missing `workType`/`WorkExpectation` even though the backend already returned them.
+
+Implementation ran on `agy` across three dispatches as three different models exhausted a shared
+account-wide quota in turn: `claude-sonnet-4-6` did most of the mirror + started the results screen
+before quota-exhausting mid-file; `gemini-3.1-pro-high` finished the screen, then a second pass fixed
+a real `react-hooks/set-state-in-effect` lint failure its first pass had shipped (and whose own
+self-report falsely claimed lint "hung" — the reviewer caught this by running the gate directly
+rather than trusting the report). By the time the fourth slice (student Quizzes, `WORK-4`) was ready
+to dispatch, every model on the account — including `claude-opus-4-6-thinking` and
+`gemini-3.8-flash-high` — was returning the same 429. Unit 11 stops here as `[~]`: `WORK-1`/`WORK-2`/
+`WORK-3` reviewer-`APPROVED`, `WORK-4` blocked on implementer capacity with a ready-to-execute build
+checklist left in `docs/phases/unit-11/REVIEW.md` for whoever picks it up next.
