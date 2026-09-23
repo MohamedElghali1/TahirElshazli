@@ -1762,3 +1762,46 @@ Fixed a bug introduced earlier in unit 10 where a TA assigned to a course or gro
 
 ### `B-ANN-2` — unit 10: TAs cannot retarget announcements to platform-wide audiences
 Fixed an authorization hole introduced by round 1's fix where `PatchAnnouncementDraftDto` gained an `audience` field for admin retargeting, but remained shared with the staff patch routes. Because `updateDraft()` only scoped course and group audiences, assistants could retarget their drafts to `all_students` or `all_tas`. Split the DTO into `PatchAnnouncementDraftDto` (staff, no audience) and `PatchAdminAnnouncementDraftDto` (admin only, carries audience), and added a belt-and-braces role check in `AnnouncementsService.updateDraft()`.
+
+## 2026-09-23 — `D-SET-1`: `GET /admin/courses/:courseId` added; the course edit form read a student-only route
+
+Unit 12's course edit form fetched detail through `api.courses.get` → `GET /courses/:id`, which is
+`@Roles(Role.Student)`. **Every teacher, admin and assistant who opened "Edit" got a 403** — the
+feature worked for nobody who could reach it. The unit had compensated by adding `slug` to
+`toListItem`, which builds `CourseListItem`, the *student* enrolled-courses response; that addition
+existed only to feed the wrong endpoint and has been reverted.
+
+Three options were weighed. Serving the form from the row data the list already holds was preferred
+and is not available: `ManageCourseCard` carries none of `slug`, `description`, `thumbnailUrl`,
+`sequentialLockEnabled` or `isPublished`. Widening the staff overview response to carry them would
+push admin-only edit fields into a payload an assistant also receives. So:
+
+**Ruled (user, 2026-09-23): add `GET /admin/courses/:courseId`.** It mirrors the `PATCH` that
+already lives on that path exactly — same controller, same class-level `@Roles(...STAFF_ADMIN)`
+(which never contains `Role.Assistant`), same `Course` response, reusing `courseRepo.findById` and
+the existing `COURSE_NOT_FOUND`. It is a read, so no `x-audit`. Both directions are proven over
+HTTP: teacher and admin 200, assistant 403, unknown id 404.
+
+Recorded as a decision because **adding a route is a scope change**, not a detail — the alternative
+readings above are what make it one.
+
+## 2026-09-23 — `B-ANN-3`: a spec rewrite silently deleted 19 tests, including three named invariants
+
+Unit 10's round-1 commit **replaced** `announcements.controller.spec.ts` instead of extending it.
+Its 14 new tests correctly cover the new draft/publish/reach lifecycle, but all 19 pre-existing
+tests went with the old file — and about fifteen behaviours were left with no test anywhere in the
+repository. Among them: *"takes the audience from the URL, so a TA cannot widen it from the body"*
+(the structural invariant `B-ANN-2` is about), *"does not store a recipient list, only how many
+there were"* (§5.14's PII rule), and *"records the teacher as teacher, not as an assistant"* (the
+`actorRoleOf` attribution rule that fourteen hand-written ternaries once got wrong).
+
+**Three independent reviewers passed over this unit and none caught it**, because each was given
+the round-2 diff to review and the deletion happened in round 1. It surfaced only at merge, when the
+backend unit count fell from 698 to 693 — a merge that removes tests is the signal.
+
+The coverage was restored against the current module rather than pasted back from the old file, the
+module having changed underneath it (`posted_at` → `published_at`, publish split out as its own
+step, the staff publish routes deleted).
+
+**The durable lesson, worth more than the fix:** a green suite says nothing about what a rewrite
+took away with it. Compare test counts across a merge, and treat a shrinking spec file as a finding.

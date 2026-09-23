@@ -76,3 +76,44 @@ progress, not complete. Slice 10b (frontend) has not started and should not star
 verdict changes from REJECTED — it also needs the `frontend/lib/types.ts` `postedAt` → `createdAt`/
 `publishedAt` fix noted in `REVIEW.md` §2 done as part of its own first commit, before any component
 reads the `Announcement` type.
+
+---
+
+## Resolution of §3, and a regression the round-2 review did not see (2026-09-23, later)
+
+**§3's hole is closed and slice 10a is `APPROVED`.** The DTO was split so `audience` is structurally
+unreachable from `/staff/*` (the global `whitelist: true` pipe strips it), and the service gained
+the role check independently, because §7 wants the rule true regardless of DTO shape. Two tests
+prove both directions: an assistant is refused at the service, and over real HTTP the draft's
+audience is *unchanged* after the PATCH — asserting the value, not merely a status code, because a
+stripped field and a rejected one both look like a 200. Gates re-run by the orchestrator:
+655/655 unit, 300/300 e2e, lint 0, 149/149 integration with migrations 001–021 from an empty schema.
+
+**A regression this unit caused, found only at merge — `B-ANN-3`.** The round-1 commit
+(`4c25db6`) **replaced** `announcements.controller.spec.ts` instead of extending it. Its 14 new
+tests are correct and cover the new draft/publish/reach lifecycle, but all 19 pre-existing tests
+went with the old file, leaving about fifteen behaviours untested anywhere — including three this
+repository names as invariants:
+
+- *"takes the audience from the URL, so a TA cannot widen it from the body"* — the structural
+  invariant `B-ANN-2` is about, so the unit deleted the test for the very rule it then re-broke;
+- *"does not store a recipient list, only how many there were"* — §5.14's PII rule;
+- *"records the teacher as teacher, not as an assistant"* — the `actorRoleOf` attribution rule.
+
+Also gone: the whole audience-codec group (round-trip, malformed rejection, DTO-pattern-and-parser
+in step), send-time resolution, and read-back scoping.
+
+**Three independent reviewers passed over this unit and none caught it**, because each was handed
+the round-2 diff and the deletion had happened in round 1. It surfaced when the backend unit count
+fell from 698 to 693 across the merge. The coverage was restored against the *current* module
+rather than pasted back from the old file, which no longer compiles against it.
+
+**The durable lesson:** a green suite says nothing about what a rewrite took away with it. Compare
+test counts across a merge, and read a shrinking spec file as a finding rather than a tidy-up.
+
+## Still outstanding
+
+**Slice 10b — the announcements frontend — is the whole of what remains on unit 10.** Compose screen
+with student-view preview (`ANN-6`), drafts/sent list (`ANN-3`), audience picker (`ANN-1`), media
+picker reusing `/staff/uploads` (`ANN-2`), live reach counter (`ANN-5`). The `lib/types.ts`
+`Announcement` mirror is stale against the current backend and must be the first thing 10b touches.

@@ -74,3 +74,46 @@ Both were decided before the diff existed, so no separate `--resume-last` delta 
 theoretical), including one functional bug (the course edit form calls a student-only endpoint and
 will 403 for every real user of that screen). Full list in `docs/phases/unit-12/REVIEW.md`. A remediation
 brief has been dispatched to Antigravity with `--resume-last`.
+
+---
+
+## Resolution (2026-09-23, later the same day)
+
+**The REJECTED verdict above is superseded.** All eight remediation items were implemented by
+Antigravity (`gemini-3.8-flash-high`), re-verified gate-by-gate by the orchestrator, and passed to
+an independent reviewer that had written none of it: verdict **`APPROVED WITH FOLLOW-UP`**, the
+follow-up being documentation, now closed by this section and the `docs/` updates alongside it.
+
+Final measurements, all re-run by the orchestrator rather than taken from any self-report:
+
+| Gate | Before | After |
+|---|---|---|
+| backend unit | 664/664 | **667/667**, 40 files |
+| backend e2e | **5 failing** | **311/311** |
+| frontend `tsc` | **not 0** | **0** |
+| lint | 0 errors | 0 errors |
+| integration (real PostgreSQL, 001–022 from empty) | 149/151, 2 never executed | **151/151** |
+
+Two corrections to this document's own findings, both worth more than the fixes:
+
+**Finding 3's root cause was not what was hypothesised.** The suspicion was that multer's
+`limits.fileSize` error never reaches Nest's exception handling and that a global exception filter
+was missing. It is not. The note above about stray fixture files was closer, and is the whole
+story: with the fixtures deleted, `.attach('file', 'large.jpg')` pointed at nothing, so supertest
+never sent a body — *that* is what reset the connection and timed out the following test. Replaced
+with real in-memory buffers, multer's limit already returns a clean 413 and the process stays
+healthy for the next request. **No production code was needed, and none was written.**
+
+**Finding 6 was worth more than a test-placement fix.** Once the notification-preference
+integration tests actually ran, they immediately failed on a live defect nothing else would have
+caught: `PostgresNotificationPreferencesRepository` read `result.rows`, but `DatabaseService.query`
+already unwraps to `T[]`. Grepped the rest of the backend — the only other `.rows` uses are on the
+raw `pg` client inside `db.transaction(...)`, where it is correct.
+
+One scope change was made, approved by the user before it was built: **`GET /admin/courses/:courseId`**
+(`D-SET-1` in `docs/CHANGELOG.md`), because the edit form had no staff-readable source for the five
+fields `ManageCourseCard` does not carry.
+
+Reverted from the implementer's diff: an unrequested `isolate: false` in `vitest.config.e2e.ts`
+(measured unnecessary — 309/309 passed without it) and a duplicate `api.admin.getCourse` identical
+to `api.admin.course` with no consumer.
