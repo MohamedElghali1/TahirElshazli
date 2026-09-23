@@ -20,13 +20,9 @@ import {
   type StudentDirectoryEntry,
 } from './directory.service.js';
 import { ManageRecordingsService } from './manage-recordings.service.js';
-import { ManageLiveSessionsService } from './manage-live-sessions.service.js';
 import type { Recording } from '../recordings/interfaces/recording-repository.interface.js';
-import type { LiveSession } from '../live-sessions/interfaces/live-session-repository.interface.js';
 import { CreateRecordingDto } from './dto/create-recording.dto.js';
 import { UpdateRecordingDto } from './dto/update-recording.dto.js';
-import { CreateLiveSessionDto } from './dto/create-live-session.dto.js';
-import { UpdateLiveSessionDto } from './dto/update-live-session.dto.js';
 import { ListDirectoryQueryDto } from './dto/queries.dto.js';
 import { RegistrationApprovalService } from './registration-approval.service.js';
 import {
@@ -51,11 +47,6 @@ import { AssistantWriteDto } from './dto/assistant-admin.dto.js';
  * the routes move to `StaffManageController` and the service is untouched -
  * which is why the service takes a `StaffActor` rather than assuming admin.
  *
- * Live-session scheduling is here for the same reason and on the same terms:
- * §2.2's preset omits it and §11 records the board's `CRS-11` as an unresolved
- * disagreement, so the narrow reading ships. `ManageLiveSessionsService`
- * carries the full argument.
- *
  * Kept as its own controller rather than per-route `@Roles` on the shared one:
  * the class-level decorator is the thing a reader checks, and mixing two role
  * sets in one file makes it stop being the answer.
@@ -66,7 +57,6 @@ export class AdminManageController {
   constructor(
     private readonly directory: DirectoryService,
     private readonly recordings: ManageRecordingsService,
-    private readonly liveSessions: ManageLiveSessionsService,
     private readonly registrations: RegistrationApprovalService,
     private readonly adminStudents: AdminStudentsService,
     private readonly adminAssistants: AdminAssistantsService,
@@ -233,38 +223,5 @@ export class AdminManageController {
     @Request() req: { user: JwtPayload },
   ): Promise<{ removed: true }> {
     return this.recordings.remove(recordingId, this.actor(req));
-  }
-
-  @Post('courses/:courseId/live-sessions')
-  @HttpCode(HttpStatus.CREATED)
-  async createLiveSession(
-    @Param('courseId') courseId: string,
-    @Body() body: CreateLiveSessionDto,
-    @Request() req: { user: JwtPayload },
-  ): Promise<LiveSession> {
-    return this.liveSessions.create(courseId, this.actor(req), {
-      title: body.title,
-      zoomLink: body.zoomLink,
-      scheduledAt: body.scheduledAt,
-      durationMinutes: body.durationMinutes,
-    });
-  }
-
-  @Patch('live-sessions/:sessionId')
-  async updateLiveSession(
-    @Param('sessionId') sessionId: string,
-    @Body() body: UpdateLiveSessionDto,
-    @Request() req: { user: JwtPayload },
-  ): Promise<LiveSession> {
-    return this.liveSessions.update(sessionId, this.actor(req), body);
-  }
-
-  @Delete('live-sessions/:sessionId')
-  @HttpCode(HttpStatus.OK)
-  async deleteLiveSession(
-    @Param('sessionId') sessionId: string,
-    @Request() req: { user: JwtPayload },
-  ): Promise<{ removed: true }> {
-    return this.liveSessions.remove(sessionId, this.actor(req));
   }
 }

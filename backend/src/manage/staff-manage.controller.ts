@@ -26,9 +26,7 @@ import {
   type GradingQueueResponse,
 } from './grading.service.js';
 import { ManageRecordingsService } from './manage-recordings.service.js';
-import { ManageLiveSessionsService } from './manage-live-sessions.service.js';
 import type { Recording } from '../recordings/interfaces/recording-repository.interface.js';
-import type { LiveSession } from '../live-sessions/interfaces/live-session-repository.interface.js';
 import {
   AssessmentAuthoringService,
   type AuthoredAssessment,
@@ -62,7 +60,6 @@ export class StaffManageController {
     private readonly manage: ManageService,
     private readonly grading: GradingService,
     private readonly recordings: ManageRecordingsService,
-    private readonly liveSessions: ManageLiveSessionsService,
     private readonly authoring: AssessmentAuthoringService,
   ) {}
 
@@ -132,19 +129,7 @@ export class StaffManageController {
     return this.recordings.list(courseId, this.actor(req));
   }
 
-  /**
-   * Read-only for a TA, same as recordings: they need the schedule to mark
-   * attendance against it. The scheduling writes are teacher-only and live on
-   * the admin controller - see `ManageLiveSessionsService` for why, and for
-   * what would change if §11 resolves `CRS-11` the other way.
-   */
-  @Get('courses/:courseId/live-sessions')
-  async listLiveSessions(
-    @Param('courseId') courseId: string,
-    @Request() req: { user: JwtPayload },
-  ): Promise<LiveSession[]> {
-    return this.liveSessions.list(courseId, this.actor(req));
-  }
+
 
   /**
    * Every task the caller reaches, across courses (`TASK-6`). Group-grain: a

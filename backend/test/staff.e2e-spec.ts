@@ -83,7 +83,7 @@ describe('Staff and admin API (e2e)', () => {
       '/staff/courses/course-1/roster',
       '/staff/courses/course-1/submissions',
       '/staff/courses/course-1/recordings',
-      '/staff/courses/course-1/live-sessions',
+      '/staff/sessions/planned',
       '/staff/courses/course-1/announcements',
       '/admin/students',
       '/admin/assistants',
@@ -98,7 +98,7 @@ describe('Staff and admin API (e2e)', () => {
       '/staff/overview',
       '/staff/courses/course-1/roster',
       '/staff/courses/course-1/submissions',
-      '/staff/courses/course-1/live-sessions',
+      '/staff/sessions/planned',
       '/staff/courses/course-1/announcements',
       '/admin/students',
       '/admin/announcements',
@@ -313,61 +313,33 @@ describe('Staff and admin API (e2e)', () => {
     });
   });
 
-  describe('live-session scheduling is teacher-only over HTTP', () => {
+  describe('staff live sessions and attendance (unit 8 S3)', () => {
     /** A week out, so it lands in the student's "upcoming" list whenever this runs. */
     const soon = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const soonEnd = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000 + 75 * 60 * 1000).toISOString();
     let scheduledId: string;
 
-    it('refuses a TA the scheduling writes, even on a course they hold', async () => {
-      // assistant-1 IS assigned to course-1, so scoping alone would let this
-      // through. What stops it is the role: CLAUDE.md 2.2's preset does not
-      // grant a TA session scheduling, and 11 records CRS-11 as unresolved.
-      // A 403 rather than a 404 is right - the course is theirs, the action
-      // is not.
-      await request(app.getHttpServer())
-        .post('/admin/courses/course-1/live-sessions')
-        .set(bearer(assignedTaToken))
-        .send({
-          title: 'Should not exist',
-          zoomLink: 'https://zoom.us/j/1',
-          scheduledAt: soon,
-          durationMinutes: 60,
-        })
-        .expect(403);
-      await request(app.getHttpServer())
-        .patch('/admin/live-sessions/sess-1')
-        .set(bearer(assignedTaToken))
-        .send({ title: 'Renamed by a TA' })
-        .expect(403);
-      await request(app.getHttpServer())
-        .delete('/admin/live-sessions/sess-1')
-        .set(bearer(assignedTaToken))
-        .expect(403);
-    });
-
-    it('lets the teacher schedule a session the student then sees', async () => {
+    it('lets the teacher schedule a session into group-1 that the student on course-1 then sees', async () => {
       const created = await request(app.getHttpServer())
-        .post('/admin/courses/course-1/live-sessions')
+        .post('/staff/groups/group-1/sessions')
         .set(bearer(adminToken))
         .send({
           title: 'Scheduled over HTTP',
-          zoomLink: 'https://zoom.us/j/99988877766',
+          meetingLink: 'https://zoom.us/j/99988877766',
           scheduledAt: soon,
-          durationMinutes: 75,
+          endsAt: soonEnd,
         })
         .expect(201);
       scheduledId = created.body.id;
       expect(scheduledId).toBeDefined();
 
-      // The student surface reads the same table. That is the entire point of
-      // scheduling, so it is asserted rather than assumed.
+      // The student surface reads the same table via course-1. That is the entire point
+      // of scheduling, so it is asserted rather than assumed.
       const studentView = await request(app.getHttpServer())
         .get('/courses/course-1/live-sessions')
         .set(bearer(studentToken))
         .expect(200);
-      // `durationMinutes` is gone since migration 019 (`endsAt` is stored
-      // directly, `DOMAIN_MODEL.md` §5); the 75-minute input is still visible
-      // as the gap between the two stored timestamps.
+
       const scheduled = studentView.body.upcoming.find(
         (s: { id: string }) => s.id === scheduledId,
       );
@@ -379,40 +351,75 @@ describe('Staff and admin API (e2e)', () => {
       ).toBe(75);
     });
 
-    it('shows it to the assigned TA read-only, and 404s another course', async () => {
-      const mine = await request(app.getHttpServer())
-        .get('/staff/courses/course-1/live-sessions')
+    it('D-6: lets an assigned TA schedule and view sessions for their own group', async () => {
+      // assistant-1 holds group-1
+      const res = await request(app.getHttpServer())
+        .post('/staff/groups/group-1/sessions')
+        .set(bearer(assignedTaToken))
+        .send({
+          title: 'TA Scheduled Session',
+          meetingLink: 'https://zoom.us/j/11122233344',
+          scheduledAt: soon,
+          endsAt: soonEnd,
+        })
+        .expect(201);
+      expect(res.body.groupId).toBe('group-1');
+
+      // Grid query
+      const from = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const to = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+      const grid = await request(app.getHttpServer())
+        .get(`/staff/sessions?from=${from}&to=${to}&groupId=group-1`)
         .set(bearer(assignedTaToken))
         .expect(200);
-      expect(mine.body.map((s: { id: string }) => s.id)).toContain(scheduledId);
+      expect(grid.body.map((s: { id: string }) => s.id)).toContain(res.body.id);
 
-      await request(app.getHttpServer())
-        .get('/staff/courses/course-2/live-sessions')
+      // Filtering by unheld group-2 yields empty list for the assistant
+      const unheldGrid = await request(app.getHttpServer())
+        .get(`/staff/sessions?from=${from}&to=${to}&groupId=group-2`)
         .set(bearer(assignedTaToken))
-        .expect(404);
+        .expect(200);
+      expect(unheldGrid.body).toEqual([]);
     });
 
     it.each([
       ['a javascript: URL', 'javascript:alert(1)'],
       ['a loopback host', 'http://127.0.0.1:8080/j/1'],
       ['the cloud metadata endpoint', 'http://169.254.169.254/latest/meta-data'],
-    ])('rejects %s as a Zoom link', async (_label, zoomLink) => {
+    ])('rejects %s as a meeting link', async (_label, meetingLink) => {
       await request(app.getHttpServer())
-        .post('/admin/courses/course-1/live-sessions')
+        .post('/staff/groups/group-1/sessions')
         .set(bearer(adminToken))
-        .send({ title: 'Bad link', zoomLink, scheduledAt: soon, durationMinutes: 60 })
+        .send({
+          title: 'Bad link',
+          meetingLink,
+          scheduledAt: soon,
+          endsAt: soonEnd,
+        })
+        .expect(400);
+    });
+
+    it('rejects inverted dates (endsAt <= scheduledAt) with 400', async () => {
+      await request(app.getHttpServer())
+        .post('/staff/groups/group-1/sessions')
+        .set(bearer(adminToken))
+        .send({
+          title: 'Inverted dates',
+          scheduledAt: soonEnd,
+          endsAt: soon,
+        })
         .expect(400);
     });
 
     it('edits and cancels, logging both against the teacher', async () => {
       await request(app.getHttpServer())
-        .patch(`/admin/live-sessions/${scheduledId}`)
+        .patch(`/staff/sessions/${scheduledId}`)
         .set(bearer(adminToken))
         .send({ title: 'Moved an hour later' })
         .expect(200);
 
       await request(app.getHttpServer())
-        .delete(`/admin/live-sessions/${scheduledId}`)
+        .delete(`/staff/sessions/${scheduledId}`)
         .set(bearer(adminToken))
         .expect(200);
 
@@ -432,12 +439,186 @@ describe('Staff and admin API (e2e)', () => {
       expect(edited.after.title).toBe('Moved an hour later');
     });
 
-    it('404s an edit of a session that is not there', async () => {
-      await request(app.getHttpServer())
-        .patch('/admin/live-sessions/sess-nope')
+    it('handles publish idempotence and draft timetable (SESS-4)', async () => {
+      // Create a planned session
+      const plannedRes = await request(app.getHttpServer())
+        .post('/staff/groups/group-1/sessions')
+        .set(bearer(assignedTaToken))
+        .send({
+          title: 'Draft timetable session',
+          scheduledAt: soon,
+          endsAt: soonEnd,
+          state: 'planned',
+        })
+        .expect(201);
+      const plannedId = plannedRes.body.id;
+
+      // Appears on draft timetable
+      const plannedList = await request(app.getHttpServer())
+        .get('/staff/sessions/planned')
+        .set(bearer(assignedTaToken))
+        .expect(200);
+      expect(plannedList.body.map((s: { id: string }) => s.id)).toContain(plannedId);
+
+      // Publish it
+      const publishedRes = await request(app.getHttpServer())
+        .post(`/staff/sessions/${plannedId}/publish`)
+        .set(bearer(assignedTaToken))
+        .expect(200);
+      expect(publishedRes.body.state).toBe('published');
+
+      // Publish again — idempotent 200 no-op
+      const secondPublish = await request(app.getHttpServer())
+        .post(`/staff/sessions/${plannedId}/publish`)
+        .set(bearer(assignedTaToken))
+        .expect(200);
+      expect(secondPublish.body.state).toBe('published');
+
+      // Verify audit log has exactly ONE session.published for this session
+      const log = await request(app.getHttpServer())
+        .get('/admin/audit-log?action=session.published')
         .set(bearer(adminToken))
-        .send({ title: 'x' })
+        .expect(200);
+      const matchingEntries = log.body.entries.filter(
+        (e: { targetId: string }) => e.targetId === plannedId,
+      );
+      expect(matchingEntries).toHaveLength(1);
+    });
+
+    it('reads the attendance sheet and bulk-marks attendance (SESS-3)', async () => {
+      const created = await request(app.getHttpServer())
+        .post('/staff/groups/group-1/sessions')
+        .set(bearer(adminToken))
+        .send({
+          title: 'Attendance Session',
+          scheduledAt: soon,
+          endsAt: soonEnd,
+        })
+        .expect(201);
+      const sessId = created.body.id;
+
+      // 1. Initial sheet: all members unmarked (null, never absent)
+      const sheet = await request(app.getHttpServer())
+        .get(`/staff/sessions/${sessId}/attendance`)
+        .set(bearer(assignedTaToken))
+        .expect(200);
+      expect(sheet.body.length).toBeGreaterThan(0);
+      for (const item of sheet.body) {
+        expect(item.status).toBeNull();
+      }
+
+      const s1 = sheet.body[0].studentId;
+
+      // 2. Reject student outside group-1
+      await request(app.getHttpServer())
+        .put(`/staff/sessions/${sessId}/attendance`)
+        .set(bearer(assignedTaToken))
+        .send({
+          entries: [{ studentId: 'student-not-in-group', status: 'present' }],
+        })
+        .expect(400);
+
+      // 3. Mark valid student
+      await request(app.getHttpServer())
+        .put(`/staff/sessions/${sessId}/attendance`)
+        .set(bearer(assignedTaToken))
+        .send({
+          entries: [{ studentId: s1, status: 'present' }],
+        })
+        .expect(200);
+
+      // Verify sheet updated
+      const sheetAfter = await request(app.getHttpServer())
+        .get(`/staff/sessions/${sessId}/attendance`)
+        .set(bearer(assignedTaToken))
+        .expect(200);
+      const markedRow = sheetAfter.body.find((r: { studentId: string }) => r.studentId === s1);
+      expect(markedRow.status).toBe('present');
+
+      // Verify attendance.marked audit row
+      const log = await request(app.getHttpServer())
+        .get('/admin/audit-log?targetType=attendance')
+        .set(bearer(adminToken))
+        .expect(200);
+      const auditEntry = log.body.entries.find((e: { targetId: string }) => e.targetId === sessId);
+      expect(auditEntry).toBeDefined();
+      expect(auditEntry.action).toBe('attendance.marked');
+      expect(auditEntry.after).toMatchObject({ present: 1 });
+    });
+
+    it('refusal tests: asserts byte-identical 404 between out-of-scope and genuine miss', async () => {
+      // Assistant-1 holds group-1 only. sess-4 belongs to group-2.
+      // 1. POST /staff/groups/:groupId/sessions
+      const genuineGroupMiss = await request(app.getHttpServer())
+        .post('/staff/groups/group-nonexistent/sessions')
+        .set(bearer(adminToken))
+        .send({ title: 'X', scheduledAt: soon, endsAt: soonEnd })
         .expect(404);
+      const outOfScopeGroup = await request(app.getHttpServer())
+        .post('/staff/groups/group-2/sessions')
+        .set(bearer(assignedTaToken))
+        .send({ title: 'X', scheduledAt: soon, endsAt: soonEnd })
+        .expect(404);
+      expect(outOfScopeGroup.body.message).toBe(genuineGroupMiss.body.message);
+
+      // 2. PATCH /staff/sessions/:sessionId
+      const genuineSessMiss = await request(app.getHttpServer())
+        .patch('/staff/sessions/sess-nope')
+        .set(bearer(adminToken))
+        .send({ title: 'X' })
+        .expect(404);
+      const outOfScopePatch = await request(app.getHttpServer())
+        .patch('/staff/sessions/sess-4')
+        .set(bearer(assignedTaToken))
+        .send({ title: 'X' })
+        .expect(404);
+      expect(outOfScopePatch.body.message).toBe(genuineSessMiss.body.message);
+
+      // 3. DELETE /staff/sessions/:sessionId
+      const genuineDeleteMiss = await request(app.getHttpServer())
+        .delete('/staff/sessions/sess-nope')
+        .set(bearer(adminToken))
+        .expect(404);
+      const outOfScopeDelete = await request(app.getHttpServer())
+        .delete('/staff/sessions/sess-4')
+        .set(bearer(assignedTaToken))
+        .expect(404);
+      expect(outOfScopeDelete.body.message).toBe(genuineDeleteMiss.body.message);
+
+      // 4. POST /staff/sessions/:sessionId/publish
+      const genuinePublishMiss = await request(app.getHttpServer())
+        .post('/staff/sessions/sess-nope/publish')
+        .set(bearer(adminToken))
+        .expect(404);
+      const outOfScopePublish = await request(app.getHttpServer())
+        .post('/staff/sessions/sess-4/publish')
+        .set(bearer(assignedTaToken))
+        .expect(404);
+      expect(outOfScopePublish.body.message).toBe(genuinePublishMiss.body.message);
+
+      // 5. GET /staff/sessions/:sessionId/attendance
+      const genuineSheetMiss = await request(app.getHttpServer())
+        .get('/staff/sessions/sess-nope/attendance')
+        .set(bearer(adminToken))
+        .expect(404);
+      const outOfScopeSheet = await request(app.getHttpServer())
+        .get('/staff/sessions/sess-4/attendance')
+        .set(bearer(assignedTaToken))
+        .expect(404);
+      expect(outOfScopeSheet.body.message).toBe(genuineSheetMiss.body.message);
+
+      // 6. PUT /staff/sessions/:sessionId/attendance
+      const genuineMarkMiss = await request(app.getHttpServer())
+        .put('/staff/sessions/sess-nope/attendance')
+        .set(bearer(adminToken))
+        .send({ entries: [] })
+        .expect(404);
+      const outOfScopeMark = await request(app.getHttpServer())
+        .put('/staff/sessions/sess-4/attendance')
+        .set(bearer(assignedTaToken))
+        .send({ entries: [] })
+        .expect(404);
+      expect(outOfScopeMark.body.message).toBe(genuineMarkMiss.body.message);
     });
   });
 

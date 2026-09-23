@@ -217,6 +217,17 @@ Each slice ends green. Do not start the next with the previous one red.
 | **S3** | Staff service, scope, DTOs, routes (§3.1); delete the `/admin/*` three | Unit + e2e green, including a refusal test per permission. |
 | **S4** | Student routes (§3.2), T-30, the projection | Both-directions T-30 test; `privateNotes` absence asserted. |
 | **S5** | Frontend: `lib/types.ts` + `lib/api.ts` mirror first, then `/manage/live-sessions`, `/manage/live-sessions/drafts`, the attendance sheet, the student timetable week grid, the student attendance screen | `npx tsc --noEmit` = **0** in `frontend/`, lint clean. |
+
+**S5 must send `from`/`to` as full ISO instants, not bare dates.** `GET /staff/sessions` accepts
+either, but a bare `YYYY-MM-DD` `to` is widened to `T23:59:59.999Z` — **UTC**. The school runs on
+Egypt time (UTC+2/+3), so a week requested as bare dates is a window shifted two or three hours off
+the local week: a Monday 01:00 local session is `Sunday 22:00Z` and falls *outside* a window that
+starts Monday. The session is not missing from the database, only from that grid, which is the worst
+shape for a bug of this kind — it looks like a data problem.
+
+Sending an offset-bearing instant (`2026-09-21T00:00:00+03:00`) makes it exact, and the DTO's
+`@IsISO8601()` already accepts it. Not a defect in S3; a constraint S3 hands to S5, recorded here
+rather than discovered on screen.
 | **S6** | Docs (§6) | Every file in §6 updated. |
 
 **S5 note — the nav already points at pages that do not exist.** `console-shell.tsx:100-106` links

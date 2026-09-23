@@ -118,6 +118,9 @@ const EXPECTED: Record<string, readonly Role[]> = {
   // The draft library (`TASK-2`, unit 6). Assistant-reachable by
   // `AUTHORIZATION_MODEL.md` §3; scoped by course reach in the service.
   TaskDraftsController: STAFF_ALL,
+  // Live sessions and attendance (`D-6`, unit 8 S3). Assistant-reachable
+  // for held groups; scoped by group reach in the service.
+  SessionsController: STAFF_ALL,
   UploadsController: STAFF_ALL,
   WorkAnalyticsController: STAFF_ALL,
 
@@ -146,13 +149,14 @@ const PER_METHOD_CONTROLLERS = ['AppController', 'AuthController'];
 
 describe('the authorization boundary', () => {
   it('discovers every controller in the build', () => {
-    // 30 controller files, 30 classes. If this number moves, a controller was
+    // 31 controller files, 31 classes. If this number moves, a controller was
     // added or removed and its row below has to be decided rather than
     // defaulted - which is the entire point of asserting a count.
     // `AdminCoursesController` (`DOM-5`) was the thirtieth; `AdminStaffController`
     // left with `course_staff_assignments` (`AUTH-2`), which is a net -1.
-    // `TaskDraftsController` (`TASK-2`, unit 6) is the thirtieth again.
-    expect(CONTROLLERS).toHaveLength(30);
+    // `TaskDraftsController` (`TASK-2`, unit 6) was the thirtieth again.
+    // `SessionsController` (`D-6`, unit 8 S3) is the thirty-first.
+    expect(CONTROLLERS).toHaveLength(31);
     const named = CONTROLLERS.map((c) => c.name);
     expect(new Set(named).size).toBe(named.length);
     for (const name of [
@@ -162,7 +166,7 @@ describe('the authorization boundary', () => {
     ]) {
       expect(named).toContain(name);
     }
-    expect(Object.keys(EXPECTED)).toHaveLength(26);
+    expect(Object.keys(EXPECTED)).toHaveLength(27);
   });
 
   describe('@Roles, read back off the decorator', () => {
@@ -347,8 +351,10 @@ describe('the authorization boundary', () => {
       // this list before it. They may delete any draft in the library on a
       // course they reach - `AUTHORIZATION_MODEL.md` §3 grants "Manage the
       // draft library" with no own-only rule (unit 6, `TASK-2`).
+      // They may cancel a live session on groups they hold (`D-6`, unit 8 S3).
       expect(assistantDeletes.sort()).toEqual(
         [
+          'SessionsController.remove',
           'StaffBlogController.remove',
           'StaffManageController.deleteAssessment',
           'TaskDraftsController.remove',

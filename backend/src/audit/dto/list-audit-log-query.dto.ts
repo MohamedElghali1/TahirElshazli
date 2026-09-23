@@ -66,6 +66,9 @@ const AUDIT_ACTION_VALUES: Record<AuditAction, true> = {
   'task_draft.created': true,
   'task_draft.updated': true,
   'task_draft.deleted': true,
+  'session.planned': true,
+  'session.published': true,
+  'attendance.marked': true,
 };
 
 const AUDIT_TARGET_TYPE_VALUES: Record<AuditTargetType, true> = {
@@ -85,6 +88,7 @@ const AUDIT_TARGET_TYPE_VALUES: Record<AuditTargetType, true> = {
   course: true,
   assistant: true,
   task_draft: true,
+  attendance: true,
 };
 
 export const AUDIT_ACTIONS = Object.keys(

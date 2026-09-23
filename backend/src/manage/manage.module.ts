@@ -24,6 +24,7 @@ import { MailModule } from '../mail/mail.module.js';
 import { AssistantScopeRepositoryModule } from '../staff/assistant-scope-repository.module.js';
 import { AssistantInvitationRepositoryModule } from './assistant-invitation-repository.module.js';
 import { TaskDraftsController } from './task-drafts.controller.js';
+import { SessionsController } from './sessions.controller.js';
 import { TaskDraftsService } from './task-drafts.service.js';
 import type { TaskDraftRepository } from './interfaces/task-draft-repository.interface.js';
 import { TASK_DRAFT_REPOSITORY } from './interfaces/task-draft-repository.interface.js';
@@ -68,6 +69,7 @@ import { repositoryProvider } from '../database/repository.provider.js';
     AdminManageController,
     WorkAnalyticsController,
     TaskDraftsController,
+    SessionsController,
   ],
   providers: [
     ManageService,

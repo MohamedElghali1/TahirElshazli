@@ -4,6 +4,7 @@ import { InMemoryTaskDraftRepository } from './repositories/in-memory-task-draft
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { StaffManageController } from './staff-manage.controller.js';
 import { AdminManageController } from './admin-manage.controller.js';
+import { SessionsController } from './sessions.controller.js';
 import { ManageService } from './manage.service.js';
 import { GradingService } from './grading.service.js';
 import { ManageRecordingsService } from './manage-recordings.service.js';
@@ -76,13 +77,14 @@ const FULL_ADMIN = {
 describe('Manage surface', () => {
   let staff: StaffManageController;
   let admin: AdminManageController;
+  let sessions: SessionsController;
   let audit: AuditService;
   let assessments: InMemoryAssessmentRepository;
   let users: InMemoryUserRepository;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      controllers: [StaffManageController, AdminManageController],
+      controllers: [StaffManageController, AdminManageController, SessionsController],
       providers: [
         ManageService,
         GradingService,
@@ -155,6 +157,7 @@ describe('Manage surface', () => {
 
     staff = module.get(StaffManageController);
     admin = module.get(AdminManageController);
+    sessions = module.get(SessionsController);
     audit = module.get(AuditService);
     assessments = module.get(ASSESSMENT_REPOSITORY);
     users = module.get(USER_REPOSITORY);
@@ -520,76 +523,90 @@ describe('Manage surface', () => {
   describe('live sessions', () => {
     const SESSION = {
       title: 'Paper 2 clinic',
-      zoomLink: 'https://zoom.us/j/55512345678',
+      meetingLink: 'https://zoom.us/j/55512345678',
       scheduledAt: '2026-10-01T18:00:00Z',
-      durationMinutes: 90,
+      endsAt: '2026-10-01T19:30:00Z',
     };
 
     it('lets an assigned assistant read the schedule', async () => {
-      const list = await staff.listLiveSessions('course-1', ASSIGNED_TA);
+      const list = await sessions.list(
+        { from: '2026-08-01T00:00:00Z', to: '2026-10-31T23:59:59Z' },
+        ASSIGNED_TA,
+      );
       expect(list.length).toBeGreaterThan(0);
       expect(list[0]).toHaveProperty('meetingLink');
     });
 
-    it('404s the schedule of a course the assistant does not hold', async () => {
-      await expect(
-        staff.listLiveSessions('course-2', ASSIGNED_TA),
-      ).rejects.toThrow(NotFoundException);
+    it('returns empty when filtering by an unheld group for assistant', async () => {
+      const list = await sessions.list(
+        { from: '2026-08-01T00:00:00Z', to: '2026-10-31T23:59:59Z', groupId: 'group-2' },
+        ASSIGNED_TA,
+      );
+      expect(list).toEqual([]);
     });
 
-    it('schedules a session the course then lists', async () => {
-      const before = await staff.listLiveSessions('course-1', ADMIN);
-      const created = await admin.createLiveSession('course-1', SESSION, ADMIN);
-      // course-1's one group, per `InMemoryGroupRepository`'s seed - the
-      // course-to-group translation `ManageLiveSessionsService` is a stopgap
-      // around (migration 019 re-parented the table onto `group_id`).
+    it('schedules a session for a held group that the grid then lists', async () => {
+      const before = await sessions.list(
+        { from: '2026-10-01T00:00:00Z', to: '2026-10-02T00:00:00Z' },
+        ASSIGNED_TA,
+      );
+      const created = await sessions.create('group-1', SESSION, ASSIGNED_TA);
       expect(created).toMatchObject({ groupId: 'group-1', title: 'Paper 2 clinic' });
 
-      const after = await staff.listLiveSessions('course-1', ADMIN);
+      const after = await sessions.list(
+        { from: '2026-10-01T00:00:00Z', to: '2026-10-02T00:00:00Z' },
+        ASSIGNED_TA,
+      );
       expect(after).toHaveLength(before.length + 1);
       expect(after.map((s) => s.id)).toContain(created.id);
     });
 
-    it('404s a course that does not exist', async () => {
+    it('404s scheduling into a group that does not exist or is out of scope', async () => {
       await expect(
-        admin.createLiveSession('course-nope', SESSION, ADMIN),
+        sessions.create('group-nope', SESSION, ADMIN),
+      ).rejects.toThrow(NotFoundException);
+      await expect(
+        sessions.create('group-2', SESSION, ASSIGNED_TA),
       ).rejects.toThrow(NotFoundException);
     });
 
     it('edits a session and leaves the omitted fields alone', async () => {
-      const created = await admin.createLiveSession('course-1', SESSION, ADMIN);
-      const updated = await admin.updateLiveSession(
+      const created = await sessions.create('group-1', SESSION, ADMIN);
+      const updated = await sessions.update(
         created.id,
-        { scheduledAt: '2026-10-02T18:00:00Z' },
+        { scheduledAt: '2026-10-02T18:00:00Z', endsAt: '2026-10-02T19:30:00Z' },
         ADMIN,
       );
       expect(updated.scheduledAt).toBe('2026-10-02T18:00:00Z');
       expect(updated.title).toBe('Paper 2 clinic');
-      expect(updated.meetingLink).toBe(SESSION.zoomLink);
+      expect(updated.meetingLink).toBe(SESSION.meetingLink);
     });
 
     it('404s an edit or a cancel of a session that is not there', async () => {
       await expect(
-        admin.updateLiveSession('sess-nope', { title: 'x' }, ADMIN),
+        sessions.update('sess-nope', { title: 'x' }, ADMIN),
       ).rejects.toThrow(NotFoundException);
-      await expect(admin.deleteLiveSession('sess-nope', ADMIN)).rejects.toThrow(
+      await expect(sessions.remove('sess-nope', ADMIN)).rejects.toThrow(
         NotFoundException,
       );
     });
 
     it('cancels a session and removes it from the schedule', async () => {
-      const created = await admin.createLiveSession('course-1', SESSION, ADMIN);
+      const created = await sessions.create('group-1', SESSION, ADMIN);
       await expect(
-        admin.deleteLiveSession(created.id, ADMIN),
+        sessions.remove(created.id, ADMIN),
       ).resolves.toEqual({ removed: true });
-      const list = await staff.listLiveSessions('course-1', ADMIN);
+      const list = await sessions.list(
+        { from: '2026-10-01T00:00:00Z', to: '2026-10-02T00:00:00Z' },
+        ADMIN,
+      );
       expect(list.find((s) => s.id === created.id)).toBeUndefined();
     });
 
     it('audits scheduling, editing and cancelling', async () => {
-      const created = await admin.createLiveSession('course-1', SESSION, ADMIN);
-      await admin.updateLiveSession(created.id, { title: 'Renamed' }, ADMIN);
-      await admin.deleteLiveSession(created.id, ADMIN);
+      const created = await sessions.create('group-1', SESSION, ADMIN);
+      await sessions.update(created.id, { title: 'Renamed' }, ADMIN);
+      await sessions.remove(created.id, ADMIN);
 
       const page = await audit.find({ limit: 20 });
       const actions = page.entries.map((e) => e.action);
@@ -602,8 +619,8 @@ describe('Manage surface', () => {
       // The bug this guards against: a repository handing back the stored
       // object by reference makes before and after the same mutated object -
       // an entry that looks like evidence and shows nothing having moved.
-      const created = await admin.createLiveSession('course-1', SESSION, ADMIN);
-      await admin.updateLiveSession(created.id, { title: 'Renamed' }, ADMIN);
+      const created = await sessions.create('group-1', SESSION, ADMIN);
+      await sessions.update(created.id, { title: 'Renamed' }, ADMIN);
 
       const page = await audit.find({ limit: 20, action: 'live_session.updated' });
       const entry = page.entries[0];

@@ -38,6 +38,10 @@ export type AuditAction =
   | 'live_session.scheduled'
   | 'live_session.updated'
   | 'live_session.cancelled'
+  // Sessions and attendance (unit 8, `SESS-1`..`SESS-4`).
+  | 'session.planned'
+  | 'session.published'
+  | 'attendance.marked'
   // The first TA mutation outside grading. Announcements fan out to real
   // people's notification feeds and cannot be recalled, so the entry is the
   // only record of who sent what to whom.
@@ -206,7 +210,9 @@ export type AuditTargetType =
   // A draft-library template (`TASK-2`). Its own target type rather than
   // `assessment`: a draft is not a task anybody was set, and "what happened to
   // this template" is a different question from "what happened to this task".
-  | 'task_draft';
+  | 'task_draft'
+  // Attendance sheet on a live session (unit 8, `SESS-3`).
+  | 'attendance';
 
 /**
  * One side of a before/after pair.
