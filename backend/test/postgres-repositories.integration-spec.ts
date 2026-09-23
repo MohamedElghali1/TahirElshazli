@@ -24,6 +24,7 @@ import { PostgresMailDeliveryRepository } from '../src/mail/postgres-mail-delive
 import { PostgresAssistantInvitationRepository } from '../src/manage/repositories/postgres-assistant-invitation.repository.js';
 import { PostgresTaskDraftRepository } from '../src/manage/repositories/postgres-task-draft.repository.js';
 import { PostgresWorkRepository } from '../src/assessments/repositories/postgres-work.repository.js';
+import { PostgresSubmissionAnnotationRepository } from '../src/assessments/repositories/postgres-submission-annotation.repository.js';
 import type { NewAssessment } from '../src/assessments/interfaces/assessment-repository.interface.js';
 import { Role } from '../src/auth/roles.enum.js';
 
@@ -2604,6 +2605,304 @@ describeIfDb('Postgres repositories', () => {
   });
 
   /**
+   * Migration `019`'s post-conditions (unit 7, `MARK-1`/`MARK-2`/`MARK-6`),
+   * asserted against the catalog and by offering it bad rows. Every constraint
+   * is exercised, not merely declared.
+   */
+  describe('migration 019', () => {
+    const bad = (sql: string) => db.query(sql);
+    let submissionId: string;
+
+    beforeAll(async () => {
+      // A paper of its own, so the cascade below deletes nothing a later block reads.
+      const task = await new PostgresAssessmentRepository(db).create({ ...NEW_TASK, title: '019 constraints' });
+      submissionId = (
+        await new PostgresAssessmentRepository(db).createSubmission(task.id, 'student-2', null, 'x')
+      ).id;
+    });
+
+    const insertAnnotation = (overrides: string) =>
+      bad(`INSERT INTO submission_annotations
+             (id, submission_id, file_url, page, kind, x_percent, y_percent, text, path, created_by)
+           SELECT ${overrides}`);
+
+    it('refuses a stroke without a path, and a pin with one', async () => {
+      await expect(
+        insertAnnotation(`'a1', '${submissionId}', '/uploads/a.png', 1, 'pen', 10, 10, '', NULL, 'teacher-1'`),
+      ).rejects.toThrow(/submission_annotations_path_iff_stroke/);
+      await expect(
+        insertAnnotation(`'a2', '${submissionId}', '/uploads/a.png', 1, 'tick', 10, 10, '', '[[1,1],[2,2]]'::jsonb, 'teacher-1'`),
+      ).rejects.toThrow(/submission_annotations_path_iff_stroke/);
+    });
+
+    it('refuses a comment with blank text', async () => {
+      await expect(
+        insertAnnotation(`'a3', '${submissionId}', '/uploads/a.png', 1, 'comment', 10, 10, '   ', NULL, 'teacher-1'`),
+      ).rejects.toThrow(/submission_annotations_comment_has_text/);
+    });
+
+    it('refuses an out-of-range point, page, kind and path length', async () => {
+      await expect(
+        insertAnnotation(`'a4', '${submissionId}', '/uploads/a.png', 1, 'tick', 100.01, 10, '', NULL, 'teacher-1'`),
+      ).rejects.toThrow(/x_percent/);
+      await expect(
+        insertAnnotation(`'a5', '${submissionId}', '/uploads/a.png', 0, 'tick', 1, 1, '', NULL, 'teacher-1'`),
+      ).rejects.toThrow(/page/);
+      await expect(
+        insertAnnotation(`'a6', '${submissionId}', '/uploads/a.png', 1, 'eraser', 1, 1, '', NULL, 'teacher-1'`),
+      ).rejects.toThrow(/kind/);
+      await expect(
+        insertAnnotation(`'a7', '${submissionId}', '/uploads/a.png', 1, 'pen', 1, 1, '', '[[1,1]]'::jsonb, 'teacher-1'`),
+      ).rejects.toThrow(/path/);
+    });
+
+    it('refuses a return without a mark', async () => {
+      await expect(
+        bad(`UPDATE assessment_submissions SET returned_at = now() WHERE id = '${submissionId}'`),
+      ).rejects.toThrow(/assessment_submissions_returned_needs_mark/);
+    });
+
+    it('refuses more than five files, and a non-array, on submissions and revisions', async () => {
+      const six = JSON.stringify(Array.from({ length: 6 }, (_, i) => ({ url: `/uploads/${i}.png`, mimeType: 'image/png', sizeBytes: 1 })));
+      await expect(
+        bad(`UPDATE assessment_submissions SET files = '${six}'::jsonb WHERE id = '${submissionId}'`),
+      ).rejects.toThrow(/assessment_submissions_files_is_list/);
+      await expect(
+        bad(`UPDATE assessment_submissions SET files = '{}'::jsonb WHERE id = '${submissionId}'`),
+      ).rejects.toThrow(/assessment_submissions_files_is_list/);
+      await expect(
+        bad(`INSERT INTO submission_revisions (id, submission_id, submitted_at, files)
+             VALUES ('rev-bad', '${submissionId}', now(), '${six}'::jsonb)`),
+      ).rejects.toThrow(/submission_revisions_files_is_list/);
+    });
+
+    it('indexes annotations by (submission_id, page)', async () => {
+      const row = await db.queryOne<{ indexdef: string }>(
+        `SELECT indexdef FROM pg_indexes
+          WHERE schemaname = current_schema() AND indexname = 'submission_annotations_submission_id_page_idx'`,
+      );
+      expect(row?.indexdef).toMatch(/\(submission_id, page\)/);
+    });
+
+    it('cascades annotations away with their submission', async () => {
+      const repo = new PostgresSubmissionAnnotationRepository(db);
+      const doomed = await new PostgresAssessmentRepository(db).createSubmission(
+        (await new PostgresAssessmentRepository(db).create({ ...NEW_TASK, title: '019 cascade' })).id,
+        'student-2',
+        null,
+        'x',
+      );
+      const a = await repo.create({
+        submissionId: doomed.id, fileUrl: '/uploads/c.png', page: 1, kind: 'tick',
+        xPercent: 1, yPercent: 1, text: '', path: null, createdBy: 'teacher-1',
+      });
+      await db.query('DELETE FROM assessment_submissions WHERE id = $1', [doomed.id]);
+      expect(await repo.findById(a.id)).toBeNull();
+    });
+
+    it('refuses deleting a staff user who marked a paper (RESTRICT)', async () => {
+      await db.query(
+        `INSERT INTO users (id, email, password_hash, role, name)
+         VALUES ('marker-019', 'marker019@example.com', 'x', 'assistant', 'Marker')`,
+      );
+      await new PostgresSubmissionAnnotationRepository(db).create({
+        submissionId, fileUrl: '/uploads/r.png', page: 1, kind: 'cross',
+        xPercent: 5, yPercent: 5, text: '', path: null, createdBy: 'marker-019',
+      });
+      await expect(bad(`DELETE FROM users WHERE id = 'marker-019'`)).rejects.toThrow(
+        /submission_annotations_created_by_fkey/,
+      );
+    });
+
+    it('seeds sub-1..6 as returned exactly when corrected (the seed edit, finding 2)', async () => {
+      const rows = await db.query<{ id: string; corrected_at: Date | null; returned_at: Date | null }>(
+        `SELECT id, corrected_at, returned_at FROM assessment_submissions
+          WHERE id IN ('sub-1','sub-2','sub-3','sub-4','sub-5','sub-6') ORDER BY id`,
+      );
+      expect(rows).toHaveLength(6);
+      for (const row of rows) {
+        if (row.id === 'sub-2') {
+          expect(row.corrected_at).toBeNull();
+          expect(row.returned_at).toBeNull();
+        } else {
+          expect(row.returned_at?.toISOString()).toBe(row.corrected_at?.toISOString());
+        }
+      }
+    });
+  });
+
+  describe('submission annotations', () => {
+    const repo = () => new PostgresSubmissionAnnotationRepository(db);
+    let submissionId: string;
+
+    beforeAll(async () => {
+      const task = await new PostgresAssessmentRepository(db).create({ ...NEW_TASK, title: 'Annotations' });
+      submissionId = (
+        await new PostgresAssessmentRepository(db).createSubmission(task.id, 'student-2', null, 'x')
+      ).id;
+    });
+
+    it('creates, reads back numbers as numbers, and round-trips a path', async () => {
+      const stroke = await repo().create({
+        submissionId, fileUrl: '/uploads/p.png', page: 2, kind: 'pen',
+        xPercent: 12.5, yPercent: 40.25, text: '', path: [[12.5, 40.25], [13, 41], [99.99, 0]],
+        createdBy: 'teacher-1',
+      });
+      expect(typeof stroke.xPercent).toBe('number');
+      expect(stroke.xPercent).toBe(12.5);
+      expect(stroke.yPercent).toBe(40.25);
+      expect(stroke.path).toEqual([[12.5, 40.25], [13, 41], [99.99, 0]]);
+      const read = await repo().findById(stroke.id);
+      expect(typeof read!.yPercent).toBe('number');
+      expect(read!.path).toEqual(stroke.path);
+    });
+
+    it('orders a paper by (page, created_at, id)', async () => {
+      await repo().create({ submissionId, fileUrl: '/uploads/p.png', page: 1, kind: 'tick', xPercent: 1, yPercent: 1, text: '', path: null, createdBy: 'teacher-1' });
+      await repo().create({ submissionId, fileUrl: '/uploads/p.png', page: 1, kind: 'comment', xPercent: 2, yPercent: 2, text: 'ليلى: good', path: null, createdBy: 'assistant-1' });
+      const all = await repo().findBySubmission(submissionId);
+      expect(all.map((a) => [a.page, a.kind])).toEqual([[1, 'tick'], [1, 'comment'], [2, 'pen']]);
+      expect(all[1]!.text).toBe('ليلى: good');
+    });
+
+    it('updates only what is supplied, and stamps updated_at', async () => {
+      const [first] = await repo().findBySubmission(submissionId);
+      const moved = await repo().update(first!.id, { xPercent: 50 });
+      expect(moved!.xPercent).toBe(50);
+      expect(moved!.yPercent).toBe(first!.yPercent);
+      expect(moved!.kind).toBe(first!.kind);
+      expect(new Date(moved!.updatedAt).getTime()).toBeGreaterThanOrEqual(new Date(first!.updatedAt).getTime());
+      expect(await repo().update('nope', { xPercent: 1 })).toBeNull();
+    });
+
+    it('counts per submission and per (submission, file), and deletes', async () => {
+      expect(await repo().countBySubmission(submissionId)).toBe(3);
+      await repo().create({ submissionId, fileUrl: '/uploads/old.png', page: 1, kind: 'cross', xPercent: 3, yPercent: 3, text: '', path: null, createdBy: 'teacher-1' });
+      const counts = await repo().countBySubmissionFiles([submissionId, 'none']);
+      const byFile = Object.fromEntries(counts.map((c) => [c.fileUrl, c.count]));
+      expect(byFile).toEqual({ '/uploads/p.png': 3, '/uploads/old.png': 1 });
+      expect(counts.every((c) => typeof c.count === 'number')).toBe(true);
+      expect(await repo().countBySubmissionFiles([])).toEqual([]);
+
+      const [first] = await repo().findBySubmission(submissionId);
+      expect(await repo().remove(first!.id)).toBe(true);
+      expect(await repo().remove(first!.id)).toBe(false);
+      expect(await repo().countBySubmission(submissionId)).toBe(3);
+    });
+  });
+
+  describe('assessments: returned_at, files and the marker claim (unit 7)', () => {
+    const repo = () => new PostgresAssessmentRepository(db);
+    let taskId: string;
+    let submissionId: string;
+
+    beforeAll(async () => {
+      taskId = (await repo().create({ ...NEW_TASK, title: 'Return me' })).id;
+      submissionId = (await repo().createSubmission(taskId, 'student-2', null, 'answer')).id;
+    });
+
+    it('returnSubmission refuses an unmarked paper with null and writes nothing', async () => {
+      expect(await repo().returnSubmission(submissionId)).toBeNull();
+      expect((await repo().findSubmissionById(submissionId))!.returnedAt).toBeNull();
+      expect(await repo().returnSubmission('nope')).toBeNull();
+    });
+
+    it('gradeSubmission marks without returning, and carries returnedAt on its RETURNING list', async () => {
+      const graded = await repo().gradeSubmission(submissionId, { score: 15, feedback: 'ok', annotatedFileUrl: undefined });
+      expect(graded!.score).toBe(15);
+      expect(graded!.correctedAt).not.toBeNull();
+      expect(graded!.returnedAt).toBeNull();
+      expect(graded!.files).toEqual([]);
+    });
+
+    it('returnSubmission stamps once and keeps the first time on a second call', async () => {
+      const first = await repo().returnSubmission(submissionId);
+      expect(first!.returnedAt).not.toBeNull();
+      const again = await repo().returnSubmission(submissionId);
+      expect(again!.returnedAt).toBe(first!.returnedAt);
+    });
+
+    it('a re-grade after return leaves returned_at alone (A-4)', async () => {
+      const before = (await repo().findSubmissionById(submissionId))!.returnedAt;
+      const regraded = await repo().gradeSubmission(submissionId, { score: 16, feedback: 'better', annotatedFileUrl: undefined });
+      expect(regraded!.returnedAt).toBe(before);
+      expect(regraded!.score).toBe(16);
+    });
+
+    it('every submission read carries returnedAt and files', async () => {
+      const reads = [
+        await repo().findSubmission(taskId, 'student-2'),
+        await repo().findSubmissionById(submissionId),
+        (await repo().findSubmissionsForStudent([taskId], 'student-2'))[0],
+        (await repo().findSubmissionsForAssessments([taskId]))[0],
+        (await repo().findSubmissionsForStudents([taskId], ['student-2']))[0],
+      ];
+      for (const read of reads) {
+        expect(read!.returnedAt).not.toBeNull();
+        expect(read!.files).toEqual([]);
+      }
+      const seeded = await repo().findSubmissionById('sub-1');
+      expect(seeded!.returnedAt).toBe(seeded!.correctedAt);
+    });
+
+    it('findSubmissionsForStudents restricts to the students named, in the query', async () => {
+      expect(await repo().findSubmissionsForStudents([taskId, 'assess-3'], ['student-1'])).toEqual([
+        expect.objectContaining({ id: 'sub-1' }),
+      ]);
+      expect(await repo().findSubmissionsForStudents([taskId], [])).toEqual([]);
+      expect(await repo().findSubmissionsForStudents([], ['student-2'])).toEqual([]);
+    });
+
+    it('stores an uploaded file set, and a resubmission archives and replaces it whole', async () => {
+      const photos = [
+        { url: '/uploads/11111111-1111-4111-8111-111111111111.jpg', mimeType: 'image/jpeg', sizeBytes: 100 },
+        { url: '/uploads/22222222-2222-4222-8222-222222222222.png', mimeType: 'image/png', sizeBytes: 200 },
+      ];
+      const other = (await repo().create({ ...NEW_TASK, title: 'Photos' })).id;
+      const created = await repo().createSubmission(other, 'student-2', null, 'note', photos);
+      expect(created.files).toEqual(photos);
+      expect(created.fileUrl).toBeNull();
+
+      const pdf = [{ url: '/uploads/33333333-3333-4333-8333-333333333333.pdf', mimeType: 'application/pdf', sizeBytes: 300 }];
+      const updated = await repo().updateSubmission(created.id, 'student-2', null, undefined, pdf);
+      expect(updated!.files).toEqual(pdf);
+      expect(updated!.answerText).toBe('note');
+      const revisions = await repo().findRevisions(created.id, 'student-2');
+      expect(revisions).toHaveLength(1);
+      expect(revisions[0]!.files).toEqual(photos);
+
+      // `undefined` leaves the set alone, like the other two fields.
+      const noteOnly = await repo().updateSubmission(created.id, 'student-2', undefined, 'new note');
+      expect(noteOnly!.files).toEqual(pdf);
+    });
+
+    it('claimMarker names the first claimant only', async () => {
+      const task = (await repo().create({ ...NEW_TASK, title: 'Claim me' })).id;
+      expect(await repo().claimMarker(task, 'assistant-1')).toBe(true);
+      expect(await repo().claimMarker(task, 'teacher-1')).toBe(false);
+      expect((await repo().findById(task))!.markerId).toBe('assistant-1');
+      expect(await repo().claimMarker('nope', 'teacher-1')).toBe(false);
+    });
+  });
+
+  describe('groups: findMembersForGroups', () => {
+    it('reads many rosters in one call, ordered by placement', async () => {
+      const repo = new PostgresGroupRepository(db);
+      const rows = await repo.findMembersForGroups(['group-1', 'group-2']);
+      const pairs = rows.map((m) => [m.groupId, m.studentId]);
+      expect(pairs).toEqual(expect.arrayContaining([
+        ['group-1', 'student-1'],
+        ['group-1', 'student-2'],
+        ['group-2', 'student-1'],
+      ]));
+      const times = rows.map((m) => m.assignedAt);
+      expect([...times].sort()).toEqual(times);
+      expect(await repo.findMembersForGroups([])).toEqual([]);
+      expect(await repo.findMembersForGroups(['group-nope'])).toEqual([]);
+    });
+  });
+
+  /**
    * `TASK-F4` (unit 7, part): the external-results reads that guard a delete
    * (`D-36`, `tallyResults`), feed the student list (`countResultsByAssessments`)
    * and feed the mark book (`findResults`, `findResultsForStudent`, `D-46`).
@@ -3028,6 +3327,70 @@ describeIfDb('migration 015 backfills the course grants it drops', () => {
       expect(grants.rows[0]!.n).toBe(0);
     } finally {
       await drop(client, schema);
+    }
+  }, 60_000);
+});
+
+/**
+ * Migration `019`'s backfill, run the way production will meet it: over rows
+ * that already exist. The main suite migrates BEFORE it seeds, so there the
+ * `UPDATE` sees an empty table and proves nothing (unit-7 plan, Risk 4).
+ */
+describeIfDb('migration 019 backfills returned_at from corrected_at', () => {
+  const migrationsDir = fileURLToPath(
+    new URL('../src/database/migrations', import.meta.url),
+  );
+
+  it('returns every existing mark, and leaves unmarked work unreturned', async () => {
+    const schema = 'migtest_019_backfill';
+    const admin = new Pool({ connectionString });
+    await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+    await admin.query(`CREATE SCHEMA ${schema}`);
+    await admin.end();
+    const client = new Pool({ connectionString, options: `-c search_path=${schema}` });
+    try {
+      const files = (await readdir(migrationsDir)).filter((n) => n.endsWith('.sql')).sort();
+      for (const name of files.filter((n) => n < '019')) {
+        await client.query(await readFile(join(migrationsDir, name), 'utf8'));
+      }
+      await client.query(
+        `INSERT INTO users (id, email, password_hash, name, role)
+         VALUES ('t', 't@example.com', 'x', 'Teacher', 'teacher'),
+                ('s', 's@example.com', 'x', 'Student', 'student')`,
+      );
+      await client.query(
+        `INSERT INTO courses (id, slug, is_published, title, description, teacher_name)
+         VALUES ('c1', 'c-one', true, 'One', 'One', 'Dr. Tahir')`,
+      );
+      await client.query(
+        `INSERT INTO assessments (id, course_id, title, description, instructions, type,
+                                  available_from, available_to, due_at, max_score,
+                                  allowed_file_types, max_file_size_bytes)
+         VALUES ('a1', 'c1', 'A1', '', '', 'homework', now(), now() + interval '1 day', now(), 10, ARRAY['application/pdf'], 1024),
+                ('a2', 'c1', 'A2', '', '', 'homework', now(), now() + interval '1 day', now(), 10, ARRAY['application/pdf'], 1024)`,
+      );
+      await client.query(
+        `INSERT INTO assessment_submissions (id, assessment_id, student_id, score, corrected_at)
+         VALUES ('marked', 'a1', 's', 7, '2026-08-01T10:00:00.123Z'),
+                ('unmarked', 'a2', 's', NULL, NULL)`,
+      );
+
+      await client.query(
+        await readFile(join(migrationsDir, '019_submission_annotations_and_return.sql'), 'utf8'),
+      );
+
+      const rows = await client.query<{ id: string; returned_at: Date | null; files: unknown }>(
+        'SELECT id, returned_at, files FROM assessment_submissions ORDER BY id',
+      );
+      expect(rows.rows).toEqual([
+        { id: 'marked', returned_at: new Date('2026-08-01T10:00:00.123Z'), files: [] },
+        { id: 'unmarked', returned_at: null, files: [] },
+      ]);
+    } finally {
+      await client.end();
+      const cleanup = new Pool({ connectionString });
+      await cleanup.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+      await cleanup.end();
     }
   }, 60_000);
 });

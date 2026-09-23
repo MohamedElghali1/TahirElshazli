@@ -11,6 +11,10 @@ import {
   WORK_REPOSITORY,
 } from './interfaces/work-repository.interface.js';
 import { InMemoryWorkRepository } from './repositories/in-memory-work.repository.js';
+import type { SubmissionAnnotationRepository } from './interfaces/submission-annotation-repository.interface.js';
+import { SUBMISSION_ANNOTATION_REPOSITORY } from './interfaces/submission-annotation-repository.interface.js';
+import { InMemorySubmissionAnnotationRepository } from './repositories/in-memory-submission-annotation.repository.js';
+import { PostgresSubmissionAnnotationRepository } from './repositories/postgres-submission-annotation.repository.js';
 import { PostgresWorkRepository } from './repositories/postgres-work.repository.js';
 import { GoogleFormSyncService } from './google-form-sync.service.js';
 import { WorkAnalyticsService } from './work-analytics.service.js';
@@ -59,6 +63,17 @@ import { GoogleIntegrationModule } from '../integrations/google/google-integrati
       InMemoryWorkRepository,
       PostgresWorkRepository,
     ),
+    // Annotations (`MARK-1`). Provided HERE, beside the submission aggregate,
+    // rather than in `manage/` where `MarkingService` lives (assumption A-13):
+    // the student's returned-copy read in this module needs it too, and a
+    // token re-provided in `manage/` would build a second in-memory store.
+    InMemorySubmissionAnnotationRepository,
+    PostgresSubmissionAnnotationRepository,
+    repositoryProvider<SubmissionAnnotationRepository>(
+      SUBMISSION_ANNOTATION_REPOSITORY,
+      InMemorySubmissionAnnotationRepository,
+      PostgresSubmissionAnnotationRepository,
+    ),
     // The authoring service binds external work through this port and never
     // learns which providers exist. `useExisting` rather than `useClass` so it
     // is the *same* instance as `GoogleFormSyncService` above - a second one
@@ -75,6 +90,7 @@ import { GoogleIntegrationModule } from '../integrations/google/google-integrati
     AssessmentsService,
     ASSESSMENT_REPOSITORY,
     WORK_REPOSITORY,
+    SUBMISSION_ANNOTATION_REPOSITORY,
     GoogleFormSyncService,
     WorkAnalyticsService,
   ],
