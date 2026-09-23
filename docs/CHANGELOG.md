@@ -1514,3 +1514,77 @@ different marker → 403; clearing a set marker → 403 (unit).
 
 **Also filed:** `TASK-F3` (align the submissions-delete refusal to 409) and `TASK-F4` (Postgres
 work/credential integration coverage, `tallyResults` first).
+
+---
+
+## 2026-09-24 — Unit 8: sessions and attendance (`SESS-1`…`SESS-7`)
+
+**Context.** `SESS-1`…`SESS-7` build the group-grained session and attendance model. Recorded here:
+one document correction, one deliberate audit-naming inconsistency, one place the plan was wrong and
+the code right, one deliberately dropped test technique, two closed student-facing field leaks, one
+pre-existing test found to be asserting nothing, one hidden ceiling named, and one UTC edge handed
+forward.
+
+### `DOMAIN_MODEL.md` §5 contradicted `D-9` and is corrected
+`DOMAIN_MODEL.md` §5 still listed session `mode` (`on_ground | online`) and `location` (room *or*
+meeting link) — both retired by `D-9` (closed, earlier). Two documents at the same authority level
+disagreeing is a finding, not a puzzle to solve silently (`CLAUDE.md` §2.3). Corrected to `meetingLink`
+(nullable) only; see `DOMAIN_MODEL.md` §5 for the full text.
+
+### Audit actions: three added, three deliberately not renamed
+Added `attendance.marked`, `session.planned`, `session.published` to the `AuditAction` union and the
+exhaustive `Record<AuditAction, true>` filter. The three existing `live_session.scheduled|updated|
+cancelled` strings are **deliberately not renamed** to `session.*`, even though `DOMAIN_MODEL.md`
+names the new `session.planned`/`session.published` pair — renaming the existing three would orphan
+every audit row already written against the old strings and break the log's own filter.
+
+### The plan was wrong, the code is right: `LEFT JOIN`, not `JOIN`, in the re-parent abort guard
+`PHASE_PLAN.md` §2.1's original abort guard used a plain `JOIN` between `live_sessions` and `groups`
+on `course_id`, which only catches "a course with several groups". A course with **zero** groups
+produces no row in that join at all and would have slipped the guard, surfacing three statements
+later as a bare NOT NULL violation naming a column rather than the session it belonged to. The
+implementation widened it to `LEFT JOIN`; `PHASE_PLAN.md` was amended to match.
+
+### A regex drift-guard from the plan was deliberately dropped
+`PHASE_PLAN.md` §5 specified reading the abort guard's SQL out of the migration file with a regex, by
+analogy to unit 7 — whose test extracts and runs one `UPDATE` statement, where a drifted file means
+testing SQL that never shipped. Unit 8's integration tests execute the **whole** migration file and
+assert it raises, so a guard removed or renamed already fails them by construction. Adding the regex
+would have been ceremony over a boundary the whole-file test already covers.
+
+### Two student-facing field leaks, both closed — the first introduced and missed in this unit's own S1/S2
+Migration `019` widened `LiveSession` with `privateNotes`, `isVisible` and `state`. The student routes
+serialised sessions by **spreading the row** — and there is no `ClassSerializerInterceptor` anywhere
+in the app — so those staff-only columns reached students, alongside an unwithheld `meetingLink` and
+the unpublished draft timetable. **The leak was introduced in this unit's own S1/S2 and missed in the
+S1/S2 review.** Closing only the two named student routes (`SESS-6`, `SESS-7`) left the same leak
+alive in a sibling caller: `LiveSessionsService.getNextSession` still returned the raw row, and both
+dashboards (`GET /courses/:id/dashboard`, `GET /dashboard`) hand it to students as `nextLiveSession`.
+The fix is a shared allow-list, `backend/src/live-sessions/student-session-view.ts`, that every
+student-answering service now reaches, so "a student only ever sees the allow-list" is a property of
+the code rather than something each caller must remember to re-implement.
+
+### A pre-existing test asserted nothing
+The e2e comparing `GET /courses/:id/dashboard`'s and `GET /dashboard`'s `nextLiveSession` had been
+passing `null` against `null` all along — every seeded session predates the branch's "today", so the
+field was never populated on either side and the assertion never exercised the comparison it claimed
+to. The new regression test schedules a session 45 minutes out first and keeps a count guard, which is
+what caught the vacuity.
+
+### A hidden ceiling, named
+The unscoped week grid (`GET /staff/sessions` with no `groupId`) gathers the caller's groups via
+`findAll(100, 0)`. Past 100 groups, the teacher's grid would silently lose sessions belonging to
+groups sorting past that page — presenting as a data problem, not a limit. Named as
+`MAX_GROUPS_FOR_UNSCOPED_GRID` with the failure mode recorded in its own comment, not fixed (the
+product runs at ~10 groups today, §1).
+
+### A UTC window edge handed to S5
+`GET /staff/sessions` widens a bare `YYYY-MM-DD` `to` to `T23:59:59.999Z` — **UTC**. The school runs
+on Egypt time, so a week requested with bare dates is a window two to three hours off the local week.
+Clients must send offset-bearing ISO instants; the DTO's `@IsISO8601()` already accepts them. S5 does
+this correctly; recorded so a future caller of the same route does not repeat the bare-date mistake.
+
+**Affected.** `backend/src/manage/sessions.controller.ts`, `backend/src/live-sessions/
+student-session-view.ts`, `backend/src/database/migrations/019_*.sql`, `DOMAIN_MODEL.md`,
+`API_GAP_ANALYSIS.md`, `AUTHORIZATION_MODEL.md`, `IMPLEMENTATION_PLAN.md`, `PHASE_ROADMAP.md`,
+`CLAUDE.md`, `ARCHITECTURE.md`.

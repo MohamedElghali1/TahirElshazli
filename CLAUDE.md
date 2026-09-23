@@ -152,7 +152,7 @@ Backend TypeScript is `strict: true`, `module: nodenext`, `target: ES2023`, with
 
 ```
 npm run dev                  # both services, no database needed
-npm test                     # backend unit — 660 tests, 39 files
+npm test                     # backend unit — 678 tests, 40 files
 npm run test:e2e             # backend e2e
 npm run test:integration     # backend integration; SKIPS ITSELF without TEST_DATABASE_URL
 npm run lint                 # frontend eslint + backend oxlint
@@ -230,9 +230,10 @@ destroyed live code (`docs/phases/unit-4/REVIEW_4D.md`). Do not read `SHELL-4`'s
 ("delete `components/app/*`, `components/site/*`") as still describing the directory's contents —
 verify against the actual consumer graph before treating either directory as legacy again.
 
-The backend **is** green and must stay green: **660 unit / 39 files, 297 e2e, 146 integration**
-(against real PostgreSQL 15.19, 001–018 from an empty schema) as of the unit-6 re-check-1 follow-ups, 2026-09-22
-(`docs/phases/unit-6/EXECUTION_NOTES.md`; unit 6 is `[~]`, awaiting review).
+The backend **is** green and must stay green: **678 unit / 40 files, 306 e2e, 152 integration**
+(against real PostgreSQL 15.19, 001–019 from an empty schema, with 020 composing on top from unit 7)
+as measured by the coordinator at unit 8's `a7ac05f`, 2026-09-24
+(`docs/phases/unit-8/EXECUTION_NOTES.md`).
 
 ---
 
@@ -338,8 +339,9 @@ withheld verbs. The durable rules:
   (`all_groups | assigned_groups`). Stored as a column, never inferred from a row count — "no
   assignment rows" must never be ambiguous between "everything" and "not set up yet".
 - **`StaffScopeService` is the single place that decides** whether a staff member may reach a
-  resource. **Ten** services call it, across 29 call sites (unit 6 recount; method in
-  `ARCHITECTURE.md` §2.4). Its interface and behaviour are a contract
+  resource. **Ten** services call it, across **34** call sites (unit 8 recount at `a7ac05f`, same
+  method as `ARCHITECTURE.md` §2.4: lines calling `assertAssigned`, `scopeFor`, `mayReachGroup` or
+  `reachableGroupIds` outside specs). Its interface and behaviour are a contract
   (`staff-scope.service.spec.ts`); `AUTH-2` rewrote its internals from course-scoped to group-scoped
   on 2026-09-20 and **changed neither** — the seven contract cases passed unmodified.
 - **Scope is held at the group grain.** `assistant_scopes` (how wide) + `assistant_group_assignments`
@@ -421,9 +423,15 @@ A security claim needs a test that proves the unauthorized case fails (§10).
   a gate, not a nicety: migrations 001–008 were each verified this way and **every single first run
   found something** — including the audit log silently ending after page one, because
   `created_at` was microsecond `TIMESTAMPTZ` while the JavaScript cursor carried only milliseconds.
-  **As of 2026-09-22, 001–018 have all run from an empty schema**, on `postgres:15-alpine` (15.19)
-  for `018` (`docs/phases/unit-6/EXECUTION_NOTES.md`). Keep it that way: authoring a migration on top of an unverified one buries whatever it gets wrong. Without
+  **As of 2026-09-24, 001–019 have all run from an empty schema**, on `postgres:15-alpine` (15.19),
+  with unit 7's `020` composing on top (`docs/phases/unit-8/EXECUTION_NOTES.md`). Keep it that way:
+  authoring a migration on top of an unverified one buries whatever it gets wrong. Without
   Docker, a local `postgres` cluster pointed at by `TEST_DATABASE_URL` is enough.
+  **An empty-schema run is silent about every guard and every backfill — a guard that counts rows
+  proves nothing against zero rows.** Unit 8's `019` reparents sessions to their group and backfills
+  `attendance.status`; both abort guards needed **seeded fixtures**, not the empty-schema run, because
+  an empty schema has no ambiguous course and no row to backfill — the run proves only that the SQL
+  applies, not that the guards fire.
 - **Destructive migrations validate existing data first and raise rather than guess.** The
   `group_courses → groups.course_id` collapse must abort if any group holds two courses; silently
   picking one corrupts every session, task and report hanging off it.
@@ -481,6 +489,15 @@ tests. Keep it.
 **When a list-shaped mirror of a union exists, derive it from an exhaustive `Record<Union, true>`.** A
 spec that iterates an array can only prove that what is listed works, never that nothing is missing.
 That distinction let six audit actions log correctly and then be rejected by the log's own filter.
+
+**A measured environment hazard (unit 8, this Windows machine):** the **e2e** suite's vitest process
+intermittently dies with `0xC0000409` / exit `3221226505` — sometimes *after* printing that all tests
+passed, sometimes before printing anything at all. It is **not** a test failure:
+`npx vitest run --config ./vitest.config.e2e.ts --no-file-parallelism` produced a clean `306 passed`
+on a tree that had just crashed twice in a row. Read the printed counts before concluding a suite is
+red. The trap inside the trap: piping the run through `grep` returns **grep's** exit 1 when the crash
+suppresses output entirely, which reads as a failing suite when it is not — check the vitest output
+directly, not a piped exit code.
 
 ---
 

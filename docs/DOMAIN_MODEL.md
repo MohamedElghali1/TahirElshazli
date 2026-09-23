@@ -193,13 +193,17 @@ Already built (migration 010) and vendor-neutral: `provider`, opaque `externalId
 
 ### `Session` (was `LiveSession`)
 - **Fields.** `id`, **`groupId`** (was `courseId`), `title`, `scheduledAt`, **`endsAt`**,
-  **`mode` (`on_ground | online`)**, **`location`** (room *or* meeting link), **`assistantId?`**,
+  **`meetingLink`** (nullable — a planned session need not have one yet), **`assistantId?`**,
   `description?`, **`privateNotes?`**, **`isVisible`**, **`state` (`planned | published`)**,
-  `attachments[]`
+  `attachments[]` **[NOT BUILT — `SESS-8`, unit 8]**
+- **No `mode` and no `location`.** `D-9` (closed) retired both — every session runs on an external
+  meeting link, there is no `on_ground | online` split. Corrected here 2026-09-24 (unit 8); this
+  entry previously still listed `mode` and `location`, contradicting the closed decision.
 - **Re-parenting to the group is the point.** Two groups on the same course meet at different times;
   that is most of why groups exist.
-- **Rule.** A meeting link is revealed to students 30 minutes before the start. Join appears **only**
-  when the session is live *and* online.
+- **Rule.** The meeting link is revealed to students 30 minutes before the start. Because `D-9`
+  removed the online/on-ground split, **Join appears when the session is live**, full stop — the old
+  "and online" half of the rule is now vacuous.
 - **Lifecycle.** `planned` (the draft timetable, locked until its date) → `published` → past.
 
 ### `Attendance`
@@ -207,8 +211,11 @@ Already built (migration 010) and vendor-neutral: `provider`, opaque `externalId
 
 - **The boolean becomes an enum.** `CLAUDE.md` §11 asked for this decision *before* multiple
   read-sides existed; the design settles it, and the migration is cheap now and expensive later.
+- **An unmarked student is `null`, never `absent`.** A missing mark is the absence of a fact, not a
+  fact.
 - **Projection.** A student's attendance percentage is `present / expected`, where expected is the
-  published sessions of their groups — never stored.
+  published sessions of their groups that have already ended — **computed, never stored**. `late`
+  counts as neither `present` nor `expected`'s numerator.
 
 ---
 

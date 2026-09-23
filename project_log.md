@@ -3816,3 +3816,51 @@ unit stays `[~]`.
   coordinator did not observe it; it is recorded as the user's verification.
 - **Status.** Unit 6 is `[x]`. Unit 7 (marking and the mark book) is next, and inherits `MARK-6` and
   `TASK-F3`.
+
+**Unit 8 — sessions and attendance, closed 2026-09-24.** Migration `019` re-parents sessions to the
+group and moves `attendance` from a boolean to `present | absent | late`, with `marked_by`/
+`marked_at`. Eight staff routes landed in a new `backend/src/manage/sessions.controller.ts` (week
+grid, create/update/cancel, draft timetable, publish, the attendance sheet and its bulk write), two
+student routes (`GET /students/me/timetable`, `GET /students/me/attendance`), and five frontend
+screens with a rewritten `frontend/lib/` sessions mirror. The three `/admin/*` live-session write
+routes and the two course-scoped student live-session reads were deleted, not extended. `D-6` (may an
+assistant write a session?) closed as "their own groups only", checked with
+`StaffScopeService.mayReachGroup` — the routes are group-grained from birth and carry none of
+`AUTH-6`'s course-grain debt.
+
+**Two student-facing field leaks were found and closed, one of them this unit's own.** Migration `019`
+widened `LiveSession` with `privateNotes`, `isVisible` and `state`; because the student routes
+serialised by spreading the row and nothing in the app runs a `ClassSerializerInterceptor`, those
+staff-only fields — and an unwithheld `meetingLink` — reached students. The first leak was introduced
+in this unit's own S1/S2 slice and missed in the S1/S2 review. Closing only the two named student
+routes left a sibling caller leaking the same fields: `LiveSessionsService.getNextSession`, read by
+both dashboards. The fix is a shared allow-list (`student-session-view.ts`) every student-answering
+service now goes through. A second, pre-existing bug surfaced in the same pass: the e2e comparing the
+two dashboards' `nextLiveSession` had been asserting `null` against `null` since before this branch,
+because every seeded session predates "today" — it proved nothing. A new regression test schedules a
+session 45 minutes out and keeps a count guard.
+
+**Slice order.** S1+S2 (migration + repository seam) were checkpointed unverified, then verified
+against real PostgreSQL; S3 (staff routes); S4 (student routes, T-30, the projection); S5 (frontend);
+S6 (this documentation pass). A Claude subagent implemented S1/S2, S4 and S5; Antigravity
+(`gemini-3.8-flash-high`) implemented S3, after `claude-sonnet-4-6` hit its ~96h `agy` quota mid-unit.
+
+**Final measured counts** (coordinator, at `a7ac05f`): 678 unit / 40 files, 306 e2e / 4 files, 152
+integration against real PostgreSQL 15.19 (0 skipped). `npx tsc --noEmit` 0 errors in `frontend/`.
+Lint clean apart from one pre-existing oxlint warning that predates this branch
+(`dashboard.controller.spec.ts:17`). Migrations `001`→`019`→`020` (unit 7's) all run from an empty
+schema.
+
+**Outstanding, recorded rather than dressed up.** No screen has been opened in a real browser — the
+Browser pane timed out twice at 300s and then returned an empty page at a 0×0 viewport — so RTL and
+dark theme are structural review only, and the week grid and the attendance toggle have not been
+looked at. `/timetable`, `/attendance`, `/manage/live-sessions` and `/manage/live-sessions/drafts` are
+confirmed to compile and return 200 with the dev server running, which is short of a real check.
+Three pre-existing `text-[var(--fs-*)]` bugs remain in `join-session.tsx` (lines 52, 69, 100),
+untouched by this unit under "no unrelated refactors" and filed as a follow-up. `SESS-8` (session
+attachments) is filed, not built — `DOMAIN_MODEL.md` §5 names `attachments[]` but no task or route
+ever carried it. Unit 7's `020` composed cleanly in the combined empty-schema run but its own three
+backfill tests did not execute in that run (bare `psql`, empty schema, nothing to backfill) — unit 8
+owes unit 7 a combined integration run at merge time. Two S4 judgment calls are flagged for the
+reviewer: the attendance projection's `expected` filters on `state: published` only, not `isVisible`;
+and the `history[]` field shape was not specified anywhere and mirrors the staff sheet.

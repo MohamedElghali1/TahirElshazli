@@ -298,13 +298,14 @@ existence oracle on `PATCH`/`DELETE /staff/assessments/:id` and `POST …/target
 `BOOK-3` `[ ]` CSV export
 
 ### Phase 10 — Sessions and attendance
-`SESS-1` `[ ]` Sessions re-parent to group + mode/location/assistant/visible/state (`DOM-1`) ·
-`SESS-2` `[ ]` **Attendance boolean → three-state enum** ·
-`SESS-3` `[ ]` Attendance sheet read + bulk write ·
-`SESS-4` `[ ]` Draft timetable + publish ·
-`SESS-5` `[ ]` Console week grid ·
-`SESS-6` `[ ]` Student timetable — **meeting link withheld server-side until T-30min** ·
-`SESS-7` `[ ]` Student attendance screen
+`SESS-1` `[x]` Sessions re-parent to group + meetingLink/assistant/visible/state (`DOM-1`; no mode or location, `D-9`) ·
+`SESS-2` `[x]` **Attendance boolean → three-state enum** ·
+`SESS-3` `[x]` Attendance sheet read + bulk write ·
+`SESS-4` `[x]` Draft timetable + publish ·
+`SESS-5` `[x]` Console week grid ·
+`SESS-6` `[x]` Student timetable — **meeting link withheld server-side until T-30min** ·
+`SESS-7` `[x]` Student attendance screen ·
+`SESS-8` `[ ]` Session attachments — `DOMAIN_MODEL.md` §5 lists `attachments[]` on `Session`; no `SESS-*` task named it, no route in `API_GAP_ANALYSIS.md` B6 carries it, and it needs its own `FileStorage` wiring and upload surface. Deliberately out of unit 8's scope (`PHASE_PLAN.md` §1.2), filed so it is visible rather than forgotten.
 
 ### Phase 11 — Weekly reports  *(the flagship; 9 routes, none exist)*
 `RPT-1` `[ ]` `weekly_reports` table + repositories ·

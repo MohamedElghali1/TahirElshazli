@@ -497,23 +497,27 @@ em-dash, never `0`.**
 
 ---
 
-### Chat unit 8 — Sessions and attendance `[ ]`
+### Chat unit 8 — Sessions and attendance `[x]` `COMPLETE` 2026-09-24
 
-**Scope** `SESS-1` … `SESS-7`.
+**Scope** `SESS-1` … `SESS-7`. Sessions carry `meetingLink`/assistant/visible/state — no `mode`, no
+`location` (`D-9`, closed).
 **Depends on** unit 2 (`DOM-1`).
 **Migrations** re-parent sessions to the group; **`attendance.attended BOOLEAN` → `present | absent |
 late`**.
 **Security** the meeting link is **withheld server-side until T-30 minutes**. Not hidden by the
 client — absent from the response.
-**Blocked within scope** `SESS-1` partially — decision `D-6` (may an assistant create or edit a
-session?).
+`D-6` is closed — **an assistant may create, edit, cancel and publish sessions, and mark attendance,
+for their own groups only** — and unit 8 built it that way, checked with
+`StaffScopeService.mayReachGroup`, never `assertAssigned(courseId)`.
 
 ---
 
 ### Chat unit 9 — Weekly reports `[ ]`  *(the flagship — 9 routes, none exist)*
 
 **Scope** `RPT-1` … `RPT-9`.
-**Depends on** units 2, 3, 7, 8 — it composes their figures.
+**Depends on** units 2, 3, 7, 8 — it composes their figures. The attendance figure it composes is
+`present / expected` with `late` counted as **neither**, served by `GET /students/me/attendance` —
+reuse that shape rather than reinterpreting it.
 **Care** generation is **pure composition** over attendance, submissions and progress. It owns no
 figures of its own; that is what keeps the report and the screens it summarises from disagreeing.
 **Idempotent, and never overwrites a report already `sent`.**

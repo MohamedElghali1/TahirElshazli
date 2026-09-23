@@ -58,8 +58,8 @@ is otherwise a no-op; it is listed once per controller rather than once per rout
 | `GET /courses/:id/materials` | `[KEEP]` | |
 | `GET /courses/:id/recordings` | `[MODIFY]` | Add `thumbnailUrl`, honour `isVisible`. |
 | `POST /recordings/:id/progress` | `[KEEP]` | |
-| `GET /courses/:id/live-sessions` | `[REPLACE]` | Sessions re-parent to the group and gain mode/location/state. See B6. |
-| `GET /courses/:id/live-sessions/next` | `[REPLACE]` | Same. |
+| `GET /courses/:id/live-sessions` | `[REPLACE]`d, done | Replaced by `GET /students/me/timetable?from=&to=` (unit 8, 2026-09-24). See B6. |
+| `GET /courses/:id/live-sessions/next` | `[REPLACE]`d, done | Folded into the same timetable route; no separate "next" endpoint. See B6. |
 | `GET /courses/:id/reports/summary` | `[MODIFY]` | Feeds the student Marks page; needs attendance breakdown and the teacher note. |
 | `GET /courses/:id/reports/documents` | `[MODIFY]` | Becomes the weekly-report period selector. |
 | `GET /reports/documents/:documentId` | `[KEEP]` | |
@@ -195,20 +195,20 @@ Task-results screen. It needs a frontend and nothing else.
 | Student × task grid for a group | `GET /staff/groups/:id/markbook` | `[MISSING]` |
 | CSV export | `GET /staff/groups/:id/markbook.csv` | `[MISSING]` |
 
-## B6. Sessions and attendance
+## B6. Sessions and attendance — built by unit 8, 2026-09-24
 
 | Need | Route | Status |
 |---|---|---|
-| Week grid for a group / all in-scope groups | `GET /staff/sessions?from=&to=` | `[MISSING]` |
-| Create / update / cancel a session | `POST /staff/groups/:id/sessions`, `PATCH`/`DELETE /staff/sessions/:id` | `[REPLACE]` of the three admin live-session routes |
-| Draft timetable list + publish | `GET /staff/sessions/planned`, `POST /staff/sessions/:id/publish` | `[MISSING]` |
-| Attendance sheet for a session | `GET /staff/sessions/:id/attendance` | `[MISSING]` |
-| Mark attendance (bulk) | `PUT /staff/sessions/:id/attendance` | `[MISSING]` |
-| Student's own attendance history | `GET /students/me/attendance` | `[MISSING]` |
-| Student timetable | `GET /students/me/timetable` | `[REPLACE]` of the two course-scoped reads |
+| Week grid for a group / all in-scope groups | `GET /staff/sessions?from=&to=&groupId=` | `[DONE]` — `groupId` is optional and additive; without it, every group in `reachableGroupIds`. |
+| Create / update / cancel a session | `POST /staff/groups/:id/sessions`, `PATCH`/`DELETE /staff/sessions/:id` | `[DONE]` — replaced the three admin live-session routes, which are deleted. |
+| Draft timetable list + publish | `GET /staff/sessions/planned`, `POST /staff/sessions/:id/publish` | `[DONE]` — publish is idempotent (a published session re-published is a 200 no-op, no second audit row). |
+| Attendance sheet for a session | `GET /staff/sessions/:id/attendance` | `[DONE]` — every group member, `null` status for unmarked. |
+| Mark attendance (bulk) | `PUT /staff/sessions/:id/attendance` | `[DONE]` — one transaction, one `attendance.marked` audit row with counts; rejects a `studentId` outside the session's group. |
+| Student's own attendance history | `GET /students/me/attendance` | `[DONE]` — `present`/`late`/`absent`/`expected`, `late` counted as neither. |
+| Student timetable | `GET /students/me/timetable` | `[DONE]` — replaced the two course-scoped reads; `state = published` and `isVisible = true` only. |
 
-**Note:** the admin live-session write routes exist but are absent from `frontend/lib/api.ts`
-entirely — the client was never written. They are being replaced anyway.
+**Note:** the admin live-session write routes that were absent from `frontend/lib/api.ts` are now
+deleted outright, along with `AdminManageController`'s wiring for them.
 
 ## B7. Weekly reports — wholly missing
 

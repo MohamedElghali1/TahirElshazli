@@ -100,9 +100,10 @@ the entry it writes.
 
 ### 2.4 One scoping chokepoint
 `StaffScopeService` is the only place that answers "may this staff member reach this?". **Ten**
-services call it, across 29 call sites (recounted 2026-09-22, unit 6: lines calling
-`assertAssigned`, `scopeFor`, `mayReachGroup` or `reachableGroupIds` outside specs; the same count on
-`6dabdb8` gives 22). The tenth is `manage/task-drafts` (`TASK-2`); `reachableGroupIds` is a fifth,
+services call it, across **34** call sites (recounted 2026-09-24, unit 8, at `a7ac05f`: lines calling
+`assertAssigned`, `scopeFor`, `mayReachGroup` or `reachableGroupIds` outside specs; the same count was
+29 at unit 6's 2026-09-22 recount, and 22 on `6dabdb8`). The tenth is `manage/task-drafts` (`TASK-2`);
+`reachableGroupIds` is a fifth,
 additive method for list reads that restrict in the query. It 404s rather than 403s, with a message
 identical to a genuine miss.
 
