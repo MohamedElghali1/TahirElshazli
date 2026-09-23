@@ -44,10 +44,12 @@ export type AuditAction =
   // it and when is exactly the history §5.4 exists for.
   | 'live_session.scheduled'
   | 'live_session.updated'
+  // live_session.cancelled
   | 'live_session.cancelled'
-  // The first TA mutation outside grading. Announcements fan out to real
-  // people's notification feeds and cannot be recalled, so the entry is the
-  // only record of who sent what to whom.
+  // Announcements (unit 10). Draft/publish lifecycle.
+  | 'announcement.created'
+  | 'announcement.updated'
+  | 'announcement.deleted'
   | 'announcement.posted'
   // Groups (CLAUDE.md §5.16). Placement is the one here that §5.4 reaches
   // squarely: a TA decides which cohort a student sits in, which decides -

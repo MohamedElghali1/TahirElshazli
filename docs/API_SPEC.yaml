@@ -125,6 +125,32 @@ components:
 
   schemas:
 
+    Announcement:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        audience: { type: string }
+        audienceType: { type: string, enum: [all_students, all_tas, course, group] }
+        courseId: { $ref: '#/components/schemas/Id', nullable: true }
+        groupId: { $ref: '#/components/schemas/Id', nullable: true }
+        title: { type: string }
+        body: { type: string }
+        mediaKind: { type: string, enum: [image, video, youtube, file], nullable: true }
+        mediaUrl: { type: string, nullable: true }
+        postedBy: { $ref: '#/components/schemas/Id' }
+        createdAt: { type: string, format: date-time }
+        publishedAt: { type: string, format: date-time, nullable: true }
+        recipientCount: { type: integer }
+      required:
+        - id
+        - audience
+        - audienceType
+        - title
+        - body
+        - postedBy
+        - createdAt
+        - recipientCount
+
     Error:
       type: object
       required: [statusCode, message]
@@ -2458,7 +2484,7 @@ paths:
                   skipped:   { type: integer, description: Already sent; never overwritten. }
 
   # --- Announcements ------------------------------------------------------
-  /admin/announcements/reach:
+  /staff/announcements/reach:
     get:
       tags: [announcements]
       summary: How many students an audience currently reaches
@@ -2478,6 +2504,114 @@ paths:
                 type: object
                 properties: { reach: { type: integer } }
 
+
+  /admin/announcements:
+    get:
+      tags: [announcements]
+      summary: List all announcements
+      x-roles: [teacher, admin]
+      responses:
+        '200': { description: OK }
+    post:
+      tags: [announcements]
+      summary: Create a draft announcement
+      x-roles: [teacher, admin]
+      responses:
+        '201': { description: Created }
+
+  /admin/announcements/{id}:
+    patch:
+      tags: [announcements]
+      summary: Update a draft announcement
+      x-roles: [teacher, admin]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200': { description: Updated }
+    delete:
+      tags: [announcements]
+      summary: Delete a draft announcement
+      x-roles: [teacher, admin]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '204': { description: Deleted }
+
+  /staff/courses/{courseId}/announcements:
+    get:
+      tags: [announcements]
+      summary: List course announcements
+      x-roles: [assistant, teacher, admin]
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200': { description: OK }
+    post:
+      tags: [announcements]
+      summary: Create course draft
+      x-roles: [assistant, teacher, admin]
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '201': { description: Created }
+
+  /staff/courses/{courseId}/announcements/{id}:
+    patch:
+      tags: [announcements]
+      summary: Update course draft
+      x-roles: [assistant, teacher, admin]
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200': { description: Updated }
+    delete:
+      tags: [announcements]
+      summary: Delete course draft
+      x-roles: [assistant, teacher, admin]
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '204': { description: Deleted }
+
+  /staff/groups/{groupId}/announcements:
+    get:
+      tags: [announcements]
+      summary: List group announcements
+      x-roles: [assistant, teacher, admin]
+      parameters:
+        - { name: groupId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200': { description: OK }
+    post:
+      tags: [announcements]
+      summary: Create group draft
+      x-roles: [assistant, teacher, admin]
+      parameters:
+        - { name: groupId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '201': { description: Created }
+
+  /staff/groups/{groupId}/announcements/{id}:
+    patch:
+      tags: [announcements]
+      summary: Update group draft
+      x-roles: [assistant, teacher, admin]
+      parameters:
+        - { name: groupId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200': { description: Updated }
+    delete:
+      tags: [announcements]
+      summary: Delete group draft
+      x-roles: [assistant, teacher, admin]
+      parameters:
+        - { name: groupId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '204': { description: Deleted }
   /admin/announcements/{announcementId}/publish:
     post:
       tags: [announcements]

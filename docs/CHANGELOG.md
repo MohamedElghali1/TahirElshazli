@@ -1670,3 +1670,41 @@ lands.
 (`StudentWorkResult[]`) has no consuming screen named in `WORK-1`..`WORK-4` or in
 `docs/redesign-mapping.md`'s screen lists. Not built this unit — left for whichever later unit
 (13/14, student or staff profile work) decides it wants a per-student cross-task work table.
+
+---
+
+## 2026-09-23 — Unit 10 (announcements, slice 10a): `D-ANN-1`, `D-ANN-2`, `B-ANN-1`, `B-ANN-2`
+
+On `origin/redesign` these entries sat inside that branch's own unit 7 entry, which this line does
+not carry (see the 2026-09-23 reconciliation entry). Moved here verbatim.
+
+### `D-ANN-1` — unit 10 (Announcements): `/admin/announcements/reach` moves to `/staff/announcements/reach`
+Two documents disagreed. `API_SPEC.yaml` stubbed `GET /admin/announcements/reach` with
+`x-roles: [assistant, teacher, admin]`; `CLAUDE.md` §6's route-split rule is explicit that `/admin/*`
+is teacher-and-admin-only, unscoped — an `/admin/*` route cannot legitimately name `assistant`. That
+is a finding, not a typo to quietly correct: the two documents said different things about who may
+see reach. **Resolution:** the route's *placement* was wrong, not its permissions — `assistant`
+belongs in the roles list, so the route moves to `/staff/announcements/reach` (all three roles,
+`StaffScopeService`-checked like every other `/staff/*` route). `API_SPEC.yaml` corrected in the same
+change (unit 10, slice 10a). Nothing implemented this route before the correction, so there is no
+back-compat cost.
+
+### `D-ANN-2` — unit 10: a published announcement IS editable (reverses the planner's initial assumption)
+The unit-10 phase plan originally assumed a published announcement is immutable — no `PATCH` once
+`published_at` is set — reasoning from the pre-existing `PostgresAnnouncementRepository`'s own
+docstring ("insert-and-read only... a retraction is a second announcement"). **The user ruled
+otherwise, via the coordinator: a typo in a published announcement must be correctable.** `PATCH`
+now works on a published row, editing title/body/media. The **audience** stays refused (`409`) once
+published — widening it after send would mean recipients who never received the original mail, and
+building a delta fan-out for that is a feature nobody asked for; refusing it is both the lazy and
+the honest answer. `DELETE` was not part of this ruling and stays refused on a published row,
+flagged as its own open follow-up rather than assumed either way. The `published_at` column, already
+the guard behind idempotent publish, now also guarantees an edit can never re-trigger the send: only
+`publish()`'s own guarded `UPDATE` ever sets it, and `updateDraft()` never touches it.
+
+### `B-ANN-1` — unit 10: TAs cannot publish announcements
+Fixed a bug introduced earlier in unit 10 where a TA assigned to a course or group could publish an announcement targeted at it through `/staff/.../publish` routes, bypassing teacher/admin review. The staff publish routes were removed, and the `publish()` service method now unconditionally enforces the `teacher` or `admin` role for all announcements, closing the loophole.
+
+### `B-ANN-2` — unit 10: TAs cannot retarget announcements to platform-wide audiences
+Fixed an authorization hole introduced by round 1's fix where `PatchAnnouncementDraftDto` gained an `audience` field for admin retargeting, but remained shared with the staff patch routes. Because `updateDraft()` only scoped course and group audiences, assistants could retarget their drafts to `all_students` or `all_tas`. Split the DTO into `PatchAnnouncementDraftDto` (staff, no audience) and `PatchAdminAnnouncementDraftDto` (admin only, carries audience), and added a belt-and-braces role check in `AnnouncementsService.updateDraft()`.
+

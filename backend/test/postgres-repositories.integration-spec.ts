@@ -918,6 +918,9 @@ describeIfDb('Postgres repositories', () => {
       const course = await repo().create({
         audienceType: 'course',
         courseId: 'course-1',
+        groupId: null,
+        mediaKind: null,
+        mediaUrl: null,
         title: 'Course only',
         body: 'Body.',
         postedBy: 'assistant-1',
@@ -928,6 +931,9 @@ describeIfDb('Postgres repositories', () => {
       const platform = await repo().create({
         audienceType: 'all_tas',
         courseId: null,
+        groupId: null,
+        mediaKind: null,
+        mediaUrl: null,
         title: 'Every assistant',
         body: 'Body.',
         postedBy: 'teacher-1',
@@ -935,7 +941,7 @@ describeIfDb('Postgres repositories', () => {
       });
       expect(platform.audience).toBe('all_tas');
       expect(platform.courseId).toBeNull();
-      expect(platform.postedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      expect(platform.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     });
 
     it('refuses an audience_type and course_id that disagree', async () => {
@@ -956,19 +962,33 @@ describeIfDb('Postgres repositories', () => {
       ).rejects.toThrow();
     });
 
-    it('stores posted_at at the precision a JS Date can represent', async () => {
+    it('stores published_at at the precision a JS Date can represent', async () => {
       // TIMESTAMPTZ(3), not the default microsecond TIMESTAMPTZ. Migration 002
       // records what a microsecond column costs the moment a keyset cursor is
       // added over it: the audit feed silently ended after page one.
-      const [row] = await db.query<{ id: string; posted_at: Date }>(
-        'SELECT id, posted_at FROM announcements ORDER BY posted_at DESC, id DESC LIMIT 1',
+      const draft = await repo().create({
+        audienceType: 'all_tas',
+        courseId: null,
+        groupId: null,
+        mediaKind: null,
+        mediaUrl: null,
+        title: 'For precision check',
+        body: 'Body.',
+        postedBy: 'teacher-1',
+        recipientCount: 0,
+      });
+      await repo().publish(draft.id, 2);
+
+      const [row] = await db.query<{ id: string; published_at: Date }>(
+        'SELECT id, published_at FROM announcements WHERE id = $1',
+        [draft.id]
       );
       // The exact round trip a keyset cursor would make: read the timestamp
       // out through a JS Date, hand it straight back, and require it to match
       // the row it came from. On a microsecond column this is false.
       const [same] = await db.query<{ equal: boolean }>(
-        'SELECT posted_at = $2::timestamptz AS equal FROM announcements WHERE id = $1',
-        [row!.id, row!.posted_at.toISOString()],
+        'SELECT published_at = $2::timestamptz AS equal FROM announcements WHERE id = $1',
+        [row!.id, row!.published_at.toISOString()],
       );
       expect(same?.equal).toBe(true);
     });
@@ -978,6 +998,9 @@ describeIfDb('Postgres repositories', () => {
         await repo().create({
           audienceType: 'course',
           courseId: 'course-2',
+          groupId: null,
+          mediaKind: null,
+          mediaUrl: null,
           title,
           body: 'Body.',
           postedBy: 'teacher-1',
@@ -1009,6 +1032,9 @@ describeIfDb('Postgres repositories', () => {
       const posted = await repo().create({
         audienceType: 'course',
         courseId: 'course-ann',
+        groupId: null,
+        mediaKind: null,
+        mediaUrl: null,
         title: 'Goes away',
         body: 'Body.',
         postedBy: 'teacher-1',

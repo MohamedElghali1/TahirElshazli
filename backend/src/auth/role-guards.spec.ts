@@ -363,6 +363,8 @@ describe('the authorization boundary', () => {
       expect(assistantDeletes.sort()).toEqual(
         [
           'MarkingController.removeAnnotation',
+          'StaffAnnouncementsController.deleteCourseDraft',
+          'StaffAnnouncementsController.deleteGroupDraft',
           'StaffBlogController.remove',
           'StaffManageController.deleteAssessment',
           'TaskDraftsController.remove',
