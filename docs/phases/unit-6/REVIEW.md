@@ -296,3 +296,161 @@ The dev stack on :3000/:3001 was not touched.
   - `PostgresWorkRepository`/`PostgresGoogleCredentialRepository` coverage (their SQL is untouched by this range, which I verified with the name-only diff);
   - `group.updated` missing from the frontend `AuditAction` mirror;
   - the empty `backend/{const`.
+
+---
+
+## Re-check 1 — 2026-09-22, after the round-1 remediation
+
+**VERDICT: APPROVED WITH FOLLOW-UP**
+
+**Every round-1 code and documentation finding (`F-1` … `F-6`, and the optional `F-7`) is closed,**
+along with both user rulings (`D-36`, `D-37`). I found no new security, authorization or
+correctness finding. **The one thing left between this unit and `APPROVED` is the coordinator's
+real-browser pass, which is still outstanding.**
+
+**This verdict depends on that pass, explicitly:**
+- **If the pass is clean**, recording it is enough to turn this into `APPROVED`. That means all
+  four screens, as teacher and assistant-1, in LTR and RTL with `ليلى فهمي`, including the `F-2`
+  and `F-4` behaviours below. No further code re-review is needed; the coordinator may cite this
+  paragraph.
+- **If the pass finds a defect**, it comes back here.
+
+The 400/409 inconsistency the executor flagged **does not block**; my ruling is below.
+
+### Scope
+
+**Revision.** `redesign` at `cc76ee4`, range `6dabdb8..cc76ee4`.
+- `82b5d78` commits this file unmodified. `git diff 82b5d78 cc76ee4 -- docs/phases/unit-6/REVIEW.md`
+  is empty, so the round-1 text above is exactly what I wrote.
+- `cc76ee4` is the remediation: 21 files, +983/−71.
+- The working tree is clean apart from this appended section.
+
+**Read:**
+- the full `791ea7c..cc76ee4` diff of:
+  - `assessment-authoring.service.ts` and `task-drafts.service.ts`
+  - the interface and both drivers of `AssessmentRepository` (`clearDraftProvenance`)
+  - `staff-manage.controller.ts` and `staff-scope.service.ts` (the JSDoc moves only)
+  - `task-form.tsx` and `drafts/page.tsx`
+  - `API_SPEC.yaml`, `CHANGELOG.md` and `IMPLEMENTATION_PLAN.md`
+- the new unit, e2e and integration test bodies
+- `EXECUTION_NOTES.md` §Remediation (review round 1)
+
+**Suites I re-ran myself** (Node v26.8.1):
+
+| Suite | Result |
+|---|---|
+| `TEST_DATABASE_URL=…@localhost:55432/tahirelshazli_test npm run test:integration` | **146 / 146, 1 file, 0 skipped.** 18 `Applied 0…` lines, `001` … `018`, on `tahir-unit6-pg` (PG 15.19). |
+| `npm test` | **659 / 39 files**, exit 0 |
+| `npm run test:e2e` | **296 / 4 files**, exit 0 |
+| `frontend: npx tsc --noEmit` | exit 0 |
+| `frontend: npx eslint .` | exit 0 |
+| `npm run lint` | exit 0; the same pre-existing warning (`dashboard.controller.spec.ts:17`) |
+
+These match the coordinator's and the executor's figures. The dev stack on :3000/:3001 was not
+touched.
+
+### Round-1 findings
+
+| Finding | Status | Evidence |
+|---|---|---|
+| **`F-1`**: a drifted marker blocked every edit | **Closed** | **Server:** `update` checks the marker only when `update.markerId !== before.markerId` (`assessment-authoring.service.ts:794`). **Form:** sends `markerId` only when it changed (`task-form.tsx:341-343`). **Unit test:** a title-only PATCH that re-sends the drifted marker succeeds and keeps it, while a *changed* ineligible marker is still 400. **e2e:** the same over HTTP, with `markerDrift` still true. The assistant 403 on a *different* marker is still asserted (spec `:678-686`, e2e `:2267-2273`). See `R1-1` for the one edge this changes. |
+| **`F-2`**: re-targeting erased per-group overrides | **Closed in code; the form half needs the browser pass.** | `task-form.tsx:356` rebuilds the set as `{ groupId, ...overrideOf(targetOf(groupId)) }`, and only added groups go bare. Each retained override is shown read-only, both in the editor and in the scoped view. The e2e test (`staff.e2e-spec.ts:2651-2676`) proves the API keeps an override that is sent back. It exercises the *request the form now builds*, not the form itself, which has no test harness. So the browser pass should re-target a task that has an override. |
+| **`F-3`**: hide or delete a task with synced results | **Closed by `D-36`** | `assertMayHide` (`:500-518`) and `remove` (`:944-954`) both count `WorkRepository.tallyResults` (matched + unmatched), and each gives a 409 with its own message. **Unit tests:** hide is refused for a matched and for an unmatched result and allowed with none; delete is refused and nothing is lost. **e2e:** hide 409, delete 409, both allowed before a sync (`:2678-2696`). Both checks run inside the existing `runInTransaction`. `tallyResults` is a pre-existing method, and no `PostgresWorkRepository` SQL changed (name-only diff). |
+| **`F-4`**: attachments defaulted to *Students* | **Closed; visual check in the browser pass** | New rows start at `audience: ''` ("Choose…") for both upload and link. A row with content and no audience shows *"Choose one"*. `audiencesChosen` disables Create, Save changes, Save as draft and the draft editor's Save, and an amber note says why. `toAttachmentInputs` never sends an unchosen row. The DTO still requires `audience` (6i e2e). |
+| **`F-5`**: the memory driver diverged on draft delete | **Closed** | `AssessmentRepository.clearDraftProvenance` in both drivers, called by `TaskDraftsService.remove` in the same transaction, before the delete. It is a service-level join; no repository calls another. **Integration:** "clearDraftProvenance nulls draft_id on exactly the tasks from that draft". **Memory unit test:** added. It is a new `Postgres*` method with its own integration test, so `CLAUDE.md` §10 holds. |
+| **`F-6`**: documentation behind the build | **Closed** | `D-30` is annotated as superseded on nullability, and the section reference is fixed. Deviations 2 and 8 are recorded (8 as superseded by `D-36`). `AUTH-6` carries the deviation-7 "403 → `ASSESSMENT_NOT_FOUND`" note. `TASK-F2` (retire the old per-course page) is filed. `API_SPEC.yaml` has the DELETE 409, the PATCH 409 wording and the `VisibilityState` rule. `DOMAIN_MODEL.md` §4 and `CLAUDE.md` counts (659/39, 296, 146) match my runs. |
+| **`F-7`**: orphaned JSDoc | **Closed** | Both blocks sit on their own methods again. |
+
+### `D-36` and `D-37`, checked against the rulings
+
+- **`D-36` ("refuse both").**
+  - Implemented as ruled: a synced result, matched or not, blocks hide and delete with a 409.
+  - It closes a real pre-existing loss: deleting cascaded `external_results` away under `010`'s
+    `ON DELETE CASCADE`.
+  - The submissions check runs first, so a task with both kinds of work still gets the older
+    delete message (see the ruling below).
+- **`D-37` ("earliest group opening").**
+  - `visibilityStateOf` (`:126-141`) takes the minimum of each target's `availableFrom ?? task.availableFrom`
+    over the **whole** audience. It falls back to the task's own value with no targets, so the
+    label is total.
+  - The whole audience is the same unrestricted `fullAudience` read that `status` and drift
+    already use, and it is never returned.
+  - The residue is the same class I accepted for deviation 4. A scoped assistant may see
+    *Published* while their own group is still closed, which reveals that *some* unheld group has
+    opened. That is one enum value, no id, name or count, and it is exactly what "judged over the
+    whole audience, the same for every viewer" requires.
+  - The unit test covers three mixed-override cases and teacher/assistant parity; the e2e covers
+    the published → scheduled transition.
+
+### Ruling: the delete 400 (submissions) versus 409 (external results) inconsistency
+
+**It does not block approval. It is a recorded follow-up, to be filed as a task.**
+
+- **Why it doesn't block:**
+  - The 400 predates unit 6 and is e2e-asserted as existing behaviour.
+  - Unit 6 did not introduce or widen it.
+  - Neither code leaks anything or lets a wrong mutation through; both refuse, and both say why.
+  - The new refusal chose the code `CLAUDE.md` §6 prescribes. Copying the older 400 for
+    consistency would have been the wrong way to resolve it.
+  - The executor recorded the mismatch in `CHANGELOG.md` (`D-36`) and `API_SPEC.yaml` (DELETE
+    documents both), rather than silently changing a pre-existing contract mid-review. That was
+    correct.
+- **Why it still needs a task, not just a note:**
+  - `CLAUDE.md` §6 is an engineering rule, not an open product question: "409 for a state
+    conflict", and a task with submissions is exactly that.
+  - So this does not need a user ruling. It is a small, contract-visible fix: the service, one
+    e2e assertion and `API_SPEC.yaml`.
+  - Today `CHANGELOG.md` calls it "a separate call" but no task carries it, which is how
+    inconsistencies become permanent.
+- **Filing:** add a `TASK-F3` (or a line in unit 7, which rebuilds the submissions surface):
+  "`DELETE /staff/assessments/:id` with submissions → 409, same as `D-36`." Check first that no
+  consumer branches on the 400; the old per-course page shows `ApiError.message`, which is
+  code-agnostic.
+
+### New finding
+
+#### R1-1: an assistant re-sending the task's *current*, non-null `markerId` is now a silent no-op, not a 403
+
+- **Severity:** low. **Confidence:** confirmed by reading; no test pins either behaviour.
+- **Where:** `assessment-authoring.service.ts:794`. The `!== before.markerId` short-circuit runs
+  before `assertMarker`, so the assistant branch (`:343-347`) is never reached for an unchanged
+  value.
+- **Scenario:** on a task whose marker is `teacher-1`, assistant-1 sends
+  `PATCH { title: 'x', markerId: 'teacher-1' }` and gets **200**. Before round 1 this was a **403**.
+- **Why it is low:**
+  - Nothing changes, and the marker is untouched.
+  - It is the same shape as the existing, ruled "sending `null` on an unmarked task is a no-op".
+  - The form never sends it for an assistant.
+- **Why it is recorded:** `D-32`'s text says *"An assistant sending a non-null `markerId` gets
+  403."* The literal rule now has an unstated exception, and no test pins which behaviour is
+  intended.
+- **Fix (either, not blocking):**
+  - Accept the no-op, add a line to `D-32` or the `F-1` changelog entry, and add a unit test
+    asserting the 200.
+  - Or keep the 403 for any assistant-sent non-null value by skipping only for unscoped callers.
+
+  The first is the simpler, and it matches the null precedent.
+
+### Follow-ups, added to the list above
+
+- **`TASK-F3`**: align the submissions-delete refusal to 409 (ruling above).
+- **`R1-1`**: record the unchanged-marker no-op for assistants, with a test.
+- **`PostgresWorkRepository.tallyResults`** still has no integration test. It stays out of scope
+  (its SQL is unchanged), but it is now load-bearing for a data-protection guard (`D-36`), so it
+  should come first when that coverage task is taken up.
+- The browser pass, as above.
+
+### The nine `PHASE_ROADMAP.md` §2 conditions
+
+**Every condition I can judge holds**, apart from:
+- the reviewer verdict needing `APPROVED` (condition 3);
+- the owed browser pass, a `TASK-7` Definition-of-Done item.
+
+**Remaining steps to complete the unit:**
+1. Run the browser pass and record it.
+2. If it is clean, the coordinator records this re-check as `APPROVED`, per the paragraph at the
+   top.
+3. Set `PHASE_ROADMAP.md` unit 6 and TASK-1..7 to `[x]`.
+4. File `TASK-F3`.
+
+`R1-1` may ride along with `TASK-F3`, or be recorded as accepted.
