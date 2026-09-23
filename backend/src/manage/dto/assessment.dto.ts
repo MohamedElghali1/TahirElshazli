@@ -212,6 +212,17 @@ export class CreateAssessmentDto {
   @IsOptionalNotNull()
   @IsIn(TASK_VISIBILITIES, { message: 'visibility must be published or hidden' })
   visibility?: (typeof TASK_VISIBILITIES)[number];
+
+  /**
+   * `D-32`: who marks it. Null or omitted is "whoever opens it first". An
+   * assistant sending a non-null value is a 403; a user who does not qualify
+   * for the audience is a 400. `@IsOptional`, because null is meaningful here.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  @Matches(ID_PATTERN)
+  markerId?: string | null;
 }
 
 /** Every field optional; `undefined` leaves it alone. */
@@ -318,6 +329,17 @@ export class UpdateAssessmentDto {
   @IsOptionalNotNull()
   @IsIn(TASK_VISIBILITIES, { message: 'visibility must be published or hidden' })
   visibility?: (typeof TASK_VISIBILITIES)[number];
+
+  /**
+   * `D-32`. `null` clears it back to "whoever opens it first". Only the
+   * teacher or an admin may change it (an assistant gets 403); the named user
+   * must qualify for the task's current audience (400 otherwise).
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  @Matches(ID_PATTERN)
+  markerId?: string | null;
 
   /**
    * `type`, `courseId` and `draftId` are deliberately absent. `draftId` is

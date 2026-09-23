@@ -1000,6 +1000,13 @@ export interface StaffTask extends Omit<AuthoredAssessment, 'targets'> {
   targets: StaffTaskTarget[];
   /** Server-derived (`D-28`): `scheduled` is a published task not yet open. */
   visibilityState: VisibilityState;
+  /** The named marker's display name; null when nobody is named. */
+  markerName: string | null;
+  /**
+   * True when the named marker no longer qualifies for this task's audience
+   * (`D-32`). Displayed, never repaired: `markerId` is left as it was.
+   */
+  markerDrift: boolean;
 }
 
 /** One targeted group, with the window override left out in the common case. */

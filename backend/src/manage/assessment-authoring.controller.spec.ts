@@ -1,10 +1,16 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { TASK_DRAFT_REPOSITORY } from './interfaces/task-draft-repository.interface.js';
 import { InMemoryTaskDraftRepository } from './repositories/in-memory-task-draft.repository.js';
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   AssessmentAuthoringService,
   ASSESSMENT_NOT_FOUND,
+  MARKER_NOT_ELIGIBLE,
   visibilityStateOf,
 } from './assessment-authoring.service.js';
 import { TASK_DRAFT_NOT_FOUND } from './task-drafts.service.js';
@@ -32,6 +38,8 @@ import { DATABASE_POOL } from '../database/database.tokens.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { RolesGuard } from '../auth/roles.guard.js';
 import { Role } from '../auth/roles.enum.js';
+import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js';
+import { InMemoryUserRepository } from '../auth/repositories/in-memory-user.repository.js';
 
 /** assistant-1 holds course-1; assistant-2 holds nothing. */
 const TA = { id: 'assistant-1', role: 'assistant' };
@@ -67,6 +75,7 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
   let drafts: TaskDraftRepository;
   let scopes: InMemoryAssistantScopeRepository;
   let studentService: AssessmentsService;
+  let users: InMemoryUserRepository;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -94,6 +103,8 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
         { provide: EXTERNAL_WORK_BINDER, useValue: { bindExternal: async () => {} } },
         // The draft library (`TASK-3`): authoring from a draft bumps its count.
         { provide: TASK_DRAFT_REPOSITORY, useClass: InMemoryTaskDraftRepository },
+        // Who a named marker is (`D-32`).
+        { provide: USER_REPOSITORY, useClass: InMemoryUserRepository },
         { provide: ENROLLMENT_REPOSITORY, useClass: InMemoryEnrollmentRepository },
         { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },
         {
@@ -116,6 +127,7 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
     drafts = module.get(TASK_DRAFT_REPOSITORY);
     scopes = module.get(ASSISTANT_SCOPE_REPOSITORY);
     studentService = module.get(AssessmentsService);
+    users = module.get(USER_REPOSITORY);
   });
 
   const entries = async () => (await audit.find({ limit: 50 })).entries;
@@ -635,6 +647,113 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
       const row = (await authoring.listForStaff(ADMIN, {})).find((t) => t.id === future.id);
       expect(row?.visibility).toBe('published');
       expect(row?.visibilityState).toBe('scheduled');
+    });
+  });
+
+  /** `D-32` (B-5, as recommended). */
+  describe('the marker (D-32)', () => {
+    const FULL_ADMIN = { id: 'admin-1', role: 'admin' };
+
+    it('lets the teacher name an active assistant who reaches every targeted group', async () => {
+      const created = await authoring.create('course-1', ADMIN, { ...TASK, markerId: 'assistant-1' });
+      expect(created.markerId).toBe('assistant-1');
+      const entry = (await entries()).find((e) => e.action === 'assessment.created');
+      expect(entry?.after).toMatchObject({ markerId: 'assistant-1' });
+    });
+
+    it('lets an admin name the teacher, an admin, or clear it back to whoever opens it first', async () => {
+      const created = await authoring.create('course-1', FULL_ADMIN, { ...TASK, markerId: 'teacher-1' });
+      expect((await authoring.update(created.id, FULL_ADMIN, { markerId: 'admin-1' })).markerId).toBe('admin-1');
+      expect((await authoring.update(created.id, FULL_ADMIN, { markerId: null })).markerId).toBeNull();
+      // The feed is newest first.
+      const entry = (await entries()).find((e) => e.action === 'assessment.updated');
+      expect(entry?.before).toMatchObject({ markerId: 'admin-1' });
+      expect(entry?.after).toMatchObject({ markerId: null });
+    });
+
+    it('403s an assistant sending a non-null markerId, on create and on update', async () => {
+      await expect(
+        authoring.create('course-1', TA, { ...TASK, markerId: 'assistant-1' }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      const created = await authoring.create('course-1', ADMIN, TASK);
+      await expect(
+        authoring.update(created.id, TA, { markerId: 'teacher-1' }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('403s an assistant clearing a marker someone else chose; null on an unmarked task is a no-op', async () => {
+      const marked = await authoring.create('course-1', ADMIN, { ...TASK, markerId: 'teacher-1' });
+      await expect(
+        authoring.update(marked.id, TA, { markerId: null }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      const unmarked = await authoring.create('course-1', TA, { ...TASK, markerId: null });
+      expect((await authoring.update(unmarked.id, TA, { markerId: null })).markerId).toBeNull();
+    });
+
+    it.each([
+      ['an assistant who holds none of the targets', 'assistant-2'],
+      ['a student', 'student-1'],
+      ['a user who does not exist', 'user-nope'],
+    ])('400s %s as the marker', async (_label, markerId) => {
+      await expect(
+        authoring.create('course-1', ADMIN, { ...TASK, markerId }),
+      ).rejects.toThrow(MARKER_NOT_ELIGIBLE);
+    });
+
+    it('400s an assistant who reaches only some of the targeted groups', async () => {
+      const group3 = await groups.create({
+        name: 'Marker cohort',
+        teacherId: 'teacher-1',
+        courseId: 'course-1',
+        assistantId: null,
+        meets: null,
+        room: null,
+      });
+      await expect(
+        authoring.create('course-1', ADMIN, {
+          ...TASK,
+          targets: [{ groupId: 'group-1' }, { groupId: group3.id }],
+          markerId: 'assistant-1',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('400s an assistant whose account is not active', async () => {
+      await users.setStatus('assistant-1', 'waiting');
+      await expect(
+        authoring.create('course-1', ADMIN, { ...TASK, markerId: 'assistant-1' }),
+      ).rejects.toThrow(MARKER_NOT_ELIGIBLE);
+    });
+
+    it('accepts an all_groups assistant for any audience', async () => {
+      await scopes.setScope('assistant-2', 'all_groups');
+      const created = await authoring.create('course-1', ADMIN, { ...TASK, markerId: 'assistant-2' });
+      expect(created.markerId).toBe('assistant-2');
+    });
+
+    it('displays later drift and never clears the marker', async () => {
+      const group3 = await groups.create({
+        name: 'Drift cohort',
+        teacherId: 'teacher-1',
+        courseId: 'course-1',
+        assistantId: null,
+        meets: null,
+        room: null,
+      });
+      const created = await authoring.create('course-1', ADMIN, { ...TASK, markerId: 'assistant-1' });
+      let row = (await authoring.listForStaff(ADMIN, {})).find((t) => t.id === created.id);
+      expect(row?.markerDrift).toBe(false);
+      expect(row?.markerName).toBe('Nour Hassan');
+
+      // The teacher re-aims it past what assistant-1 reaches.
+      await authoring.setTargets(created.id, ADMIN, [{ groupId: 'group-1' }, { groupId: group3.id }]);
+      row = (await authoring.listForStaff(ADMIN, {})).find((t) => t.id === created.id);
+      expect(row?.markerId).toBe('assistant-1');
+      expect(row?.markerDrift).toBe(true);
+      // The same fact for the assistant, whose own targets are narrowed.
+      const theirs = (await authoring.listForStaff(TA, {})).find((t) => t.id === created.id);
+      expect(theirs?.markerDrift).toBe(true);
+      expect(theirs?.targets.map((t) => t.groupId)).toEqual(['group-1']);
     });
   });
 });

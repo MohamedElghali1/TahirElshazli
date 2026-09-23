@@ -2235,4 +2235,95 @@ describe('Staff and admin API (e2e)', () => {
       await request(server()).delete(`/staff/assessments/${task.body.id}`).set(bearer(adminToken)).expect(204);
     });
   });
+
+  describe('the marker (D-32): teacher and admin choose; an assistant cannot', () => {
+    const server = () => app.getHttpServer();
+    let task: string;
+    beforeAll(async () => {
+      task = (
+        await request(server())
+          .post('/staff/courses/course-1/assessments')
+          .set(bearer(adminToken))
+          .send({
+            title: 'E2E marker task',
+            type: 'homework',
+            availableFrom: '2026-01-01T00:00:00.000Z',
+            availableTo: '2099-01-01T00:00:00.000Z',
+            dueAt: '2098-01-01T00:00:00.000Z',
+            maxScore: 10,
+            allowedFileTypes: ['application/pdf'],
+            maxFileSizeBytes: 1048576,
+            targets: [{ groupId: 'group-1' }],
+          })
+          .expect(201)
+      ).body.id;
+    });
+    afterAll(async () => {
+      await request(server()).delete(`/staff/assessments/${task}`).set(bearer(adminToken));
+    });
+
+    it('403s an assistant sending a non-null markerId - the task is on their screen', async () => {
+      await request(server())
+        .patch(`/staff/assessments/${task}`)
+        .set(bearer(assignedTaToken))
+        .send({ markerId: 'assistant-1' })
+        .expect(403);
+    });
+
+    it('400s the teacher naming an assistant who does not reach the audience, or a student', async () => {
+      for (const markerId of ['assistant-2', 'student-1', 'nobody']) {
+        await request(server())
+          .patch(`/staff/assessments/${task}`)
+          .set(bearer(adminToken))
+          .send({ markerId })
+          .expect(400);
+      }
+    });
+
+    it('lets the teacher name assistant-1, shows the name, and lets the full admin clear it', async () => {
+      const named = await request(server())
+        .patch(`/staff/assessments/${task}`)
+        .set(bearer(adminToken))
+        .send({ markerId: 'assistant-1' })
+        .expect(200);
+      expect(named.body.markerId).toBe('assistant-1');
+      const list = await request(server()).get('/staff/tasks').set(bearer(assignedTaToken)).expect(200);
+      const row = list.body.find((t: { id: string }) => t.id === task);
+      expect(row.markerName).toBe('Nour Hassan');
+      expect(row.markerDrift).toBe(false);
+
+      // An assistant may not clear a marker someone else chose, either.
+      await request(server())
+        .patch(`/staff/assessments/${task}`)
+        .set(bearer(assignedTaToken))
+        .send({ markerId: null })
+        .expect(403);
+
+      const cleared = await request(server())
+        .patch(`/staff/assessments/${task}`)
+        .set(bearer(fullAdminToken))
+        .send({ markerId: null })
+        .expect(200);
+      expect(cleared.body.markerId).toBeNull();
+    });
+
+    it('403s an assistant naming a marker on create', async () => {
+      await request(server())
+        .post('/staff/courses/course-1/assessments')
+        .set(bearer(assignedTaToken))
+        .send({
+          title: 'E2E marker create',
+          type: 'homework',
+          availableFrom: '2026-01-01T00:00:00.000Z',
+          availableTo: '2099-01-01T00:00:00.000Z',
+          dueAt: '2098-01-01T00:00:00.000Z',
+          maxScore: 10,
+          allowedFileTypes: ['application/pdf'],
+          maxFileSizeBytes: 1048576,
+          targets: [{ groupId: 'group-1' }],
+          markerId: 'teacher-1',
+        })
+        .expect(403);
+    });
+  });
 });

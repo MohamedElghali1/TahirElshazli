@@ -694,6 +694,8 @@ export const api = {
         allowResubmission?: boolean;
         /** `published` (default) or `hidden`. `scheduled` is derived, never sent. */
         visibility?: TaskVisibility;
+        /** Teacher/admin only (an assistant gets 403). Null: whoever opens it first. */
+        markerId?: string | null;
       },
     ) =>
       request<AuthoredAssessment>(`/staff/courses/${courseId}/assessments`, {
@@ -724,6 +726,8 @@ export const api = {
         allowResubmission?: boolean;
         /** `hidden` 409s once anything has been submitted. */
         visibility?: TaskVisibility;
+        /** Teacher/admin only; must qualify for the current audience (400). */
+        markerId?: string | null;
       },
     ) =>
       request<AuthoredAssessment>(`/staff/assessments/${assessmentId}`, {

@@ -1,10 +1,18 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Role } from '../auth/roles.enum.js';
+import { isUnscopedStaffRole } from '../auth/staff-roles.js';
+import type {
+  StoredUser,
+  UserRepository,
+} from '../auth/interfaces/user-repository.interface.js';
+import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js';
 import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import { actorRoleOf } from '../auth/actor-role.js';
@@ -69,7 +77,29 @@ export interface StaffTask extends StoredAssessment {
   targets: StaffTaskTarget[];
   /** Server-derived; see `VisibilityState`. */
   visibilityState: VisibilityState;
+  /** The named marker's display name; null when `markerId` is null. */
+  markerName: string | null;
+  /**
+   * `D-32`: true when a named marker **no longer qualifies** for this task -
+   * their account or scope changed, or the audience grew past what they reach.
+   * Drift is displayed, never silently repaired: `markerId` is left as it was.
+   * Computed over the task's **whole** audience, so it is a fact about the task
+   * rather than a number that depends on who is looking. Always false for a
+   * null marker.
+   */
+  markerDrift: boolean;
 }
+
+/**
+ * The message a named marker who does not qualify gets (`D-32`): someone who
+ * is not the teacher, an admin, or an active assistant reaching every group
+ * the task is set for.
+ */
+export const MARKER_NOT_ELIGIBLE =
+  'markerId must name the teacher, an admin, or an active assistant who reaches every group this task is set for';
+
+/** An assistant tried to choose who marks a task (`D-32`). */
+export const MARKER_TEACHER_ONLY = 'Only the teacher or an admin can choose who marks a task';
 
 /**
  * `D-28`'s label, derived on every read from the stored value and the task's
@@ -136,6 +166,11 @@ export interface CreateAssessmentInput {
    * submissions, so creating it hidden needs no conflict check.
    */
   visibility?: TaskVisibility;
+  /**
+   * `D-32`: who marks it. Null or omitted is "whoever opens it first". Only
+   * the teacher and admins may name someone.
+   */
+  markerId?: string | null;
 }
 
 /**
@@ -149,7 +184,7 @@ export type UpdateAssessmentInput = Omit<
   AssessmentUpdate,
   // Each of these has a rule of its own and is admitted by the slice that
   // enforces it - never passed through unchecked.
-  'markerId' | 'submissionModes'
+  'submissionModes'
 > & {
   googleForm?: string;
 };
@@ -195,7 +230,75 @@ export class AssessmentAuthoringService {
     /** The draft library, for `usedCount` on authoring from a draft. */
     @Inject(TASK_DRAFT_REPOSITORY)
     private readonly draftRepo: TaskDraftRepository,
+    /** Who a named marker is (`D-32`). `AuthModule` exports it. */
+    @Inject(USER_REPOSITORY) private readonly userRepo: UserRepository,
   ) {}
+
+  /**
+   * `D-32`: does this user qualify to mark a task set for these groups?
+   *
+   * The teacher and any admin always do. An assistant does when their account
+   * is active and they reach **every** targeted group - otherwise they would be
+   * assigned work they cannot open. `StaffScopeService` decides the reach, as
+   * it does for every other staff question; a missing scope row fails closed.
+   */
+  private async markerQualifies(
+    user: StoredUser | null,
+    groupIds: readonly string[],
+    reachCache?: Map<string, Promise<readonly string[] | null>>,
+  ): Promise<boolean> {
+    if (!user) {
+      return false;
+    }
+    if (isUnscopedStaffRole(user.role)) {
+      return true;
+    }
+    if (user.role !== Role.Assistant || user.status !== 'active') {
+      return false;
+    }
+    // One scope read per marker, not per task, when judging a whole list.
+    let pending = reachCache?.get(user.id);
+    if (!pending) {
+      pending = this.scope.reachableGroupIds({ id: user.id, role: user.role });
+      reachCache?.set(user.id, pending);
+    }
+    const reach = await pending;
+    return reach === null || groupIds.every((g) => reach.includes(g));
+  }
+
+  /**
+   * `D-32`: who may name a marker, and whom.
+   *
+   * - An **assistant** may not set or change it. Any non-null value is a 403 -
+   *   the task is on their screen, so the anti-enumeration 404 does not apply -
+   *   and so is clearing a marker someone else chose. Sending `null` where it is
+   *   already null changes nothing and is allowed.
+   * - The teacher or an admin may name only someone who qualifies for the
+   *   task's audience; anyone else is a 400.
+   */
+  private async assertMarker(
+    actor: StaffActor,
+    markerId: string | null | undefined,
+    current: string | null,
+    groupIds: readonly string[],
+  ): Promise<void> {
+    if (markerId === undefined) {
+      return;
+    }
+    if (!isUnscopedStaffRole(actor.role)) {
+      if (markerId !== null || current !== null) {
+        throw new ForbiddenException(MARKER_TEACHER_ONLY);
+      }
+      return;
+    }
+    if (markerId === null) {
+      return;
+    }
+    const user = await this.userRepo.findById(markerId);
+    if (!(await this.markerQualifies(user, groupIds))) {
+      throw new BadRequestException(MARKER_NOT_ELIGIBLE);
+    }
+  }
 
   /**
    * Each work type needs its own payload, and a task missing it is a task
@@ -409,11 +512,37 @@ export class AssessmentAuthoringService {
       list.push({ ...target, groupName: nameOf.get(target.groupId) ?? '' });
       byTask.set(target.assessmentId, list);
     }
+    // Marker names and drift (`D-32`). Drift is judged against the task's
+    // WHOLE audience, read unrestricted here and never returned: the answer is
+    // one boolean about the task, the same for every viewer.
+    const marked = assessments.filter((a) => a.markerId !== null);
+    const markers = await this.userRepo.findByIds([
+      ...new Set(marked.map((a) => a.markerId as string)),
+    ]);
+    const markerById = new Map(markers.map((u) => [u.id, u]));
+    const fullAudience = await this.assessmentRepo.findTargetsForAssessments(
+      marked.map((a) => a.id),
+      null,
+    );
+    const drift = new Map<string, boolean>();
+    const reachCache = new Map<string, Promise<readonly string[] | null>>();
+    for (const task of marked) {
+      const audience = fullAudience
+        .filter((t) => t.assessmentId === task.id)
+        .map((t) => t.groupId);
+      const marker = markerById.get(task.markerId as string) ?? null;
+      drift.set(task.id, !(await this.markerQualifies(marker, audience, reachCache)));
+    }
+
     const now = new Date();
     return assessments.map((assessment) => ({
       ...assessment,
       targets: byTask.get(assessment.id) ?? [],
       visibilityState: visibilityStateOf(assessment, now),
+      markerName: assessment.markerId
+        ? (markerById.get(assessment.markerId)?.name ?? null)
+        : null,
+      markerDrift: drift.get(assessment.id) ?? false,
     }));
   }
 
@@ -426,6 +555,12 @@ export class AssessmentAuthoringService {
       await this.scope.assertAssigned(courseId, actor);
       this.assertWindow(input.availableFrom, input.availableTo, input.dueAt);
       await this.assertTargets(courseId, input.targets);
+      await this.assertMarker(
+        actor,
+        input.markerId,
+        null,
+        input.targets.map((t) => t.groupId),
+      );
       const workType = input.workType ?? 'file_upload';
       this.assertWorkTypePayload(workType, input);
 
@@ -462,7 +597,7 @@ export class AssessmentAuthoringService {
         externalUrl: workType === 'link' ? (input.externalUrl ?? null) : null,
         // The unit-6 settings. Later slices thread the rest of them through.
         visibility: input.visibility ?? 'published',
-        markerId: null,
+        markerId: input.markerId ?? null,
         allowResubmission: input.allowResubmission ?? true,
         submissionModes: [],
         draftId: input.draftId ?? null,
@@ -511,6 +646,7 @@ export class AssessmentAuthoringService {
           attachmentCount: assessment.attachments.length,
           allowResubmission: assessment.allowResubmission,
           visibility: assessment.visibility,
+          markerId: assessment.markerId,
         },
       });
       return { ...assessment, targets };
@@ -526,6 +662,17 @@ export class AssessmentAuthoringService {
       const before = await this.loadInScope(assessmentId, actor);
       if (update.visibility === 'hidden') {
         await this.assertMayHide(assessmentId);
+      }
+      if (update.markerId !== undefined) {
+        // Checked against the task's CURRENT audience; re-aiming it later does
+        // not revisit this (drift is displayed, not repaired - `D-32`).
+        const audience = await this.assessmentRepo.findTargets(assessmentId);
+        await this.assertMarker(
+          actor,
+          update.markerId,
+          before.markerId,
+          audience.map((t) => t.groupId),
+        );
       }
       this.assertWindow(
         update.availableFrom ?? before.availableFrom,
@@ -592,6 +739,7 @@ export class AssessmentAuthoringService {
           attachmentCount: before.attachments.length,
           allowResubmission: before.allowResubmission,
           visibility: before.visibility,
+          markerId: before.markerId,
         },
         after: {
           title: after.title,
@@ -601,6 +749,7 @@ export class AssessmentAuthoringService {
           attachmentCount: after.attachments.length,
           allowResubmission: after.allowResubmission,
           visibility: after.visibility,
+          markerId: after.markerId,
         },
       });
       return { ...after, targets: await this.assessmentRepo.findTargets(assessmentId) };

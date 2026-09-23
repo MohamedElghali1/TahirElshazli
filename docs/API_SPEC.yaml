@@ -549,10 +549,15 @@ components:
       allOf:
         - { $ref: '#/components/schemas/AuthoredAssessment' }
         - type: object
-          required: [targets, visibilityState]
+          required: [targets, visibilityState, markerName, markerDrift]
           properties:
             targets: { type: array, items: { $ref: '#/components/schemas/StaffTaskTarget' } }
             visibilityState: { $ref: '#/components/schemas/VisibilityState' }
+            markerName: { type: [string, 'null'] }
+            # `D-32`: the named marker no longer qualifies for the task's WHOLE
+            # audience. Displayed, never silently repaired. A fact about the
+            # task, identical for every viewer. False when no marker is named.
+            markerDrift: { type: boolean }
 
     # `POST /staff/courses/{courseId}/assessments`. The body is authoritative:
     # `draftId` records provenance and bumps the draft's `usedCount`, and the
@@ -589,6 +594,10 @@ components:
           items: { $ref: '#/components/schemas/Attachment' }
         allowResubmission: { type: boolean, default: true }
         visibility: { $ref: '#/components/schemas/TaskVisibility' }
+        # `D-32`. Null/omitted is "whoever opens it first". An assistant sending a
+        # non-null value is a 403. The named user must be the teacher, an admin,
+        # or an ACTIVE assistant who reaches every targeted group - else 400.
+        markerId: { type: [string, 'null'] }
 
     # `PATCH /staff/assessments/{assessmentId}`. Every field optional and never
     # null. `type`, `courseId` and `draftId` are not patchable.
@@ -616,6 +625,10 @@ components:
         allowResubmission: { type: boolean }
         # `hidden` on a task with any submission is a 409 (`D-28`).
         visibility: { $ref: '#/components/schemas/TaskVisibility' }
+        # `D-32`. Teacher/admin only: an assistant setting OR clearing a marker
+        # is a 403. Checked against the task's current audience (400); re-aiming
+        # the task later does not clear it.
+        markerId: { type: [string, 'null'] }
 
     # --- Marking -----------------------------------------------------------
     Annotation:
@@ -1440,6 +1453,9 @@ paths:
     patch:
       tags: [tasks]
       x-roles: [assistant, teacher, admin]
+      description: >
+        403 when an assistant sets or clears `markerId` (`D-32`) - the task is on
+        their screen, so the anti-enumeration 404 does not apply.
       requestBody:
         required: true
         content:
