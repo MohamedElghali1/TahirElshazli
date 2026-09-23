@@ -984,6 +984,19 @@ export interface AuthoredAssessment {
   targets: AssessmentTarget[];
 }
 
+/** A target on the staff task list, carrying its group's display name. */
+export interface StaffTaskTarget extends AssessmentTarget {
+  groupName: string;
+}
+
+/**
+ * One row of `GET /staff/tasks` (`TASK-6`). Group-grain: `targets` holds only
+ * the groups the caller reaches, so an assistant never sees an unheld cohort.
+ */
+export interface StaffTask extends Omit<AuthoredAssessment, 'targets'> {
+  targets: StaffTaskTarget[];
+}
+
 /** One targeted group, with the window override left out in the common case. */
 export interface AssessmentTargetInput {
   groupId: string;

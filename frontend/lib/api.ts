@@ -55,6 +55,7 @@ import type {
   PublicBlogPost,
   StaffBlogPost,
   AttachmentInput,
+  StaffTask,
   TaskDraft,
   TaskDraftUpdate,
   TaskDraftWrite,
@@ -651,6 +652,16 @@ export const api = {
       request<AuthoredAssessment[]>(`/staff/courses/${courseId}/assessments`, {
         token,
       }),
+
+    /**
+     * Every task the caller reaches, across courses (`TASK-6`). Group-grain:
+     * each row's `targets` are narrowed to the caller's groups. Every filter
+     * narrows; an unreachable course or group answers `[]`.
+     */
+    tasks: (
+      token: string,
+      filter: { courseId?: string; groupId?: string; search?: string } = {},
+    ) => request<StaffTask[]>(`/staff/tasks${qs(filter)}`, { token }),
 
     createAssessment: (
       token: string,

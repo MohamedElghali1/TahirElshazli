@@ -2010,4 +2010,117 @@ describe('Staff and admin API (e2e)', () => {
       expect(denied.body.message).toBe('Assessment not found');
     });
   });
+
+  describe('GET /staff/tasks is group-grain', () => {
+    const server = () => app.getHttpServer();
+    let group3: string;
+    let shared: string;
+    let onlyGroup3: string;
+
+    beforeAll(async () => {
+      group3 = (
+        await request(server())
+          .post('/admin/groups')
+          .set(bearer(adminToken))
+          .send({ name: 'E2E - tasks group 3', courseId: 'course-1' })
+          .expect(201)
+      ).body.id;
+      const base = {
+        type: 'homework',
+        availableFrom: '2026-01-01T00:00:00.000Z',
+        availableTo: '2099-01-01T00:00:00.000Z',
+        dueAt: '2098-01-01T00:00:00.000Z',
+        maxScore: 10,
+        allowedFileTypes: ['application/pdf'],
+        maxFileSizeBytes: 1048576,
+      };
+      shared = (
+        await request(server())
+          .post('/staff/courses/course-1/assessments')
+          .set(bearer(adminToken))
+          .send({ ...base, title: 'E2E shared task', targets: [{ groupId: 'group-1' }, { groupId: group3 }] })
+          .expect(201)
+      ).body.id;
+      onlyGroup3 = (
+        await request(server())
+          .post('/staff/courses/course-1/assessments')
+          .set(bearer(adminToken))
+          .send({ ...base, title: 'E2E group-3 task', targets: [{ groupId: group3 }] })
+          .expect(201)
+      ).body.id;
+    });
+    afterAll(async () => {
+      for (const id of [shared, onlyGroup3]) {
+        await request(server()).delete(`/staff/assessments/${id}`).set(bearer(adminToken));
+      }
+    });
+
+    it('refuses a student token', async () => {
+      await request(server()).get('/staff/tasks').set(bearer(studentToken)).expect(403);
+    });
+
+    it('requires a token', async () => {
+      await request(server()).get('/staff/tasks').expect(401);
+    });
+
+    it('gives an assistant who holds nothing []', async () => {
+      const res = await request(server()).get('/staff/tasks').set(bearer(unassignedTaToken)).expect(200);
+      expect(res.body).toEqual([]);
+    });
+
+    it('shows assistant-1 only tasks with a group-1 target, with the targets narrowed', async () => {
+      const res = await request(server()).get('/staff/tasks').set(bearer(assignedTaToken)).expect(200);
+      const ids = res.body.map((t: { id: string }) => t.id);
+      expect(ids).toContain(shared);
+      expect(ids).not.toContain(onlyGroup3);
+      const row = res.body.find((t: { id: string }) => t.id === shared);
+      expect(row.targets.map((t: { groupId: string }) => t.groupId)).toEqual(['group-1']);
+      expect(JSON.stringify(res.body)).not.toContain(group3);
+      for (const task of res.body) {
+        expect(task.targets.every((t: { groupId: string }) => t.groupId === 'group-1')).toBe(true);
+      }
+    });
+
+    it('answers an unheld groupId and an unknown one identically', async () => {
+      const unheld = await request(server())
+        .get(`/staff/tasks?groupId=${group3}`)
+        .set(bearer(assignedTaToken))
+        .expect(200);
+      const unknown = await request(server())
+        .get('/staff/tasks?groupId=group-nope')
+        .set(bearer(assignedTaToken))
+        .expect(200);
+      expect(unheld.body).toEqual([]);
+      expect(JSON.stringify(unheld.body) === JSON.stringify(unknown.body)).toBe(true);
+    });
+
+    it.each([
+      ['the teacher', () => adminToken],
+      ['the full admin', () => fullAdminToken],
+    ])('shows %s every task and every target', async (_label, token) => {
+      const res = await request(server()).get('/staff/tasks').set(bearer(token())).expect(200);
+      const ids = res.body.map((t: { id: string }) => t.id);
+      expect(ids).toEqual(expect.arrayContaining([shared, onlyGroup3]));
+      const row = res.body.find((t: { id: string }) => t.id === shared);
+      expect(row.targets.map((t: { groupId: string }) => t.groupId).sort()).toEqual(['group-1', group3].sort());
+      expect(row.targets.every((t: { groupName: string }) => t.groupName.length > 0)).toBe(true);
+    });
+
+    it('filters by courseId and search, and validates the query', async () => {
+      const course2 = await request(server())
+        .get('/staff/tasks?courseId=course-2')
+        .set(bearer(adminToken))
+        .expect(200);
+      expect(course2.body.every((t: { courseId: string }) => t.courseId === 'course-2')).toBe(true);
+      const found = await request(server())
+        .get('/staff/tasks?search=E2E%20group-3')
+        .set(bearer(adminToken))
+        .expect(200);
+      expect(found.body.map((t: { id: string }) => t.id)).toEqual([onlyGroup3]);
+      await request(server())
+        .get(`/staff/tasks?search=${'x'.repeat(121)}`)
+        .set(bearer(adminToken))
+        .expect(400);
+    });
+  });
 });

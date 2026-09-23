@@ -529,6 +529,25 @@ components:
         createdAt:   { type: string, format: date-time }
         targets:     { type: array, items: { $ref: '#/components/schemas/AssessmentTarget' } }
 
+    # A target on the staff task list, with its group's display name.
+    StaffTaskTarget:
+      allOf:
+        - { $ref: '#/components/schemas/AssessmentTarget' }
+        - type: object
+          required: [groupName]
+          properties:
+            groupName: { type: string }
+
+    # One row of `GET /staff/tasks`: every `AuthoredAssessment` field, with
+    # `targets` narrowed to the groups the caller reaches.
+    StaffTask:
+      allOf:
+        - { $ref: '#/components/schemas/AuthoredAssessment' }
+        - type: object
+          required: [targets]
+          properties:
+            targets: { type: array, items: { $ref: '#/components/schemas/StaffTaskTarget' } }
+
     # `POST /staff/courses/{courseId}/assessments`. The body is authoritative:
     # `draftId` records provenance and bumps the draft's `usedCount`, and the
     # server merges nothing from the draft (assumption A-2).
@@ -1489,16 +1508,35 @@ paths:
   /staff/tasks:
     get:
       tags: [tasks]
-      summary: Every task in scope, across groups
-      description: Backs the console's Tasks list. Today only a per-course read exists.
+      summary: Every task in scope, across courses - group-grain from birth
+      description: >
+        Backs the console's Tasks list (`TASK-6`). A task is listed only through a
+        target the caller reaches (`StaffScopeService.reachableGroupIds`), and each
+        row's `targets` are narrowed to those groups IN THE QUERY - an assistant
+        never receives an unheld group's id or name. Every filter narrows and none
+        addresses a resource: an unheld or unknown `groupId` and an unreachable
+        `courseId` all answer `200 []`. `search` is a case-insensitive literal
+        title substring (`%` and `_` are not wildcards). Ordered `dueAt` desc, id.
+        Not paged (two courses, ~20 tasks each). No per-row submission counts
+        (`D-30`).
       x-roles: [assistant, teacher, admin]
       parameters:
         - { name: courseId, in: query, schema: { $ref: '#/components/schemas/Id' } }
         - { name: groupId, in: query, schema: { $ref: '#/components/schemas/Id' } }
-        - { name: status, in: query, schema: { type: string, enum: [open, marking, marked] } }
+        - name: status
+          in: query
+          schema: { type: string, enum: [open, marking, marked] }
+          x-status: 'blocked (B-3) until slice 6k'
         - { name: search, in: query, schema: { type: string, maxLength: 120 } }
       responses:
-        '200': { description: OK }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/StaffTask' } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   # --- Marking ------------------------------------------------------------
   /staff/assessments/{assessmentId}/submissions:

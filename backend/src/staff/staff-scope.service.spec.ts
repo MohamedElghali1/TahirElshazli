@@ -294,4 +294,31 @@ describe('StaffScopeService', () => {
       ).toBe(false);
     });
   });
+
+  /**
+   * `reachableGroupIds` (unit 6, `TASK-6`). Additive: the seven contract cases
+   * above pass unmodified.
+   */
+  describe('reachableGroupIds', () => {
+    it('should be null for the teacher and for a full admin', async () => {
+      expect(await service.reachableGroupIds(ADMIN)).toBeNull();
+      expect(await service.reachableGroupIds(FULL_ADMIN)).toBeNull();
+    });
+
+    it('should be null for an all_groups assistant', async () => {
+      await scopeRepo.setScope('assistant-2', 'all_groups');
+      expect(await service.reachableGroupIds(UNASSIGNED_TA)).toBeNull();
+    });
+
+    it('should be exactly the held ids for an assigned_groups assistant', async () => {
+      expect(await service.reachableGroupIds(ASSIGNED_TA)).toEqual(['group-1']);
+      expect(await service.reachableGroupIds(UNASSIGNED_TA)).toEqual([]);
+    });
+
+    it('should fail closed to [] for an assistant with no scope row at all', async () => {
+      expect(
+        await service.reachableGroupIds({ id: 'assistant-9', role: 'assistant' }),
+      ).toEqual([]);
+    });
+  });
 });

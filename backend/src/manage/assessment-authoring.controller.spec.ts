@@ -61,6 +61,7 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
   let audit: AuditService;
   let groups: InMemoryGroupRepository;
   let drafts: TaskDraftRepository;
+  let scopes: InMemoryAssistantScopeRepository;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -108,6 +109,7 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
     audit = module.get(AuditService);
     groups = module.get(GROUP_REPOSITORY);
     drafts = module.get(TASK_DRAFT_REPOSITORY);
+    scopes = module.get(ASSISTANT_SCOPE_REPOSITORY);
   });
 
   const entries = async () => (await audit.find({ limit: 50 })).entries;
@@ -460,6 +462,86 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
         expect(denied).toBe(ASSESSMENT_NOT_FOUND);
         expect(denied === gone).toBe(true);
       }
+    });
+  });
+
+  /**
+   * `GET /staff/tasks` (`TASK-6`). Group-3 is a second course-1 cohort created
+   * here, not in the seeds: every seeded course has exactly one group, which is
+   * why course grain and group grain are indistinguishable in the fixtures.
+   */
+  describe('listForStaff is group-grain (TASK-6)', () => {
+    let group3: string;
+    let shared: string;
+    let onlyGroup3: string;
+
+    beforeEach(async () => {
+      group3 = (
+        await groups.create({
+          name: 'Chemistry — Group 3',
+          teacherId: 'teacher-1',
+          courseId: 'course-1',
+          assistantId: null,
+          meets: null,
+          room: null,
+        })
+      ).id;
+      shared = (
+        await authoring.create('course-1', ADMIN, {
+          ...TASK,
+          title: 'Shared task',
+          targets: [{ groupId: 'group-1' }, { groupId: group3 }],
+        })
+      ).id;
+      onlyGroup3 = (
+        await authoring.create('course-1', ADMIN, {
+          ...TASK,
+          title: 'Group 3 only',
+          targets: [{ groupId: group3 }],
+        })
+      ).id;
+    });
+
+    it('an assigned assistant sees a task set for group-1 and group-3 with only group-1 in targets', async () => {
+      const list = await authoring.listForStaff(TA, {});
+      const row = list.find((t) => t.id === shared);
+      expect(row?.targets.map((t) => t.groupId)).toEqual(['group-1']);
+      expect(row?.targets[0]?.groupName).toBeTruthy();
+      // No trace of the unheld group anywhere in the response.
+      expect(JSON.stringify(list)).not.toContain(group3);
+    });
+
+    it('a task set only for an unheld group is absent', async () => {
+      const ids = (await authoring.listForStaff(TA, {})).map((t) => t.id);
+      expect(ids).not.toContain(onlyGroup3);
+    });
+
+    it('a groupId filter outside the held set returns [] exactly as an unknown groupId does', async () => {
+      const unheld = await authoring.listForStaff(TA, { groupId: group3 });
+      const unknown = await authoring.listForStaff(TA, { groupId: 'group-nope' });
+      expect(unheld).toEqual([]);
+      expect(unheld).toEqual(unknown);
+      // And an unreachable course narrows the same way.
+      expect(await authoring.listForStaff(TA, { courseId: 'course-2' })).toEqual([]);
+    });
+
+    it('admin and all_groups see every task and every target', async () => {
+      for (const actor of [ADMIN, { id: 'admin-1', role: 'admin' }]) {
+        const row = (await authoring.listForStaff(actor, {})).find((t) => t.id === shared);
+        expect(row?.targets.map((t) => t.groupId).sort()).toEqual(['group-1', group3].sort());
+      }
+      await scopes.setScope('assistant-2', 'all_groups');
+      const everything = await authoring.listForStaff(OTHER_TA, {});
+      expect(everything.map((t) => t.id)).toEqual(expect.arrayContaining([shared, onlyGroup3]));
+    });
+
+    it('an assistant who holds nothing sees nothing', async () => {
+      expect(await authoring.listForStaff(OTHER_TA, {})).toEqual([]);
+    });
+
+    it('filters by search, literally', async () => {
+      const found = await authoring.listForStaff(ADMIN, { search: 'group 3' });
+      expect(found.map((t) => t.id)).toEqual([onlyGroup3]);
     });
   });
 });

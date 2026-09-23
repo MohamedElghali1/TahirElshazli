@@ -32,7 +32,9 @@ import type { LiveSession } from '../live-sessions/interfaces/live-session-repos
 import {
   AssessmentAuthoringService,
   type AuthoredAssessment,
+  type StaffTask,
 } from './assessment-authoring.service.js';
+import { StaffTasksQueryDto } from './dto/staff-tasks-query.dto.js';
 import { GradeSubmissionDto } from './dto/grade-submission.dto.js';
 import { ListGradingQueueQueryDto } from './dto/queries.dto.js';
 import {
@@ -153,6 +155,23 @@ export class StaffManageController {
    * Scoped like everything else here: the course in the path goes through
    * `StaffScopeService` before anything is read or written.
    */
+  /**
+   * Every task the caller reaches, across courses (`TASK-6`). Group-grain: a
+   * task appears through a held target, and its targets are narrowed to held
+   * groups - unlike the course-grained per-course list below (`AUTH-6`).
+   */
+  @Get('tasks')
+  async listTasks(
+    @Query() query: StaffTasksQueryDto,
+    @Request() req: { user: JwtPayload },
+  ): Promise<StaffTask[]> {
+    return this.authoring.listForStaff(this.actor(req), {
+      courseId: query.courseId,
+      groupId: query.groupId,
+      search: query.search,
+    });
+  }
+
   @Get('courses/:courseId/assessments')
   async listAssessments(
     @Param('courseId') courseId: string,

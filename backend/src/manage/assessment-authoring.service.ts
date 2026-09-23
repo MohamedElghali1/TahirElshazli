@@ -46,6 +46,26 @@ export interface AuthoredAssessment extends StoredAssessment {
   targets: AssessmentTarget[];
 }
 
+/** A target on the staff task list, carrying its group's display name. */
+export interface StaffTaskTarget extends AssessmentTarget {
+  groupName: string;
+}
+
+/**
+ * One row of `GET /staff/tasks` (`TASK-6`): every stored field, plus the
+ * targets **the caller reaches** - an assistant never receives an unheld
+ * group's id or name.
+ */
+export interface StaffTask extends StoredAssessment {
+  targets: StaffTaskTarget[];
+}
+
+export interface StaffTaskListFilter {
+  courseId?: string;
+  groupId?: string;
+  search?: string;
+}
+
 export interface CreateAssessmentInput {
   title: string;
   description: string;
@@ -288,6 +308,59 @@ export class AssessmentAuthoringService {
     return assessments.map((assessment, index) => ({
       ...assessment,
       targets: targets[index],
+    }));
+  }
+
+  /**
+   * The console's task list, across courses (`TASK-6`). **Group-grain from
+   * birth**: a task is listed only through a target the caller reaches, and its
+   * targets are narrowed to those same groups - both restrictions in the query,
+   * not a filter over a wider read.
+   *
+   * Every filter narrows and none addresses a resource (assumption A-4): an
+   * unheld `groupId`, an unknown one and an unreachable `courseId` all answer
+   * `[]`, identically.
+   */
+  async listForStaff(
+    actor: StaffActor,
+    filter: StaffTaskListFilter,
+  ): Promise<StaffTask[]> {
+    const groupIds = await this.scope.reachableGroupIds(actor);
+    if (
+      filter.groupId !== undefined &&
+      groupIds !== null &&
+      !groupIds.includes(filter.groupId)
+    ) {
+      // Outside the held set: the same empty answer an unknown group gets from
+      // the query below, without asking the database to prove it.
+      return [];
+    }
+    const assessments = await this.assessmentRepo.findForStaff({
+      groupIds,
+      courseId: filter.courseId,
+      groupId: filter.groupId,
+      search: filter.search,
+    });
+    // The SAME `groupIds`, so the audience shown is the audience reached.
+    const targets = await this.assessmentRepo.findTargetsForAssessments(
+      assessments.map((a) => a.id),
+      groupIds,
+    );
+    // One batch read for the names (a repository does not join another
+    // aggregate). Every id here already passed the reach restriction.
+    const groups = await this.groupRepo.findByIds([
+      ...new Set(targets.map((t) => t.groupId)),
+    ]);
+    const nameOf = new Map(groups.map((g) => [g.id, g.name]));
+    const byTask = new Map<string, StaffTaskTarget[]>();
+    for (const target of targets) {
+      const list = byTask.get(target.assessmentId) ?? [];
+      list.push({ ...target, groupName: nameOf.get(target.groupId) ?? '' });
+      byTask.set(target.assessmentId, list);
+    }
+    return assessments.map((assessment) => ({
+      ...assessment,
+      targets: byTask.get(assessment.id) ?? [],
     }));
   }
 

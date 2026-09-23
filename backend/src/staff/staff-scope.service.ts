@@ -249,6 +249,30 @@ export class StaffScopeService {
    * `GROUP_NOT_FOUND` on both paths rather than have two files owning one
    * message.
    */
+  /**
+   * Every group this actor may reach, or `null` when they are unrestricted.
+   *
+   * Additive (unit 6, `TASK-6`), and a predicate-free read for the same reason
+   * `mayReachGroup` is one: the caller owns every message, so a refusal can
+   * stay byte-identical to a genuine miss. It exists for **list** reads that
+   * must restrict in the query rather than ask one group at a time - `GET
+   * /staff/tasks` passes the result straight into SQL.
+   *
+   * `null` for an admin or an `all_groups` assistant; the held ids for
+   * `assigned_groups`; and **`[]` for a missing scope row** - fail closed, as
+   * `scopeFor` does.
+   */
+  async reachableGroupIds(actor: StaffActor): Promise<readonly string[] | null> {
+    if (this.isAdmin(actor)) {
+      return null;
+    }
+    const held = await this.heldGroupIds(actor);
+    if (held === null) {
+      return [];
+    }
+    return held.unrestricted ? null : held.assignments.map((a) => a.groupId);
+  }
+
   async mayReachGroup(groupId: string, actor: StaffActor): Promise<boolean> {
     if (this.isAdmin(actor)) {
       return true;
