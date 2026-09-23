@@ -678,6 +678,36 @@ components:
         kind:     { $ref: '#/components/schemas/AnnotationKind' }
         text:     { type: string, maxLength: 2000 }
 
+    # One grading row: the course queue's item, and what `/grade` and `/return`
+    # answer (unit 7). `status` is `awaiting | graded` - a saved mark is graded;
+    # `returnedAt` says whether the student can see it (`MARK-2`).
+    GradingQueueItem:
+      type: object
+      required: [submissionId, assessmentId, assessmentTitle, assessmentType, maxScore,
+                 studentId, studentName, studentEmail, submittedAt, lastSubmittedAt,
+                 fileUrl, answerText, annotatedFileUrl, score, feedback, correctedAt,
+                 returnedAt, status, isLate]
+      properties:
+        submissionId:     { $ref: '#/components/schemas/Id' }
+        assessmentId:     { $ref: '#/components/schemas/Id' }
+        assessmentTitle:  { type: string }
+        assessmentType:   { $ref: '#/components/schemas/AssessmentType' }
+        maxScore:         { type: integer }
+        studentId:        { $ref: '#/components/schemas/Id' }
+        studentName:      { type: string }
+        studentEmail:     { type: string }
+        submittedAt:      { type: string, format: date-time }
+        lastSubmittedAt:  { type: string, format: date-time }
+        fileUrl:          { type: [string, 'null'] }
+        answerText:       { type: [string, 'null'] }
+        annotatedFileUrl: { type: [string, 'null'] }
+        score:            { type: [integer, 'null'] }
+        feedback:         { type: [string, 'null'] }
+        correctedAt:      { type: [string, 'null'], format: date-time, description: When the mark was saved. }
+        returnedAt:       { type: [string, 'null'], format: date-time, description: When it was handed back; null while saved-not-returned. }
+        status:           { type: string, enum: [awaiting, graded] }
+        isLate:           { type: boolean }
+
     # --- Sessions ----------------------------------------------------------
     Session:
       type: object
@@ -1595,6 +1625,11 @@ paths:
         (`D-29`), each without the `audience` field. A `hidden` task (`D-28`) is a
         404 whose body is identical to a nonexistent id. `canSubmit` is false once
         a one-shot task (`allowResubmission: false`) has a submission.
+        Unit 7 (`MARK-2`): `submission.returnedAt` is new, and `submission.score`,
+        `submission.feedback`, `submission.annotatedFileUrl`, the item's `score`
+        and the `corrected` status are all null / withheld until the work is
+        returned. A saved-not-returned paper reads `submitted` with `canSubmit:
+        false` (the existing freeze) and a non-null `correctedAt`.
       x-roles: [student]
       parameters:
         - { name: assessmentId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
@@ -1738,27 +1773,66 @@ paths:
       responses:
         '204': { description: Deleted }
 
+  /staff/submissions/{submissionId}/grade:
+    post:
+      tags: [marking]
+      summary: Save a mark (does NOT return it)
+      description: >
+        `[MODIFY]` (unit 7). Saves the score and feedback and stamps `correctedAt`;
+        the student sees none of it until `/return` (`MARK-2`). A re-grade after
+        return is allowed and visible immediately (assumption A-4); `returnedAt`
+        is never touched here. Group grain (`D-44`): the caller must reach a group
+        that the task was set for AND the student sits in - otherwise a 404 whose
+        body is byte-identical to a missing submission (`Submission not found`).
+        The first saved mark on a task with no marker names the caller as its
+        marker when they qualify (`D-43`), audited as `assessment.updated`.
+      x-roles: [assistant, teacher, admin]
+      parameters:
+        - { name: submissionId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [score]
+              properties:
+                score:            { type: integer, minimum: 0, description: 'At most the task''s maxScore (400 otherwise).' }
+                feedback:         { type: string, maxLength: 4000 }
+                annotatedFileUrl: { type: string, format: uri, maxLength: 2048 }
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GradingQueueItem' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-audit: submission.graded
+
   /staff/submissions/{submissionId}/return:
     post:
       tags: [marking]
       summary: Return the marked paper to the student
       description: >
-        Distinct from saving a mark. Saving records the score and annotations;
-        returning is what makes them visible. The original file is never
-        replaced — the annotated copy sits alongside it.
+        Distinct from saving a mark (`MARK-2`). Returning is what makes the score,
+        feedback, annotated copy, annotations and `corrected` status visible to
+        the student. The original file is never replaced. 409 when the paper has
+        no saved mark. Returning an already-returned paper is a 200 no-op: the
+        first `returnedAt` is kept and no second audit entry is written. No
+        request body - `includeInReport` is deferred to the weekly-reports unit
+        (assumption A-5). Group grain, with the same byte-identical 404 as `/grade`.
       x-roles: [assistant, teacher, admin]
       parameters:
         - { name: submissionId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                includeInReport: { type: boolean, default: true }
       responses:
-        '200': { description: Returned }
+        '200':
+          description: Returned
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GradingQueueItem' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
       x-audit: submission.returned
 
   # --- Mark book ----------------------------------------------------------

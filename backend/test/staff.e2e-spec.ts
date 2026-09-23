@@ -2755,4 +2755,124 @@ describe('Staff and admin API (e2e)', () => {
       await request(app.getHttpServer()).delete(`/staff/assessments/${task.body.id}`).set(bearer(adminToken)).expect(204);
     });
   });
+
+  /**
+   * Unit 7 fixtures: group-3 on course-1 holding student-2 (who also sits in
+   * group-1), a task set for group-1 with student-1's submission, and a task
+   * set for group-3 ONLY with student-2's. assistant-1 holds group-1: the
+   * group-3 paper is out of their reach even though its student sits in a
+   * group they hold, because the task was never set for that group.
+   */
+  const unit7 = {
+    group3: '',
+    g1Task: '',
+    g3Task: '',
+    mine: '',
+    theirs: '',
+    student2Token: '',
+  };
+  const unit7Task = {
+    type: 'homework',
+    availableFrom: '2026-01-01T00:00:00.000Z',
+    availableTo: '2099-01-01T00:00:00.000Z',
+    dueAt: '2098-01-01T00:00:00.000Z',
+    maxScore: 20,
+    allowedFileTypes: ['application/pdf'],
+    maxFileSizeBytes: 1048576,
+  };
+  async function unit7Setup(label: string) {
+    const server = app.getHttpServer();
+    const group3 = (
+      await request(server).post('/admin/groups').set(bearer(adminToken))
+        .send({ name: `E2E unit 7 group 3 (${label})`, courseId: 'course-1' }).expect(201)
+    ).body.id as string;
+    await request(server).post(`/staff/groups/${group3}/members`).set(bearer(adminToken))
+      .send({ studentId: 'student-2' }).expect(201);
+    // Earlier describes in this file remove both students from group-1 (AUTH-3,
+    // D-10); placing them back is idempotent, and makes the fixture explicit.
+    for (const studentId of ['student-1', 'student-2']) {
+      await request(server).post('/staff/groups/group-1/members').set(bearer(adminToken))
+        .send({ studentId }).expect(201);
+    }
+    const g1Task = (
+      await request(server).post('/staff/courses/course-1/assessments').set(bearer(adminToken))
+        .send({ ...unit7Task, title: `E2E unit 7 group-1 task (${label})`, targets: [{ groupId: 'group-1' }] }).expect(201)
+    ).body.id as string;
+    const g3Task = (
+      await request(server).post('/staff/courses/course-1/assessments').set(bearer(adminToken))
+        .send({ ...unit7Task, title: `E2E unit 7 group-3 task (${label})`, targets: [{ groupId: group3 }] }).expect(201)
+    ).body.id as string;
+    const student2Token = (
+      await request(server).post('/auth/login').send({ email: 'student2@example.com', password: 'password123' }).expect(200)
+    ).body.accessToken as string;
+    const mine = (
+      await request(server).post(`/assessments/${g1Task}/submissions`).set(bearer(studentToken))
+        .send({ answerText: 'student-1 work' }).expect(201)
+    ).body.id as string;
+    const theirs = (
+      await request(server).post(`/assessments/${g3Task}/submissions`).set(bearer(student2Token))
+        .send({ answerText: 'student-2 work' }).expect(201)
+    ).body.id as string;
+    Object.assign(unit7, { group3, g1Task, g3Task, mine, theirs, student2Token });
+  }
+
+  describe('unit 7: return, and saved is not returned (MARK-2)', () => {
+    const server = () => app.getHttpServer();
+    beforeAll(() => unit7Setup('return'));
+
+    it('refuses to return unmarked work with 409', async () => {
+      const res = await request(server()).post(`/staff/submissions/${unit7.mine}/return`).set(bearer(adminToken)).expect(409);
+      expect(res.body.message).toBe('Enter a mark before returning this work.');
+    });
+
+    it('404s an out-of-scope paper with a body equal to a missing one, for both scoped assistants', async () => {
+      const gone = await request(server()).post('/staff/submissions/nope/return').set(bearer(assignedTaToken)).expect(404);
+      const unheld = await request(server()).post(`/staff/submissions/${unit7.theirs}/return`).set(bearer(assignedTaToken)).expect(404);
+      const nothing = await request(server()).post(`/staff/submissions/${unit7.mine}/return`).set(bearer(unassignedTaToken)).expect(404);
+      expect(gone.body.message).toBe('Submission not found');
+      expect(JSON.stringify(unheld.body) === JSON.stringify(gone.body)).toBe(true);
+      expect(JSON.stringify(nothing.body) === JSON.stringify(gone.body)).toBe(true);
+    });
+
+    it('refuses a student token', async () => {
+      await request(server()).post(`/staff/submissions/${unit7.mine}/return`).set(bearer(studentToken)).expect(403);
+    });
+
+    it('proves the whole path: a saved mark is invisible to the student until returned, then visible and audited', async () => {
+      await request(server()).post(`/staff/submissions/${unit7.mine}/grade`).set(bearer(assignedTaToken))
+        .send({ score: 18, feedback: 'Well argued' }).expect(200);
+
+      const before = await request(server()).get(`/assessments/${unit7.g1Task}`).set(bearer(studentToken)).expect(200);
+      expect(before.body.status).toBe('submitted');
+      expect(before.body.score).toBeNull();
+      expect(before.body.submission).toMatchObject({ score: null, feedback: null, returnedAt: null });
+      const listBefore = await request(server()).get('/courses/course-1/assessments').set(bearer(studentToken)).expect(200);
+      expect(listBefore.body.find((a: { id: string }) => a.id === unit7.g1Task)).toMatchObject({ status: 'submitted', score: null });
+
+      const returned = await request(server()).post(`/staff/submissions/${unit7.mine}/return`).set(bearer(assignedTaToken)).expect(200);
+      expect(returned.body.returnedAt).not.toBeNull();
+      expect(returned.body).toMatchObject({ score: 18, status: 'graded' });
+
+      const after = await request(server()).get(`/assessments/${unit7.g1Task}`).set(bearer(studentToken)).expect(200);
+      expect(after.body.status).toBe('corrected');
+      expect(after.body.submission).toMatchObject({ score: 18, feedback: 'Well argued', returnedAt: returned.body.returnedAt });
+      const listAfter = await request(server()).get('/courses/course-1/assessments').set(bearer(studentToken)).expect(200);
+      expect(listAfter.body.find((a: { id: string }) => a.id === unit7.g1Task)).toMatchObject({ status: 'corrected', score: 18 });
+
+      // A second return is a no-op: same time, and no second entry.
+      const again = await request(server()).post(`/staff/submissions/${unit7.mine}/return`).set(bearer(adminToken)).expect(200);
+      expect(again.body.returnedAt).toBe(returned.body.returnedAt);
+
+      const log = await request(server()).get(`/admin/audit-log?action=submission.returned&targetId=${unit7.mine}`)
+        .set(bearer(adminToken)).expect(200);
+      expect(log.body.entries).toHaveLength(1);
+      expect(log.body.entries[0]).toMatchObject({ actorId: 'assistant-1', actorRole: 'assistant', targetType: 'assessment_submission' });
+    });
+
+    it('lets the full admin return any paper', async () => {
+      await request(server()).post(`/staff/submissions/${unit7.theirs}/grade`).set(bearer(fullAdminToken)).send({ score: 9 }).expect(200);
+      const res = await request(server()).post(`/staff/submissions/${unit7.theirs}/return`).set(bearer(fullAdminToken)).expect(200);
+      expect(res.body.returnedAt).not.toBeNull();
+    });
+  });
 });

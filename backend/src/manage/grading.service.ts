@@ -38,9 +38,51 @@ export interface GradingQueueItem {
   score: number | null;
   feedback: string | null;
   correctedAt: string | null;
+  /**
+   * When the mark was handed back to the student (`MARK-2`); null while it is
+   * saved but unseen. `status` stays `awaiting | graded` - saved is graded.
+   */
+  returnedAt: string | null;
   status: GradingStatus;
   /** Judged on the content actually being marked, not the first placeholder. */
   isLate: boolean;
+}
+
+/**
+ * One submission as a grading row. Shared by the course queue, `/grade` and
+ * `/return` so the three answer one shape (`API_SPEC.yaml` `GradingQueueItem`).
+ */
+export function toGradingQueueItem(
+  submission: StoredSubmission,
+  assessment: StoredAssessment,
+  student: { name: string; email: string } | null,
+): GradingQueueItem {
+  return {
+    submissionId: submission.id,
+    assessmentId: assessment.id,
+    assessmentTitle: assessment.title,
+    assessmentType: assessment.type,
+    maxScore: assessment.maxScore,
+    studentId: submission.studentId,
+    studentName: student?.name ?? 'Unknown',
+    studentEmail: student?.email ?? '',
+    submittedAt: submission.submittedAt,
+    lastSubmittedAt: submission.lastSubmittedAt,
+    fileUrl: submission.fileUrl,
+    answerText: submission.answerText,
+    annotatedFileUrl: submission.annotatedFileUrl,
+    score: submission.score,
+    feedback: submission.feedback,
+    correctedAt: submission.correctedAt,
+    returnedAt: submission.returnedAt,
+    status: submission.correctedAt === null ? 'awaiting' : 'graded',
+    // Server-derived, like every other status on this platform (§5.10).
+    // Measured against lastSubmittedAt so a placeholder filed before the
+    // deadline and swapped afterwards still reads as late.
+    isLate:
+      new Date(submission.lastSubmittedAt).getTime() >
+      new Date(assessment.dueAt).getTime(),
+  };
 }
 
 /**
@@ -112,37 +154,9 @@ export class GradingService {
       const student = studentById.get(submission.studentId);
       if (!assessment || !student) return [];
 
-      const status: GradingStatus =
-        submission.correctedAt === null ? 'awaiting' : 'graded';
-      if (filter?.status && filter.status !== status) return [];
-
-      return [
-        {
-          submissionId: submission.id,
-          assessmentId: assessment.id,
-          assessmentTitle: assessment.title,
-          assessmentType: assessment.type,
-          maxScore: assessment.maxScore,
-          studentId: student.id,
-          studentName: student.name,
-          studentEmail: student.email,
-          submittedAt: submission.submittedAt,
-          lastSubmittedAt: submission.lastSubmittedAt,
-          fileUrl: submission.fileUrl,
-          answerText: submission.answerText,
-          annotatedFileUrl: submission.annotatedFileUrl,
-          score: submission.score,
-          feedback: submission.feedback,
-          correctedAt: submission.correctedAt,
-          status,
-          // Server-derived, like every other status on this platform (§5.10).
-          // Measured against lastSubmittedAt so a placeholder filed before the
-          // deadline and swapped afterwards still reads as late.
-          isLate:
-            new Date(submission.lastSubmittedAt).getTime() >
-            new Date(assessment.dueAt).getTime(),
-        },
-      ];
+      const item = toGradingQueueItem(submission, assessment, student);
+      if (filter?.status && filter.status !== item.status) return [];
+      return [item];
     });
 
     return {
@@ -240,28 +254,7 @@ export class GradingService {
       });
 
       const student = await this.userRepo.findById(graded.studentId);
-      return {
-        submissionId: graded.id,
-        assessmentId: assessment.id,
-        assessmentTitle: assessment.title,
-        assessmentType: assessment.type,
-        maxScore: assessment.maxScore,
-        studentId: graded.studentId,
-        studentName: student?.name ?? 'Unknown',
-        studentEmail: student?.email ?? '',
-        submittedAt: graded.submittedAt,
-        lastSubmittedAt: graded.lastSubmittedAt,
-        fileUrl: graded.fileUrl,
-        answerText: graded.answerText,
-        annotatedFileUrl: graded.annotatedFileUrl,
-        score: graded.score,
-        feedback: graded.feedback,
-        correctedAt: graded.correctedAt,
-        status: graded.correctedAt === null ? 'awaiting' : 'graded',
-        isLate:
-          new Date(graded.lastSubmittedAt).getTime() >
-          new Date(assessment.dueAt).getTime(),
-      };
+      return toGradingQueueItem(graded, assessment, student);
     });
   }
 }

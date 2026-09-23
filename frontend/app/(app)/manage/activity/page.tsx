@@ -24,6 +24,8 @@ const ACTION_LABEL: Record<AuditAction, string> = {
   'course_staff.assigned': 'assigned an assistant',
   'course_staff.unassigned': 'removed an assistant',
   'submission.graded': 'graded a submission',
+  'submission.returned': 'returned marked work',
+  'submission.annotated': 'marked up a submission',
   'recording.created': 'published a recording',
   'recording.updated': 'edited a recording',
   'recording.deleted': 'deleted a recording',
@@ -74,6 +76,10 @@ const ACTION_TONE: Record<AuditAction, TagTone> = {
   'course_staff.assigned': 'green',
   'course_staff.unassigned': 'red',
   'submission.graded': 'blue',
+  // Returning is the moment a student sees a mark - green, like other
+  // actions that make something reach students.
+  'submission.returned': 'green',
+  'submission.annotated': 'blue',
   'recording.created': 'green',
   'recording.updated': 'amber',
   'recording.deleted': 'red',

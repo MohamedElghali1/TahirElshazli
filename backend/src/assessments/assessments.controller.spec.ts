@@ -23,6 +23,8 @@ const OTHER_STUDENT = {
 
 describe('AssessmentsController', () => {
   let controller: AssessmentsController;
+  let service: AssessmentsService;
+  let repo: InMemoryAssessmentRepository;
 
   beforeEach(async () => {
     // Status is derived from "now" vs. the stored window, so pin the clock.
@@ -56,6 +58,8 @@ describe('AssessmentsController', () => {
       .compile();
 
     controller = module.get<AssessmentsController>(AssessmentsController);
+    service = module.get(AssessmentsService);
+    repo = module.get(ASSESSMENT_REPOSITORY);
   });
 
   afterEach(() => {
@@ -300,6 +304,77 @@ describe('AssessmentsController', () => {
           STRANGER,
         ),
       ).rejects.toThrow();
+    });
+  });
+  /**
+   * `MARK-2`: a saved mark is invisible to the student until it is returned.
+   * One predicate (`isReturnedToStudent`) over the five reads that used to key
+   * on `correctedAt`; each read is asserted here (unit-7 plan, Risk 1).
+   */
+  describe('saved is not returned (MARK-2)', () => {
+    const saveMark = () =>
+      repo.gradeSubmission('sub-2', { score: 17, feedback: 'Nearly there', annotatedFileUrl: 'https://storage.example.com/annotated/moles.pdf' });
+
+    it('hides the score, feedback, annotated copy and corrected status until return', async () => {
+      await saveMark();
+      const list = await controller.listAssessments('course-1', {}, STUDENT);
+      const row = list.find((a) => a.id === 'assess-4')!;
+      expect(row.status).toBe('submitted');
+      expect(row.score).toBeNull();
+      expect(row.scorePercentage).toBeNull();
+
+      const detail = await controller.getAssessmentDetail('assess-4', STUDENT);
+      expect(detail.status).toBe('submitted');
+      expect(detail.score).toBeNull();
+      expect(detail.submission).toMatchObject({
+        score: null,
+        feedback: null,
+        annotatedFileUrl: null,
+        returnedAt: null,
+      });
+      // The freeze is unchanged (A-2): a saved mark still closes resubmission,
+      // and `correctedAt` is what lets the page say the teacher is marking it.
+      expect(detail.canSubmit).toBe(false);
+      expect(detail.submission!.correctedAt).not.toBeNull();
+
+      const performance = await service.getPerformanceEntries('course-1', 'student-1');
+      const entry = performance.find((e) => e.assessmentId === 'assess-4')!;
+      expect(entry.score).toBeNull();
+      expect(entry.status).toBe('submitted');
+    });
+
+    it('shows all of it once returned', async () => {
+      await saveMark();
+      await repo.returnSubmission('sub-2');
+
+      const list = await controller.listAssessments('course-1', {}, STUDENT);
+      expect(list.find((a) => a.id === 'assess-4')).toMatchObject({ status: 'corrected', score: 17 });
+
+      const detail = await controller.getAssessmentDetail('assess-4', STUDENT);
+      expect(detail.submission).toMatchObject({
+        score: 17,
+        feedback: 'Nearly there',
+        annotatedFileUrl: 'https://storage.example.com/annotated/moles.pdf',
+      });
+      expect(detail.submission!.returnedAt).not.toBeNull();
+
+      const performance = await service.getPerformanceEntries('course-1', 'student-1');
+      expect(performance.find((e) => e.assessmentId === 'assess-4')).toMatchObject({ score: 17, status: 'corrected' });
+    });
+
+    it('does not show feedback typed before a mark exists (it was unconditional before unit 7)', async () => {
+      // Force the pre-unit-7 shape: feedback stored, nothing returned.
+      const stored = await repo.findSubmission('assess-4', 'student-1');
+      stored!.feedback = 'draft note';
+      const detail = await controller.getAssessmentDetail('assess-4', STUDENT);
+      expect(detail.submission!.feedback).toBeNull();
+    });
+
+    it('keeps every fixture mark that predates the split visible (019 backfill parity)', async () => {
+      const detail = await controller.getAssessmentDetail('assess-3', STUDENT);
+      expect(detail.status).toBe('corrected');
+      expect(detail.submission).toMatchObject({ score: 35 });
+      expect(detail.submission!.returnedAt).not.toBeNull();
     });
   });
 });

@@ -12,6 +12,9 @@ import { AdminAssistantsService } from './admin-assistants.service.js';
 import { AssessmentAuthoringService } from './assessment-authoring.service.js';
 import { WorkAnalyticsController } from './work-analytics.controller.js';
 import { WorkAnalyticsGateService } from './work-analytics-gate.service.js';
+import { MarkingController } from './marking.controller.js';
+import { MarkingService } from './marking.service.js';
+import { SubmissionAccessService } from './submission-access.service.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { StaffModule } from '../staff/staff.module.js';
 import { CoursesModule } from '../courses/courses.module.js';
@@ -68,6 +71,7 @@ import { repositoryProvider } from '../database/repository.provider.js';
     AdminManageController,
     WorkAnalyticsController,
     TaskDraftsController,
+    MarkingController,
   ],
   providers: [
     ManageService,
@@ -95,6 +99,11 @@ import { repositoryProvider } from '../database/repository.provider.js';
     // before it can be scoped on - one service rather than four lines repeated
     // per handler (CLAUDE.md §5.11).
     WorkAnalyticsGateService,
+    // Marking (unit 7). The annotation repository is NOT provided here: it
+    // comes from `AssessmentsModule`, which the student read needs it in too
+    // (assumption A-13).
+    SubmissionAccessService,
+    MarkingService,
     // The draft library (`TASK-2`), and the one repository this module owns.
     TaskDraftsService,
     InMemoryTaskDraftRepository,

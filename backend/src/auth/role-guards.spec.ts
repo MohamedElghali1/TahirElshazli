@@ -118,6 +118,10 @@ const EXPECTED: Record<string, readonly Role[]> = {
   // The draft library (`TASK-2`, unit 6). Assistant-reachable by
   // `AUTHORIZATION_MODEL.md` §3; scoped by course reach in the service.
   TaskDraftsController: STAFF_ALL,
+  // Marking (unit 7): return, the per-task queue, annotations. Assistants
+  // "grade, annotate, return" (`AUTHORIZATION_MODEL.md` §3); every route is
+  // group-grain in `SubmissionAccessService` / `MarkingService`.
+  MarkingController: STAFF_ALL,
   UploadsController: STAFF_ALL,
   WorkAnalyticsController: STAFF_ALL,
 
@@ -152,7 +156,8 @@ describe('the authorization boundary', () => {
     // `AdminCoursesController` (`DOM-5`) was the thirtieth; `AdminStaffController`
     // left with `course_staff_assignments` (`AUTH-2`), which is a net -1.
     // `TaskDraftsController` (`TASK-2`, unit 6) is the thirtieth again.
-    expect(CONTROLLERS).toHaveLength(30);
+    // `MarkingController` (unit 7, `MARK-1`/`MARK-2`/`MARK-3`) is the 31st.
+    expect(CONTROLLERS).toHaveLength(31);
     const named = CONTROLLERS.map((c) => c.name);
     expect(new Set(named).size).toBe(named.length);
     for (const name of [
@@ -162,7 +167,7 @@ describe('the authorization boundary', () => {
     ]) {
       expect(named).toContain(name);
     }
-    expect(Object.keys(EXPECTED)).toHaveLength(26);
+    expect(Object.keys(EXPECTED)).toHaveLength(27);
   });
 
   describe('@Roles, read back off the decorator', () => {

@@ -25,6 +25,13 @@ export type AuditAction =
   // The first TA mutation the log covers. §5.4 names grading explicitly, and
   // it is the action a student is most likely to dispute.
   | 'submission.graded'
+  // Marking (unit 7). `returned` is the moment a student can see a mark
+  // (`MARK-2`) - "who handed this back, and when" is the question a disputed
+  // mark turns on. `annotated` covers create, edit and erase of a mark on the
+  // paper (assumption A-12): the before/after pair says which, and the target
+  // is the submission, so a paper's whole marking history is one filter.
+  | 'submission.returned'
+  | 'submission.annotated'
   // Teacher-only writes (§2.2 grants a TA materials, not recordings), but
   // logged on the same terms: an admin action that changes what students can
   // see is history worth keeping.

@@ -326,11 +326,19 @@ export interface SubmissionView {
   submittedAt: string;
   lastSubmittedAt: string;
   updatedAt: string;
+  /** Null until the work is returned (`MARK-2`). */
   score: number | null;
+  /**
+   * When a mark was SAVED. Non-null with a null `returnedAt` means "your
+   * teacher is marking this": the mark exists but is not visible yet.
+   */
   correctedAt: string | null;
+  /** Null until returned. */
   feedback: string | null;
-  /** CLAUDE.md §5.5 - the annotated PDF is a new artifact beside the original. */
+  /** CLAUDE.md §5.5 - the annotated PDF is a new artifact beside the original. Null until returned. */
   annotatedFileUrl: string | null;
+  /** When the marked work came back (`MARK-2`). The key for showing a mark. */
+  returnedAt: string | null;
   revisions: SubmissionRevision[];
 }
 
@@ -571,6 +579,8 @@ export interface GradingQueueItem {
   score: number | null;
   feedback: string | null;
   correctedAt: string | null;
+  /** When the mark was handed back (`MARK-2`); null while saved-not-returned. */
+  returnedAt: string | null;
   /** Server-derived, like every status on this platform (CLAUDE.md 5.10). */
   status: GradingStatus;
   isLate: boolean;
@@ -722,6 +732,9 @@ export type AuditAction =
   | 'course_staff.assigned'
   | 'course_staff.unassigned'
   | 'submission.graded'
+  // Unit 7: handing marked work back, and marks drawn on the paper.
+  | 'submission.returned'
+  | 'submission.annotated'
   | 'recording.created'
   | 'recording.updated'
   | 'recording.deleted'

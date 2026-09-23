@@ -14,6 +14,7 @@ import type {
   StoredAssessment,
   TaskVisibility,
   StoredSubmission,
+  SubmissionFile,
   SubmissionRevision,
 } from './interfaces/assessment-repository.interface.js';
 import { ASSESSMENT_REPOSITORY } from './interfaces/assessment-repository.interface.js';
@@ -40,6 +41,20 @@ export function isVisibleToStudents(task: { visibility: TaskVisibility }): boole
   return task.visibility !== 'hidden';
 }
 
+/**
+ * Whether a student may see the mark on this submission (`MARK-2`).
+ *
+ * **Saved is not returned.** `correctedAt` is when a mark was saved; a student
+ * sees the score, the feedback, the annotated copy, the annotations and the
+ * `corrected` status only once the work is returned. Before unit 7,
+ * `correctedAt` was the visibility switch in five places; this is the one
+ * predicate all five now read, so no read can leak a saved mark early (unit-7
+ * plan, Risk 1). A new student read that shows a mark must use it too.
+ */
+export function isReturnedToStudent(s: { returnedAt: string | null }): boolean {
+  return s.returnedAt !== null;
+}
+
 export interface AssessmentListItem {
   id: string;
   courseId: string;
@@ -62,14 +77,26 @@ export interface AssessmentListItem {
 export interface SubmissionView {
   id: string;
   fileUrl: string | null;
+  /** The uploaded files, in order (`D-39`). */
+  files: SubmissionFile[];
   answerText: string | null;
   submittedAt: string;
   lastSubmittedAt: string;
   updatedAt: string;
+  /** Null until returned (`isReturnedToStudent`). */
   score: number | null;
+  /**
+   * When a mark was saved. Kept visible: it is what lets the page say "your
+   * teacher is marking this" for saved-not-returned work, whose resubmission
+   * is already frozen (assumption A-2). It carries no mark.
+   */
   correctedAt: string | null;
+  /** Null until returned. */
   feedback: string | null;
+  /** Null until returned. */
   annotatedFileUrl: string | null;
+  /** When the marked work came back (`MARK-2`). Null until then. */
+  returnedAt: string | null;
   /** Superseded versions, oldest first - the submission history. */
   revisions: SubmissionRevision[];
 }
@@ -227,7 +254,9 @@ export class AssessmentsService {
     now: Date,
     hasExternalResult = false,
   ): AssessmentStatus {
-    if (submission?.correctedAt) {
+    // `corrected` means marked AND handed back (`MARK-2`). A saved mark that
+    // has not been returned stays `submitted` on every student read.
+    if (submission && isReturnedToStudent(submission)) {
       return 'corrected';
     }
     if (submission) {
@@ -272,7 +301,8 @@ export class AssessmentsService {
       now,
       hasExternalResult,
     );
-    const score = submission?.correctedAt ? submission.score : null;
+    const score =
+      submission && isReturnedToStudent(submission) ? submission.score : null;
     return {
       id: assessment.id,
       courseId: assessment.courseId,
@@ -434,14 +464,21 @@ export class AssessmentsService {
         ? {
             id: submission.id,
             fileUrl: submission.fileUrl,
+            files: submission.files,
             answerText: submission.answerText,
             submittedAt: submission.submittedAt,
             lastSubmittedAt: submission.lastSubmittedAt,
             updatedAt: submission.updatedAt,
-            score: submission.correctedAt ? submission.score : null,
+            // Everything that IS the mark waits for the return (`MARK-2`).
+            // `feedback` and `annotatedFileUrl` were unconditional before unit
+            // 7, so feedback typed before a score even existed was visible.
+            score: isReturnedToStudent(submission) ? submission.score : null,
             correctedAt: submission.correctedAt,
-            feedback: submission.feedback,
-            annotatedFileUrl: submission.annotatedFileUrl,
+            feedback: isReturnedToStudent(submission) ? submission.feedback : null,
+            annotatedFileUrl: isReturnedToStudent(submission)
+              ? submission.annotatedFileUrl
+              : null,
+            returnedAt: submission.returnedAt,
             revisions: await this.assessmentRepo.findRevisions(
               submission.id,
               studentId,
@@ -556,7 +593,10 @@ export class AssessmentsService {
         type: assessment.type,
         topics: assessment.topics,
         maxScore: assessment.maxScore,
-        score: submission?.correctedAt ? submission.score : null,
+        // The report, the dashboard and student home all read this: a saved
+        // mark reaches none of them before it is returned (`MARK-2`).
+        score:
+          submission && isReturnedToStudent(submission) ? submission.score : null,
         status: this.computeStatus(
           assessment,
           submission,
