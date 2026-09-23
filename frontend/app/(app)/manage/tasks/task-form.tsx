@@ -549,23 +549,39 @@ export function TaskForm({
               hint={task?.visibilityState === 'scheduled' ? 'Scheduled: students see it locked until it opens.' : undefined}
             />
             <TextInput label="Out of" type="number" min={1} max={1000} className="w-[120px]" value={form.maxScore} onChange={(e) => set('maxScore', e.target.value)} />
-            <TextInput label="Accepted file types" className="min-w-[220px]" value={form.allowedFileTypes} onChange={(e) => set('allowedFileTypes', e.target.value)} hint="MIME types, comma separated" />
+            {/* `D-47`: with modes chosen the server derives the types from them,
+                so the field would only be a promise the server overrides. */}
+            {form.submissionModes.length === 0 && (
+              <TextInput label="Accepted file types" className="min-w-[220px]" value={form.allowedFileTypes} onChange={(e) => set('allowedFileTypes', e.target.value)} hint="MIME types, comma separated" />
+            )}
             <TextInput label="Largest file (MB)" type="number" min={1} max={100} className="w-[140px]" value={form.maxFileSizeMb} onChange={(e) => set('maxFileSizeMb', e.target.value)} />
           </div>
           <div className="flex flex-col gap-1">
             <p className="text-base text-fg-2">Students may hand in</p>
-            {MODES.map((m) => (
-              <div key={m.value} className="flex items-center gap-2">
-                <Checkbox
-                  label={m.label}
-                  checked={form.submissionModes.includes(m.value)}
-                  onChange={(checked) =>
-                    set('submissionModes', checked ? [...form.submissionModes, m.value] : form.submissionModes.filter((x) => x !== m.value))
-                  }
-                />
-                <span className="text-base text-fg">{m.label}</span>
-              </div>
-            ))}
+            {MODES.map((m) => {
+              // `D-48` (b): an upload mode needs file storage on this server.
+              // The server refuses it regardless; this avoids offering it. A mode
+              // already on the task stays shown and can be unticked.
+              const needsStorage = m.value !== 'doc_link';
+              const blocked = needsStorage && !(uploadConfig?.enabled ?? false) && !form.submissionModes.includes(m.value);
+              return (
+                <div key={m.value} className="flex items-center gap-2">
+                  <Checkbox
+                    label={m.label}
+                    disabled={blocked}
+                    checked={form.submissionModes.includes(m.value)}
+                    onChange={(checked) =>
+                      set('submissionModes', checked ? [...form.submissionModes, m.value] : form.submissionModes.filter((x) => x !== m.value))
+                    }
+                  />
+                  <span className={blocked ? 'text-base text-fg-4' : 'text-base text-fg'}>{m.label}</span>
+                  {blocked && <span className="text-xs text-fg-4">Needs file storage on this server</span>}
+                </div>
+              );
+            })}
+            {form.submissionModes.length === 0 && (
+              <p className="text-xs text-fg-4">None ticked: students hand in a link and/or a typed answer, as before.</p>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <Toggle label="Allow resubmission" checked={form.allowResubmission} onChange={(v) => set('allowResubmission', v)} />

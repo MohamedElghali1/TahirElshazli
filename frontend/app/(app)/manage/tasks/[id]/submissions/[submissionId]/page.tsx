@@ -95,7 +95,10 @@ function MarkingView({ id, submissionId }: { id: string; submissionId: string })
 
   const data = queue.data;
   const row = data?.rows.find((r) => r.submissionId === submissionId) ?? null;
-  const doc = row?.documents[0] ?? null;
+  // A hand-in may be several files (`D-47`: up to five photos); one at a time.
+  const [docIndex, setDocIndex] = useState(0);
+  const docs = row?.documents ?? [];
+  const doc = docs[Math.min(docIndex, Math.max(docs.length - 1, 0))] ?? null;
 
   const annotations = useMemo(
     () => [...(listed.data ?? []), ...added].filter((a) => !removed.has(a.id)),
@@ -275,6 +278,28 @@ function MarkingView({ id, submissionId }: { id: string; submissionId: string })
                     <InlineBanner tone="danger" icon="AlertTriangle">
                       {markError}
                     </InlineBanner>
+                  )}
+                  {docs.length > 1 && (
+                    <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Files in this hand-in">
+                      {docs.map((d, i) => (
+                        <Button
+                          key={d.url}
+                          size="small"
+                          variant="tertiary"
+                          active={doc?.url === d.url}
+                          onClick={() => {
+                            setDocIndex(i);
+                            setPage(1);
+                          }}
+                        >
+                          {d.kind === 'image' ? `Photo ${i + 1}` : d.kind === 'pdf' ? 'PDF' : `File ${i + 1}`}
+                          <span className="num text-fg-4">
+                            {' '}
+                            {annotations.filter((a) => a.fileUrl === d.url).length}
+                          </span>
+                        </Button>
+                      ))}
+                    </div>
                   )}
                   {doc ? (
                     <MarkingSurface

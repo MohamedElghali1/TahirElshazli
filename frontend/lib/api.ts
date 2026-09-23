@@ -60,6 +60,7 @@ import type {
   SubmissionMode,
   TaskSubmissions,
   Markbook,
+  SubmissionFile,
   Annotation,
   AnnotationPatch,
   AnnotationWrite,
@@ -285,12 +286,22 @@ async function uploadFile(
   file: File,
   signal?: AbortSignal,
 ): Promise<UploadResult> {
+  return uploadTo<UploadResult>('/staff/uploads', token, file, signal);
+}
+
+/** Multipart POST of one `file`, with the bearer token and the usual error mapping. */
+async function uploadTo<T>(
+  path: string,
+  token: string,
+  file: File,
+  signal?: AbortSignal,
+): Promise<T> {
   const form = new FormData();
   form.append('file', file);
 
   let res: Response;
   try {
-    res = await fetch(`${baseUrl()}/staff/uploads`, {
+    res = await fetch(`${baseUrl()}${path}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
       body: form,
@@ -306,7 +317,7 @@ async function uploadFile(
   if (!res.ok) {
     throw new ApiError(res.status, messageFrom(payload, res.status), payload);
   }
-  return payload as UploadResult;
+  return payload as T;
 }
 
 /**
@@ -505,10 +516,17 @@ export const api = {
     get: (token: string, assessmentId: string) =>
       request<AssessmentDetail>(`/assessments/${assessmentId}`, { token }),
 
+    /**
+     * One file for a submission to this task (`D-48`): stored and typed by the
+     * server, attached to nothing until `submit` names its URL.
+     */
+    uploadFile: (token: string, assessmentId: string, file: File) =>
+      uploadTo<SubmissionFile>(`/assessments/${assessmentId}/files`, token, file),
+
     submit: (
       token: string,
       assessmentId: string,
-      body: { fileUrl?: string; answerText?: string },
+      body: { fileUrl?: string; answerText?: string; files?: string[] },
     ) =>
       request<unknown>(`/assessments/${assessmentId}/submissions`, {
         method: 'POST',

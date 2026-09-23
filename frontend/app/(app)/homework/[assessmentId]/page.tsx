@@ -10,13 +10,14 @@ import {
   formatDateTime,
   formatFileSize,
 } from '@/lib/format';
-import type { AssessmentDetail, SubmissionView } from '@/lib/types';
+import type { AssessmentDetail, SubmissionFile, SubmissionMode, SubmissionView } from '@/lib/types';
 import {
   Panel,
   EmptyState,
   Loader,
   Tag,
   Button,
+  Select,
   TextInput,
   TextArea,
   InlineBanner,
@@ -157,9 +158,9 @@ function Fact({ label, value }: { label: string; value: string }) {
 /* --- Submission -----------------------------------------------------------
    `canSubmit` is the server's answer, not ours (CLAUDE.md §5.10).
 
-   Uploads are a URL field for now: the R2 signed-upload flow does not exist
-   yet, and a file input that cannot upload is a lie. The backend's
-   `SubmitAssessmentDto` takes `fileUrl` or `answerText`. */
+   A task stating no submission modes keeps the old form: a link and/or a
+   typed answer. A task stating modes (`D-47`) gets `ModedSubmit`: one way to
+   hand in, chosen from the modes, with real uploads (`D-48`). */
 
 function SubmitPanel({
   assessment,
@@ -183,6 +184,17 @@ function SubmitPanel({
             : 'This is not open for submission. Check the dates above.'}
         </p>
       </Panel>
+    );
+  }
+
+  if (assessment.work.kind === 'file_upload' && assessment.work.submissionModes.length > 0) {
+    return (
+      <ModedSubmit
+        assessment={assessment}
+        modes={assessment.work.submissionModes}
+        maxBytes={assessment.work.maxFileSizeBytes}
+        onSubmitted={onSubmitted}
+      />
     );
   }
 
@@ -261,6 +273,194 @@ function SubmitPanel({
   );
 }
 
+const MODE_LABEL: Record<SubmissionMode, string> = {
+  pdf_upload: 'Upload a PDF',
+  photo_upload: 'Photos of your work',
+  doc_link: 'Google Doc link',
+};
+
+/** `D-47`: which mode an existing hand-in was, so a revision starts there. */
+function modeOf(existing: SubmissionView | null, modes: readonly SubmissionMode[]): SubmissionMode {
+  if (existing?.files.length) {
+    const pdf = existing.files[0]!.mimeType === 'application/pdf';
+    const m: SubmissionMode = pdf ? 'pdf_upload' : 'photo_upload';
+    if (modes.includes(m)) return m;
+  }
+  if (existing?.fileUrl && modes.includes('doc_link')) return 'doc_link';
+  return modes[0]!;
+}
+
+/**
+ * The hand-in for a task that states modes (`D-47`, `D-48`). Exactly one mode
+ * per submission. Files upload as they are chosen - each is stored and typed
+ * by the server, and becomes work only when this form is sent. Sending again
+ * replaces the whole hand-in; the previous one stays in the history.
+ *
+ * The server is the rule; this form only avoids offering what it will refuse.
+ */
+function ModedSubmit({
+  assessment,
+  modes,
+  maxBytes,
+  onSubmitted,
+}: {
+  assessment: AssessmentDetail;
+  modes: SubmissionMode[];
+  maxBytes: number;
+  onSubmitted: () => void;
+}) {
+  const { token } = useSession();
+  const existing = assessment.submission;
+  const [mode, setMode] = useState<SubmissionMode>(() => modeOf(existing, modes));
+  const [files, setFiles] = useState<SubmissionFile[]>(() =>
+    existing && modeOf(existing, modes) === mode ? existing.files : [],
+  );
+  const [link, setLink] = useState(existing?.fileUrl ?? '');
+  const [note, setNote] = useState(existing?.answerText ?? '');
+  const [uploading, setUploading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const photoCap = 5;
+  const accept = mode === 'pdf_upload' ? 'application/pdf' : 'image/jpeg,image/png,image/webp';
+
+  async function choose(event: React.ChangeEvent<HTMLInputElement>) {
+    const chosen = Array.from(event.target.files ?? []);
+    event.target.value = '';
+    if (!token || chosen.length === 0) return;
+    const room = mode === 'pdf_upload' ? 1 : photoCap - files.length;
+    if (chosen.length > room) {
+      setError(mode === 'pdf_upload' ? 'Hand in one PDF.' : `You can add ${room} more photo${room === 1 ? '' : 's'}.`);
+      return;
+    }
+    setError(null);
+    setUploading(true);
+    try {
+      const stored: SubmissionFile[] = [];
+      for (const file of chosen) {
+        // One at a time, so a refusal names the file it was about.
+        stored.push(await api.assessments.uploadFile(token, assessment.id, file));
+      }
+      setFiles((f) => (mode === 'pdf_upload' ? stored : [...f, ...stored]));
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : 'That file could not be uploaded. Please try again.');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token) return;
+    const body =
+      mode === 'doc_link'
+        ? { fileUrl: link.trim(), answerText: note.trim() || undefined }
+        : { files: files.map((f) => f.url), answerText: note.trim() || undefined };
+    if (mode === 'doc_link' ? !link.trim() : files.length === 0) {
+      setError(mode === 'doc_link' ? 'Paste the link to your document.' : 'Add your work first.');
+      return;
+    }
+    setError(null);
+    setBusy(true);
+    try {
+      await api.assessments.submit(token, assessment.id, body);
+      onSubmitted();
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : 'Could not send your submission. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Panel title={existing ? 'Revise your submission' : 'Your submission'}>
+      {existing && (
+        <p className="mb-4 text-xs text-fg-3">
+          Submitted {formatDateTime(existing.lastSubmittedAt)}. Sending again replaces all of it, and the
+          previous version is kept in your history.
+        </p>
+      )}
+      <form onSubmit={submit} noValidate className="flex flex-col gap-4">
+        {modes.length > 1 && (
+          <Select
+            label="How you are handing it in"
+            value={mode}
+            onChange={(e) => {
+              setMode(e.target.value as SubmissionMode);
+              setFiles([]);
+              setError(null);
+            }}
+            options={modes.map((m) => ({ value: m, label: MODE_LABEL[m] }))}
+          />
+        )}
+
+        {mode === 'doc_link' ? (
+          <TextInput
+            label="Link to your Google Doc"
+            type="url"
+            inputMode="url"
+            placeholder="https://"
+            value={link}
+            onChange={(e) => setLink(e.target.value)}
+            hint="Make sure your teacher can open it."
+          />
+        ) : (
+          <div className="flex flex-col gap-2">
+            <label className="flex flex-col gap-1 text-xs text-fg-3">
+              {mode === 'pdf_upload' ? 'Your PDF' : `Photos of your work (up to ${photoCap})`}
+              <input
+                type="file"
+                accept={accept}
+                multiple={mode === 'photo_upload'}
+                disabled={uploading || (mode === 'photo_upload' ? files.length >= photoCap : false)}
+                onChange={(e) => void choose(e)}
+                className="text-base text-fg-2"
+              />
+            </label>
+            <p className="text-xxs text-fg-4">
+              {mode === 'pdf_upload' ? 'PDF' : 'JPEG, PNG or WebP (iPhone HEIC photos: choose "Most compatible" in camera settings)'}
+              , up to {formatFileSize(Math.min(maxBytes, 20 * 1024 * 1024))} each.
+            </p>
+            {uploading && <Loader size={3} label="Uploading" />}
+            {files.length > 0 && (
+              <ul className="flex flex-col gap-1">
+                {files.map((f, i) => (
+                  <li key={f.url} className="flex items-center justify-between gap-2 text-base text-fg-2">
+                    <span>
+                      {mode === 'pdf_upload' ? 'PDF' : `Photo ${i + 1}`}
+                      <span className="text-fg-4"> · uploaded</span>
+                    </span>
+                    <Button size="small" variant="tertiary" onClick={() => setFiles((all) => all.filter((x) => x.url !== f.url))}>
+                      Remove
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        <TextArea
+          label="A note for your teacher (optional)"
+          dir="auto"
+          rows={4}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+        />
+
+        {error && <InlineBanner tone="danger">{error}</InlineBanner>}
+
+        <div className="flex items-center justify-between gap-4">
+          <p className="text-xxs text-fg-4">You can revise until the window closes.</p>
+          <Button type="submit" variant="primary" disabled={busy || uploading} iconRight="ArrowUpRight">
+            {busy ? <Loader size={3} label="Sending" /> : existing ? 'Send revision' : 'Submit'}
+          </Button>
+        </div>
+      </form>
+    </Panel>
+  );
+}
+
 /* --- Marking: shown only once the work is RETURNED (MARK-2) -------------- */
 
 /**
@@ -308,11 +508,14 @@ function Marking({ assessment }: { assessment: AssessmentDetail }) {
         </p>
       )}
 
-      {submission.fileUrl && submission.annotations.length > 0 && (
-        <div className="mt-4 border-t border-border-light pt-4">
-          <MarkedCopy fileUrl={submission.fileUrl} annotations={submission.annotations} />
-        </div>
-      )}
+      {/* Each file of the hand-in that carries marks, in order (`D-47`). */}
+      {[...submission.files.map((f) => f.url), ...(submission.fileUrl ? [submission.fileUrl] : [])]
+        .filter((url) => submission.annotations.some((a) => a.fileUrl === url))
+        .map((url) => (
+          <div key={url} className="mt-4 border-t border-border-light pt-4">
+            <MarkedCopy fileUrl={url} annotations={submission.annotations} />
+          </div>
+        ))}
 
       {submission.annotatedFileUrl && (
         <a
@@ -345,6 +548,11 @@ function History({ submission }: { submission: SubmissionView }) {
               <p className="num mt-1 text-xxs text-fg-4">
                 Replaced {formatDateTime(revision.replacedAt)}
               </p>
+              {revision.files.length > 0 && (
+                <p className="mt-1 text-xxs text-fg-4">
+                  {revision.files.length} file{revision.files.length === 1 ? '' : 's'}
+                </p>
+              )}
               {revision.fileUrl && (
                 <a
                   href={revision.fileUrl}

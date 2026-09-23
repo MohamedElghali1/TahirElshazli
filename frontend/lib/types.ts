@@ -308,10 +308,18 @@ export interface AssessmentListItem {
   scorePercentage: number | null;
 }
 
+/** One uploaded file of a submission (`D-47`, `D-48`); the type is the server's. */
+export interface SubmissionFile {
+  url: string;
+  mimeType: string;
+}
+
 export interface SubmissionRevision {
   id: string;
   submissionId: string;
   fileUrl: string | null;
+  /** The superseded file set, archived whole (`D-48` (c)). */
+  files: SubmissionFile[];
   answerText: string | null;
   /** When this content was submitted. */
   submittedAt: string;
@@ -339,6 +347,8 @@ export interface SubmissionView {
   annotatedFileUrl: string | null;
   /** When the marked work came back (`MARK-2`). The key for showing a mark. */
   returnedAt: string | null;
+  /** The uploaded files, in order (`D-47`, `D-48`). Empty for a link or legacy submission. */
+  files: SubmissionFile[];
   /** Marks on the paper (`MARK-5`): empty until returned, never with an author. */
   annotations: StudentAnnotation[];
   revisions: SubmissionRevision[];
@@ -353,7 +363,28 @@ export interface AssessmentDetail extends AssessmentListItem {
   maxFileSizeBytes: number;
   canSubmit: boolean;
   submission: SubmissionView | null;
+  /** What the student is expected to do - the field the UI branches on. */
+  work: WorkExpectation;
 }
+
+/** Mirrors `WorkExpectation` in `assessments.service.ts`. */
+export type WorkExpectation =
+  | {
+      kind: 'file_upload';
+      allowedFileTypes: string[];
+      maxFileSizeBytes: number;
+      /** `D-47`: empty keeps the old rule; otherwise exactly one per submission. */
+      submissionModes: SubmissionMode[];
+    }
+  | { kind: 'link'; url: string }
+  | {
+      kind: 'google_form';
+      formUrl: string;
+      completed: boolean;
+      score: number | null;
+      maxScore: number | null;
+      lastSyncedAt: string | null;
+    };
 
 /* --- dashboard (dashboard/dashboard.service.ts) --------------------------- */
 
