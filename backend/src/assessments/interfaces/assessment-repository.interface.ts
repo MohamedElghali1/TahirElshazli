@@ -459,7 +459,8 @@ export interface AssessmentRepository {
     submissionId: string,
     studentId: string,
     fileUrl: string | null | undefined,
-    answerText: string | undefined,
+    /** `null` clears the note (a moded hand-in is replaced whole). */
+    answerText: string | null | undefined,
     /**
      * The replacement file set, archived and replaced WHOLE (`D-48` (c)) -
      * never merged. `undefined` leaves the stored set alone, like the two

@@ -748,7 +748,7 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
     submissionId: string,
     studentId: string,
     fileUrl: string | null | undefined,
-    answerText: string | undefined,
+    answerText: string | null | undefined,
     files?: readonly SubmissionFile[],
   ): Promise<StoredSubmission | null> {
     const submission = this.submissions.find(

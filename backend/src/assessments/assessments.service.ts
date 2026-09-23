@@ -584,6 +584,17 @@ export class AssessmentsService {
         'This task takes a link or a typed answer, not uploaded files.',
       );
     }
+    // No upload that can never be handed in (review R-7): the same two
+    // refusals `submitAssessment` would give, answered before bytes are kept.
+    const existing = await this.assessmentRepo.findSubmission(assessmentId, studentId);
+    if (existing && !assessment.allowResubmission) {
+      throw new ConflictException('This task accepts one submission only.');
+    }
+    if (existing?.correctedAt) {
+      throw new BadRequestException(
+        'This submission has already been corrected and can no longer be changed',
+      );
+    }
     return {
       allowedMimeTypes: mimeTypesForModes(assessment.submissionModes),
       maxBytes: Math.min(assessment.maxFileSizeBytes, STUDENT_UPLOAD_MAX_BYTES),

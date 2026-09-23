@@ -78,9 +78,20 @@ describe('D-47: what a hand-in may be', () => {
     });
   });
 
+  it('R-8: accepts only the exact server-minted shape, not a prefix match', () => {
+    expect(refused(() => checkSubmission(['pdf_upload'], { files: ['/uploads/../x.pdf'] }))).toMatch(/Upload each file/);
+    expect(refused(() => checkSubmission(['pdf_upload'], { files: ['/uploads/sub/11111111-1111-4111-8111-111111111111.pdf'] }))).toMatch(/Upload each file/);
+  });
+
+  it('R-6: a moded hand-in without a note clears the old note; the old rule leaves it', () => {
+    expect(checkSubmission(['pdf_upload'], { files: [PDF] }).answerText).toBeNull();
+    expect(checkSubmission(['doc_link'], { fileUrl: DOC }).answerText).toBeNull();
+    expect(checkSubmission([], { fileUrl: DOC }).answerText).toBeUndefined();
+  });
+
   it('refuses a file the platform did not store, or one whose type the whitelist does not mint', () => {
     expect(refused(() => checkSubmission(['pdf_upload'], { files: ['https://evil.example/x.pdf'] }))).toMatch(/Upload each file/);
-    expect(refused(() => checkSubmission(['pdf_upload'], { files: ['/uploads/x.exe'] }))).toMatch(/Upload each file/);
+    expect(refused(() => checkSubmission(['pdf_upload'], { files: ['/uploads/11111111-1111-4111-8111-111111111111.exe'] }))).toMatch(/Upload each file/);
     // A stored text file is platform-stored but no mode takes it.
     expect(refused(() => checkSubmission(['pdf_upload', 'photo_upload'], { files: [TXT] }))).toMatch(/one kind of file/);
   });

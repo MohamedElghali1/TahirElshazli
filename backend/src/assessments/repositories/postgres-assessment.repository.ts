@@ -759,7 +759,7 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
     submissionId: string,
     studentId: string,
     fileUrl: string | null | undefined,
-    answerText: string | undefined,
+    answerText: string | null | undefined,
     files?: readonly SubmissionFile[],
   ): Promise<StoredSubmission | null> {
     // Archiving the old content and overwriting it must be one unit. Half of

@@ -2832,6 +2832,9 @@ describeIfDb('Postgres repositories', () => {
       expect(noteOnly!.files).toEqual(pdf);
       // Every read carries it.
       expect((await repo().findSubmission(task, 'student-2'))!.files).toEqual(pdf);
+      // R-6: null clears the note (a moded hand-in is replaced whole).
+      const cleared = await repo().updateSubmission(created.id, 'student-2', null, null, pdf);
+      expect(cleared!.answerText).toBeNull();
       expect((await repo().findSubmissionsForStudents([task], ['student-2']))[0]!.files).toEqual(pdf);
     });
   });

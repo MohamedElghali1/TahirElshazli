@@ -2993,6 +2993,14 @@ describe('Staff and admin API (e2e)', () => {
         .send({ fileUrl: 'https://docs.google.com/document/d/abc' }).expect(201);
     });
 
+    it('R-7: refuses an upload once the hand-in is marked - it could never be submitted', async () => {
+      const queue = await request(server()).get(`/staff/assessments/${pdfTask}/submissions`).set(bearer(adminToken)).expect(200);
+      const sub = (queue.body.rows as { studentId: string; submissionId: string }[]).find((r) => r.studentId === 'student-1')!;
+      await request(server()).post(`/staff/submissions/${sub.submissionId}/grade`).set(bearer(adminToken)).send({ score: 5 }).expect(200);
+      const res = await upload(pdfTask, studentToken, pdf, 'application/pdf', 'late.pdf').expect(400);
+      expect(res.body.message).toMatch(/already been corrected/);
+    });
+
     it('lists the uploaded photos as documents staff can mark up', async () => {
       const queue = await request(server()).get(`/staff/assessments/${photoTask}/submissions`).set(bearer(adminToken)).expect(200);
       const row = (queue.body.rows as { studentId: string; submissionId: string; documents: { url: string; kind: string; annotatable: boolean }[] }[])

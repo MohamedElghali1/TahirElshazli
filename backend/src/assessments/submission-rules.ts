@@ -5,6 +5,15 @@ import type { SubmissionFile, SubmissionMode } from './interfaces/assessment-rep
 /** `D-47`: what a photo may be. No HEIC (`D-48` (d)), no GIF/AVIF. */
 export const PHOTO_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
 export const PDF_MIME_TYPE = 'application/pdf';
+/**
+ * Exactly what the storage driver mints: `/uploads/<uuid>.<ext>` (review R-8).
+ * A prefix check alone would accept `/uploads/../x.pdf`; nothing is exposed by
+ * that (the static server normalises the path), but a submission should name
+ * only a file the platform could actually have stored.
+ */
+const STORED_UPLOAD_URL =
+  /^\/uploads\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]{2,5}$/;
+
 /** `PRODUCT_SPEC.md` §2.1: "photo of written work (≤5)". */
 export const MAX_PHOTOS = 5;
 
@@ -34,7 +43,12 @@ export interface SubmissionInput {
 export interface SubmissionWrite {
   fileUrl: string | null | undefined;
   files: SubmissionFile[] | undefined;
-  answerText: string | undefined;
+  /**
+   * `null` clears it: a moded hand-in is replaced WHOLE (`D-48` (c)), the
+   * note included, so a note left out is a note removed (review R-6). A task
+   * stating no modes keeps the old undefined-leaves-it rule.
+   */
+  answerText: string | null | undefined;
 }
 
 const HAND_IN: Record<SubmissionMode, string> = {
@@ -96,11 +110,12 @@ export function checkSubmission(
     if (!modes.includes('doc_link')) {
       throw new BadRequestException(`This task asks for ${list(modes)}, not a link.`);
     }
-    return { fileUrl: link, files: [], answerText: input.answerText };
+    return { fileUrl: link, files: [], answerText: input.answerText ?? null };
   }
 
   const typed: SubmissionFile[] = files.map((url) => {
-    const mimeType = isPlatformStored(url) ? storedMimeTypeOf(url) : null;
+    const mimeType =
+      isPlatformStored(url) && STORED_UPLOAD_URL.test(url) ? storedMimeTypeOf(url) : null;
     if (!mimeType) {
       throw new BadRequestException(
         'Upload each file with this task first; only uploaded files can be handed in.',
@@ -133,5 +148,5 @@ export function checkSubmission(
       'Hand in one kind of file: a PDF, or photos (JPEG, PNG or WebP).',
     );
   }
-  return { fileUrl: null, files: typed, answerText: input.answerText };
+  return { fileUrl: null, files: typed, answerText: input.answerText ?? null };
 }
