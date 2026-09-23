@@ -23,10 +23,14 @@ tree had live uncommitted unit-7 work and three implementers would have collided
 `frontend/lib/api.ts`, `lib/types.ts`, `docs/API_SPEC.yaml` and the shared docs.
 
 ```
-.claude/worktrees/unit-10   branch unit-10   commit 4c25db6
-.claude/worktrees/unit-11   branch unit-11   commit 13b95a8
-.claude/worktrees/unit-12   branch unit-12   commit 066ed93
+.claude/worktrees/unit-10   branch unit-10   commit f0f1442   REJECTED (one hole left)
+.claude/worktrees/unit-11   branch unit-11   commit 59a4cc4   slice A/B APPROVED, C not built
+.claude/worktrees/unit-12   branch unit-12   commit 066ed93   REJECTED (six findings)
 ```
+
+Each branch's **second** commit corrects its first: both units 10 and 11 had work land
+*before* the first commit was written, so the first messages understate them. The later
+commit is the accurate one in each case.
 
 `node_modules` is junctioned into each from the main tree, so npm works without reinstalling.
 
@@ -84,9 +88,11 @@ Branch `unit-10`, commit `4c25db6`. Artifacts in `docs/phases/unit-10/`.
 repository drivers, service, DTOs, both controllers, audit DTO, `role-guards.spec.ts`, e2e,
 `API_SPEC.yaml`, `CHANGELOG.md`. Slice 10b (frontend) **not started**.
 
-**Measured** (by the reviewer, not claimed): 653/654 unit · 297 e2e · lint 0 errors · frontend tsc 0
-· migration `021` clean from an empty schema on `postgres:15-alpine` (throwaway container, port
-55433, to stay clear of units 7/8) · 147/149 integration.
+**Measured after the round-1 delta** (by the reviewer, against the worktree, not claimed):
+**654/654 unit · 299/299 e2e · lint clean · frontend tsc 0 · 149/149 integration**, migration `021`
+clean `001-021` from an empty schema on a throwaway `postgres:15-alpine` (own container, removed
+after, to stay clear of units 7/8). The +2 e2e are the new TA-refused-on-publish and
+admin-PATCH-audience-over-HTTP cases.
 
 **Decisions recorded** in `docs/CHANGELOG.md`:
 
@@ -104,32 +110,43 @@ repository drivers, service, DTOs, both controllers, audit DTO, `role-guards.spe
   screen). `all_students`/`all_tas` for a non-admin stays **403** — a category-level permission
   refusal, not a lookup of an addressable resource, so there is nothing to enumerate.
 
-**OPEN — blocking merge:**
+### FIXED and independently verified (round-1 delta, landed before the first commit)
 
-1. **CRITICAL — an assistant can publish an announcement.** Two undocumented staff publish routes
-   (`POST /staff/courses/:id/announcements/:id/publish` and the groups equivalent) were added under
-   `STAFF_ALL`, and `publish()` only refuses non-admins for platform-wide audiences — course- and
-   group-targeted publishes have **no role gate at all**, only a scope check. The diff's own e2e
-   **asserts the hole as correct** (assistant token, 200, `recipientCount: 2`). Contradicts the plan
-   and `API_SPEC.yaml`'s `x-roles: [teacher, admin]` on publish.
-   **Fix:** decide first whether those two routes should exist at all — if the plan did not call for
-   them, deleting them is lazier and safer than gating them. Then gate at **both** layers:
-   `@Roles(STAFF_ADMIN)` on the decorator **and** an unconditional refusal inside `publish()` for
-   every audience. Use `STAFF_ADMIN` from `auth/staff-roles.ts`, never a hand-written list.
-   **Invert the existing e2e assertion, do not delete it**, or the hole silently returns.
-2. **HIGH — the `posted_at` to `published_at` rename has an unmeasured blast radius.** Two
-   integration tests broke. Before accepting any fix, grep **both workspaces** for `posted_at` and
-   `postedAt`: backend source, seeds, the integration spec, `frontend/lib/types.ts`,
-   `frontend/lib/api.ts`, and any screen rendering it. The mirror is hand-written and has drifted
-   before; a rename that misses it typechecks clean and renders blank.
-3. **MEDIUM — `PatchAnnouncementDraftDto` omits `audience`**, so the global `whitelist: true` pipe
-   strips it before the controller sees it. Editing a draft's audience is unreachable over real HTTP
-   despite correct service logic. It was missed because the unit test calls the controller method
-   directly, bypassing the DTO — **the replacement test must go over real HTTP (supertest).**
+- **The assistant-can-publish hole is closed.** The two undocumented staff publish routes were
+  **deleted outright**, not merely gated (`grep` confirms zero publish routes in
+  `staff-announcements.controller.ts`), and `publish()` now refuses unconditionally via
+  `isUnscopedStaffRole` **before** any scope check — the gate holds at both layers. The e2e that
+  asserted the hole as correct was **inverted to assert 403, not deleted**, so it cannot silently
+  return.
+- Both broken integration tests fixed properly — one now publishes-then-asserts `published_at`
+  rather than reading a null column.
+- `PATCH` audience is reachable over real HTTP, covered by a supertest case.
+
+### OPEN — blocking merge
+
+1. **CRITICAL — round 1's own fix opened a narrower hole.** Adding `audience` to the **shared**
+   `PatchAnnouncementDraftDto` (`dto/post-announcement.dto.ts:66`) also gave it to the STAFF PATCH
+   routes (`updateCourseDraft`/`updateGroupDraft`, `STAFF_ALL`). In `updateDraft()`'s audience
+   branch (`announcements.service.ts:136-147`) the scope check only runs `if (parsed.courseId)` or
+   `if (parsed.groupId)` — for `all_students`/`all_tas` **neither fires, so no role check runs at
+   all**. An assistant can retarget their own draft platform-wide. They cannot publish it (that is
+   fixed), but a teacher trusting the TA drafts queue could publish something silently retargeted.
+   This reopens exactly the capability the original DTO design withheld *structurally* (see
+   `PostCourseAnnouncementDto`'s own comment: a TA has no way to name `all_students` even by
+   sending it).
+   **Specified fix** (`REVIEW.md` §3 has file/line/code): **split the DTO** — the base stays
+   audience-free for staff routes, an admin-only subclass adds it — restoring the structural
+   invariant rather than adding a role check that can drift again. Plus a belt-and-braces
+   `isUnscopedStaffRole` check on the service's platform-wide branch, one unit test, one e2e.
+2. **LOW, non-blocking for 10a — `frontend/lib/types.ts:1110` still declares
+   `Announcement.postedAt`** after the `posted_at` → `published_at` rename. The full grep is done:
+   the only other hits are migration-history comments, which are correct and must not be touched.
+   **Zero live consumers today** and no announcements UI exists yet, so nothing breaks — but it must
+   be **the first thing slice 10b touches**, before any component reads the type.
 
 ---
 
-## 5. Unit 11 — Google Forms surface · A/B partially verified, slice C not started
+## 5. Unit 11 — Google Forms surface · slice A/B APPROVED, slice C not built
 
 Branch `unit-11`, commit `13b95a8`. Artifacts in `docs/phases/unit-11/`. **Frontend only** — the
 backend's seven `WorkAnalyticsController` routes already existed and were not touched.
@@ -152,18 +169,26 @@ before it died mid-run at step 4):
 nested `Panel`, `Score`/`Meter` never merged, no indigo used for status, `SyncStatus` with a
 last-checked time, understated-figure banner present.
 
+**Slice A/B is APPROVED.** The `useApi` restructure landed: `results/page.tsx` contains **zero
+`useEffect`**, replaced by four `useApi` calls (analytics/results/unmatched/roster) fetching
+unconditionally rather than gated — cheap at ~30 rows and it removes the two-stage fetch entirely.
+The `react-hooks/set-state-in-effect` failure is cleared. Re-verified: **frontend tsc 0 · lint exit
+0** (one pre-existing unrelated backend warning) **· backend 660/660, 39/39 files**, with an empty
+backend diff so zero regression by construction. The Results link resolves to a page that exists —
+no dead link.
+
+**Not verified:** never driven in a real browser — no browser instance was available. Stated rather
+than implied.
+
 **OPEN:**
 
-1. `manage/tasks/[id]/results/page.tsx` (authored by `gemini-3.1-pro-high`) **fails lint** with
-   `react-hooks/set-state-in-effect` — it hand-rolls `useState`/`useEffect`/`loadData` instead of
-   reusing the existing **`useApi`** hook every other page uses. The restructure (4x `useApi`,
-   fetching unmatched + roster unconditionally rather than gated — cheap at ~30 rows) was dispatched
-   but agy hit quota, so **it is probably unlanded. Run `npm run lint` first to find out.**
-2. **Slice C — the student Quizzes surface (`WORK-4`) — not started.** Driven by
-   `work_type: 'google_form'`; **there is no first-party quiz engine and must not be one.**
-3. **Confirm the Results link points at a page that exists** before merging — a dead link was in the
-   tree at one point.
-4. Finding for a later unit: `GET /staff/courses/:courseId/students/:studentId/work` has **no
+1. **Slice C — the student Quizzes surface (`WORK-4`) — not built.** agy went quota-exhausted before
+   it could be dispatched. A precise self-contained checklist is in `REVIEW.md`
+   §"Slice C checklist": exact file, the already-landed `WorkExpectation` mirror shapes to render,
+   the four quiz states and their triggers, what not to touch, design constraints, gate commands.
+   No re-derivation needed. Driven by `work_type: 'google_form'` — **there is no first-party quiz
+   engine and must not be one.**
+2. Finding for a later unit: `GET /staff/courses/:courseId/students/:studentId/work` has **no
    consuming screen** anywhere in `WORK-1..4` or `redesign-mapping.md`. Flagged, not built for.
 
 ---
