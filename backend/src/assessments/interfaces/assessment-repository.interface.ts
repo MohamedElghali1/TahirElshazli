@@ -103,38 +103,11 @@ export interface StoredAssessment {
   createdAt: string;
 }
 
-/**
- * One uploaded file of a submission (`D-38`, `D-39`). A value object stored as a
- * JSONB array element, never a row of its own - the unit-6 attachments
- * precedent.
- *
- * `url` is minted by the student upload route (`POST /assessments/:id/files`);
- * `mimeType` and `sizeBytes` are what the SERVER settled on when it stored the
- * bytes, and the submit route re-derives the type from the URL's server-minted
- * extension rather than trusting either.
- */
-export interface SubmissionFile {
-  url: string;
-  mimeType: string;
-  sizeBytes: number;
-}
-
 export interface StoredSubmission {
   id: string;
   assessmentId: string;
   studentId: string;
-  /**
-   * A pasted URL: the legacy submission (a task stating no modes) or a
-   * `doc_link` submission. Null for an upload-mode submission, whose files are
-   * in `files` - one source per fact.
-   */
   fileUrl: string | null;
-  /**
-   * The uploaded files, in the student's order (`D-39`): one PDF for
-   * `pdf_upload`, 1-5 photos for `photo_upload`, empty otherwise.
-   */
-  files: SubmissionFile[];
-  /** On a task that states modes this is a note beside the work, never the work (`D-38`). */
   answerText: string | null;
   /** First submission. Never moves - it is the start of the history. */
   submittedAt: string;
@@ -169,8 +142,6 @@ export interface SubmissionRevision {
   id: string;
   submissionId: string;
   fileUrl: string | null;
-  /** The superseded file set, archived whole (`D-39` (c)). */
-  files: SubmissionFile[];
   answerText: string | null;
   /** When this content was submitted. */
   submittedAt: string;
@@ -431,16 +402,11 @@ export interface AssessmentRepository {
     assessmentIds: readonly string[],
     studentIds: readonly string[],
   ): Promise<StoredSubmission[]>;
-  /**
-   * `files` is the upload-mode set (`D-39`); omitted is `[]`, which is every
-   * legacy and link submission.
-   */
   createSubmission(
     assessmentId: string,
     studentId: string,
     fileUrl: string | null,
     answerText: string | null,
-    files?: readonly SubmissionFile[],
   ): Promise<StoredSubmission>;
   /**
    * Replaces the student's answer, archiving the previous content as a revision.
@@ -459,14 +425,8 @@ export interface AssessmentRepository {
   updateSubmission(
     submissionId: string,
     studentId: string,
-    fileUrl: string | null | undefined,
+    fileUrl: string | undefined,
     answerText: string | undefined,
-    /**
-     * The replacement file set, archived and replaced WHOLE (`D-39` (c)) -
-     * never merged. `undefined` leaves the stored set alone, like the two
-     * fields above; the archived revision carries the old set either way.
-     */
-    files?: readonly SubmissionFile[],
   ): Promise<StoredSubmission | null>;
   findRevisions(
     submissionId: string,

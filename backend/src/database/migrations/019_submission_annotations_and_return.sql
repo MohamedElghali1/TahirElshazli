@@ -1,26 +1,21 @@
 -- 019_submission_annotations_and_return.sql
 --
--- Unit 7: marking and the mark book (`MARK-1`, `MARK-2`, `MARK-6`).
--- `DATABASE_PLAN.md` §2 (the `assessment_submissions` additions) and §3
+-- Unit 7: marking and the mark book (`MARK-1`, `MARK-2`).
+-- `DATABASE_PLAN.md` §2 (the `assessment_submissions` addition) and §3
 -- (`submission_annotations`).
 --
 -- Additive, plus ONE data backfill (`returned_at := corrected_at`, below). No
 -- destructive step: nothing existing is rewritten, only a new column filled.
 --
--- Two user rulings are folded in here rather than given a 020, because this
--- file had not yet run anywhere when they arrived (`CHANGELOG.md`, the same
--- move 018 made for `D-28`/`D-31`):
---
--- * `D-38` (B-1): the submission modes are enforced at submit time; a
---   `photo_upload` submission is 1-5 uploaded photos.
--- * `D-39` (B-2): the set of uploaded files is a JSON list on the submission
---   and on each revision (storage reading A), not a child table. A resubmission
---   replaces the whole set and archives the whole set.
+-- Deliberately NOT here: any multi-file column. `MARK-6` (submission modes and
+-- up to five photos) is open as B-1/B-2 and escalated to the user; whatever
+-- they decide becomes 020. Annotations anchor on a file URL, so this table is
+-- correct under any answer.
 --
 -- Deviations from `DATABASE_PLAN.md` §3's `submission_annotations` sketch, each
 -- with `D-2` (annotations are data, freehand strokes included) as authority:
--- * `file_url` - which file the mark was drawn on. A submission can carry up to
---   five files (`D-39`) and a resubmission replaces them, so `(submission, page)`
+-- * `file_url` - which file the mark was drawn on. A resubmission replaces the
+--   file, and `MARK-6` may give one submission several, so `(submission, page)`
 --   alone cannot say where a mark belongs.
 -- * `kind` adds `pen` and `highlight`, and `path` carries a stroke's points.
 -- * `updated_at` - an annotation is editable (`D-2`).
@@ -50,29 +45,7 @@ ALTER TABLE assessment_submissions
   CHECK (returned_at IS NULL OR corrected_at IS NOT NULL);
 
 -- ---------------------------------------------------------------------------
--- 2. The uploaded files of a submission (`D-38`, `D-39`).
--- ---------------------------------------------------------------------------
-
--- An array of `{url, mimeType, sizeBytes}`, in the order the student gave them.
--- Empty for every row that predates this migration and for a link submission,
--- which keeps its URL in `file_url` as before. The element shape is the
--- service's job (the URLs are server-minted by the student upload route); the
--- CHECK refuses what a reader cannot survive - a non-array - and the one bound
--- the product states: at most five (`PRODUCT_SPEC.md` §2.1, "photo ... (<=5)").
-ALTER TABLE assessment_submissions
-  ADD COLUMN files JSONB NOT NULL DEFAULT '[]'
-  CONSTRAINT assessment_submissions_files_is_list
-  CHECK (jsonb_typeof(files) = 'array' AND jsonb_array_length(files) <= 5);
-
--- The superseded set, archived whole (`D-39` (c)): a revision is the history of
--- what was handed in, and a photo set is one hand-in.
-ALTER TABLE submission_revisions
-  ADD COLUMN files JSONB NOT NULL DEFAULT '[]'
-  CONSTRAINT submission_revisions_files_is_list
-  CHECK (jsonb_typeof(files) = 'array' AND jsonb_array_length(files) <= 5);
-
--- ---------------------------------------------------------------------------
--- 3. Annotations as DATA (`D-2`). Never a flattened file.
+-- 2. Annotations as DATA (`D-2`). Never a flattened file.
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE submission_annotations (

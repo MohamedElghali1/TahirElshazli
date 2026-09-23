@@ -66,6 +66,68 @@ has access. Where no one does, build to `PRODUCT_SPEC.md` §2.2/§2.3 and the co
 
 ---
 
+## Revision 1: coordinator planning pass, 2026-09-23 (supersedes the draft where they differ)
+
+**Who and how.** The draft below was written by the `redesign-planner` agent. The user then asked
+for the pipeline to run without the agent harness, so the coordinator re-did the planning pass
+itself, read-only. It re-read the plan end to end and spot-checked its §0 findings against the code:
+- `uploads.controller.ts:44` is `@Roles(...STAFF_ALL)`;
+- `submit-assessment.dto.ts:13` is `@IsPublicHttpUrl()`;
+- `assessments.service.ts:443-444` returned `feedback`/`annotatedFileUrl` unconditionally at `6657c7a`;
+- `main.ts:48` is `helmet()` with its defaults;
+- `console-shell.tsx:95` links `/manage/marks`, which has no page.
+
+All held. The draft's analysis stands; this section records what changed around it.
+
+**Rulings (user, 2026-09-23).** The user accepted all nine recommendations, then **withdrew `B-1`
+and `B-2`** with the instruction *"escalate the MARK-6 design question instead of deciding it."*
+
+| Blocker | Status | Decision id |
+|---|---|---|
+| `B-1` submission modes | **OPEN. Escalated to the user.** | `D-38`, accepted and withdrawn the same day, and recorded as withdrawn |
+| `B-2` student upload and multi-file | **OPEN. Escalated to the user.** | `D-39`, accepted and withdrawn, and recorded as withdrawn |
+| `B-3` `pdfjs-dist` | Ruled: reading A (≥ 4.2.67, `isEvalSupported: false`, same-origin worker, lazy on marking routes) | `D-40` |
+| `B-4` platform-stored files only | Ruled: reading A, plus file an "R2 storage driver" task, not built here | `D-41` |
+| `B-5` annotation authorship and lifecycle | Ruled: (a) author-only, 403; (b) **marking up after return is allowed, and audited**; (c) resubmission unchanged, and old marks counted stale | `D-42` |
+| `B-6` marker | Ruled: reading A. Advisory; the first `grade` or annotation write on an unclaimed task claims it for the actor, audited `assessment.updated`; assistants may self-claim | `D-43` |
+| `B-7` grain of `/grade` and the course queue | Ruled: reading A. `/grade` uses `loadSubmissionInScope`; the course queue's items narrow to held groups in the query; the course tab gains Save and return; averages stay course-wide, recorded as the residue | `D-44` |
+| `B-8` mark-book total | Ruled: (a). Mean of per-task shares over marked cells, non-submissions excluded, labelled "Average of marked work", never "term" | `D-45` |
+| `B-9` Google Form columns | Ruled: (b). Matched result over its own max, labelled mirrored with the last sync time, and the unmatched count shown | `D-46` |
+
+**Scope, revised:**
+- **Executable:** 7a–7h, **plus 7j (`D-44`), 7k (`D-40`), 7l (`D-43`), 7m (`D-45`), 7n (`D-46`) and
+  7o (`D-42`).**
+- **Blocked:** 7i (`MARK-6`) only. It stays `[!]` against `B-1`/`B-2`, and the unit **cannot close**
+  while it is open (roadmap §2, condition 9), unless the user moves `MARK-6` out of unit 7.
+
+**Consequences the executor must carry out:**
+1. **No `MARK-6` DDL in `019`.** The stopped agent executor folded a `files JSONB` column (≤ 5) on
+   `assessment_submissions` and `submission_revisions` into `019` under `D-38`/`D-39`. It comes out,
+   together with every `files`/`SubmissionFile` path in both drivers, the service, `API_SPEC.yaml`,
+   `lib/types.ts` and the integration spec.
+   - `019` has run only on disposable test databases, never on a shared or production one, so it is
+     edited in place, as the draft's §4 *Database* allows.
+   - Whatever `B-1`/`B-2` decide becomes migration `020`.
+2. **Annotations anchor on `file_url` (A-11)**, which is today's single `fileUrl`. That is correct
+   with or without multi-file, so 7b's annotation table is unaffected.
+3. **Honesty about reach.** With `B-2` open there is still **no student upload**. So under `D-41` no
+   real student submission is annotatable in any environment. The marking surface, including PDFs
+   under `D-40`, is proven against a manufactured platform-stored fixture only.
+   `EXECUTION_NOTES.md` must say so in its first paragraph.
+4. **`D-46` pulls `findResultsForStudent`, or whichever work-repository read feeds the mark-book
+   columns, into `TASK-F4`'s integration coverage.** No SQL changes without a named test.
+5. **`D-45` reuses `GROUP-4`'s arithmetic** (`groups.service.ts` `report`), so the two screens agree.
+   A missing mark is excluded from the mean, never counted as 0. A student with no marked cells shows
+   `—`.
+
+**Prior work being verified, not redone.** The stopped executor left commits `9add020..22de559`
+(7a–7f with 7o folded into 7e), plus uncommitted edits to `grading.service.ts`,
+`assessment-authoring.service.ts` and `manage.controller.spec.ts` (7j/7l in progress). The user chose
+to keep them. The implementation pass re-verifies each against this plan, and
+`EXECUTION_NOTES.md` records what was re-run and what was corrected.
+
+---
+
 ## 0. Headline
 
 **Where the work splits:** annotations, save versus return, the per-task queue with non-submitters,

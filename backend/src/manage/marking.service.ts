@@ -9,8 +9,6 @@ import {
 import type {
   AssessmentRepository,
   StoredSubmission,
-  SubmissionFile,
-  SubmissionMode,
 } from '../assessments/interfaces/assessment-repository.interface.js';
 import { ASSESSMENT_REPOSITORY } from '../assessments/interfaces/assessment-repository.interface.js';
 import type { WorkType } from '../assessments/interfaces/work-repository.interface.js';
@@ -73,9 +71,14 @@ export interface SubmissionDocument {
   annotatable: boolean;
 }
 
-/** The files this submission currently carries, in order (`D-39`). */
-export function documentsOf(s: Pick<StoredSubmission, 'fileUrl' | 'files'>): SubmissionDocument[] {
-  const urls = [...s.files.map((f) => f.url), ...(s.fileUrl ? [s.fileUrl] : [])];
+/**
+ * The file this submission currently carries, as the marking view renders it.
+ * Zero or one today - a submission is one `fileUrl` - and a list because
+ * `MARK-6` (open, B-1/B-2) may make it several; the anchor on `fileUrl`
+ * (A-11) already allows that.
+ */
+export function documentsOf(s: Pick<StoredSubmission, 'fileUrl'>): SubmissionDocument[] {
+  const urls = s.fileUrl ? [s.fileUrl] : [];
   return urls.map((url) => {
     if (!isPlatformStored(url)) {
       return { url, kind: 'link', annotatable: false };
@@ -165,7 +168,6 @@ export interface TaskSubmissionRow {
   isLate: boolean;
   isOverdue: boolean;
   fileUrl: string | null;
-  files: SubmissionFile[];
   documents: SubmissionDocument[];
   answerText: string | null;
   lastSubmittedAt: string | null;
@@ -173,9 +175,9 @@ export interface TaskSubmissionRow {
   feedback: string | null;
   correctedAt: string | null;
   returnedAt: string | null;
-  /** Marks on the files this submission carries now. */
+  /** Marks on the file this submission carries now. */
   annotationCount: number;
-  /** Marks on files a resubmission replaced (`D-42` (c)): kept, never deleted. */
+  /** Marks on a file a resubmission replaced (`D-42` (c)): kept, never deleted. */
   staleAnnotationCount: number;
 }
 
@@ -201,7 +203,6 @@ export interface TaskSubmissions {
   maxScore: number;
   dueAt: string;
   workType: WorkType;
-  submissionModes: SubmissionMode[];
   /** `D-43`: advisory. Null until the first saved mark claims the task. */
   markerId: string | null;
   markerName: string | null;
@@ -322,7 +323,6 @@ export class MarkingService {
         isLate: submission !== null && new Date(submission.lastSubmittedAt).getTime() > new Date(dueAt).getTime(),
         isOverdue: submission === null && now > new Date(dueAt).getTime(),
         fileUrl: submission?.fileUrl ?? null,
-        files: submission?.files ?? [],
         documents: submission ? documentsOf(submission) : [],
         answerText: submission?.answerText ?? null,
         lastSubmittedAt: submission?.lastSubmittedAt ?? null,
@@ -368,7 +368,6 @@ export class MarkingService {
       maxScore: assessment.maxScore,
       dueAt: assessment.dueAt,
       workType: assessment.workType,
-      submissionModes: assessment.submissionModes,
       markerId: assessment.markerId,
       markerName: marker?.name ?? null,
       groups: summaries,

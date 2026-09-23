@@ -14,7 +14,6 @@ import type {
   StoredAssessment,
   TaskVisibility,
   StoredSubmission,
-  SubmissionFile,
   SubmissionRevision,
 } from './interfaces/assessment-repository.interface.js';
 import { ASSESSMENT_REPOSITORY } from './interfaces/assessment-repository.interface.js';
@@ -82,8 +81,6 @@ export interface AssessmentListItem {
 export interface SubmissionView {
   id: string;
   fileUrl: string | null;
-  /** The uploaded files, in order (`D-39`). */
-  files: SubmissionFile[];
   answerText: string | null;
   submittedAt: string;
   lastSubmittedAt: string;
@@ -483,7 +480,6 @@ export class AssessmentsService {
         ? {
             id: submission.id,
             fileUrl: submission.fileUrl,
-            files: submission.files,
             answerText: submission.answerText,
             submittedAt: submission.submittedAt,
             lastSubmittedAt: submission.lastSubmittedAt,

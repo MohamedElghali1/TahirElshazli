@@ -307,13 +307,9 @@ describe('MarkingService', () => {
     it('counts current and stale annotations, and derives documents server-side', async () => {
       const task = await assessments.create({ ...TASK, title: 'Stale' });
       await assessments.setTargets(task.id, [{ groupId: 'group-1' }]);
-      const sub = await assessments.createSubmission(task.id, 'student-1', null, null, [
-        { url: '/uploads/old.png', mimeType: 'image/png', sizeBytes: 1 },
-      ]);
+      const sub = await assessments.createSubmission(task.id, 'student-1', '/uploads/old.png', null);
       await annotations.create({ submissionId: sub.id, fileUrl: '/uploads/old.png', page: 1, kind: 'tick', xPercent: 1, yPercent: 1, text: '', path: null, createdBy: 'teacher-1' });
-      await assessments.updateSubmission(sub.id, 'student-1', null, undefined, [
-        { url: '/uploads/new.pdf', mimeType: 'application/pdf', sizeBytes: 2 },
-      ]);
+      await assessments.updateSubmission(sub.id, 'student-1', '/uploads/new.pdf', undefined);
       await annotations.create({ submissionId: sub.id, fileUrl: '/uploads/new.pdf', page: 2, kind: 'cross', xPercent: 1, yPercent: 1, text: '', path: null, createdBy: 'teacher-1' });
       const row = (await marking.queue(task.id, TEACHER)).rows.find((r) => r.studentId === 'student-1')!;
       expect(row).toMatchObject({ annotationCount: 1, staleAnnotationCount: 1 });
@@ -323,21 +319,19 @@ describe('MarkingService', () => {
 
   describe('documentsOf', () => {
     it('marks a pasted link unannotatable and a stored image or PDF annotatable', () => {
-      expect(documentsOf({ fileUrl: 'https://docs.google.com/x', files: [] })).toEqual([
+      expect(documentsOf({ fileUrl: 'https://docs.google.com/x' })).toEqual([
         { url: 'https://docs.google.com/x', kind: 'link', annotatable: false },
       ]);
-      expect(
-        documentsOf({
-          fileUrl: null,
-          files: [
-            { url: '/uploads/a.jpg', mimeType: 'image/jpeg', sizeBytes: 1 },
-            { url: '/uploads/b.txt', mimeType: 'text/plain', sizeBytes: 1 },
-          ],
-        }),
-      ).toEqual([
+      expect(documentsOf({ fileUrl: '/uploads/a.jpg' })).toEqual([
         { url: '/uploads/a.jpg', kind: 'image', annotatable: true },
+      ]);
+      expect(documentsOf({ fileUrl: '/uploads/b.pdf' })).toEqual([
+        { url: '/uploads/b.pdf', kind: 'pdf', annotatable: true },
+      ]);
+      expect(documentsOf({ fileUrl: '/uploads/b.txt' })).toEqual([
         { url: '/uploads/b.txt', kind: 'file', annotatable: false },
       ]);
+      expect(documentsOf({ fileUrl: null })).toEqual([]);
     });
   });
   describe('annotations (MARK-1, D-42)', () => {
@@ -348,12 +342,10 @@ describe('MarkingService', () => {
     async function paper() {
       const task = await assessments.create({ ...TASK, title: 'Marked up' });
       await assessments.setTargets(task.id, [{ groupId: 'group-1' }, { groupId: group3 }]);
-      const sub = await assessments.createSubmission(task.id, 'student-1', null, null, [
-        { url: PHOTO, mimeType: 'image/png', sizeBytes: 10 },
-      ]);
-      const theirs = await assessments.createSubmission(task.id, 'student-2', null, null, [
-        { url: PHOTO, mimeType: 'image/png', sizeBytes: 10 },
-      ]);
+      // A platform-stored file no student route can create yet (B-2 is open):
+      // manufactured here, as the plan's browser fixture is.
+      const sub = await assessments.createSubmission(task.id, 'student-1', PHOTO, null);
+      const theirs = await assessments.createSubmission(task.id, 'student-2', PHOTO, null);
       return { sub, theirs };
     }
 

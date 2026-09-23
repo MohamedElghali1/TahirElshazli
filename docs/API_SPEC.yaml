@@ -739,17 +739,9 @@ components:
           maxItems: 2000
           items: { $ref: '#/components/schemas/AnnotationPoint' }
 
-    # One uploaded file of a submission (`D-39`). `url` is server-minted by
-    # `POST /assessments/{id}/files`; `mimeType` is re-derived from it.
-    SubmissionFile:
-      type: object
-      required: [url, mimeType, sizeBytes]
-      properties:
-        url:       { type: string, maxLength: 2048 }
-        mimeType:  { type: string }
-        sizeBytes: { type: integer, minimum: 0 }
-
-    # A file of a submission as the marking view renders it - server-derived.
+    # The file of a submission as the marking view renders it - server-derived.
+    # Zero or one today (a submission is one `fileUrl`); a list because MARK-6
+    # (B-1/B-2, open) may allow several.
     # `image`/`pdf` are platform-stored and annotatable; `file` is platform-
     # stored but not renderable; `link` is a pasted URL, graded without mark-up
     # (`D-41`).
@@ -764,7 +756,7 @@ components:
     TaskSubmissionRow:
       type: object
       required: [studentId, studentName, groupId, groupName, submissionId, status, dueAt,
-                 isLate, isOverdue, fileUrl, files, documents, answerText, lastSubmittedAt,
+                 isLate, isOverdue, fileUrl, documents, answerText, lastSubmittedAt,
                  score, feedback, correctedAt, returnedAt, annotationCount, staleAnnotationCount]
       properties:
         studentId:       { $ref: '#/components/schemas/Id' }
@@ -777,7 +769,6 @@ components:
         isLate:          { type: boolean }
         isOverdue:       { type: boolean, description: No submission and past this student's deadline. }
         fileUrl:         { type: [string, 'null'] }
-        files:           { type: array, items: { $ref: '#/components/schemas/SubmissionFile' } }
         documents:       { type: array, items: { $ref: '#/components/schemas/SubmissionDocument' } }
         answerText:      { type: [string, 'null'] }
         lastSubmittedAt: { type: [string, 'null'], format: date-time }
@@ -785,8 +776,8 @@ components:
         feedback:        { type: [string, 'null'] }
         correctedAt:     { type: [string, 'null'], format: date-time }
         returnedAt:      { type: [string, 'null'], format: date-time }
-        annotationCount:      { type: integer, description: Marks on the files the submission carries now. }
-        staleAnnotationCount: { type: integer, description: 'Marks on files a resubmission replaced (`D-42` (c)); kept.' }
+        annotationCount:      { type: integer, description: Marks on the file the submission carries now. }
+        staleAnnotationCount: { type: integer, description: 'Marks on a file a resubmission replaced (`D-42` (c)); kept.' }
 
     # Per reachable targeted group. Counted over that group's own members, so
     # a figure is the same for every viewer who can see the group. There is
@@ -805,7 +796,7 @@ components:
 
     TaskSubmissions:
       type: object
-      required: [assessmentId, courseId, title, maxScore, dueAt, workType, submissionModes,
+      required: [assessmentId, courseId, title, maxScore, dueAt, workType,
                  markerId, markerName, groups, rows]
       properties:
         assessmentId:    { $ref: '#/components/schemas/Id' }
@@ -814,7 +805,6 @@ components:
         maxScore:        { type: integer }
         dueAt:           { type: string, format: date-time }
         workType:        { $ref: '#/components/schemas/WorkType' }
-        submissionModes: { type: array, items: { $ref: '#/components/schemas/SubmissionMode' } }
         markerId:        { type: [string, 'null'], description: '`D-43`: advisory; set by the first saved mark when unclaimed.' }
         markerName:      { type: [string, 'null'] }
         groups:          { type: array, items: { $ref: '#/components/schemas/TaskSubmissionGroup' } }
@@ -1775,7 +1765,6 @@ paths:
         `submission.annotations` (`StudentAnnotation[]`, `MARK-5`) is empty until
         the work is returned, and never carries who drew a mark. It is only ever
         the caller's own submission - resolved from the token, never from an id.
-        `submission.files` (`SubmissionFile[]`, `D-39`) lists the uploaded files.
       x-roles: [student]
       parameters:
         - { name: assessmentId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }

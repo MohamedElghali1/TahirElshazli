@@ -2662,20 +2662,6 @@ describeIfDb('Postgres repositories', () => {
       ).rejects.toThrow(/assessment_submissions_returned_needs_mark/);
     });
 
-    it('refuses more than five files, and a non-array, on submissions and revisions', async () => {
-      const six = JSON.stringify(Array.from({ length: 6 }, (_, i) => ({ url: `/uploads/${i}.png`, mimeType: 'image/png', sizeBytes: 1 })));
-      await expect(
-        bad(`UPDATE assessment_submissions SET files = '${six}'::jsonb WHERE id = '${submissionId}'`),
-      ).rejects.toThrow(/assessment_submissions_files_is_list/);
-      await expect(
-        bad(`UPDATE assessment_submissions SET files = '{}'::jsonb WHERE id = '${submissionId}'`),
-      ).rejects.toThrow(/assessment_submissions_files_is_list/);
-      await expect(
-        bad(`INSERT INTO submission_revisions (id, submission_id, submitted_at, files)
-             VALUES ('rev-bad', '${submissionId}', now(), '${six}'::jsonb)`),
-      ).rejects.toThrow(/submission_revisions_files_is_list/);
-    });
-
     it('indexes annotations by (submission_id, page)', async () => {
       const row = await db.queryOne<{ indexdef: string }>(
         `SELECT indexdef FROM pg_indexes
@@ -2795,7 +2781,7 @@ describeIfDb('Postgres repositories', () => {
     });
   });
 
-  describe('assessments: returned_at, files and the marker claim (unit 7)', () => {
+  describe('assessments: returned_at and the marker claim (unit 7)', () => {
     const repo = () => new PostgresAssessmentRepository(db);
     let taskId: string;
     let submissionId: string;
@@ -2816,7 +2802,6 @@ describeIfDb('Postgres repositories', () => {
       expect(graded!.score).toBe(15);
       expect(graded!.correctedAt).not.toBeNull();
       expect(graded!.returnedAt).toBeNull();
-      expect(graded!.files).toEqual([]);
     });
 
     it('returnSubmission stamps once and keeps the first time on a second call', async () => {
@@ -2833,7 +2818,7 @@ describeIfDb('Postgres repositories', () => {
       expect(regraded!.score).toBe(16);
     });
 
-    it('every submission read carries returnedAt and files', async () => {
+    it('every submission read carries returnedAt', async () => {
       const reads = [
         await repo().findSubmission(taskId, 'student-2'),
         await repo().findSubmissionById(submissionId),
@@ -2843,7 +2828,6 @@ describeIfDb('Postgres repositories', () => {
       ];
       for (const read of reads) {
         expect(read!.returnedAt).not.toBeNull();
-        expect(read!.files).toEqual([]);
       }
       const seeded = await repo().findSubmissionById('sub-1');
       expect(seeded!.returnedAt).toBe(seeded!.correctedAt);
@@ -2855,29 +2839,6 @@ describeIfDb('Postgres repositories', () => {
       ]);
       expect(await repo().findSubmissionsForStudents([taskId], [])).toEqual([]);
       expect(await repo().findSubmissionsForStudents([], ['student-2'])).toEqual([]);
-    });
-
-    it('stores an uploaded file set, and a resubmission archives and replaces it whole', async () => {
-      const photos = [
-        { url: '/uploads/11111111-1111-4111-8111-111111111111.jpg', mimeType: 'image/jpeg', sizeBytes: 100 },
-        { url: '/uploads/22222222-2222-4222-8222-222222222222.png', mimeType: 'image/png', sizeBytes: 200 },
-      ];
-      const other = (await repo().create({ ...NEW_TASK, title: 'Photos' })).id;
-      const created = await repo().createSubmission(other, 'student-2', null, 'note', photos);
-      expect(created.files).toEqual(photos);
-      expect(created.fileUrl).toBeNull();
-
-      const pdf = [{ url: '/uploads/33333333-3333-4333-8333-333333333333.pdf', mimeType: 'application/pdf', sizeBytes: 300 }];
-      const updated = await repo().updateSubmission(created.id, 'student-2', null, undefined, pdf);
-      expect(updated!.files).toEqual(pdf);
-      expect(updated!.answerText).toBe('note');
-      const revisions = await repo().findRevisions(created.id, 'student-2');
-      expect(revisions).toHaveLength(1);
-      expect(revisions[0]!.files).toEqual(photos);
-
-      // `undefined` leaves the set alone, like the other two fields.
-      const noteOnly = await repo().updateSubmission(created.id, 'student-2', undefined, 'new note');
-      expect(noteOnly!.files).toEqual(pdf);
     });
 
     it('claimMarker names the first claimant only', async () => {
@@ -3383,12 +3344,12 @@ describeIfDb('migration 019 backfills returned_at from corrected_at', () => {
         await readFile(join(migrationsDir, '019_submission_annotations_and_return.sql'), 'utf8'),
       );
 
-      const rows = await client.query<{ id: string; returned_at: Date | null; files: unknown }>(
-        'SELECT id, returned_at, files FROM assessment_submissions ORDER BY id',
+      const rows = await client.query<{ id: string; returned_at: Date | null }>(
+        'SELECT id, returned_at FROM assessment_submissions ORDER BY id',
       );
       expect(rows.rows).toEqual([
-        { id: 'marked', returned_at: new Date('2026-08-01T10:00:00.123Z'), files: [] },
-        { id: 'unmarked', returned_at: null, files: [] },
+        { id: 'marked', returned_at: new Date('2026-08-01T10:00:00.123Z') },
+        { id: 'unmarked', returned_at: null },
       ]);
     } finally {
       await client.end();

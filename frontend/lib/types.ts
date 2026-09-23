@@ -339,8 +339,6 @@ export interface SubmissionView {
   annotatedFileUrl: string | null;
   /** When the marked work came back (`MARK-2`). The key for showing a mark. */
   returnedAt: string | null;
-  /** The uploaded files, in order (`D-39`). Empty for a link or legacy submission. */
-  files: SubmissionFile[];
   /** Marks on the paper (`MARK-5`): empty until returned, never with an author. */
   annotations: StudentAnnotation[];
   revisions: SubmissionRevision[];
@@ -592,13 +590,6 @@ export interface GradingQueueItem {
 
 /* --- marking (manage/marking.service.ts, unit 7) ------------------------- */
 
-/** One uploaded file of a submission (`D-39`). */
-export interface SubmissionFile {
-  url: string;
-  mimeType: string;
-  sizeBytes: number;
-}
-
 /** Pins and freehand strokes (`D-2`). The eraser is a DELETE, not a kind. */
 export type AnnotationKind = 'comment' | 'tick' | 'cross' | 'pen' | 'highlight';
 
@@ -663,7 +654,6 @@ export interface TaskSubmissionRow {
   isLate: boolean;
   isOverdue: boolean;
   fileUrl: string | null;
-  files: SubmissionFile[];
   documents: SubmissionDocument[];
   answerText: string | null;
   lastSubmittedAt: string | null;
@@ -693,7 +683,6 @@ export interface TaskSubmissions {
   maxScore: number;
   dueAt: string;
   workType: WorkType;
-  submissionModes: SubmissionMode[];
   markerId: string | null;
   markerName: string | null;
   groups: TaskSubmissionGroup[];

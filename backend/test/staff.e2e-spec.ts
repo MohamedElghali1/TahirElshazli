@@ -2940,12 +2940,12 @@ describe('Staff and admin API (e2e)', () => {
     let unheldPaper = '';
     beforeAll(async () => {
       await unit7Setup('annotations');
-      // The student upload route is slice 7i; here the paper's file is placed
-      // through the repository so these cases test the annotation routes alone.
+      // No student route can store a platform file yet (MARK-6, B-1/B-2 open;
+      // a submission's URL must be public). The paper's file is placed through
+      // the repository so these cases test the annotation routes alone.
       const repo = app.get<AssessmentRepository>(ASSESSMENT_REPOSITORY);
-      const file = [{ url: PHOTO, mimeType: 'image/png', sizeBytes: 10 }];
-      await repo.updateSubmission(unit7.mine, 'student-1', null, undefined, file);
-      await repo.updateSubmission(unit7.theirs, 'student-2', null, undefined, file);
+      await repo.updateSubmission(unit7.mine, 'student-1', PHOTO, undefined);
+      await repo.updateSubmission(unit7.theirs, 'student-2', PHOTO, undefined);
       paper = unit7.mine;
       unheldPaper = unit7.theirs;
     });
@@ -3039,7 +3039,7 @@ describe('Staff and admin API (e2e)', () => {
       ).body.id;
       await request(server()).post(`/assessments/${shared}/submissions`).set(bearer(unit7.student2Token)).send({ answerText: 'theirs' }).expect(201);
       await app.get<AssessmentRepository>(ASSESSMENT_REPOSITORY).updateSubmission(
-        s1Sub, 'student-1', null, undefined, [{ url: PHOTO, mimeType: 'image/png', sizeBytes: 1 }],
+        s1Sub, 'student-1', PHOTO, undefined,
       );
       await request(server()).post(`/staff/submissions/${s1Sub}/annotations`).set(bearer(assignedTaToken))
         .send({ fileUrl: PHOTO, page: 1, kind: 'comment', xPercent: 5, yPercent: 5, text: 'Show working' }).expect(201);
