@@ -3851,3 +3851,10 @@ the task's mode — a PDF, up to five photos, or a Google Doc link — uploading
 platform on a route of their own, and staff mark up every file of a hand-in. On a server without file
 storage, a teacher cannot create a task that promises uploads. Counts: 748 unit / 44 files, 336 e2e,
 176 integration (0 skipped; 001–020 from an empty schema).
+
+**Closed the same day, `APPROVED`.** The user confirmed the three new `MARK-6` screens in a browser: the
+student upload form, the file switcher in the marking view, and the authoring gate. The coordinator did
+not observe it; it is recorded as the user's verification. Unit 7 is `[x]`. Unit 8 (sessions and
+attendance) is next. Carried forward:
+- `MARK-F1`…`MARK-F5`, including the R2 storage driver without which production stores no files;
+- one open question: whether quiz scores belong in the mark book's average.

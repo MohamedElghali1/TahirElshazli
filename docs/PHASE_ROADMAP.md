@@ -484,9 +484,15 @@ not the rule.
 
 ---
 
-### Chat unit 7 — Marking and the mark book `[~]` **reviewed `APPROVED WITH FOLLOW-UP` — NOT complete**
+### Chat unit 7 — Marking and the mark book `[x]` **`COMPLETE` 2026-09-23**
 
-**Status 2026-09-23: `[~]`.** Built on `redesign` `6657c7a..HEAD` (local, not pushed); artifacts in
+**Status 2026-09-23: `COMPLETE`.** Review closed **`APPROVED`** after the user confirmed the 7i screens
+in a browser (user-performed, not observed by the coordinator). Artifacts: `PHASE_PLAN.md`,
+`EXECUTION_NOTES.md`, `REVIEW_7.md`. Carried forward, non-blocking: `MARK-F1`…`MARK-F5`, `TASK-F1`,
+`TASK-F2`, `TASK-F4` (narrowed), the `AUTH-6` remainder, and the open question on quiz scores in the
+mark book's average.
+
+**History.** Built on `redesign` `6657c7a..HEAD` (local, not pushed); artifacts in
 `docs/phases/unit-7/`. The user ran the pipeline without the agent harness: the coordinator did the
 planning pass (Revision 1 of `PHASE_PLAN.md`), the implementation and the review itself, in sequence.
 **`MARK-6` ruled and built the same day:** the user accepted the recommendations (`D-47`, `D-48`), slice 7i.

@@ -120,3 +120,29 @@ e2e and integration tests. Once the user confirms those three screens, this revi
 
 Unit 750 / 44 files · e2e 337 · integration 176, 0 skipped, PostgreSQL 15.19, 001–020 from a database
 with 0 tables · backend `tsc` 0 · frontend `tsc` 0 · lint 0 · `npm audit` 0.
+
+---
+
+# Closure — **APPROVED**, 2026-09-23
+
+The one remaining condition is met. The user confirmed the three 7i screens in a browser: the student
+upload form, the file switcher in the marking view, and the authoring gate. That confirmation is the
+user's verification, not something the coordinator observed, as with unit 6. Per the addendum it closes
+the review as **`APPROVED`** with no further round.
+
+Roadmap §2, all nine conditions:
+1. **Planner completed, plan approved** — `PHASE_PLAN.md` with Revisions 1 and 2. ✔
+2. **Executor completed the approved scope** — 7a–7o; `MARK-6` (7i) built after the user's ruling. ✔
+3. **Reviewer `APPROVED`** — this closure. ✔
+4. **Required tests pass, with real output recorded** — 750 unit / 44 files, 337 e2e, 176 integration,
+   0 skipped, on PostgreSQL 15.19; 001–020 from an empty schema. ✔
+5. **Security checks, with a refusal test for every permission added** — both review tables. ✔
+6. **Documentation updated** — the `CLAUDE.md` §12 owners. ✔
+7. **`IMPLEMENTATION_PLAN.md` statuses updated.** ✔
+8. **`PHASE_ROADMAP.md` status updated.** ✔
+9. **No unresolved blockers in scope.** ✔ The `MARK-F1`…`MARK-F5` follow-ups and the open question below
+   are outside the unit's scope.
+
+**Open question, not a blocker:** should Google Form quiz scores count in the mark book's "Average of
+marked work"? Today they are shown as columns but not averaged, following `D-45`'s "`GROUP-4`'s
+arithmetic". A yes would be a new ruling.

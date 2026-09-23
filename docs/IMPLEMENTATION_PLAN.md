@@ -278,7 +278,7 @@ way:
 
 `TASK-F2` `[ ]` follow-up (unit-6 review) — **retire `frontend/app/(app)/manage/courses/[id]/assessments/page.tsx` after a consumer count** (the `D-25` discipline). The `/manage/tasks` screens supersede it; it still works today, but it sends no attachment `audience`, so extending it would meet a 400.
 
-`TASK-F3` `[~]` **built in unit 7 (slice 7a), awaiting review** — 409 now, e2e moved. Follow-up (unit-6 re-check 1, user ruling) — **deleting a task that has submissions should return 409, not 400** (`CLAUDE.md` §6: a state conflict is 409). Today `DELETE /staff/assessments/:id` refuses with 400 for `assessment_submissions`, while `D-36`'s external-result refusal is 409. Code **not** changed in unit 6; the e2e `refuses to delete a task that has submissions` asserts 400 and moves with it. Unit 7 rebuilds the submissions surface and is a natural place.
+`TASK-F3` `[x]` **built in unit 7 (slice 7a), reviewed `APPROVED`** — 409 now, e2e moved. Follow-up (unit-6 re-check 1, user ruling) — **deleting a task that has submissions should return 409, not 400** (`CLAUDE.md` §6: a state conflict is 409). Today `DELETE /staff/assessments/:id` refuses with 400 for `assessment_submissions`, while `D-36`'s external-result refusal is 409. Code **not** changed in unit 6; the e2e `refuses to delete a task that has submissions` asserts 400 and moves with it. Unit 7 rebuilds the submissions surface and is a natural place.
 
 `TASK-F4` `[ ]` **narrowed by unit 7**: `tallyResults`, `countResultsByAssessments`, `findResultsForStudent`, `findResults` and the new `findLatestScoresForStudents` now run against real Postgres (7a, 7n). **Remaining:** `PostgresGoogleCredentialRepository`, and the binding/sync/attach methods of `PostgresWorkRepository`. Original entry: follow-up, pre-existing, **filed here because no entry existed** (it was carried only in the unit-6 plan's and review's out-of-scope lists): integration coverage for `PostgresWorkRepository` and `PostgresGoogleCredentialRepository`. **`PostgresWorkRepository.tallyResults` goes first**, because `D-36`'s hide and delete guards now depend on it (unit-6 re-check 1). Their SQL was not changed by unit 6.
 
@@ -286,14 +286,14 @@ way:
 existence oracle on `PATCH`/`DELETE /staff/assessments/:id` and `POST …/targets` (plan finding 2).
 
 ### Phase 8 — Marking
-Unit 7, 2026-09-23. `[~]` = built and tested; see `docs/phases/unit-7/REVIEW_7.md` for the verdict and what is left open. Rulings `D-40`…`D-46`; `D-38`/`D-39` withdrawn (`CHANGELOG.md`).
+Unit 7, 2026-09-23. `[x]` = built, tested and reviewed **`APPROVED`** (`docs/phases/unit-7/REVIEW_7.md`; closed on the user's browser confirmation). Rulings `D-40`…`D-46`; `D-38`/`D-39` withdrawn (`CHANGELOG.md`).
 
-`MARK-1` `[~]` `submission_annotations` (migration `019`, both drivers) + 4 routes (list, create, update, delete), `submission.annotated` audit; author-only edit/erase, allowed after return (`D-42`); the first annotation claims an unclaimed task (`D-43`) ·
-`MARK-2` `[~]` Save and return are two operations: `POST /staff/submissions/:id/return` (`returned_at`, `submission.returned` audit); one `isReturnedToStudent` predicate across the five student reads; `019` backfills `returned_at := corrected_at` ·
-`MARK-3` `[~]` `GET /staff/assessments/:id/submissions` — every targeted student **including non-submitters**, group grain, per-group counts never summed; screen `/manage/tasks/[id]/submissions` ·
-`MARK-4` `[~]` Marking view (page, toolbar, annotation list, mark, feedback, Save / Save and return) ·
-`MARK-5` `[~]` Marked copy as a **rendered overlay** (`D-2`): pins and freehand strokes as data over the immutable original; images and PDFs (`pdfjs-dist` 6.3.289, `D-40`); the student sees it only once returned. **Only platform-stored files can be marked up (`D-41`) — and no student route can store one while `MARK-6` is open, so no real submission is annotatable yet in any environment.** A flattened download stays out of scope ·
-`MARK-6` `[~]` **Built 2026-09-23 (slice 7i)** on the user's ruling `D-47`/`D-48` (the recommendations; `D-38`/`D-39` stay withdrawn): modes enforced at submit time (one PDF, 1–5 photos, or a link; a note never alone); the student upload route `POST /assessments/:id/files`; upload modes refused while storage is off; `allowedFileTypes` derived from the modes; the file set in migration `020` (both drivers), replaced and archived whole; marking over every file of a hand-in.
+`MARK-1` `[x]` `submission_annotations` (migration `019`, both drivers) + 4 routes (list, create, update, delete), `submission.annotated` audit; author-only edit/erase, allowed after return (`D-42`); the first annotation claims an unclaimed task (`D-43`) ·
+`MARK-2` `[x]` Save and return are two operations: `POST /staff/submissions/:id/return` (`returned_at`, `submission.returned` audit); one `isReturnedToStudent` predicate across the five student reads; `019` backfills `returned_at := corrected_at` ·
+`MARK-3` `[x]` `GET /staff/assessments/:id/submissions` — every targeted student **including non-submitters**, group grain, per-group counts never summed; screen `/manage/tasks/[id]/submissions` ·
+`MARK-4` `[x]` Marking view (page, toolbar, annotation list, mark, feedback, Save / Save and return) ·
+`MARK-5` `[x]` Marked copy as a **rendered overlay** (`D-2`): pins and freehand strokes as data over the immutable original; images and PDFs (`pdfjs-dist` 6.3.289, `D-40`); the student sees it only once returned. **Only platform-stored files can be marked up (`D-41`) — and no student route can store one while `MARK-6` is open, so no real submission is annotatable yet in any environment.** A flattened download stays out of scope ·
+`MARK-6` `[x]` **Built 2026-09-23 (slice 7i)** on the user's ruling `D-47`/`D-48` (the recommendations; `D-38`/`D-39` stay withdrawn): modes enforced at submit time (one PDF, 1–5 photos, or a link; a note never alone); the student upload route `POST /assessments/:id/files`; upload modes refused while storage is off; `allowedFileTypes` derived from the modes; the file set in migration `020` (both drivers), replaced and archived whole; marking over every file of a hand-in.
 
 `AUTH-6` progress (unit 7, `D-44`): `POST /staff/submissions/:id/grade` and the **items** of `GET /staff/courses/:id/submissions` are now group-grain; that queue's per-task averages stay course-wide by ruling. The remainder is below in `AUTH-6`'s own entry.
 
@@ -305,8 +305,8 @@ Unit-7 follow-ups (found, recorded, **not** fixed here):
 - `MARK-F4` `[ ]` **Helmet's `Cross-Origin-Resource-Policy: same-origin` is on `/uploads/*`**, and the web app is a different origin, so a plain `<img src={mediaSrc(...)}>` of an uploaded file is blocked by the browser (checked with `curl -I`, 2026-09-23). The marking screens avoid it by fetching through CORS; the existing blog/media screens that use `mediaSrc` in an `<img>` need a browser check.
 
 ### Phase 9 — Mark book
-`BOOK-1` `[~]` `GET /staff/groups/:id/markbook`: uploads as platform cells (saved marks shown to staff, flagged), Google Form columns mirrored with sync time and unmatched count (`D-46`), link work named as omitted, "Average of marked work" (`D-45`, `GROUP-4`'s arithmetic, platform work only) · `BOOK-2` `[~]` Screen `/manage/marks` (sticky first column, em-dash for missing, CSV export) ·
-`BOOK-3` `[~]` `GET /staff/groups/:id/markbook.csv` (UTF-8 BOM, RFC 4180, formula-injection neutralised, em-dash)
+`BOOK-1` `[x]` `GET /staff/groups/:id/markbook`: uploads as platform cells (saved marks shown to staff, flagged), Google Form columns mirrored with sync time and unmatched count (`D-46`), link work named as omitted, "Average of marked work" (`D-45`, `GROUP-4`'s arithmetic, platform work only) · `BOOK-2` `[x]` Screen `/manage/marks` (sticky first column, em-dash for missing, CSV export) ·
+`BOOK-3` `[x]` `GET /staff/groups/:id/markbook.csv` (UTF-8 BOM, RFC 4180, formula-injection neutralised, em-dash)
 
 ### Phase 10 — Sessions and attendance
 `SESS-1` `[ ]` Sessions re-parent to group + mode/location/assistant/visible/state (`DOM-1`) ·

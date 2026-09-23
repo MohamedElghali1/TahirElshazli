@@ -232,7 +232,7 @@ verify against the actual consumer graph before treating either directory as leg
 
 The backend **is** green and must stay green: **750 unit / 44 files, 337 e2e, 176 integration**
 (against real PostgreSQL 15.19, 001–020 from an empty schema) as of unit 7's slice 7i, 2026-09-23
-(`docs/phases/unit-7/EXECUTION_NOTES.md`; unit 6 is `[x]`, unit 7 is `[~]`).
+(`docs/phases/unit-7/EXECUTION_NOTES.md`; units 6 and 7 are `[x]`).
 
 ---
 
