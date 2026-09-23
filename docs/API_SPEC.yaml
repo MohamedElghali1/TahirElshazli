@@ -1895,7 +1895,10 @@ paths:
       description: >
         400 for a file not on this submission, a file the platform does not
         store, an incoherent mark (a stroke without a path, a pin with one, a
-        blank comment) or a paper already carrying 500 marks (A-11).
+        blank comment) or a paper already carrying 500 marks (A-11). The first
+        annotation on a task with no marker names the caller as its marker when
+        they qualify (`D-43`), audited as `assessment.updated` - the same claim a
+        first saved mark makes.
       x-roles: [assistant, teacher, admin]
       requestBody:
         required: true
@@ -1948,6 +1951,49 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
       x-audit: submission.annotated
+
+  /staff/courses/{courseId}/submissions:
+    get:
+      tags: [marking]
+      summary: The course grading queue (submissions only) and per-task averages
+      description: >
+        `[MODIFY]` (unit 7; never restated here before). The course is scoped
+        first: an unreachable course is a 404. **Items are at the group grain**
+        (`D-44`): a scoped assistant sees a submission only when its student sits
+        in a group they hold AND the task was set for that group - the same rule
+        `/grade` and `/return` apply, restricted in the query. Each item gains
+        `returnedAt`. **`assessments[]` averages stay course-wide** for every
+        viewer, recorded as the residue (`D-44`): narrowing them would make an
+        average change with who is looking (`D-23`). Non-submitters are NOT listed
+        here; they are on `GET /staff/assessments/{assessmentId}/submissions`.
+      x-roles: [assistant, teacher, admin]
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [courseId, items, assessments]
+                properties:
+                  courseId: { $ref: '#/components/schemas/Id' }
+                  items:    { type: array, items: { $ref: '#/components/schemas/GradingQueueItem' } }
+                  assessments:
+                    type: array
+                    items:
+                      type: object
+                      required: [assessmentId, title, type, maxScore, submissionCount, gradedCount, averageScorePercent]
+                      properties:
+                        assessmentId:        { $ref: '#/components/schemas/Id' }
+                        title:               { type: string }
+                        type:                { $ref: '#/components/schemas/AssessmentType' }
+                        maxScore:            { type: integer }
+                        submissionCount:     { type: integer }
+                        gradedCount:         { type: integer }
+                        averageScorePercent: { type: [number, 'null'], description: Null when nothing is graded - never 0. }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /staff/submissions/{submissionId}/grade:
     post:

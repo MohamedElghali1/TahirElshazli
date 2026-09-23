@@ -13,6 +13,7 @@ import {
 } from './marking.service.js';
 import { ASSESSMENT_NOT_FOUND } from './assessment-authoring.service.js';
 import { SubmissionAccessService, SUBMISSION_NOT_FOUND } from './submission-access.service.js';
+import { GradingService } from './grading.service.js';
 import { StaffScopeService } from '../staff/staff-scope.service.js';
 import { ASSISTANT_SCOPE_REPOSITORY } from '../staff/interfaces/assistant-scope-repository.interface.js';
 import { InMemoryAssistantScopeRepository } from '../staff/repositories/in-memory-assistant-scope.repository.js';
@@ -77,6 +78,7 @@ async function notFound(p: Promise<unknown>): Promise<string> {
 
 describe('MarkingService', () => {
   let marking: MarkingService;
+  let grading: GradingService;
   let assessments: InMemoryAssessmentRepository;
   let groups: InMemoryGroupRepository;
   let annotations: InMemorySubmissionAnnotationRepository;
@@ -91,6 +93,7 @@ describe('MarkingService', () => {
     const module = await Test.createTestingModule({
       providers: [
         MarkingService,
+        GradingService,
         SubmissionAccessService,
         StaffScopeService,
         AuditService,
@@ -105,6 +108,7 @@ describe('MarkingService', () => {
       ],
     }).compile();
     marking = module.get(MarkingService);
+    grading = module.get(GradingService);
     assessments = module.get(ASSESSMENT_REPOSITORY);
     groups = module.get(GROUP_REPOSITORY);
     annotations = module.get(SUBMISSION_ANNOTATION_REPOSITORY);
@@ -453,6 +457,89 @@ describe('MarkingService', () => {
       ]) {
         expect((await notFound(call)) === missing).toBe(true);
       }
+    });
+  });
+
+  describe('D-44: /grade and the course queue at the group grain (7j)', () => {
+    it('grades a reachable paper and 404s an unreachable one exactly like a missing one', async () => {
+      const { mine, theirs } = await sharedTask();
+      await expect(grading.grade(mine.id, A1, { score: 10 })).resolves.toMatchObject({ score: 10 });
+      const missing = await notFound(grading.grade('nope', A1, { score: 1 }));
+      expect(missing).toBe(SUBMISSION_NOT_FOUND);
+      // student-2 sits in group-3, which assistant-1 does not hold - before
+      // D-44, holding any group on course-1 reached this paper.
+      expect((await notFound(grading.grade(theirs.id, A1, { score: 1 }))) === missing).toBe(true);
+      expect((await notFound(grading.grade(mine.id, A2, { score: 1 }))) === missing).toBe(true);
+      await expect(grading.grade(theirs.id, TEACHER, { score: 12 })).resolves.toMatchObject({ score: 12 });
+    });
+
+    it('narrows the course queue items to held groups; the averages stay course-wide', async () => {
+      const { mine, theirs } = await sharedTask();
+      await grading.grade(mine.id, TEACHER, { score: 10 });
+      await grading.grade(theirs.id, TEACHER, { score: 20 });
+      const forTeacher = await grading.queue('course-1', TEACHER);
+      const forA1 = await grading.queue('course-1', A1);
+      const ids = (q: typeof forA1) => q.items.map((i) => i.submissionId);
+      expect(ids(forTeacher)).toEqual(expect.arrayContaining([mine.id, theirs.id]));
+      expect(ids(forA1)).toContain(mine.id);
+      expect(ids(forA1)).not.toContain(theirs.id);
+      // The residue D-44 records: a figure about the whole course, identical
+      // for every viewer, carrying no row-level data.
+      expect(forA1.assessments).toEqual(forTeacher.assessments);
+    });
+  });
+
+  describe('D-43: the first saved mark or annotation claims an unclaimed task (7l)', () => {
+    const markerOf = async (id: string) => (await assessments.findById(id))!.markerId;
+
+    it('claims on the first grade, audited once, and never over an existing marker', async () => {
+      const { task, mine, theirs } = await sharedTask();
+      await grading.grade(mine.id, TEACHER, { score: 10 });
+      expect(await markerOf(task.id)).toBe('teacher-1');
+      await grading.grade(theirs.id, ADMIN, { score: 11 });
+      expect(await markerOf(task.id)).toBe('teacher-1');
+      const claims = (await entries('assessment.updated')).filter((e) => e.targetId === task.id);
+      expect(claims).toHaveLength(1);
+      expect(claims[0]).toMatchObject({
+        actorId: 'teacher-1',
+        before: { markerId: null },
+        after: { markerId: 'teacher-1', claimedBy: 'first saved mark' },
+      });
+    });
+
+    it('lets an assistant claim for themselves when they reach every targeted group', async () => {
+      const task = await assessments.create({ ...TASK, title: 'Group-1 only' });
+      await assessments.setTargets(task.id, [{ groupId: 'group-1' }]);
+      const sub = await assessments.createSubmission(task.id, 'student-1', null, 'work');
+      await grading.grade(sub.id, A1, { score: 9 });
+      expect(await markerOf(task.id)).toBe('assistant-1');
+    });
+
+    it('does not claim for an assistant who reaches only some of the targeted groups', async () => {
+      const { task, mine } = await sharedTask();
+      await grading.grade(mine.id, A1, { score: 9 });
+      // The mark is saved; the claim writes nothing D-32 would refuse to name.
+      expect(await markerOf(task.id)).toBeNull();
+      expect((await entries('assessment.updated')).filter((e) => e.targetId === task.id)).toEqual([]);
+    });
+
+    it('claims on the first annotation too', async () => {
+      const task = await assessments.create({ ...TASK, title: 'Annotated first' });
+      await assessments.setTargets(task.id, [{ groupId: 'group-1' }]);
+      const photo = '/uploads/aaaaaaaa-0000-4000-8000-00000000000a.png';
+      const sub = await assessments.createSubmission(task.id, 'student-1', photo, null);
+      await marking.createAnnotation(sub.id, TEACHER, {
+        fileUrl: photo, page: 1, kind: 'tick', xPercent: 5, yPercent: 5,
+      });
+      expect(await markerOf(task.id)).toBe('teacher-1');
+      const claim = (await entries('assessment.updated')).find((e) => e.targetId === task.id);
+      expect(claim?.after).toMatchObject({ claimedBy: 'first annotation' });
+    });
+
+    it('never claims on a read', async () => {
+      const { task } = await sharedTask();
+      await marking.queue(task.id, TEACHER);
+      expect(await markerOf(task.id)).toBeNull();
     });
   });
 });

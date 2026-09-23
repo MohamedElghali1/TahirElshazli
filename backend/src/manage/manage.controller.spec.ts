@@ -6,6 +6,7 @@ import { StaffManageController } from './staff-manage.controller.js';
 import { AdminManageController } from './admin-manage.controller.js';
 import { ManageService } from './manage.service.js';
 import { GradingService } from './grading.service.js';
+import { SubmissionAccessService } from './submission-access.service.js';
 import { ManageRecordingsService } from './manage-recordings.service.js';
 import { ManageLiveSessionsService } from './manage-live-sessions.service.js';
 import { DirectoryService } from './directory.service.js';
@@ -84,6 +85,8 @@ describe('Manage surface', () => {
       providers: [
         ManageService,
         GradingService,
+        // `/grade` is group-grain since `D-44` (unit 7).
+        SubmissionAccessService,
         ManageRecordingsService,
         ManageLiveSessionsService,
         DirectoryService,

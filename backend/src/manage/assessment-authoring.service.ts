@@ -149,6 +149,42 @@ export interface StaffTaskListFilter {
 }
 
 /**
+ * `D-32`: does this user qualify to mark a task set for these groups?
+ *
+ * The teacher and any admin always do. An assistant does when their account
+ * is active and they reach **every** targeted group - otherwise they would be
+ * assigned work they cannot open. `StaffScopeService` decides the reach, as it
+ * does for every other staff question; a missing scope row fails closed.
+ *
+ * Exported (unit 7) so the claim on a first saved mark (`D-43`) applies the
+ * same rule a teacher naming a marker does - one definition of "qualifies".
+ */
+export async function markerQualifies(
+  scope: Pick<StaffScopeService, 'reachableGroupIds'>,
+  user: Pick<StoredUser, 'id' | 'role' | 'status'> | null,
+  groupIds: readonly string[],
+  reachCache?: Map<string, Promise<readonly string[] | null>>,
+): Promise<boolean> {
+  if (!user) {
+    return false;
+  }
+  if (isUnscopedStaffRole(user.role)) {
+    return true;
+  }
+  if (user.role !== Role.Assistant || user.status !== 'active') {
+    return false;
+  }
+  // One scope read per marker, not per task, when judging a whole list.
+  let pending = reachCache?.get(user.id);
+  if (!pending) {
+    pending = scope.reachableGroupIds({ id: user.id, role: user.role });
+    reachCache?.set(user.id, pending);
+  }
+  const reach = await pending;
+  return reach === null || groupIds.every((g) => reach.includes(g));
+}
+
+/**
  * The staff-side status of a task (`D-30`, completed by `D-34`/`D-35`):
  *
  * - `open`    - `now <=` the **latest** due date among the targeted groups
@@ -317,36 +353,13 @@ export class AssessmentAuthoringService {
     return tally.matched + tally.unmatched;
   }
 
-  /**
-   * `D-32`: does this user qualify to mark a task set for these groups?
-   *
-   * The teacher and any admin always do. An assistant does when their account
-   * is active and they reach **every** targeted group - otherwise they would be
-   * assigned work they cannot open. `StaffScopeService` decides the reach, as
-   * it does for every other staff question; a missing scope row fails closed.
-   */
+  /** `D-32`, through the one exported definition above. */
   private async markerQualifies(
     user: StoredUser | null,
     groupIds: readonly string[],
     reachCache?: Map<string, Promise<readonly string[] | null>>,
   ): Promise<boolean> {
-    if (!user) {
-      return false;
-    }
-    if (isUnscopedStaffRole(user.role)) {
-      return true;
-    }
-    if (user.role !== Role.Assistant || user.status !== 'active') {
-      return false;
-    }
-    // One scope read per marker, not per task, when judging a whole list.
-    let pending = reachCache?.get(user.id);
-    if (!pending) {
-      pending = this.scope.reachableGroupIds({ id: user.id, role: user.role });
-      reachCache?.set(user.id, pending);
-    }
-    const reach = await pending;
-    return reach === null || groupIds.every((g) => reach.includes(g));
+    return markerQualifies(this.scope, user, groupIds, reachCache);
   }
 
   /**

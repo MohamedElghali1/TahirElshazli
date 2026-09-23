@@ -2817,6 +2817,58 @@ describe('Staff and admin API (e2e)', () => {
     Object.assign(unit7, { group3, g1Task, g3Task, mine, theirs, student2Token });
   }
 
+  describe('unit 7: /grade and the course queue at the group grain (D-44, 7j) and the claim (D-43, 7l)', () => {
+    const server = () => app.getHttpServer();
+    beforeAll(() => unit7Setup('grain'));
+
+    it('grades a held-group paper; an unheld one is a 404 equal to a missing id, for both scoped assistants', async () => {
+      await request(server()).post(`/staff/submissions/${unit7.mine}/grade`).set(bearer(assignedTaToken))
+        .send({ score: 10 }).expect(200);
+      const gone = await request(server()).post('/staff/submissions/nope/grade').set(bearer(assignedTaToken))
+        .send({ score: 1 }).expect(404);
+      expect(gone.body.message).toBe('Submission not found');
+      const unheld = await request(server()).post(`/staff/submissions/${unit7.theirs}/grade`).set(bearer(assignedTaToken))
+        .send({ score: 1 }).expect(404);
+      expect(JSON.stringify(unheld.body) === JSON.stringify(gone.body)).toBe(true);
+      const unscoped = await request(server()).post(`/staff/submissions/${unit7.mine}/grade`).set(bearer(unassignedTaToken))
+        .send({ score: 1 }).expect(404);
+      expect(JSON.stringify(unscoped.body) === JSON.stringify(gone.body)).toBe(true);
+      // The teacher and the full admin reach every cohort.
+      await request(server()).post(`/staff/submissions/${unit7.theirs}/grade`).set(bearer(adminToken))
+        .send({ score: 12 }).expect(200);
+      await request(server()).post(`/staff/submissions/${unit7.theirs}/grade`).set(bearer(fullAdminToken))
+        .send({ score: 13 }).expect(200);
+    });
+
+    it('lists only held-group papers on the course queue for a scoped assistant', async () => {
+      const mineIds = (res: request.Response) =>
+        (res.body.items as { submissionId: string }[]).map((i) => i.submissionId);
+      const forTa = await request(server()).get('/staff/courses/course-1/submissions').set(bearer(assignedTaToken)).expect(200);
+      expect(mineIds(forTa)).toContain(unit7.mine);
+      expect(mineIds(forTa)).not.toContain(unit7.theirs);
+      const forTeacher = await request(server()).get('/staff/courses/course-1/submissions').set(bearer(adminToken)).expect(200);
+      expect(mineIds(forTeacher)).toEqual(expect.arrayContaining([unit7.mine, unit7.theirs]));
+      // The averages are the recorded residue: course-wide for every viewer.
+      expect(forTa.body.assessments).toEqual(forTeacher.body.assessments);
+    });
+
+    it('names the first grader as marker, audited, and leaves an existing marker alone', async () => {
+      // Graded first by assistant-1 above, who reaches group-1, the task's only group.
+      const markerOf = async () =>
+        (await request(server()).get(`/staff/assessments/${unit7.g1Task}/submissions`).set(bearer(adminToken)).expect(200)).body.markerId;
+      expect(await markerOf()).toBe('assistant-1');
+      const log = await request(server()).get('/admin/audit-log?action=assessment.updated&limit=100').set(bearer(fullAdminToken)).expect(200);
+      const claim = (log.body.entries as { targetId: string; actorId: string; after: unknown }[])
+        .filter((e) => e.targetId === unit7.g1Task);
+      expect(claim).toHaveLength(1);
+      expect(claim[0]).toMatchObject({ actorId: 'assistant-1', after: { markerId: 'assistant-1', claimedBy: 'first saved mark' } });
+      // A later grade by the teacher does not move it.
+      await request(server()).post(`/staff/submissions/${unit7.mine}/grade`).set(bearer(adminToken))
+        .send({ score: 11 }).expect(200);
+      expect(await markerOf()).toBe('assistant-1');
+    });
+  });
+
   describe('unit 7: return, and saved is not returned (MARK-2)', () => {
     const server = () => app.getHttpServer();
     beforeAll(() => unit7Setup('return'));

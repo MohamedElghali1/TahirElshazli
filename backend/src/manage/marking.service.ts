@@ -34,7 +34,7 @@ import { actorRoleOf } from '../auth/actor-role.js';
 import { StaffScopeService, type StaffActor } from '../staff/staff-scope.service.js';
 import { isPlatformStored, storedMimeTypeOf } from '../common/storage/upload-types.js';
 import { SubmissionAccessService, SUBMISSION_NOT_FOUND } from './submission-access.service.js';
-import { toGradingQueueItem, type GradingQueueItem } from './grading.service.js';
+import { GradingService, toGradingQueueItem, type GradingQueueItem } from './grading.service.js';
 import { ASSESSMENT_NOT_FOUND } from './assessment-authoring.service.js';
 
 /** A return with no mark to hand back (assumption A-3). */
@@ -223,6 +223,8 @@ export interface TaskSubmissions {
 export class MarkingService {
   constructor(
     private readonly access: SubmissionAccessService,
+    /** The `D-43` claim lives there; a first annotation claims like a first mark. */
+    private readonly grading: GradingService,
     private readonly scope: StaffScopeService,
     @Inject(ASSESSMENT_REPOSITORY)
     private readonly assessmentRepo: AssessmentRepository,
@@ -390,6 +392,8 @@ export class MarkingService {
    *
    * Allowed after return (`D-42` (b)), like a re-grade: the student sees it
    * immediately, and the audit entry records who added it and when.
+   *
+   * The first annotation on a task nobody is named for claims it (`D-43`).
    */
   async createAnnotation(
     submissionId: string,
@@ -428,6 +432,8 @@ export class MarkingService {
         createdBy: actor.id,
       });
       await this.recordAnnotation(actor, submissionId, assessment.courseId, null, snapshot(created));
+      // `D-43`: the first mark of either kind on an unclaimed task claims it.
+      await this.grading.claimIfUnmarked(assessment, actor, 'first annotation');
       return (await this.withNames([created]))[0]!;
     });
   }

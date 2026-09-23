@@ -5,6 +5,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { StaffScopeService, type StaffActor } from '../staff/staff-scope.service.js';
+import type { GroupRepository } from '../groups/interfaces/group-repository.interface.js';
+import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interface.js';
+import { SubmissionAccessService, SUBMISSION_NOT_FOUND } from './submission-access.service.js';
+import { markerQualifies } from './assessment-authoring.service.js';
 import type {
   AssessmentRepository,
   AssessmentType,
@@ -116,8 +120,12 @@ export interface GradeInput {
 export class GradingService {
   constructor(
     private readonly scope: StaffScopeService,
+    /** The group-grain gate for a submission-named route (`D-44`). */
+    private readonly access: SubmissionAccessService,
     @Inject(ASSESSMENT_REPOSITORY)
     private readonly assessmentRepo: AssessmentRepository,
+    /** `GroupDataModule` is `@Global()`; this needs no import edge. */
+    @Inject(GROUP_REPOSITORY) private readonly groupRepo: GroupRepository,
     @Inject(USER_REPOSITORY) private readonly userRepo: UserRepository,
     private readonly audit: AuditService,
     /** `DatabaseModule` is `@Global()`; this needs no import edge. */
@@ -125,11 +133,53 @@ export class GradingService {
   ) {}
 
   /**
-   * Every submission on a course, with the per-assessment averages beside it.
+   * The submissions a scoped caller may see on this course, read at the
+   * **group grain** (`D-44`): a submission is listed when its student sits in a
+   * group the caller holds on this course AND the task was set for that group -
+   * `SubmissionAccessService`'s rule, so every row listed is one `/grade` and
+   * `/return` accept. Restricted in the query to the held groups' students and
+   * the tasks set for those groups, never filtered out of a wider read.
+   */
+  private async submissionsInReach(
+    courseId: string,
+    reach: readonly string[],
+    assessmentIds: readonly string[],
+  ): Promise<StoredSubmission[]> {
+    const held = (await this.groupRepo.findByIds(reach))
+      .filter((g) => g.courseId === courseId)
+      .map((g) => g.id);
+    const [targets, members] = await Promise.all([
+      this.assessmentRepo.findTargetsForAssessments(assessmentIds, held),
+      this.groupRepo.findMembersForGroups(held),
+    ]);
+    const groupsOf = new Map<string, Set<string>>();
+    for (const m of members) {
+      const groups = groupsOf.get(m.studentId) ?? new Set<string>();
+      groups.add(m.groupId);
+      groupsOf.set(m.studentId, groups);
+    }
+    const submissions = await this.assessmentRepo.findSubmissionsForStudents(
+      [...new Set(targets.map((t) => t.assessmentId))],
+      [...groupsOf.keys()],
+    );
+    // The pair: this student's held groups must include one this task was set
+    // for. Both halves were already restricted in the reads above.
+    return submissions.filter((s) =>
+      targets.some((t) => t.assessmentId === s.assessmentId && groupsOf.get(s.studentId)?.has(t.groupId)),
+    );
+  }
+
+  /**
+   * The submissions on a course, with the per-assessment averages beside it.
    *
-   * The course is scoped first and the assessment ids are derived from it, so
-   * the unscoped `findSubmissionsForAssessments` read can only ever see work
-   * belonging to a course this actor holds (§5.11).
+   * The course is scoped first (an unreachable course is the same 404 it
+   * always was). **The items are at the group grain** (`D-44`, unit 7): a
+   * scoped assistant sees only papers from the groups they hold, so every row
+   * they can open they can also grade and return.
+   *
+   * **The averages stay course-wide**, recorded as the residue (`D-44`, as
+   * unit 6 recorded `D-35`'s): narrowing them would make an average change with
+   * the viewer (`D-23`'s denominator trap), and they carry no row-level data.
    */
   async queue(
     courseId: string,
@@ -139,9 +189,14 @@ export class GradingService {
     await this.scope.assertAssigned(courseId, actor);
 
     const assessments = await this.assessmentRepo.findByCourse(courseId);
-    const submissions = await this.assessmentRepo.findSubmissionsForAssessments(
+    const everyone = await this.assessmentRepo.findSubmissionsForAssessments(
       assessments.map((a) => a.id),
     );
+    const reach = await this.scope.reachableGroupIds(actor);
+    const submissions =
+      reach === null
+        ? everyone
+        : await this.submissionsInReach(courseId, reach, assessments.map((a) => a.id));
     const students = await this.userRepo.findByIds([
       ...new Set(submissions.map((s) => s.studentId)),
     ]);
@@ -166,20 +221,24 @@ export class GradingService {
         (a, b) =>
           new Date(b.lastSubmittedAt).getTime() - new Date(a.lastSubmittedAt).getTime(),
       ),
+      // Course-wide on purpose - see the method comment.
       assessments: assessments.map((assessment) =>
-        averageFor(assessment, submissions),
+        averageFor(assessment, everyone),
       ),
     };
   }
 
   /**
-   * Record a mark.
+   * Save a mark. **Saving is not returning** (`MARK-2`): the student sees
+   * nothing until `/return`.
    *
-   * The scope check goes through the submission's own assessment, not through
-   * a course id in the URL. A TA holding a submission id for a course they are
-   * not assigned to is the exact attack §5.11 describes, and the only thing
-   * that stops it is resolving the course from the data rather than from the
-   * request.
+   * The scope check goes through the submission's own task and student, never
+   * a course id in the URL - and since `D-44` (unit 7) at the **group grain**:
+   * the caller must reach a group the task was set for that the student sits
+   * in. Before, holding any group on the course reached every cohort's paper.
+   *
+   * The first saved mark on an unclaimed task names the caller as its marker
+   * (`D-43`), when they qualify under `D-32`'s rule.
    */
   async grade(
     submissionId: string,
@@ -187,31 +246,10 @@ export class GradingService {
     input: GradeInput,
   ): Promise<GradingQueueItem> {
     return this.db.runInTransaction(async () => {
-      const submission = await this.assessmentRepo.findSubmissionById(submissionId);
-      // 404 rather than 403 for a submission outside the actor's scope, so a TA
-      // cannot probe for which submission ids exist. Same posture as
-      // `assertAssigned`, and the reason both branches say the same thing.
-      if (!submission) {
-        throw new NotFoundException('Submission not found');
-      }
-      const assessment = await this.assessmentRepo.findById(submission.assessmentId);
-      if (!assessment) {
-        throw new NotFoundException('Submission not found');
-      }
-      // Rethrown under the submission's own wording rather than passed through.
-      // `assertAssigned` says "Course not found or not assigned to you", which on
-      // this route is a different sentence from the "Submission not found" two
-      // lines up - and two different 404 bodies is exactly the existence oracle
-      // the status code was chosen to avoid: a real id on someone else's course
-      // would read differently from a made-up one.
-      try {
-        await this.scope.assertAssigned(assessment.courseId, actor);
-      } catch (error) {
-        if (error instanceof NotFoundException) {
-          throw new NotFoundException('Submission not found');
-        }
-        throw error;
-      }
+      // 404 rather than 403 for a submission outside the actor's scope, with a
+      // body byte-identical to a missing one (`SUBMISSION_NOT_FOUND`), so a TA
+      // cannot probe for which submission ids exist.
+      const { submission, assessment } = await this.access.loadInScope(submissionId, actor);
 
       if (input.score < 0 || input.score > assessment.maxScore) {
         // Checked here rather than in the DTO because the ceiling is per
@@ -236,7 +274,7 @@ export class GradingService {
       });
       if (!graded) {
         // Deleted between the read and the write.
-        throw new NotFoundException('Submission not found');
+        throw new NotFoundException(SUBMISSION_NOT_FOUND);
       }
 
       // CLAUDE.md §5.4: every TA mutation is logged. This is the first one that
@@ -253,8 +291,56 @@ export class GradingService {
         after: { score: graded.score, correctedAt: graded.correctedAt },
       });
 
+      await this.claimIfUnmarked(assessment, actor);
+
       const student = await this.userRepo.findById(graded.studentId);
       return toGradingQueueItem(graded, assessment, student);
+    });
+  }
+
+  /**
+   * `D-43`: the marker is **advisory**, and the first saved mark on a task
+   * nobody is named for claims it. Never on a read (`GET` never mutates,
+   * CLAUDE.md §6), and never over an existing marker.
+   *
+   * Only a caller who **qualifies** under `D-32` claims - the teacher, an
+   * admin, or an active assistant reaching every group the task is set for.
+   * An assistant holding one of three targeted groups saves the mark and the
+   * task stays unclaimed: the claim writes nothing `D-32` would refuse to name
+   * directly (recorded for the reviewer). Assistants may claim themselves,
+   * the one exception to "an assistant may not change the marker" (`D-43`).
+   *
+   * Atomic (`claimMarker`'s predicate), and audited as `assessment.updated`
+   * inside the caller's transaction. Public because the first annotation on a
+   * paper claims too (`MarkingService.createAnnotation`): one rule, one place.
+   */
+  async claimIfUnmarked(
+    assessment: StoredAssessment,
+    actor: StaffActor,
+    how: 'first saved mark' | 'first annotation' = 'first saved mark',
+  ): Promise<void> {
+    if (assessment.markerId !== null) {
+      return;
+    }
+    const [user, audience] = await Promise.all([
+      this.userRepo.findById(actor.id),
+      this.assessmentRepo.findTargets(assessment.id),
+    ]);
+    if (!(await markerQualifies(this.scope, user, audience.map((t) => t.groupId)))) {
+      return;
+    }
+    if (!(await this.assessmentRepo.claimMarker(assessment.id, actor.id))) {
+      return; // Someone else's first mark won the race.
+    }
+    await this.audit.record({
+      actorId: actor.id,
+      actorRole: actorRoleOf(actor),
+      action: 'assessment.updated',
+      targetType: 'assessment',
+      targetId: assessment.id,
+      courseId: assessment.courseId,
+      before: { markerId: null },
+      after: { markerId: actor.id, claimedBy: how },
     });
   }
 }
