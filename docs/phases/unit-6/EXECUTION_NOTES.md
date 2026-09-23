@@ -226,7 +226,7 @@ See §Documents updated.
    `D-28` names the list, detail and submit. Reading it as "invisible to students" consistently: a
    report averaging a task the student cannot see would count "not submitted" against them, and
    `studentWork` is documented as agreeing with the student's own screen.
-3. **The `scheduled` label uses the task's own `availableFrom`**, not the per-group overrides. A
+3. **(Superseded by `D-37`, review round 1.)** **The `scheduled` label uses the task's own `availableFrom`**, not the per-group overrides. A
    group's override can open later or earlier than the label says. Students still see their own
    resolved window.
 4. **`markerDrift` and `status` are judged over the task's WHOLE audience**, including groups a
@@ -243,7 +243,7 @@ See §Documents updated.
    task set only for unheld groups on a course they reach). The per-course list, `AUTH-6`'s
    remainder, still shows it, so the "on their screen" basis for 403 holds there. The body confirms
    nothing beyond what that list already shows.
-8. **The hide-409 mirrors the delete guard**, so a mirrored external result (Google Form) does not
+8. **(Superseded by `D-36`, review round 1.)** **The hide-409 mirrors the delete guard**, so a mirrored external result (Google Form) does not
    count as a submission for it, exactly as it does not for delete.
 9. **Frontend mirror additions beyond the plan:**
    - `AuthoredAssessment` gained `workType`/`externalUrl`, which the response already carried
@@ -582,3 +582,88 @@ The size utility is only `text-base` (13px). Headings versus captions use tint (
    are verified by curl, but layout, RTL and the draft-prefill effect are unobserved.
 4. **The old per-course assessments page** now fails to add attachments without an audience. It
    sends none today, so nothing breaks, but it is a latent 400 if someone extends it.
+
+
+---
+
+## Remediation (review round 1)
+
+**Input.** `docs/phases/unit-6/REVIEW.md` (`APPROVED WITH FOLLOW-UP`), committed unmodified as
+`82b5d78`. The user ruled on the two open questions on 2026-09-22. The unit stays `[~]`.
+
+| Item | What was done | Tests |
+|---|---|---|
+| **F-1**: a drifted marker blocked every edit | **Server:** `update` skips `assertMarker` when `update.markerId === before.markerId`. **Form:** sends `markerId` only when it changed. A changed marker is still validated. | Unit: a drifted task accepts a title-only PATCH that re-sends the marker; the marker is kept; a *changed* ineligible marker is still 400. e2e: the same over HTTP; `markerDrift` stays true. |
+| **F-2**: re-targeting erased per-group overrides | The edit form rebuilds the target set carrying each retained group's `availableFrom`/`availableTo`/`dueAt`. Only added groups go bare. Each retained override is shown read-only ("Own window: …"), in the editor and in the scoped caller's read-only view. | e2e: a retained group-1 `dueAt` override survives adding a group. |
+| **F-3** → **`D-36`** ("refuse both") | Synced external results (matched or not, counted with `WorkRepository.tallyResults`; no `PostgresWorkRepository` SQL changed) block **hide** (409) and **delete** (409), each with its own message. This supersedes deviation 8 and the pre-existing delete behaviour. The older submissions-delete refusal stays a 400, recorded as an inconsistency. | Unit: hide refused for matched and for unmatched results, allowed with none; delete refused and nothing lost, allowed with none. e2e: hide 409, delete 409, both allowed before a result exists. |
+| **Deviation 3** → **`D-37`** ("earliest group opening") | `visibilityStateOf` takes the earliest effective `availableFrom` across the whole audience. | Unit: three mixed-override cases, and the list giving the same label to teacher and assistant-1. e2e: *published* while one group's override is open, *scheduled* once every group opens later. |
+| **F-4**: attachments defaulted to *Students* | New rows (link or upload) start with **no audience** ("Choose…"). Save, Save as draft, and the draft editor's Save stay disabled, with an amber note, until every row with content has one. | tsc and eslint. The API side is unchanged: the DTO already requires `audience`, e2e-asserted in 6i. |
+| **F-5**: memory driver diverged on draft delete | `018` is `draft_id … ON DELETE SET NULL`, mirrored exactly. New `AssessmentRepository.clearDraftProvenance(draftId)` in both drivers, called by `TaskDraftsService.remove` in the same transaction. A service-level join; no repository calls another. | Unit (memory): deleting a draft nulls `draftId` on its task, which stays intact. Integration (Postgres): new *"clearDraftProvenance nulls draft_id on exactly the tasks from that draft"*. The FK itself is proved by the existing *"deleting a draft sets assessments.draft_id to NULL and leaves the task intact"* (`describe('task drafts')`). |
+| **F-6**: docs behind the build | See the list below this table. | — |
+| **F-7** (optional, trivial) | The two orphaned JSDoc blocks now sit on their own methods (`staff-scope.service.ts` `mayReachGroup`; `staff-manage.controller.ts` the authoring routes). The two-request save and the non-clickable checkbox label are unchanged. | — |
+
+**F-6 changes:**
+- `D-30` annotated as superseded on nullability by `D-34`/`D-35`, and its §Blockers reference fixed.
+- Deviations 2 and 8 recorded in `CHANGELOG.md`; 8 is marked superseded by `D-36`.
+- The deviation-7 "403 → `ASSESSMENT_NOT_FOUND` 404 once the per-course list narrows" note added to
+  `AUTH-6`.
+- Follow-up `TASK-F2` added: retire `manage/courses/[id]/assessments/page.tsx` after a consumer count.
+- `API_SPEC.yaml`: DELETE 409, the PATCH 409 wording, and the `VisibilityState` rule.
+- `DOMAIN_MODEL.md` §4.
+
+**`CHANGELOG.md`:** `D-36`, `D-37`, deviations 2 and 8, `F-1` and `F-5`, in one dated entry.
+
+**`CLAUDE.md`:** counts 659 / 39, 296, 146.
+
+**Live check.** The coordinator's dev stack on :3000/:3001 was left running and not restarted; hot
+reload serves the change. I did not drive it here: `F-3` needs a synced result, which no HTTP route
+creates without Google. The e2e suite seeds it through the app's own `WORK_REPOSITORY`.
+
+**Rerun, real output:**
+
+```
+$ node -v
+v26.8.1
+
+$ npm test
+ Test Files  39 passed (39)
+      Tests  659 passed (659)
+   Start at  21:18:21
+   Duration  4.11s (transform 1.88s, setup 0ms, import 11.49s, tests 11.50s, environment 4ms)
+
+
+$ npm run test:e2e
+ Test Files  4 passed (4)
+      Tests  296 passed (296)
+   Start at  21:18:26
+   Duration  8.17s (transform 349ms, setup 0ms, import 1.43s, tests 6.52s, environment 0ms)
+
+
+$ TEST_DATABASE_URL=postgresql://dev:devpassword@localhost:55432/tahirelshazli_test npm run test:integration
+[Nest] 69192  - 09/22/2026, 9:18:36 PM     LOG [MigrationRunner] Applied 018_task_drafts_and_task_settings.sql
+ Test Files  1 passed (1)
+      Tests  146 passed (146)
+   Duration  4.29s (transform 175ms, setup 0ms, import 334ms, tests 3.83s, environment 0ms)
+
+$ docker exec tahir-unit6-pg psql -U dev -d tahirelshazli_test -tAc "select version()"
+PostgreSQL 15.19 on aarch64-unknown-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+
+$ cd frontend && npx tsc --noEmit; echo "exit $?"
+exit 0
+
+$ cd frontend && npx eslint .; echo "exit $?"
+exit 0
+
+$ npm run lint 2>&1 | tail -3; echo "exit ${PIPESTATUS[0]}"
+> oxlint src/ test/
+
+src/dashboard/dashboard.controller.spec.ts:17:27: warning eslint(no-unused-vars): Identifier 'EXTERNAL_WORK_BINDER' is imported but never used. help: Consider removing this import.
+exit 0
+```
+
+Movement against round 0:
+- unit 653 → **659**;
+- e2e 292 → **296**;
+- integration 145 → **146, 0 skipped**;
+- `tsc` 0; eslint 0; `npm run lint` exits 0, with the same pre-existing warning in a file unit 6 never
+  touched.

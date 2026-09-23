@@ -3,13 +3,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
+import { formatDateTime } from '@/lib/format';
 import { useApi, useSession } from '@/lib/session';
 import { isAdminRole } from '@/lib/roles';
 import type {
+  AssessmentTargetInput,
   AssessmentType,
   AttachmentAudience,
   AttachmentInput,
   StaffTask,
+  StaffTaskTarget,
   SubmissionMode,
   TaskDraft,
   TaskVisibility,
@@ -59,10 +62,63 @@ const VISIBILITY_OPTIONS = [
   { value: 'hidden', label: 'Hidden from students' },
 ];
 
+/**
+ * No pre-selected audience (review F-4, `D-29`): a mark scheme defaulted to
+ * *Students* is the exact mistake the field exists to prevent. The author must
+ * choose, and saving waits until every row has.
+ */
 const AUDIENCE_OPTIONS = [
+  { value: '', label: 'Choose…' },
   { value: 'students', label: 'Students' },
   { value: 'staff', label: 'Staff only' },
 ];
+
+/** An attachment row as the form holds it: `audience` may still be unchosen. */
+export type AttachmentRow = Omit<AttachmentInput, 'audience'> & {
+  audience: AttachmentAudience | '';
+};
+
+/** A row counts once it has any content; an untouched blank row is dropped. */
+const hasContent = (a: AttachmentRow) => Boolean(a.url.trim() || a.name.trim());
+
+/** True when every row with content has chosen who it is for. */
+export function audiencesChosen(rows: readonly AttachmentRow[]): boolean {
+  return rows.filter(hasContent).every((a) => a.audience !== '');
+}
+
+/** The rows the API receives: complete ones only, audience known. */
+export function toAttachmentInputs(rows: readonly AttachmentRow[]): AttachmentInput[] {
+  return rows
+    .filter((a) => a.url.trim() && a.name.trim() && a.audience !== '')
+    .map((a) => ({
+      url: a.url.trim(),
+      name: a.name.trim(),
+      mimeType: a.mimeType ?? null,
+      sizeBytes: a.sizeBytes ?? null,
+      audience: a.audience as AttachmentAudience,
+    }));
+}
+
+/** A retained group's own window, if it overrides the task's (review F-2). */
+function overrideOf(target: StaffTaskTarget | undefined): Omit<AssessmentTargetInput, 'groupId'> {
+  if (!target) return {};
+  return {
+    ...(target.availableFrom ? { availableFrom: target.availableFrom } : {}),
+    ...(target.availableTo ? { availableTo: target.availableTo } : {}),
+    ...(target.dueAt ? { dueAt: target.dueAt } : {}),
+  };
+}
+
+/** "Opens …, due …" for a group whose window differs from the task's. */
+function describeOverride(target: StaffTaskTarget | undefined): string | null {
+  if (!target) return null;
+  const parts = [
+    target.availableFrom && `opens ${formatDateTime(target.availableFrom)}`,
+    target.dueAt && `due ${formatDateTime(target.dueAt)}`,
+    target.availableTo && `closes ${formatDateTime(target.availableTo)}`,
+  ].filter(Boolean);
+  return parts.length > 0 ? `Own window: ${parts.join(', ')}` : null;
+}
 
 const MODES: { value: SubmissionMode; label: string }[] = [
   { value: 'pdf_upload', label: 'PDF upload' },
@@ -91,7 +147,7 @@ interface FormState {
   googleForm: string;
   description: string;
   instructions: string;
-  attachments: AttachmentInput[];
+  attachments: AttachmentRow[];
   availableFrom: string;
   availableTo: string;
   dueAt: string;
@@ -249,15 +305,9 @@ export function TaskForm({
     return options;
   }, [staff, user, task]);
 
-  const cleanAttachments = form.attachments
-    .filter((a) => a.url.trim() && a.name.trim())
-    .map((a) => ({
-      url: a.url.trim(),
-      name: a.name.trim(),
-      mimeType: a.mimeType ?? null,
-      sizeBytes: a.sizeBytes ?? null,
-      audience: a.audience,
-    }));
+  const cleanAttachments = toAttachmentInputs(form.attachments);
+  const attachmentsReady = audiencesChosen(form.attachments);
+  const targetOf = (groupId: string) => task?.targets.find((t) => t.groupId === groupId);
 
   async function save() {
     if (!token) return;
@@ -286,8 +336,11 @@ export function TaskForm({
       allowResubmission: form.allowResubmission,
       visibility: form.visibility,
       submissionModes: form.submissionModes,
-      // Only sent by someone allowed to send it (`D-32`).
-      ...(canChooseMarker ? { markerId: form.markerId || null } : {}),
+      // Only sent by someone allowed to send it (`D-32`), and only when it
+      // changed (review F-1; the server also skips an unchanged value).
+      ...(canChooseMarker && (form.markerId || null) !== (task?.markerId ?? null)
+        ? { markerId: form.markerId || null }
+        : {}),
     };
     try {
       if (task) {
@@ -295,10 +348,12 @@ export function TaskForm({
         const before = task.targets.map((t) => t.groupId).sort().join(',');
         const after = [...form.groupIds].sort().join(',');
         if (canEditAudience && before !== after) {
+          // Replace-the-whole-set, so every retained group carries its own
+          // window override back (review F-2); only added groups go bare.
           await api.staff.setAssessmentTargets(
             token,
             task.id,
-            form.groupIds.map((groupId) => ({ groupId })),
+            form.groupIds.map((groupId) => ({ groupId, ...overrideOf(targetOf(groupId)) })),
           );
         }
         setNotice('Saved.');
@@ -450,6 +505,9 @@ export function TaskForm({
                     />
                     <span className="text-base text-fg">{g.name}</span>
                     <span className="text-base text-fg-4">{g.memberCount} students</span>
+                    {form.groupIds.includes(g.id) && describeOverride(targetOf(g.id)) && (
+                      <span className="text-base text-fg-3">{describeOverride(targetOf(g.id))}</span>
+                    )}
                   </div>
                 ))}
                 {/* A target outside the picker (an admin sees every group, so
@@ -466,6 +524,13 @@ export function TaskForm({
               <div className="flex flex-wrap gap-2">
                 {task?.targets.map((t) => <Tag key={t.groupId} tone="gray">{t.groupName}</Tag>)}
               </div>
+              {task?.targets.map((t) =>
+                describeOverride(t) ? (
+                  <p key={t.groupId} className="text-base text-fg-3">
+                    {t.groupName}: {describeOverride(t)}
+                  </p>
+                ) : null,
+              )}
               <p className="text-base text-fg-3">Only the teacher can change who this is set for.</p>
             </div>
           )}
@@ -526,17 +591,20 @@ export function TaskForm({
         <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="primary"
-            disabled={busy !== null || !form.title.trim() || !form.courseId || form.groupIds.length === 0}
+            disabled={busy !== null || !form.title.trim() || !form.courseId || form.groupIds.length === 0 || !attachmentsReady}
             onClick={save}
           >
             {busy === 'save' ? <Loader size={3} label="Saving" /> : task ? 'Save changes' : 'Create task'}
           </Button>
           {!task && (
-            <Button disabled={busy !== null || !form.title.trim() || !form.courseId} onClick={saveAsDraft}>
+            <Button disabled={busy !== null || !form.title.trim() || !form.courseId || !attachmentsReady} onClick={saveAsDraft}>
               {busy === 'draft' ? <Loader size={3} label="Saving" /> : 'Save as draft'}
             </Button>
           )}
           {form.draftId && !task && <Tag tone="blue">Started from a draft</Tag>}
+          {!attachmentsReady && (
+            <span className="text-base text-status-amber-text">Choose who each attachment is for before saving.</span>
+          )}
         </div>
       </div>
     </Panel>
@@ -555,8 +623,8 @@ export function AttachmentsEditor({
   uploadsEnabled,
   acceptTypes,
 }: {
-  attachments: AttachmentInput[];
-  onChange: (next: AttachmentInput[]) => void;
+  attachments: AttachmentRow[];
+  onChange: (next: AttachmentRow[]) => void;
   uploadsEnabled: boolean;
   acceptTypes: readonly string[];
 }) {
@@ -565,7 +633,7 @@ export function AttachmentsEditor({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const update = (index: number, patch: Partial<AttachmentInput>) =>
+  const update = (index: number, patch: Partial<AttachmentRow>) =>
     onChange(attachments.map((a, i) => (i === index ? { ...a, ...patch } : a)));
 
   const pick = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -577,7 +645,7 @@ export function AttachmentsEditor({
       const result = await api.staff.upload(token, file);
       onChange([
         ...attachments,
-        { url: result.url, name: file.name, mimeType: result.mimeType, sizeBytes: result.sizeBytes, audience: 'students' },
+        { url: result.url, name: file.name, mimeType: result.mimeType, sizeBytes: result.sizeBytes, audience: '' },
       ]);
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : 'That upload failed.');
@@ -600,8 +668,9 @@ export function AttachmentsEditor({
             label="Visible to"
             className="w-[150px]"
             value={a.audience}
-            onChange={(e) => update(index, { audience: e.target.value as AttachmentAudience })}
+            onChange={(e) => update(index, { audience: e.target.value as AttachmentAudience | '' })}
             options={AUDIENCE_OPTIONS}
+            error={a.audience === '' && hasContent(a) ? 'Choose one' : null}
           />
           <Button variant="tertiary" icon="Trash" onClick={() => onChange(attachments.filter((_, i) => i !== index))}>
             Remove
@@ -612,7 +681,7 @@ export function AttachmentsEditor({
         <Button
           icon="Plus"
           disabled={attachments.length >= 10}
-          onClick={() => onChange([...attachments, { url: '', name: '', audience: 'students' }])}
+          onClick={() => onChange([...attachments, { url: '', name: '', audience: '' }])}
         >
           Add a link
         </Button>

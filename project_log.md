@@ -3791,3 +3791,14 @@ Final counts:
 - frontend: `tsc` 0, eslint 0.
 
 The unit is `[~]` until the reviewer's verdict. A browser pass of the four screens is still owed.
+
+**Review round 1 (same day).** The reviewer returned `APPROVED WITH FOLLOW-UP`. It found no security
+finding, but two real bugs in the new edit screen:
+- a drifted marker blocked every save;
+- re-targeting silently erased per-group due dates.
+
+Both are fixed on the server side and in the form. The user ruled that synced Google Form results
+count as handed-in work, so a task with results can be neither hidden nor deleted (`D-36`); the
+delete half had been possible since before unit 6. The user also ruled that the staff `scheduled`
+label follows the earliest group opening (`D-37`). Counts: 659 unit, 296 e2e, 146 integration. The
+unit stays `[~]`.

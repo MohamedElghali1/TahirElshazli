@@ -240,16 +240,6 @@ export class StaffScopeService {
   }
 
   /**
-   * May this actor reach **this group**? Non-throwing, because the caller owns
-   * the message (`D-10`).
-   *
-   * Additive, and deliberately a predicate rather than an `assertReachesGroup`:
-   * the refusal has to be byte-identical to a genuinely missing group, and the
-   * only way to guarantee that is to let `GroupsService` throw its own
-   * `GROUP_NOT_FOUND` on both paths rather than have two files owning one
-   * message.
-   */
-  /**
    * Every group this actor may reach, or `null` when they are unrestricted.
    *
    * Additive (unit 6, `TASK-6`), and a predicate-free read for the same reason
@@ -273,6 +263,16 @@ export class StaffScopeService {
     return held.unrestricted ? null : held.assignments.map((a) => a.groupId);
   }
 
+  /**
+   * May this actor reach **this group**? Non-throwing, because the caller owns
+   * the message (`D-10`).
+   *
+   * Additive, and deliberately a predicate rather than an `assertReachesGroup`:
+   * the refusal has to be byte-identical to a genuinely missing group, and the
+   * only way to guarantee that is to let `GroupsService` throw its own
+   * `GROUP_NOT_FOUND` on both paths rather than have two files owning one
+   * message.
+   */
   async mayReachGroup(groupId: string, actor: StaffActor): Promise<boolean> {
     if (this.isAdmin(actor)) {
       return true;

@@ -492,6 +492,17 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
     return written.map((x) => ({ ...x }));
   }
 
+  async clearDraftProvenance(draftId: string): Promise<number> {
+    let changed = 0;
+    for (const assessment of this.assessments) {
+      if (assessment.draftId === draftId) {
+        assessment.draftId = null;
+        changed += 1;
+      }
+    }
+    return changed;
+  }
+
   async findTargets(assessmentId: string): Promise<AssessmentTarget[]> {
     return this.targets
       .filter((x) => x.assessmentId === assessmentId)

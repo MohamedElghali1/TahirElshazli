@@ -38,6 +38,8 @@ import type {
 } from '../assessments/interfaces/work-repository.interface.js';
 import { EXTERNAL_WORK_BINDER } from '../assessments/interfaces/work-repository.interface.js';
 import type { TaskDraftRepository } from './interfaces/task-draft-repository.interface.js';
+import type { WorkRepository } from '../assessments/interfaces/work-repository.interface.js';
+import { WORK_REPOSITORY } from '../assessments/interfaces/work-repository.interface.js';
 import { TASK_DRAFT_REPOSITORY } from './interfaces/task-draft-repository.interface.js';
 import { TASK_DRAFT_NOT_FOUND } from './task-drafts.service.js';
 
@@ -114,17 +116,28 @@ export const RETARGET_UNREACHABLE_AUDIENCE =
   'This task is also set for groups you do not hold, so only the teacher or an admin can change who it is set for';
 
 /**
- * `D-28`'s label, derived on every read from the stored value and the task's
- * **own** window - never accepted from a client.
+ * `D-28`'s label, derived on every read - never accepted from a client.
+ *
+ * `D-37`: `scheduled` while `now` is before the **earliest** effective opening
+ * across the targeted groups (each group's `availableFrom` override, or the
+ * task's own). So the label reads *Published* as soon as any group can see
+ * the task. Judged over the whole audience, so it is the same for every
+ * viewer. With no audience given, the task's own `availableFrom` is used.
  */
 export function visibilityStateOf(
   task: Pick<StoredAssessment, 'visibility' | 'availableFrom'>,
   now: Date,
+  audience: readonly Pick<AssessmentTarget, 'availableFrom'>[] = [],
 ): VisibilityState {
   if (task.visibility === 'hidden') {
     return 'hidden';
   }
-  return now < new Date(task.availableFrom) ? 'scheduled' : 'published';
+  const earliest = Math.min(
+    ...(audience.length > 0 ? audience : [{ availableFrom: null }]).map((t) =>
+      new Date(t.availableFrom ?? task.availableFrom).getTime(),
+    ),
+  );
+  return now.getTime() < earliest ? 'scheduled' : 'published';
 }
 
 export interface StaffTaskListFilter {
@@ -287,7 +300,22 @@ export class AssessmentAuthoringService {
     private readonly draftRepo: TaskDraftRepository,
     /** Who a named marker is (`D-32`). `AuthModule` exports it. */
     @Inject(USER_REPOSITORY) private readonly userRepo: UserRepository,
+    /**
+     * Mirrored external results (`D-36`): a synced Google Form response is a
+     * student's work too. `AssessmentsModule` exports the token.
+     */
+    @Inject(WORK_REPOSITORY) private readonly work: WorkRepository,
   ) {}
+
+  /**
+   * `D-36`: how many synced external responses a task has, matched to a
+   * student or not - each is somebody's handed-in work. A count read
+   * (`tallyResults`), not the rows.
+   */
+  private async externalResultCount(assessmentId: string): Promise<number> {
+    const tally = await this.work.tallyResults(assessmentId);
+    return tally.matched + tally.unmatched;
+  }
 
   /**
    * `D-32`: does this user qualify to mark a task set for these groups?
@@ -463,13 +491,13 @@ export class AssessmentAuthoringService {
   }
 
   /**
-   * `D-28` (reading iii): a task anybody has submitted to cannot be hidden.
+   * `D-28` (reading iii): a task anybody has handed work in for cannot be
+   * hidden - that would take a student's own work out of their sight.
    *
-   * Hiding it would take a student's own work out of their sight, which is the
-   * history delete-refused-once-submitted exists to keep - so this mirrors that
-   * check exactly (the same `findSubmissionsForAssessments` read; a mirrored
-   * external result is not a submission there either). A 409, because it is a
-   * state conflict (CLAUDE.md §6). Relaxable later without losing anything.
+   * `D-36` (review F-3): "handed in" includes a **synced external result**. A
+   * Google Form answered by thirty students is thirty pieces of work, and the
+   * student list already reads such a task as submitted. A 409, because it is
+   * a state conflict (CLAUDE.md §6).
    */
   private async assertMayHide(assessmentId: string): Promise<void> {
     const submissions = await this.assessmentRepo.findSubmissionsForAssessments([
@@ -479,6 +507,12 @@ export class AssessmentAuthoringService {
       throw new ConflictException(
         'This task has submissions and cannot be hidden. ' +
           'Close its availability window instead.',
+      );
+    }
+    if ((await this.externalResultCount(assessmentId)) > 0) {
+      throw new ConflictException(
+        'Students have already answered this task on its external form, so it ' +
+          'cannot be hidden. Close its availability window instead.',
       );
     }
   }
@@ -610,7 +644,11 @@ export class AssessmentAuthoringService {
     const rows: StaffTask[] = assessments.map((assessment) => ({
       ...assessment,
       targets: byTask.get(assessment.id) ?? [],
-      visibilityState: visibilityStateOf(assessment, now),
+      visibilityState: visibilityStateOf(
+        assessment,
+        now,
+        fullAudience.filter((t) => t.assessmentId === assessment.id),
+      ),
       status: staffTaskStatusOf(
         assessment,
         fullAudience.filter((t) => t.assessmentId === assessment.id),
@@ -749,7 +787,11 @@ export class AssessmentAuthoringService {
       if (update.visibility === 'hidden') {
         await this.assertMayHide(assessmentId);
       }
-      if (update.markerId !== undefined) {
+      // Only a CHANGED marker is checked (review F-1). Re-validating the one
+      // already stored would refuse every edit to a task whose marker has
+      // drifted - forcing the teacher to clear it, which is exactly what
+      // `D-32` says never happens. An unchanged value is a no-op.
+      if (update.markerId !== undefined && update.markerId !== before.markerId) {
         // Checked against the task's CURRENT audience; re-aiming it later does
         // not revisit this (drift is displayed, not repaired - `D-32`).
         const audience = await this.assessmentRepo.findTargets(assessmentId);
@@ -897,6 +939,17 @@ export class AssessmentAuthoringService {
         throw new BadRequestException(
           'This assessment has submissions and cannot be deleted. ' +
             'Close its availability window or re-target it instead.',
+        );
+      }
+      // `D-36` (review F-3): synced external results are handed-in work too,
+      // and deleting the task would cascade them away. Before unit 6's
+      // remediation this path deleted them silently. A 409 - a state conflict
+      // - where the pre-existing submissions refusal above stays a 400
+      // (unchanged, and recorded as an inconsistency, not silently "fixed").
+      if ((await this.externalResultCount(assessmentId)) > 0) {
+        throw new ConflictException(
+          'Students have already answered this task on its external form, so it ' +
+            'cannot be deleted. Close its availability window instead.',
         );
       }
       await this.assessmentRepo.remove(assessmentId);

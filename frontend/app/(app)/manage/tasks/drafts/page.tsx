@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
 import { formatDate } from '@/lib/format';
-import type { AssessmentType, AttachmentInput, TaskDraft } from '@/lib/types';
+import type { AssessmentType, TaskDraft } from '@/lib/types';
 import {
   Button,
   ButtonLink,
@@ -21,7 +21,7 @@ import {
   type Column,
 } from '@/components/ui';
 import { PageTitle } from '@/components/shell/page-chrome';
-import { AttachmentsEditor } from '../task-form';
+import { AttachmentsEditor, audiencesChosen, toAttachmentInputs, type AttachmentRow } from '../task-form';
 
 const TYPE_OPTIONS = [
   { value: 'homework', label: 'Homework' },
@@ -181,7 +181,7 @@ function DraftEditor({
   const [type, setType] = useState<AssessmentType>(draft.type);
   const [description, setDescription] = useState(draft.description);
   const [instructions, setInstructions] = useState(draft.instructions);
-  const [attachments, setAttachments] = useState<AttachmentInput[]>(draft.attachments.map((a) => ({ ...a })));
+  const [attachments, setAttachments] = useState<AttachmentRow[]>(draft.attachments.map((a) => ({ ...a })));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -195,9 +195,7 @@ function DraftEditor({
         type,
         description,
         instructions,
-        attachments: attachments
-          .filter((a) => a.url.trim() && a.name.trim())
-          .map((a) => ({ ...a, url: a.url.trim(), name: a.name.trim() })),
+        attachments: toAttachmentInputs(attachments),
       });
       onSaved();
     } catch (cause) {
@@ -222,7 +220,7 @@ function DraftEditor({
           uploadsEnabled={uploadConfig?.enabled ?? false}
           acceptTypes={uploadConfig?.allowedMimeTypes ?? []}
         />
-        <Button variant="primary" className="self-start" disabled={busy || !title.trim()} onClick={save}>
+        <Button variant="primary" className="self-start" disabled={busy || !title.trim() || !audiencesChosen(attachments)} onClick={save}>
           {busy ? <Loader size={3} label="Saving" /> : 'Save draft'}
         </Button>
       </div>

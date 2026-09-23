@@ -163,7 +163,8 @@ components:
     # see `VisibilityState`.
     TaskVisibility:   { type: string, enum: [published, hidden] }
     # What a staff screen shows: `scheduled` is DERIVED on the server for a
-    # `published` task whose own `availableFrom` is in the future.
+    # `published` task before the EARLIEST effective `availableFrom` across its
+    # targeted groups, counting per-group overrides (`D-37`).
     VisibilityState:  { type: string, enum: [published, scheduled, hidden] }
     # The staff-side status of a task (`D-30`, `D-34`, `D-35`), derived - see
     # `GET /staff/tasks`.
@@ -1495,15 +1496,19 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409':
-          description: '`visibility: hidden` on a task that has any submission (`D-28`).'
+          description: '`visibility: hidden` on a task that has any submission (`D-28`) or any synced external result (`D-36`).'
       x-audit: assessment.updated
     delete:
       tags: [tasks]
       x-roles: [assistant, teacher, admin]
-      description: Refused with 400 once anything has been submitted.
+      description: >
+        Refused with 400 once anything has been submitted (pre-existing), and with
+        409 once any external result has synced (`D-36`) - deleting would cascade
+        students' form responses away.
       responses:
         '204': { description: Deleted }
         '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
       x-audit: assessment.deleted

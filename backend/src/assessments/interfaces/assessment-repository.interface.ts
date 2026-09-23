@@ -331,6 +331,17 @@ export interface AssessmentRepository {
   /** The staff read: who this task was set for. */
   findTargets(assessmentId: string): Promise<AssessmentTarget[]>;
   /**
+   * Sets `draftId` to null on every task authored from this draft, and returns
+   * how many rows changed - what migration `018`'s `ON DELETE SET NULL` does
+   * when a draft is deleted.
+   *
+   * Exists for the memory driver's sake (review F-5): it has no FK, and a
+   * repository may not reach into another's store, so `TaskDraftsService`
+   * calls this before removing the draft. On Postgres it is the same UPDATE
+   * the FK would perform, run explicitly and first.
+   */
+  clearDraftProvenance(draftId: string): Promise<number>;
+  /**
    * Every task visible to a staff caller, across courses (`TASK-6`).
    *
    * A task is visible through a **target** the caller reaches - the group

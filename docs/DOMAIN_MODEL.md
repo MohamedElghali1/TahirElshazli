@@ -143,8 +143,10 @@ The task. Written once, aimed at groups.
 - **`visibility`** (`published | hidden`) is **new and distinct from the window** — timestamps alone
   cannot express "hidden". **Narrowed by `D-28`:** `scheduled` is not stored; it is the derived label
   for `published ∧ now < availableFrom`, which a student already sees as locked-with-a-date. A
-  `hidden` task is absent from every student read, and a task with any submission cannot be hidden
-  (409).
+  `hidden` task is absent from every student read — and from the report's averages and the staff
+  read of one student's work, which mirror it — and a task with any submission **or synced external
+  result** cannot be hidden or deleted (409, `D-36`). The staff label `scheduled` follows the
+  earliest group opening (`D-37`).
 - **Derived, never stored.** `AssessmentStatus` = `locked | available | submitted | corrected`,
   computed server-side from the window, the visibility and the submission (`CLAUDE.md` §5.10).
 - **Invariants.** At least one target group. `availableFrom < availableTo`, `dueAt` inside. A

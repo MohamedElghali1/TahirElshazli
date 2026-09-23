@@ -2049,6 +2049,24 @@ describeIfDb('Postgres repositories', () => {
       expect(await drafts().remove('nope')).toBe(false);
     });
 
+    it('clearDraftProvenance nulls draft_id on exactly the tasks from that draft (review F-5)', async () => {
+      const draft = await drafts().create({ ...base, title: 'Explicit clear' });
+      const other = await drafts().create({ ...base, title: 'Untouched draft' });
+      const assessments = new PostgresAssessmentRepository(db);
+      const mine = await assessments.create({ ...NEW_TASK, draftId: draft.id, title: 'Mine' });
+      const theirs = await assessments.create({ ...NEW_TASK, draftId: other.id, title: 'Theirs' });
+
+      expect(await assessments.clearDraftProvenance(draft.id)).toBe(1);
+      expect((await assessments.findById(mine.id))?.draftId).toBeNull();
+      expect((await assessments.findById(theirs.id))?.draftId).toBe(other.id);
+      expect(await assessments.clearDraftProvenance('nope')).toBe(0);
+
+      await assessments.remove(mine.id);
+      await assessments.remove(theirs.id);
+      await drafts().remove(draft.id);
+      await drafts().remove(other.id);
+    });
+
     it('deleting a draft sets assessments.draft_id to NULL and leaves the task intact', async () => {
       const draft = await drafts().create({ ...base, title: 'Provenance' });
       const assessments = new PostgresAssessmentRepository(db);

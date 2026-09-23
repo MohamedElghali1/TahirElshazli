@@ -3,6 +3,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import type { Server } from 'node:http';
 import { AppModule } from './../src/app.module.js';
+import { WORK_REPOSITORY, type WorkRepository } from './../src/assessments/interfaces/work-repository.interface.js';
 import { RATE_LIMIT_STORE } from './../src/common/rate-limit/rate-limit.interface.js';
 import type {
   RateLimitDecision,
@@ -2579,6 +2580,141 @@ describe('Staff and admin API (e2e)', () => {
         .send({ status: 'marked' })
         .expect(200);
       expect(patched.body.status).toBeUndefined();
+    });
+  });
+
+  /**
+   * Review round 1 (`docs/phases/unit-6/REVIEW.md`): `F-1`, `F-2`, `F-3`
+   * (`D-36`), deviation 3 (`D-37`).
+   */
+  describe('review round 1', () => {
+    const server = () => app.getHttpServer();
+    const base = {
+      type: 'homework',
+      availableFrom: '2026-01-01T00:00:00.000Z',
+      availableTo: '2099-01-01T00:00:00.000Z',
+      dueAt: '2098-01-01T00:00:00.000Z',
+      maxScore: 10,
+      allowedFileTypes: ['application/pdf'],
+      maxFileSizeBytes: 1048576,
+    };
+    const create = async (token: string, body: object) =>
+      (
+        await request(server())
+          .post('/staff/courses/course-1/assessments')
+          .set(bearer(token))
+          .send({ ...base, ...body })
+          .expect(201)
+      ).body as { id: string };
+    const newGroup = async (name: string) =>
+      (
+        await request(server())
+          .post('/admin/groups')
+          .set(bearer(adminToken))
+          .send({ name, courseId: 'course-1' })
+          .expect(201)
+      ).body.id as string;
+    /** No route creates an external result without Google; seed the mirror directly. */
+    const syncResult = (assessmentId: string) =>
+      app.get<WorkRepository>(WORK_REPOSITORY).replaceResults(assessmentId, 'google_form', [
+        {
+          assessmentId,
+          provider: 'google_form',
+          externalId: `e2e-${assessmentId}`,
+          studentId: 'student-1',
+          respondentId: 'student@example.com',
+          score: null,
+          maxScore: null,
+          submittedAt: '2026-09-20T10:00:00.000Z',
+          raw: {},
+        },
+      ]);
+
+    it('F-1: a drifted task saves a title-only edit that re-sends the unchanged marker; the marker is kept', async () => {
+      const group3 = await newGroup('E2E - F-1 cohort');
+      const task = await create(adminToken, { title: 'E2E F-1', targets: [{ groupId: 'group-1' }], markerId: 'assistant-1' });
+      await request(server())
+        .post(`/staff/assessments/${task.id}/targets`)
+        .set(bearer(adminToken))
+        .send({ targets: [{ groupId: 'group-1' }, { groupId: group3 }] })
+        .expect(201);
+      const saved = await request(server())
+        .patch(`/staff/assessments/${task.id}`)
+        .set(bearer(adminToken))
+        .send({ title: 'E2E F-1, typo fixed', markerId: 'assistant-1' })
+        .expect(200);
+      expect(saved.body.markerId).toBe('assistant-1');
+      const list = await request(server()).get('/staff/tasks').set(bearer(adminToken)).expect(200);
+      expect(list.body.find((t: { id: string }) => t.id === task.id).markerDrift).toBe(true);
+    });
+
+    it('F-2: a retained group keeps its window override when another group is added', async () => {
+      const group3 = await newGroup('E2E - F-2 cohort');
+      const task = await create(adminToken, {
+        title: 'E2E F-2',
+        targets: [{ groupId: 'group-1', dueAt: '2098-06-01T00:00:00.000Z' }],
+      });
+      // What the edit form now sends: the retained group WITH its override, the
+      // added group bare.
+      const list = await request(server()).get('/staff/tasks').set(bearer(adminToken)).expect(200);
+      const retained = list.body
+        .find((t: { id: string }) => t.id === task.id)
+        .targets.map((t: { groupId: string; availableFrom: string | null; availableTo: string | null; dueAt: string | null }) => ({
+          groupId: t.groupId,
+          ...(t.availableFrom ? { availableFrom: t.availableFrom } : {}),
+          ...(t.availableTo ? { availableTo: t.availableTo } : {}),
+          ...(t.dueAt ? { dueAt: t.dueAt } : {}),
+        }));
+      const res = await request(server())
+        .post(`/staff/assessments/${task.id}/targets`)
+        .set(bearer(adminToken))
+        .send({ targets: [...retained, { groupId: group3 }] })
+        .expect(201);
+      const group1 = res.body.targets.find((t: { groupId: string }) => t.groupId === 'group-1');
+      expect(group1.dueAt).toBe('2098-06-01T00:00:00.000Z');
+      expect(res.body.targets.find((t: { groupId: string }) => t.groupId === group3).dueAt).toBeNull();
+    });
+
+    it('F-3 / D-36: hide and delete are refused (409) once a result has synced, and allowed before', async () => {
+      const answered = await create(adminToken, { title: 'E2E answered form', targets: [{ groupId: 'group-1' }] });
+      await syncResult(answered.id);
+      const hide = await request(server())
+        .patch(`/staff/assessments/${answered.id}`)
+        .set(bearer(adminToken))
+        .send({ visibility: 'hidden' })
+        .expect(409);
+      expect(hide.body.message).toMatch(/already answered/);
+      const del = await request(server()).delete(`/staff/assessments/${answered.id}`).set(bearer(adminToken)).expect(409);
+      expect(del.body.message).toMatch(/cannot be deleted/);
+
+      const quiet = await create(adminToken, { title: 'E2E unanswered form', targets: [{ groupId: 'group-1' }] });
+      await request(server())
+        .patch(`/staff/assessments/${quiet.id}`)
+        .set(bearer(adminToken))
+        .send({ visibility: 'hidden' })
+        .expect(200);
+      await request(server()).delete(`/staff/assessments/${quiet.id}`).set(bearer(adminToken)).expect(204);
+    });
+
+    it('D-37: scheduled follows the earliest group opening, counting a per-group override', async () => {
+      const group3 = await newGroup('E2E - D-37 cohort');
+      const task = await create(adminToken, {
+        title: 'E2E D-37',
+        availableFrom: '2098-01-01T00:00:00.000Z',
+        dueAt: '2098-06-01T00:00:00.000Z',
+        targets: [{ groupId: 'group-1' }, { groupId: group3, availableFrom: '2026-01-01T00:00:00.000Z' }],
+      });
+      let list = await request(server()).get('/staff/tasks').set(bearer(adminToken)).expect(200);
+      expect(list.body.find((t: { id: string }) => t.id === task.id).visibilityState).toBe('published');
+
+      // Move group-3's opening into the future too: every group now opens later.
+      await request(server())
+        .post(`/staff/assessments/${task.id}/targets`)
+        .set(bearer(adminToken))
+        .send({ targets: [{ groupId: 'group-1' }, { groupId: group3, availableFrom: '2098-02-01T00:00:00.000Z' }] })
+        .expect(201);
+      list = await request(server()).get('/staff/tasks').set(bearer(adminToken)).expect(200);
+      expect(list.body.find((t: { id: string }) => t.id === task.id).visibilityState).toBe('scheduled');
     });
   });
 });

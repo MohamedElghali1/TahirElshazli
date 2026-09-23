@@ -147,15 +147,6 @@ export class StaffManageController {
   }
 
   /**
-   * Authoring (CLAUDE.md §5.18). On the **staff** controller, not the admin
-   * one, because the client settled §11's open question on 2026-09-10: a
-   * teaching assistant may create both assignments and quizzes. One role rule,
-   * no branch on the task's `type` - §2.2 warns against exactly that.
-   *
-   * Scoped like everything else here: the course in the path goes through
-   * `StaffScopeService` before anything is read or written.
-   */
-  /**
    * Every task the caller reaches, across courses (`TASK-6`). Group-grain: a
    * task appears through a held target, and its targets are narrowed to held
    * groups - unlike the course-grained per-course list below (`AUTH-6`).
@@ -173,6 +164,15 @@ export class StaffManageController {
     });
   }
 
+  /**
+   * Authoring (CLAUDE.md §5.18). On the **staff** controller, not the admin
+   * one, because the client settled §11's open question on 2026-09-10: a
+   * teaching assistant may create both assignments and quizzes. One role rule,
+   * no branch on the task's `type` - §2.2 warns against exactly that.
+   *
+   * Scoped like everything else here: the course in the path goes through
+   * `StaffScopeService` before anything is read or written.
+   */
   @Get('courses/:courseId/assessments')
   async listAssessments(
     @Param('courseId') courseId: string,

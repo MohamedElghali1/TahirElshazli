@@ -15,6 +15,8 @@ import type {
   TaskDraftUpdate,
 } from './interfaces/task-draft-repository.interface.js';
 import { TASK_DRAFT_REPOSITORY } from './interfaces/task-draft-repository.interface.js';
+import type { AssessmentRepository } from '../assessments/interfaces/assessment-repository.interface.js';
+import { ASSESSMENT_REPOSITORY } from '../assessments/interfaces/assessment-repository.interface.js';
 
 /**
  * The message a draft that does not exist **and** a draft on a course the
@@ -63,6 +65,9 @@ export class TaskDraftsService {
     private readonly audit: AuditService,
     /** `DatabaseModule` is `@Global()`; this needs no import edge. */
     private readonly db: DatabaseService,
+    /** For the provenance clear on delete (review F-5). */
+    @Inject(ASSESSMENT_REPOSITORY)
+    private readonly assessments: AssessmentRepository,
   ) {}
 
   /**
@@ -181,6 +186,9 @@ export class TaskDraftsService {
   async remove(id: string, actor: StaffActor): Promise<void> {
     return this.db.runInTransaction(async () => {
       const before = await this.loadInScope(id, actor);
+      // What `018`'s `ON DELETE SET NULL` does, done explicitly so both
+      // drivers leave the same state behind (review F-5). Same transaction.
+      await this.assessments.clearDraftProvenance(id);
       await this.drafts.remove(id);
       await this.audit.record({
         actorId: actor.id,

@@ -472,6 +472,14 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
     });
   }
 
+  async clearDraftProvenance(draftId: string): Promise<number> {
+    const rows = await this.db.query<{ id: string }>(
+      'UPDATE assessments SET draft_id = NULL WHERE draft_id = $1 RETURNING id',
+      [draftId],
+    );
+    return rows.length;
+  }
+
   async findTargets(assessmentId: string): Promise<AssessmentTarget[]> {
     const rows = await this.db.query<AssessmentTargetRow>(
       `SELECT id, assessment_id, group_id, available_from, available_to, due_at

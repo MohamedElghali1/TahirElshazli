@@ -78,6 +78,7 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
   let scopes: InMemoryAssistantScopeRepository;
   let studentService: AssessmentsService;
   let users: InMemoryUserRepository;
+  let work: InMemoryWorkRepository;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -130,6 +131,7 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
     scopes = module.get(ASSISTANT_SCOPE_REPOSITORY);
     studentService = module.get(AssessmentsService);
     users = module.get(USER_REPOSITORY);
+    work = module.get(WORK_REPOSITORY);
   });
 
   const entries = async () => (await audit.find({ limit: 50 })).entries;
@@ -972,6 +974,118 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
       const ta = (await authoring.listForStaff(TA, {})).find((t) => t.id === created.id);
       expect(ta?.status).toBe(teacher?.status);
       expect(ta?.targets.map((t) => t.groupId)).toEqual(['group-1']);
+    });
+  });
+
+  /** Review round 1: `F-1`, `F-3` (`D-36`), deviation 3 (`D-37`). */
+  describe('review round 1', () => {
+    const OPEN = {
+      availableFrom: '2026-01-01T00:00:00Z',
+      availableTo: '2099-01-01T00:00:00Z',
+      dueAt: '2098-01-01T00:00:00Z',
+    };
+    const syncOneResult = (assessmentId: string, studentId: string | null) =>
+      work.replaceResults(assessmentId, 'google_form', [
+        {
+          assessmentId,
+          provider: 'google_form',
+          externalId: `resp-${assessmentId}`,
+          studentId,
+          respondentId: 'someone@example.com',
+          score: null,
+          maxScore: null,
+          submittedAt: '2026-09-20T10:00:00Z',
+          raw: {},
+        },
+      ]);
+
+    it('F-1: a title-only PATCH on a drifted task succeeds and leaves the marker as it was', async () => {
+      const group3 = await groups.create({
+        name: 'F-1 cohort',
+        teacherId: 'teacher-1',
+        courseId: 'course-1',
+        assistantId: null,
+        meets: null,
+        room: null,
+      });
+      const created = await authoring.create('course-1', ADMIN, { ...TASK, markerId: 'assistant-1' });
+      await authoring.setTargets(created.id, ADMIN, [{ groupId: 'group-1' }, { groupId: group3.id }]);
+      expect((await authoring.listForStaff(ADMIN, {})).find((t) => t.id === created.id)?.markerDrift).toBe(true);
+
+      // What the edit form sends: the unchanged marker alongside the edit.
+      const saved = await authoring.update(created.id, ADMIN, { title: 'Typo fixed', markerId: 'assistant-1' });
+      expect(saved.title).toBe('Typo fixed');
+      expect(saved.markerId).toBe('assistant-1');
+      // A CHANGED marker is still validated.
+      await expect(
+        authoring.update(created.id, ADMIN, { markerId: 'assistant-2' }),
+      ).rejects.toThrow(MARKER_NOT_ELIGIBLE);
+    });
+
+    it('F-3 / D-36: a task with a synced external result cannot be hidden (409); without one it can', async () => {
+      const answered = await authoring.create('course-1', ADMIN, { ...TASK, ...OPEN, title: 'Answered form' });
+      await syncOneResult(answered.id, 'student-1');
+      await expect(
+        authoring.update(answered.id, ADMIN, { visibility: 'hidden' }),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      // An unmatched response is still somebody's work.
+      const unmatched = await authoring.create('course-1', ADMIN, { ...TASK, ...OPEN, title: 'Unmatched form' });
+      await syncOneResult(unmatched.id, null);
+      await expect(
+        authoring.update(unmatched.id, ADMIN, { visibility: 'hidden' }),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      const quiet = await authoring.create('course-1', ADMIN, { ...TASK, ...OPEN, title: 'Nobody answered' });
+      expect((await authoring.update(quiet.id, ADMIN, { visibility: 'hidden' })).visibility).toBe('hidden');
+    });
+
+    it('F-3 / D-36: a task with a synced external result cannot be deleted (409); without one it can', async () => {
+      const answered = await authoring.create('course-1', ADMIN, { ...TASK, ...OPEN, title: 'Answered, then deleted?' });
+      await syncOneResult(answered.id, 'student-1');
+      await expect(authoring.remove(answered.id, ADMIN)).rejects.toBeInstanceOf(ConflictException);
+      expect((await authoring.list('course-1', ADMIN)).map((a) => a.id)).toContain(answered.id);
+      expect(await work.findResults(answered.id)).toHaveLength(1);
+
+      const quiet = await authoring.create('course-1', ADMIN, { ...TASK, ...OPEN, title: 'Deletable' });
+      await authoring.remove(quiet.id, ADMIN);
+      expect((await authoring.list('course-1', ADMIN)).map((a) => a.id)).not.toContain(quiet.id);
+    });
+
+    it('D-37: scheduled follows the EARLIEST group opening, counting per-group overrides', () => {
+      const now = new Date('2026-09-22T12:00:00Z');
+      const task = { visibility: 'published' as const, availableFrom: '2026-10-01T00:00:00Z' };
+      // The task's own opening is in the future, but one group opens earlier.
+      expect(visibilityStateOf(task, now, [{ availableFrom: null }, { availableFrom: '2026-09-01T00:00:00Z' }])).toBe('published');
+      // Every group opens in the future.
+      expect(visibilityStateOf(task, now, [{ availableFrom: null }, { availableFrom: '2026-11-01T00:00:00Z' }])).toBe('scheduled');
+      // The task opened, but every group's override is later.
+      expect(
+        visibilityStateOf({ ...task, availableFrom: '2026-09-01T00:00:00Z' }, now, [{ availableFrom: '2026-10-05T00:00:00Z' }]),
+      ).toBe('scheduled');
+    });
+
+    it('D-37: the staff list applies it through the whole audience', async () => {
+      const group3 = await groups.create({
+        name: 'Early cohort',
+        teacherId: 'teacher-1',
+        courseId: 'course-1',
+        assistantId: null,
+        meets: null,
+        room: null,
+      });
+      const created = await authoring.create('course-1', ADMIN, {
+        ...TASK,
+        availableFrom: '2098-01-01T00:00:00Z',
+        availableTo: '2099-01-01T00:00:00Z',
+        dueAt: '2098-06-01T00:00:00Z',
+        targets: [{ groupId: 'group-1' }, { groupId: group3.id, availableFrom: '2026-01-01T00:00:00Z' }],
+      });
+      const teacherRow = (await authoring.listForStaff(ADMIN, {})).find((t) => t.id === created.id);
+      expect(teacherRow?.visibilityState).toBe('published');
+      // The same label for assistant-1, who sees only group-1.
+      const taRow = (await authoring.listForStaff(TA, {})).find((t) => t.id === created.id);
+      expect(taRow?.visibilityState).toBe('published');
     });
   });
 });

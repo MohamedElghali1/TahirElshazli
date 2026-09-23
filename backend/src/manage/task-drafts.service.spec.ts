@@ -14,6 +14,8 @@ import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import { DATABASE_POOL } from '../database/database.tokens.js';
 import { Role } from '../auth/roles.enum.js';
+import { ASSESSMENT_REPOSITORY } from '../assessments/interfaces/assessment-repository.interface.js';
+import { InMemoryAssessmentRepository } from '../assessments/repositories/in-memory-assessment.repository.js';
 
 /** assistant-1 holds group-1 (course-1); assistant-2 holds nothing. */
 const TA = { id: 'assistant-1', role: 'assistant' };
@@ -46,6 +48,7 @@ async function messageOf(promise: Promise<unknown>): Promise<string> {
 describe('TaskDraftsService (TASK-2)', () => {
   let service: TaskDraftsService;
   let audit: AuditService;
+  let assessments: InMemoryAssessmentRepository;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -61,10 +64,12 @@ describe('TaskDraftsService (TASK-2)', () => {
         { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },
         { provide: ASSISTANT_SCOPE_REPOSITORY, useClass: InMemoryAssistantScopeRepository },
         { provide: AUDIT_LOG_REPOSITORY, useClass: InMemoryAuditLogRepository },
+        { provide: ASSESSMENT_REPOSITORY, useClass: InMemoryAssessmentRepository },
       ],
     }).compile();
     service = module.get(TaskDraftsService);
     audit = module.get(AuditService);
+    assessments = module.get(ASSESSMENT_REPOSITORY);
   });
 
   const entries = async (action: string) =>
@@ -194,6 +199,39 @@ describe('TaskDraftsService (TASK-2)', () => {
       expect(created.usedCount).toBe(0);
       expect(created.createdBy).toBe('assistant-1');
       expect(created.workType).toBe('file_upload');
+    });
+  });
+
+  describe('the memory driver matches Postgres on delete (review F-5)', () => {
+    it('deleting a draft nulls draftId on the tasks authored from it, and leaves them intact', async () => {
+      const draft = await service.create(TEACHER, DRAFT);
+      const task = await assessments.create({
+        courseId: 'course-1',
+        lessonId: null,
+        title: 'Authored from the draft',
+        description: '',
+        instructions: '',
+        type: 'homework',
+        topics: [],
+        availableFrom: '2026-09-01T00:00:00.000Z',
+        availableTo: '2026-12-01T00:00:00.000Z',
+        dueAt: '2026-11-01T00:00:00.000Z',
+        maxScore: 20,
+        allowedFileTypes: ['application/pdf'],
+        maxFileSizeBytes: 1024,
+        workType: 'file_upload',
+        externalUrl: null,
+        visibility: 'published',
+        markerId: null,
+        allowResubmission: true,
+        submissionModes: [],
+        draftId: draft.id,
+        attachments: [],
+      });
+      await service.remove(draft.id, TEACHER);
+      const after = await assessments.findById(task.id);
+      expect(after?.draftId).toBeNull();
+      expect(after?.title).toBe('Authored from the draft');
     });
   });
 });

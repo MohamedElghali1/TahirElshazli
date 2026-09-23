@@ -1358,7 +1358,9 @@ and `B-4` add or narrow columns, both were folded into migration `018` before it
 - `open` = `now ≤ dueAt`; `marking` = past due with any ungraded submission; `marked` = all graded.
 - No per-row submission counts in unit 6. They are unit 7's queue (`MARK-3`).
 - **Edges nobody ruled on are recorded, not invented** — see `docs/phases/unit-6/EXECUTION_NOTES.md`
-  §Blockers. A task in an unruled state carries `status: null` and matches no `status` filter.
+  §Rulings after execution. ~~A task in an unruled state carries `status: null` and matches no
+  `status` filter.~~ **Superseded on nullability by `D-34` (`closed`) and `D-35` (the latest due date
+  drives it): the status is total and never null.**
 
 ### `D-31` — `B-4`: a `submission_modes TEXT[]` column; multi-file is unit 7's (reading B)
 
@@ -1449,3 +1451,46 @@ for them rather than guess (`docs/phases/unit-6/EXECUTION_NOTES.md`). The user r
 
 **Affected.** `assessment-authoring.service.ts` (`staffTaskStatusOf`), `staff-tasks-query.dto.ts`,
 `API_SPEC.yaml`, `frontend/lib/types.ts`, `manage/tasks/page.tsx`, `IMPLEMENTATION_PLAN.md`.
+
+---
+
+## 2026-09-22 — Unit 6 review round 1: `D-36`, `D-37`, and two executor interpretations recorded
+
+**Context.** `redesign-reviewer` returned `APPROVED WITH FOLLOW-UP` (`docs/phases/unit-6/REVIEW.md`).
+The user ruled on the two open questions it surfaced; the remediation is in the commit after
+`82b5d78`.
+
+### `D-36` — synced external results count like submissions: hide **and** delete are refused (review `F-3`, "refuse both")
+- A task with any synced external result (a Google Form response, matched to a student or not) can
+  no longer be **hidden** (409) or **deleted** (409). Counted with `WorkRepository.tallyResults`.
+- **Supersedes** the executor's deviation 8 (the hide guard counted only `assessment_submissions`,
+  mirroring the delete guard) **and the pre-existing delete behaviour**, which let a task with synced
+  results be deleted and cascaded its `external_results` away (`010`'s `ON DELETE CASCADE`).
+- **Inconsistency kept, not silently "fixed":** a delete refused for `assessment_submissions` is still
+  a **400** (pre-existing, e2e-asserted); the new external-result refusal is a **409**, the code
+  `CLAUDE.md` §6 names for a state conflict. Aligning the older one is a separate call.
+
+### `D-37` — the staff `scheduled` label follows the **earliest** group opening (executor deviation 3)
+- `scheduled` = `published ∧ now <` the earliest effective `availableFrom` across the targeted groups
+  (each group's override, or the task's own). The label reads *Published* as soon as any group can
+  see the task. Judged over the whole audience, so every viewer gets the same label.
+- Before: the task's own `availableFrom` only, ignoring overrides.
+
+### Executor interpretations, recorded as the reviewer asked (`F-6`)
+- **Deviation 2 (endorsed by review):** a hidden task (`D-28`) is dropped from **every** student read
+  — list, detail, submit — **and** from `getPerformanceEntries` (what a report averages) and the staff
+  `studentWork` read, which is documented to agree with the student's own screen. One predicate,
+  `isVisibleToStudents`, serves all five.
+- **Deviation 8 (superseded by `D-36`):** the hide guard mirrored the delete guard and ignored external
+  results. No longer true for either.
+
+### Also from the review
+- **`F-5`:** the memory driver now matches `018`'s `draft_id ON DELETE SET NULL`: `TaskDraftsService.
+  remove` clears provenance through `AssessmentRepository.clearDraftProvenance` in the same
+  transaction, so both drivers leave the same state (a service-level join; no repository calls
+  another).
+- **`F-1`:** an unchanged `markerId` is not re-validated, so a drifted marker no longer blocks editing
+  the task — `D-32`'s "displayed, never cleared" holds on the edit screen.
+
+**Affected.** `assessment-authoring.service.ts`, `task-drafts.service.ts`, both assessment drivers,
+`task-form.tsx`, `drafts/page.tsx`, `API_SPEC.yaml`, `DOMAIN_MODEL.md`, `IMPLEMENTATION_PLAN.md`.
