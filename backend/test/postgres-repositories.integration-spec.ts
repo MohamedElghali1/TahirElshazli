@@ -944,6 +944,32 @@ describeIfDb('Postgres repositories', () => {
       expect(platform.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     });
 
+    it('deletes a draft, and refuses to delete a published row or a missing one', async () => {
+      // `remove` once called a `db.execute` that `DatabaseService` does not
+      // have, so deleting a draft threw on this driver and on no other.
+      const draft = () =>
+        repo().create({
+          audienceType: 'all_tas',
+          courseId: null,
+          groupId: null,
+          mediaKind: null,
+          mediaUrl: null,
+          title: 'To delete',
+          body: 'Body.',
+          postedBy: 'teacher-1',
+          recipientCount: 0,
+        });
+      const d = await draft();
+      expect(await repo().remove(d.id)).toBe(true);
+      expect(await repo().findById(d.id)).toBeNull();
+      expect(await repo().remove(d.id)).toBe(false);
+
+      const p = await draft();
+      await repo().publish(p.id, 2);
+      expect(await repo().remove(p.id)).toBe(false);
+      expect(await repo().findById(p.id)).not.toBeNull();
+    });
+
     it('refuses an audience_type and course_id that disagree', async () => {
       // The CHECK in migration 005. Neither half is reachable through the
       // service, which is exactly why the database has to be the one holding

@@ -3931,3 +3931,18 @@ nothing about what a rewrite took away with it: compare test counts across a mer
 State on `redesign`: unit 11 `[x]`, unit 12 `[x]`, unit 10 `[~]` — slice 10a (backend) merged and
 `APPROVED`, slice 10b (the announcements frontend, `ANN-1`/`ANN-2`/`ANN-3`/`ANN-5`/`ANN-6`) is the
 whole of what remains on that unit.
+
+## 2026-09-23 — Two `redesign`s made one
+
+Unit 7 finished locally while units 10–12 finished on `origin/redesign` — and the remote line had also
+started its own unit 7, so the two could not simply be merged: two different migration `020`s, and
+the same decision codes naming different rulings. The user kept the local, reviewed unit 7; units
+10–12 were ported across unit by unit and the remote's half-built marking work was left behind.
+
+Porting surfaced two things the remote's reviews had not: its backend did not compile (nothing had
+run `tsc` on it — `vitest` does not typecheck, and `nest build` would have failed the image), and
+deleting an announcement draft crashed on Postgres because the repository called a method
+`DatabaseService` does not have. Both fixed; the second has a test that was seen failing first.
+
+Baseline on the reconciled tree: 771 unit / 45 files, 354 e2e, 179 integration (0 skipped, 001–022
+from an empty schema on PostgreSQL 15.19), frontend `tsc` 0, lint clean. Unit 14 is next.

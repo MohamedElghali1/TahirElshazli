@@ -292,9 +292,15 @@ this scale round trips and row volume matter and query counts mostly do not.
 `016` mail deliveries (**applied**, unit 3) · `017` assistant invitations (**applied**, unit 5) ·
 `018` **task drafts + assessment columns** (**applied and verified**, unit 6) · `019` annotations +
 submission columns (**applied and verified**, unit 7) · `020` **submission file sets** (`files JSONB` ≤ 5 on
-submissions and revisions, `D-48`; **applied and verified**, unit 7 slice 7i) · `021` sessions rework ·
-`022` attendance enum · `023` weekly reports · `024` announcements (group audience, media, draft) ·
-`025` notification preferences
+submissions and revisions, `D-48`; **applied and verified**, unit 7 slice 7i) · `021` announcements
+(group audience, media, draft; **applied and verified**, unit 10) · `022` notification preferences
+(**applied and verified**, unit 12) · `023` sessions rework · `024` attendance enum · `025` weekly
+reports
+
+**Renumbered a third time 2026-09-23, the units 10–12 reconciliation.** Units 10 and 12 were built on
+a parallel line of `redesign` and shipped announcements as `021` and notification preferences as
+`022`. Ported onto the unit 7 line they keep those numbers; the three unbuilt entries follow them.
+001–022 ran in order from an empty schema on PostgreSQL 15.19 (integration 179 passed, 0 skipped).
 
 **Renumbered again 2026-09-23, unit 7.** `MARK-6`'s file set took `020`, so every later entry shifts by one.
 

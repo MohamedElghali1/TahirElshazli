@@ -1768,3 +1768,22 @@ author-supplied text never becomes markup. Announcement bodies render as paragra
 
 Removed before commit: an unrequested debounced search box over the announcement list. §1's scale
 numbers are the test — a list this size does not get search furniture.
+
+---
+
+## 2026-09-23 — Reconciliation: units 10–12 ported onto the unit 7 line; the remote's parallel unit 7 dropped
+
+`redesign` had split at `6657c7a` into two lines: local carried a reviewed, `APPROVED` unit 7;
+`origin/redesign` carried units 10–12 and a separate, partial unit 7 (7a–7c). The two unit 7s were
+incompatible — both numbered a migration `020`, and `D-39`…`D-45` named different rulings on each
+line. **The user ruled:** keep the local unit 7, port units 10–12, drop the remote's 7a–7c.
+
+- **Not carried:** the remote's `020_marking.sql` and its `D-38`…`D-45` entries. On this line those
+  codes mean only what the unit 7 entries above say.
+- **Migrations keep their numbers:** `021` announcements, `022` notification preferences — neither
+  depends on `020_marking`. `DATABASE_PLAN.md` §7 renumbered: sessions `023`, attendance `024`,
+  weekly reports `025`.
+- **Found and fixed while porting:** the remote backend did not typecheck (29 errors; `nest build`
+  failed), and `PostgresAnnouncementRepository.remove` called a `db.execute` that does not exist, so
+  deleting a draft threw on Postgres. Test added, verified failing first.
+- Follow-ups `RC-F1`…`RC-F4`. Full record: `docs/phases/RECONCILE_UNITS_10_12.md`.

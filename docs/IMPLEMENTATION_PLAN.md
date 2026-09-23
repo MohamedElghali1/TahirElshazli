@@ -360,6 +360,15 @@ assistant retarget their draft platform-wide for a teacher to publish unaware).
 
 ---
 
+### Reconciliation follow-ups — units 10–12 ported onto the unit 7 line, 2026-09-23
+
+`docs/phases/RECONCILE_UNITS_10_12.md`. None blocks unit 14.
+
+- `RC-F1` `[ ]` `announcements.controller.spec.ts` does not typecheck (11 errors): fixtures pass `id` to repository `create` calls that ignore it. The scope refusals hold only because the seed already has an unheld `group-2`. Rewrite against the seed; add backend `tsc --noEmit` (specs included) to CI — the remote line shipped a backend `nest build` could not compile.
+- `RC-F2` `[ ]` `SettingsService.getProfile` throws a bare `Error` on a missing user: a 500, not a 404.
+- `RC-F3` `[ ]` No e2e for the five `/staff/groups/:groupId/announcements*` routes or `/staff/announcements/reach`.
+- `RC-F4` `[ ]` One unreproduced integration failure during the reconciliation (1 of 4 runs; name not captured).
+
 ## Phases 15–17 — Remaining surfaces
 
 `STU-1` `[ ]` Overview (action-first; **no mark on this page**) ·
@@ -457,7 +466,7 @@ Report findings; do not fix silently.
 | Tasks | 87 (`AUTH-6` added 2026-09-21), less `AUTH-5` (dropped) = **86** |
 | Blocked | **0** — all eight decisions closed 2026-09-20 |
 | Complete | **15** — Phase 0's 13 done (`SPEC-16`/`SPEC-17` outstanding), plus `AUTH-1` and `AUTH-3` |
-| Migrations | 11 (011–021), one destructive |
+| Migrations | 12 (011–022), one destructive |
 | New backend routes | ~48 |
 | Routes modified | ~28 |
 | Routes retired | 12 |

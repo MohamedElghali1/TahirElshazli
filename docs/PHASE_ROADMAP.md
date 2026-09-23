@@ -518,6 +518,11 @@ built as slice 7i (migration `020`).
 
 ---
 
+> **2026-09-23 — one line again.** Units 10–12 were built on `origin/redesign` beside a separate,
+> partial unit 7; they were ported onto this line and that unit 7 was dropped (user ruling).
+> Baseline after: 771 unit, 354 e2e, 179 integration (001–022 from empty). Sessions take migration
+> `023`. `docs/phases/RECONCILE_UNITS_10_12.md`.
+
 ### Chat unit 8 — Sessions and attendance `[ ]`
 
 **Scope** `SESS-1` … `SESS-7`.
