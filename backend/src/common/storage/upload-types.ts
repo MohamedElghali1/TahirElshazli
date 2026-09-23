@@ -77,6 +77,12 @@ export const MAX_UPLOAD_BYTES = 64 * 1024 * 1024;
 /** The MIME types the whitelist admits, for an error message worth reading. */
 export const ALLOWED_UPLOAD_MIME_TYPES = Object.keys(ALLOWED_UPLOAD_TYPES);
 
+export const ALLOWED_AVATAR_MIME_TYPES = Object.entries(ALLOWED_UPLOAD_TYPES)
+  .filter(([_, type]) => type.kind === 'image')
+  .map(([mime]) => mime);
+
+export const AVATAR_MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+
 /**
  * The single path prefix the local driver serves from, and the only relative
  * shape `IsBlogMediaUrl` will accept. Both sides import it rather than

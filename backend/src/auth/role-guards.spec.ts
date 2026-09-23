@@ -124,6 +124,7 @@ const EXPECTED: Record<string, readonly Role[]> = {
   MarkingController: STAFF_ALL,
   UploadsController: STAFF_ALL,
   WorkAnalyticsController: STAFF_ALL,
+  SettingsController: STAFF_ALL,
 
   // ---- the student surface: a student never becomes an admin ----
   AssessmentsController: [Role.Student],
@@ -156,18 +157,23 @@ describe('the authorization boundary', () => {
     // `AdminCoursesController` (`DOM-5`) was the thirtieth; `AdminStaffController`
     // left with `course_staff_assignments` (`AUTH-2`), which is a net -1.
     // `TaskDraftsController` (`TASK-2`, unit 6) is the thirtieth again.
-    // `MarkingController` (unit 7, `MARK-1`/`MARK-2`/`MARK-3`) is the 31st.
-    expect(CONTROLLERS).toHaveLength(31);
+    // `MarkingController` (unit 7, `MARK-1`/`MARK-2`/`MARK-3`) is the 31st;
+    // `SettingsController` (unit 12, `SET-1`/`SET-2`) the 32nd.
+    expect(CONTROLLERS).toHaveLength(32);
     const named = CONTROLLERS.map((c) => c.name);
     expect(new Set(named).size).toBe(named.length);
-    for (const name of [
+    const accounted = [
       ...Object.keys(EXPECTED),
       ...PUBLIC_CONTROLLERS,
       ...PER_METHOD_CONTROLLERS,
-    ]) {
+    ];
+    for (const name of accounted) {
       expect(named).toContain(name);
     }
-    expect(Object.keys(EXPECTED)).toHaveLength(27);
+    for (const name of named) {
+      expect(accounted).toContain(name);
+    }
+    expect(Object.keys(EXPECTED)).toHaveLength(28);
   });
 
   describe('@Roles, read back off the decorator', () => {

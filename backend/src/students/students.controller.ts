@@ -8,9 +8,13 @@ import {
   Post,
   Request,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
+  UnsupportedMediaTypeException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { RateLimit } from '../common/rate-limit/rate-limit.guard.js';
-import { AUTH_ATTEMPT_LIMIT } from '../common/rate-limit/limits.js';
+import { AUTH_ATTEMPT_LIMIT, UPLOAD_LIMIT } from '../common/rate-limit/limits.js';
 import { StudentsService } from './students.service.js';
 import type { StudentProfileView } from './students.service.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
@@ -20,12 +24,17 @@ import { Role } from '../auth/roles.enum.js';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
 import { ChangePasswordDto } from './dto/change-password.dto.js';
 import type { JwtPayload } from '../auth/jwt.strategy.js';
+import { ALLOWED_AVATAR_MIME_TYPES, AVATAR_MAX_UPLOAD_BYTES } from '../common/storage/upload-types.js';
+import { UploadsService, type UploadedFileLike } from '../common/storage/uploads.service.js';
 
 @Controller('students')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.Student)
 export class StudentsController {
-  constructor(private readonly studentsService: StudentsService) {}
+  constructor(
+    private readonly studentsService: StudentsService,
+    private readonly uploadsService: UploadsService,
+  ) {}
 
   @Get('me/profile')
   async getMyProfile(
@@ -56,5 +65,28 @@ export class StudentsController {
       dto.currentPassword,
       dto.newPassword,
     );
+  }
+
+  @Post('me/avatar')
+  @RateLimit(UPLOAD_LIMIT)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: AVATAR_MAX_UPLOAD_BYTES, files: 1 },
+    }),
+  )
+  async uploadMyAvatar(
+    @UploadedFile() file: UploadedFileLike | undefined,
+    @Request() req: { user: JwtPayload },
+  ): Promise<StudentProfileView> {
+    if (file && !ALLOWED_AVATAR_MIME_TYPES.includes(file.mimetype?.toLowerCase())) {
+      throw new UnsupportedMediaTypeException(
+        `Files of type "${file.mimetype}" are not accepted. Allowed: ${ALLOWED_AVATAR_MIME_TYPES.join(', ')}.`,
+      );
+    }
+    const result = await this.uploadsService.store(file, {
+      maxBytes: AVATAR_MAX_UPLOAD_BYTES,
+      allowedMimeTypes: ALLOWED_AVATAR_MIME_TYPES,
+    });
+    return this.studentsService.updateProfile(req.user.sub, { avatarUrl: result.url });
   }
 }

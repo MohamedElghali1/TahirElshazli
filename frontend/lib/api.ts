@@ -24,6 +24,8 @@ import type {
   GroupMemberView,
   GroupPatch,
   GroupReport,
+  StaffProfile,
+  NotificationPreferences,
   GroupSummary,
   GroupWrite,
   LiveSession,
@@ -164,7 +166,7 @@ export class ApiError extends Error {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   body?: unknown;
   token?: string | null;
   signal?: AbortSignal;
@@ -621,6 +623,26 @@ export const api = {
      §5.11 - there is no "fetch everything and hide some" path).
      ---------------------------------------------------------------------- */
   staff: {
+    profile: (token: string) =>
+      request<StaffProfile>('/me/profile', { token }),
+
+    updateProfile: (token: string, body: { name: string }) =>
+      request<StaffProfile>('/me/profile', {
+        method: 'PATCH',
+        token,
+        body,
+      }),
+
+    notificationPreferences: (token: string) =>
+      request<NotificationPreferences>('/me/notification-preferences', { token }),
+
+    updateNotificationPreferences: (token: string, body: NotificationPreferences) =>
+      request<void>('/me/notification-preferences', {
+        method: 'PUT',
+        token,
+        body,
+      }),
+
     /** Courses the caller may work on. Scoped for a TA, all of them for admin. */
     courses: (token: string) =>
       request<StaffCourseSummary[]>('/staff/courses', { token }),
@@ -1062,6 +1084,15 @@ export const api = {
      courtesy (CLAUDE.md §8).
      ---------------------------------------------------------------------- */
   admin: {
+    googleIntegration: {
+      status: (token: string) =>
+        request<{ isConfigured: boolean; isConnected: boolean; googleEmail?: string; connectedAt?: string; lastError?: string }>('/admin/integrations/google', { token }),
+      connect: (token: string) =>
+        request<{ authUrl: string }>('/admin/integrations/google/connect', { method: 'POST', token }),
+      disconnect: (token: string) =>
+        request<void>('/admin/integrations/google', { method: 'DELETE', token }),
+    },
+
     /* Group CRUD is teacher-only; *placement* is not (staff.addGroupMember
        above). The client's instruction covered placement explicitly and said
        nothing about who creates a group, so the narrow reading ships - the
@@ -1167,6 +1198,10 @@ export const api = {
         body,
       }),
 
+    /** Course detail for editing (`DOM-5`). */
+    course: (token: string, courseId: string) =>
+      request<AdminCourse>(`/admin/courses/${courseId}`, { token }),
+
     // `courseStaff`/`assignStaff`/`unassignStaff` are gone with
     // `/admin/courses/:courseId/staff` (`AUTH-2`): an assistant's reach is held
     // at the group grain now, and the route that edits it is unit 5's
@@ -1253,6 +1288,9 @@ export const api = {
   },
 
   students: {
+    uploadAvatar: (token: string, file: File, signal?: AbortSignal) =>
+      uploadTo<StudentProfile>('/students/me/avatar', token, file, signal),
+
     profile: (token: string) =>
       request<StudentProfile>('/students/me/profile', { token }),
 

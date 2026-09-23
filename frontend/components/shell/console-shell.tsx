@@ -76,7 +76,7 @@ function sectionsFor(admin: boolean, studentCount: number | null): NavGroup[] {
   }
 
   const system: NavLeaf[] = [];
-  if (admin) system.push({ href: '/manage/settings', label: 'Settings', icon: 'Settings' });
+  system.push({ href: '/manage/settings', label: 'Settings', icon: 'Settings' });
   system.push({ href: '/manage/account', label: 'Account', icon: 'UserCircle' });
 
   return [

@@ -1491,3 +1491,18 @@ export interface StudentWorkResult {
   submittedAt: string | null;
   hasDetail: boolean;
 }
+
+export interface StaffProfile {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  googleEmail: string | null;
+}
+
+export interface NotificationPreferences {
+  submissions: boolean;
+  registrations: boolean;
+  unmatched: boolean;
+  weeklySummary: boolean;
+}

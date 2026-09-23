@@ -2520,6 +2520,22 @@ paths:
       x-audit: course.created
 
   /admin/courses/{courseId}:
+    get:
+      tags: [settings]
+      summary: Course detail for editing
+      description: >
+        Course detail for staff editing. Unscoped: teacher and admin only.
+      x-roles: [teacher, admin]
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Course' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
     patch:
       tags: [settings]
       summary: Edit a course
