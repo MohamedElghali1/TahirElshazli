@@ -12,6 +12,7 @@ import {
   ASSESSMENT_NOT_FOUND,
   MARKER_NOT_ELIGIBLE,
   RETARGET_UNREACHABLE_AUDIENCE,
+  staffTaskStatusOf,
   visibilityStateOf,
 } from './assessment-authoring.service.js';
 import { TASK_DRAFT_NOT_FOUND } from './task-drafts.service.js';
@@ -887,6 +888,84 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
       const created = await authoring.create('course-1', ADMIN, TASK);
       expect(created.submissionModes).toEqual([]);
       expect(created.allowedFileTypes).toEqual(['application/pdf']);
+    });
+  });
+
+  /** `D-30` (B-3 → a, no counts). */
+  describe('the staff task status (D-30)', () => {
+    const now = new Date('2026-09-22T12:00:00Z');
+    const past = '2026-09-01T00:00:00Z';
+    const future = '2026-10-01T00:00:00Z';
+
+    it('open while now <= dueAt, whatever has been submitted', () => {
+      expect(staffTaskStatusOf({ dueAt: future }, [{ dueAt: null }], { total: 0, ungraded: 0 }, now)).toBe('open');
+      expect(staffTaskStatusOf({ dueAt: future }, [{ dueAt: null }], { total: 3, ungraded: 3 }, now)).toBe('open');
+      // Exactly at the due instant is still open (<=).
+      expect(staffTaskStatusOf({ dueAt: '2026-09-22T12:00:00Z' }, [], { total: 0, ungraded: 0 }, now)).toBe('open');
+    });
+
+    it('marking when past due with any ungraded submission; marked when every submission is graded', () => {
+      expect(staffTaskStatusOf({ dueAt: past }, [{ dueAt: null }], { total: 3, ungraded: 1 }, now)).toBe('marking');
+      expect(staffTaskStatusOf({ dueAt: past }, [{ dueAt: null }], { total: 3, ungraded: 0 }, now)).toBe('marked');
+    });
+
+    it('uses each group’s own due date: an override in the future keeps the task open', () => {
+      expect(staffTaskStatusOf({ dueAt: past }, [{ dueAt: future }], { total: 0, ungraded: 0 }, now)).toBe('open');
+    });
+
+    it('is null, not a guess, past due with nothing submitted (unruled edge)', () => {
+      expect(staffTaskStatusOf({ dueAt: past }, [{ dueAt: null }], { total: 0, ungraded: 0 }, now)).toBeNull();
+    });
+
+    it('is null, not a guess, when groups’ due dates disagree about being past due (unruled edge)', () => {
+      expect(
+        staffTaskStatusOf({ dueAt: past }, [{ dueAt: null }, { dueAt: future }], { total: 2, ungraded: 0 }, now),
+      ).toBeNull();
+    });
+
+    it('derives it on the list and filters by it; a null status matches no filter', async () => {
+      // The seeds: assess-3 is past due with its one submission graded,
+      // assess-4 past due with its one submission ungraded, assess-2 past due
+      // with nothing submitted.
+      const list = await authoring.listForStaff(ADMIN, {});
+      const statusOf = (id: string) => list.find((t) => t.id === id)?.status;
+      expect(statusOf('assess-3')).toBe('marked');
+      expect(statusOf('assess-4')).toBe('marking');
+      expect(statusOf('assess-2')).toBeNull();
+
+      const marking = await authoring.listForStaff(ADMIN, { status: 'marking' });
+      expect(marking.map((t) => t.id)).toContain('assess-4');
+      expect(marking.every((t) => t.status === 'marking')).toBe(true);
+      for (const status of ['open', 'marking', 'marked'] as const) {
+        const ids = (await authoring.listForStaff(ADMIN, { status })).map((t) => t.id);
+        expect(ids).not.toContain('assess-2');
+      }
+    });
+
+    it('gives an assistant the same status the teacher sees (viewer-independent)', async () => {
+      const group3 = await groups.create({
+        name: 'Status cohort',
+        teacherId: 'teacher-1',
+        courseId: 'course-1',
+        assistantId: null,
+        meets: null,
+        room: null,
+      });
+      const created = await authoring.create('course-1', ADMIN, {
+        ...TASK,
+        availableFrom: '2026-01-01T00:00:00Z',
+        availableTo: '2099-01-01T00:00:00Z',
+        dueAt: '2026-02-01T00:00:00Z',
+        targets: [
+          { groupId: 'group-1' },
+          // The unheld group's own due date is in the future.
+          { groupId: group3.id, dueAt: '2098-01-01T00:00:00Z' },
+        ],
+      });
+      const teacher = (await authoring.listForStaff(ADMIN, {})).find((t) => t.id === created.id);
+      const ta = (await authoring.listForStaff(TA, {})).find((t) => t.id === created.id);
+      expect(ta?.status).toBe(teacher?.status);
+      expect(ta?.targets.map((t) => t.groupId)).toEqual(['group-1']);
     });
   });
 });

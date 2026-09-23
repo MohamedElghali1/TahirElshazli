@@ -56,6 +56,7 @@ import type {
   StaffBlogPost,
   AttachmentInput,
   StaffTask,
+  StaffTaskStatus,
   SubmissionMode,
   TaskDraft,
   TaskVisibility,
@@ -662,7 +663,12 @@ export const api = {
      */
     tasks: (
       token: string,
-      filter: { courseId?: string; groupId?: string; search?: string } = {},
+      filter: {
+        courseId?: string;
+        groupId?: string;
+        search?: string;
+        status?: StaffTaskStatus;
+      } = {},
     ) => request<StaffTask[]>(`/staff/tasks${qs(filter)}`, { token }),
 
     createAssessment: (

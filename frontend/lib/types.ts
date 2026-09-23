@@ -279,6 +279,14 @@ export type TaskVisibility = 'published' | 'hidden';
 /** What a staff screen shows: `scheduled` is derived by the server, never sent. */
 export type VisibilityState = TaskVisibility | 'scheduled';
 
+/**
+ * The staff-side status of a task (`D-30`), derived by the server: `open` until
+ * due, then `marking` while anything is ungraded, then `marked`. `null` where
+ * the ruling does not reach (past due with nothing submitted; groups whose own
+ * due dates disagree) - render it as an em-dash, never as a guess.
+ */
+export type StaffTaskStatus = 'open' | 'marking' | 'marked';
+
 /** How a student may hand the work in (`D-31`). */
 export type SubmissionMode = 'pdf_upload' | 'doc_link' | 'photo_upload';
 export type AssessmentStatus = 'locked' | 'available' | 'submitted' | 'corrected';
@@ -1002,6 +1010,8 @@ export interface StaffTask extends Omit<AuthoredAssessment, 'targets'> {
   targets: StaffTaskTarget[];
   /** Server-derived (`D-28`): `scheduled` is a published task not yet open. */
   visibilityState: VisibilityState;
+  /** Server-derived (`D-30`); null where the ruling does not reach. */
+  status: StaffTaskStatus | null;
   /** The named marker's display name; null when nobody is named. */
   markerName: string | null;
   /**

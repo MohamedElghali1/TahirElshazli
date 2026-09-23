@@ -2517,4 +2517,33 @@ describe('Staff and admin API (e2e)', () => {
         .expect(400);
     });
   });
+
+  describe('the staff task status (D-30)', () => {
+    const server = () => app.getHttpServer();
+    it('derives status on GET /staff/tasks and filters by it; null matches no filter', async () => {
+      const all = await request(server()).get('/staff/tasks').set(bearer(adminToken)).expect(200);
+      const statusOf = (id: string) => all.body.find((t: { id: string }) => t.id === id)?.status;
+      expect(statusOf('assess-3')).toBe('marked');
+      expect(statusOf('assess-2')).toBeNull();
+      for (const status of ['open', 'marking', 'marked']) {
+        const res = await request(server()).get(`/staff/tasks?status=${status}`).set(bearer(adminToken)).expect(200);
+        expect(res.body.every((t: { status: string }) => t.status === status)).toBe(true);
+        expect(res.body.map((t: { id: string }) => t.id)).not.toContain('assess-2');
+      }
+      // No per-row counts ride along (D-30).
+      expect(Object.keys(all.body[0])).not.toEqual(expect.arrayContaining(['submittedCount']));
+    });
+
+    it('refuses a status that is not one of the three, and never takes one on a write', async () => {
+      await request(server()).get('/staff/tasks?status=closed').set(bearer(adminToken)).expect(400);
+      // A client status on PATCH is stripped, not honoured: the response still
+      // carries no stored status field at all.
+      const patched = await request(server())
+        .patch('/staff/assessments/assess-1')
+        .set(bearer(adminToken))
+        .send({ status: 'marked' })
+        .expect(200);
+      expect(patched.body.status).toBeUndefined();
+    });
+  });
 });

@@ -1,4 +1,4 @@
-import { IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { IsIn, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 
 const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 
@@ -25,4 +25,13 @@ export class StaffTasksQueryDto {
   @IsString()
   @MaxLength(120)
   search?: string;
+
+  /**
+   * `D-30`: derived on the server from the due date and the submissions -
+   * never a stored or client-supplied value. A task whose status is `null`
+   * (an edge the ruling does not reach) matches no filter.
+   */
+  @IsOptional()
+  @IsIn(['open', 'marking', 'marked'], { message: 'status must be open, marking or marked' })
+  status?: 'open' | 'marking' | 'marked';
 }

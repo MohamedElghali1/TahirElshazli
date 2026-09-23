@@ -602,6 +602,30 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
     );
   }
 
+  async countSubmissionsByAssessments(
+    assessmentIds: readonly string[],
+  ): Promise<Record<string, { total: number; ungraded: number }>> {
+    if (assessmentIds.length === 0) {
+      return {};
+    }
+    const rows = await this.db.query<{ assessment_id: string; total: string; ungraded: string }>(
+      `SELECT assessment_id,
+              COUNT(*) AS total,
+              COUNT(*) FILTER (WHERE corrected_at IS NULL) AS ungraded
+         FROM assessment_submissions
+        WHERE assessment_id = ANY($1::text[])
+        GROUP BY assessment_id`,
+      [[...assessmentIds]],
+    );
+    // COUNT(*) arrives as a string; see countUngradedSubmissionsByCourses.
+    return Object.fromEntries(
+      rows.map((row) => [
+        row.assessment_id,
+        { total: Number(row.total), ungraded: Number(row.ungraded) },
+      ]),
+    );
+  }
+
   async findSubmissionById(
     submissionId: string,
   ): Promise<StoredSubmission | null> {

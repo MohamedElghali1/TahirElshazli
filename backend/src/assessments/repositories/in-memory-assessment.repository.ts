@@ -588,6 +588,20 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
     return counts;
   }
 
+  async countSubmissionsByAssessments(
+    assessmentIds: readonly string[],
+  ): Promise<Record<string, { total: number; ungraded: number }>> {
+    const wanted = new Set(assessmentIds);
+    const counts: Record<string, { total: number; ungraded: number }> = {};
+    for (const submission of this.submissions) {
+      if (!wanted.has(submission.assessmentId)) continue;
+      const entry = (counts[submission.assessmentId] ??= { total: 0, ungraded: 0 });
+      entry.total += 1;
+      if (submission.correctedAt === null) entry.ungraded += 1;
+    }
+    return counts;
+  }
+
   async findSubmissionById(
     submissionId: string,
   ): Promise<StoredSubmission | null> {

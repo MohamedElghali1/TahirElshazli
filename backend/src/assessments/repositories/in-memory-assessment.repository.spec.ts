@@ -108,4 +108,14 @@ describe('InMemoryAssessmentRepository: unit-6 columns', () => {
     expect(targets.map((t) => t.groupId)).toEqual(['group-1']);
     expect(await repo.findTargetsForAssessments([shared.id], [])).toEqual([]);
   });
+
+  it('countSubmissionsByAssessments counts total and ungraded per task; absent is none', async () => {
+    // Seeds: sub-1 on assess-3 graded, sub-2 on assess-4 ungraded.
+    const counts = await repo.countSubmissionsByAssessments(['assess-3', 'assess-4', 'assess-2']);
+    expect(counts).toEqual({
+      'assess-3': { total: 1, ungraded: 0 },
+      'assess-4': { total: 1, ungraded: 1 },
+    });
+    expect(await repo.countSubmissionsByAssessments([])).toEqual({});
+  });
 });

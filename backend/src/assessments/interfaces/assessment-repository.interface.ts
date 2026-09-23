@@ -430,6 +430,20 @@ export interface AssessmentRepository {
   countUngradedSubmissionsByCourses(
     courseIds: readonly string[],
   ): Promise<Record<string, number>>;
+  /**
+   * How many submissions each task has, and how many are still ungraded
+   * (`corrected_at IS NULL`, the same rule as above). Absent means none.
+   *
+   * For the staff task status (`D-30`), which needs two facts per task and
+   * must not materialise every submission row to get them (CLAUDE.md §1).
+   * **Unscoped by group on purpose**: the status is a fact about the task,
+   * identical for every viewer, and the counts themselves are never returned
+   * to a client (`D-30`: no per-row counts in unit 6). The caller must have
+   * resolved `assessmentIds` through a scoped read first.
+   */
+  countSubmissionsByAssessments(
+    assessmentIds: readonly string[],
+  ): Promise<Record<string, { total: number; ungraded: number }>>;
   /** One submission by id, for the grading screen. Null when it is gone. */
   findSubmissionById(submissionId: string): Promise<StoredSubmission | null>;
   /**

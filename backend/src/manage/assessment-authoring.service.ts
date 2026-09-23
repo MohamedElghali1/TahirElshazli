@@ -78,6 +78,8 @@ export interface StaffTask extends StoredAssessment {
   targets: StaffTaskTarget[];
   /** Server-derived; see `VisibilityState`. */
   visibilityState: VisibilityState;
+  /** Server-derived (`D-30`); `null` where the ruling does not reach. */
+  status: StaffTaskStatus | null;
   /** The named marker's display name; null when `markerId` is null. */
   markerName: string | null;
   /**
@@ -129,6 +131,52 @@ export interface StaffTaskListFilter {
   courseId?: string;
   groupId?: string;
   search?: string;
+  /** `D-30`. A task whose status is `null` matches no status filter. */
+  status?: StaffTaskStatus;
+}
+
+/**
+ * The staff-side status of a task (`D-30`, reading a):
+ *
+ * - `open`    - `now <= dueAt`;
+ * - `marking` - past due, with any ungraded submission;
+ * - `marked`  - past due, with every submission graded.
+ *
+ * **`null` where the ruling does not reach**, rather than a guess. Two such
+ * edges are recorded in `docs/phases/unit-6/EXECUTION_NOTES.md` as open
+ * questions: a task past due with **no submissions at all** (vacuously "all
+ * graded", or not marked because nothing was marked?), and a task whose groups'
+ * **own due dates disagree** about whether it is past due. External work
+ * (`link`, `google_form`) has no submission rows of its own, so past due it
+ * lands on the first edge. `dueAt` is NOT NULL, so "no due date" cannot occur.
+ */
+export type StaffTaskStatus = 'open' | 'marking' | 'marked';
+
+/**
+ * `D-30`'s derivation, over the task's WHOLE audience and every submission -
+ * the same answer for every viewer. Never accepted from a client.
+ */
+export function staffTaskStatusOf(
+  task: Pick<StoredAssessment, 'dueAt'>,
+  audience: readonly Pick<AssessmentTarget, 'dueAt'>[],
+  submissions: { total: number; ungraded: number },
+  now: Date,
+): StaffTaskStatus | null {
+  // Each group's own due date: its override, or the task's.
+  const dues = (audience.length > 0 ? audience : [{ dueAt: null }]).map(
+    (t) => new Date(t.dueAt ?? task.dueAt),
+  );
+  const open = dues.map((due) => now <= due);
+  if (open.every(Boolean)) {
+    return 'open';
+  }
+  if (open.some(Boolean)) {
+    return null; // Unruled: past due for some groups, not for others.
+  }
+  if (submissions.total === 0) {
+    return null; // Unruled: past due with nothing submitted.
+  }
+  return submissions.ungraded > 0 ? 'marking' : 'marked';
 }
 
 export interface CreateAssessmentInput {
@@ -530,18 +578,27 @@ export class AssessmentAuthoringService {
       list.push({ ...target, groupName: nameOf.get(target.groupId) ?? '' });
       byTask.set(target.assessmentId, list);
     }
-    // Marker names and drift (`D-32`). Drift is judged against the task's
-    // WHOLE audience, read unrestricted here and never returned: the answer is
-    // one boolean about the task, the same for every viewer.
+    // The task's WHOLE audience, for the two derived facts that must not
+    // depend on who is looking - marker drift (`D-32`) and status (`D-30`).
+    // Read unrestricted here and never returned. For an unrestricted caller
+    // it is the list already read.
+    const fullAudience =
+      groupIds === null
+        ? targets
+        : await this.assessmentRepo.findTargetsForAssessments(
+            assessments.map((a) => a.id),
+            null,
+          );
+    const counts = await this.assessmentRepo.countSubmissionsByAssessments(
+      assessments.map((a) => a.id),
+    );
+
+    // Marker names and drift (`D-32`): one boolean about the task.
     const marked = assessments.filter((a) => a.markerId !== null);
     const markers = await this.userRepo.findByIds([
       ...new Set(marked.map((a) => a.markerId as string)),
     ]);
     const markerById = new Map(markers.map((u) => [u.id, u]));
-    const fullAudience = await this.assessmentRepo.findTargetsForAssessments(
-      marked.map((a) => a.id),
-      null,
-    );
     const drift = new Map<string, boolean>();
     const reachCache = new Map<string, Promise<readonly string[] | null>>();
     for (const task of marked) {
@@ -553,15 +610,27 @@ export class AssessmentAuthoringService {
     }
 
     const now = new Date();
-    return assessments.map((assessment) => ({
+    const rows: StaffTask[] = assessments.map((assessment) => ({
       ...assessment,
       targets: byTask.get(assessment.id) ?? [],
       visibilityState: visibilityStateOf(assessment, now),
+      status: staffTaskStatusOf(
+        assessment,
+        fullAudience.filter((t) => t.assessmentId === assessment.id),
+        counts[assessment.id] ?? { total: 0, ungraded: 0 },
+        now,
+      ),
       markerName: assessment.markerId
         ? (markerById.get(assessment.markerId)?.name ?? null)
         : null,
       markerDrift: drift.get(assessment.id) ?? false,
     }));
+    // A derived value, so it is filtered after derivation. This narrows a list
+    // already restricted to the caller's reach in the query above; it is not a
+    // scope filter.
+    return filter.status === undefined
+      ? rows
+      : rows.filter((row) => row.status === filter.status);
   }
 
   async create(

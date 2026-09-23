@@ -169,6 +169,7 @@ export class StaffManageController {
       courseId: query.courseId,
       groupId: query.groupId,
       search: query.search,
+      status: query.status,
     });
   }
 

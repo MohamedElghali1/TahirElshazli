@@ -2223,6 +2223,17 @@ describeIfDb('Postgres repositories', () => {
       await repo().remove(onlyThird.id);
     });
 
+    it('countSubmissionsByAssessments counts total and ungraded per task, in one query', async () => {
+      // Seeds: sub-1 on assess-3 graded; sub-2 on assess-4 ungraded; nothing on assess-2.
+      // (Earlier describes may add submissions to assess-1, so it is not asked.)
+      const counts = await repo().countSubmissionsByAssessments(['assess-3', 'assess-4', 'assess-2']);
+      expect(counts).toEqual({
+        'assess-3': { total: 1, ungraded: 0 },
+        'assess-4': { total: 1, ungraded: 1 },
+      });
+      expect(await repo().countSubmissionsByAssessments([])).toEqual({});
+    });
+
     it('findTargetsForAssessments restricts to the given groups', async () => {
       const groups = new PostgresGroupRepository(db);
       const third = await groups.create({
