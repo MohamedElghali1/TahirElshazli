@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   NotFoundException,
@@ -15,6 +16,7 @@ import type {
   Attachment,
   NewAssessmentTarget,
   StoredAssessment,
+  TaskVisibility,
 } from '../assessments/interfaces/assessment-repository.interface.js';
 import { ASSESSMENT_REPOSITORY } from '../assessments/interfaces/assessment-repository.interface.js';
 import type { GroupRepository } from '../groups/interfaces/group-repository.interface.js';
@@ -52,12 +54,35 @@ export interface StaffTaskTarget extends AssessmentTarget {
 }
 
 /**
+ * The visibility a staff screen shows (`D-28`). `scheduled` is **derived**,
+ * never stored: a `published` task whose own `availableFrom` is still in the
+ * future. Students already see such a task as locked-with-a-date.
+ */
+export type VisibilityState = TaskVisibility | 'scheduled';
+
+/**
  * One row of `GET /staff/tasks` (`TASK-6`): every stored field, plus the
  * targets **the caller reaches** - an assistant never receives an unheld
  * group's id or name.
  */
 export interface StaffTask extends StoredAssessment {
   targets: StaffTaskTarget[];
+  /** Server-derived; see `VisibilityState`. */
+  visibilityState: VisibilityState;
+}
+
+/**
+ * `D-28`'s label, derived on every read from the stored value and the task's
+ * **own** window - never accepted from a client.
+ */
+export function visibilityStateOf(
+  task: Pick<StoredAssessment, 'visibility' | 'availableFrom'>,
+  now: Date,
+): VisibilityState {
+  if (task.visibility === 'hidden') {
+    return 'hidden';
+  }
+  return now < new Date(task.availableFrom) ? 'scheduled' : 'published';
 }
 
 export interface StaffTaskListFilter {
@@ -106,6 +131,11 @@ export interface CreateAssessmentInput {
   attachments?: Attachment[];
   /** Defaults to `true`, which is today's rule. */
   allowResubmission?: boolean;
+  /**
+   * `D-28`: `published` (the default) or `hidden`. A new task has no
+   * submissions, so creating it hidden needs no conflict check.
+   */
+  visibility?: TaskVisibility;
 }
 
 /**
@@ -119,7 +149,7 @@ export type UpdateAssessmentInput = Omit<
   AssessmentUpdate,
   // Each of these has a rule of its own and is admitted by the slice that
   // enforces it - never passed through unchecked.
-  'visibility' | 'markerId' | 'submissionModes'
+  'markerId' | 'submissionModes'
 > & {
   googleForm?: string;
 };
@@ -267,6 +297,27 @@ export class AssessmentAuthoringService {
   }
 
   /**
+   * `D-28` (reading iii): a task anybody has submitted to cannot be hidden.
+   *
+   * Hiding it would take a student's own work out of their sight, which is the
+   * history delete-refused-once-submitted exists to keep - so this mirrors that
+   * check exactly (the same `findSubmissionsForAssessments` read; a mirrored
+   * external result is not a submission there either). A 409, because it is a
+   * state conflict (CLAUDE.md §6). Relaxable later without losing anything.
+   */
+  private async assertMayHide(assessmentId: string): Promise<void> {
+    const submissions = await this.assessmentRepo.findSubmissionsForAssessments([
+      assessmentId,
+    ]);
+    if (submissions.length > 0) {
+      throw new ConflictException(
+        'This task has submissions and cannot be hidden. ' +
+          'Close its availability window instead.',
+      );
+    }
+  }
+
+  /**
    * Loads an assessment and proves the caller may act on its course (§5.11).
    *
    * A missing id and a real task on an unreachable course both throw
@@ -358,9 +409,11 @@ export class AssessmentAuthoringService {
       list.push({ ...target, groupName: nameOf.get(target.groupId) ?? '' });
       byTask.set(target.assessmentId, list);
     }
+    const now = new Date();
     return assessments.map((assessment) => ({
       ...assessment,
       targets: byTask.get(assessment.id) ?? [],
+      visibilityState: visibilityStateOf(assessment, now),
     }));
   }
 
@@ -408,7 +461,7 @@ export class AssessmentAuthoringService {
         // resolved against Google and written as a binding instead - see below.
         externalUrl: workType === 'link' ? (input.externalUrl ?? null) : null,
         // The unit-6 settings. Later slices thread the rest of them through.
-        visibility: 'published',
+        visibility: input.visibility ?? 'published',
         markerId: null,
         allowResubmission: input.allowResubmission ?? true,
         submissionModes: [],
@@ -457,6 +510,7 @@ export class AssessmentAuthoringService {
           draftId: assessment.draftId,
           attachmentCount: assessment.attachments.length,
           allowResubmission: assessment.allowResubmission,
+          visibility: assessment.visibility,
         },
       });
       return { ...assessment, targets };
@@ -470,6 +524,9 @@ export class AssessmentAuthoringService {
   ): Promise<AuthoredAssessment> {
     return this.db.runInTransaction(async () => {
       const before = await this.loadInScope(assessmentId, actor);
+      if (update.visibility === 'hidden') {
+        await this.assertMayHide(assessmentId);
+      }
       this.assertWindow(
         update.availableFrom ?? before.availableFrom,
         update.availableTo ?? before.availableTo,
@@ -534,6 +591,7 @@ export class AssessmentAuthoringService {
           maxScore: before.maxScore,
           attachmentCount: before.attachments.length,
           allowResubmission: before.allowResubmission,
+          visibility: before.visibility,
         },
         after: {
           title: after.title,
@@ -542,6 +600,7 @@ export class AssessmentAuthoringService {
           maxScore: after.maxScore,
           attachmentCount: after.attachments.length,
           allowResubmission: after.allowResubmission,
+          visibility: after.visibility,
         },
       });
       return { ...after, targets: await this.assessmentRepo.findTargets(assessmentId) };

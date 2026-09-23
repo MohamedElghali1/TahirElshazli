@@ -276,6 +276,9 @@ export type WorkType = 'file_upload' | 'link' | 'google_form';
  */
 export type TaskVisibility = 'published' | 'hidden';
 
+/** What a staff screen shows: `scheduled` is derived by the server, never sent. */
+export type VisibilityState = TaskVisibility | 'scheduled';
+
 /** How a student may hand the work in (`D-31`). */
 export type SubmissionMode = 'pdf_upload' | 'doc_link' | 'photo_upload';
 export type AssessmentStatus = 'locked' | 'available' | 'submitted' | 'corrected';
@@ -995,6 +998,8 @@ export interface StaffTaskTarget extends AssessmentTarget {
  */
 export interface StaffTask extends Omit<AuthoredAssessment, 'targets'> {
   targets: StaffTaskTarget[];
+  /** Server-derived (`D-28`): `scheduled` is a published task not yet open. */
+  visibilityState: VisibilityState;
 }
 
 /** One targeted group, with the window override left out in the common case. */

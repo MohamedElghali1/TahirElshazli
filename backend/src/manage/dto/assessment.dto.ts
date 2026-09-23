@@ -31,6 +31,9 @@ const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
  */
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 
+/** `D-28`. `scheduled` is derived, never accepted. */
+const TASK_VISIBILITIES = ['published', 'hidden'] as const;
+
 /**
  * One targeted group, with an optional window override.
  *
@@ -201,6 +204,14 @@ export class CreateAssessmentDto {
   @IsOptionalNotNull()
   @IsBoolean()
   allowResubmission?: boolean;
+
+  /**
+   * `D-28`: two stored values. `scheduled` is refused - it is derived from a
+   * future `availableFrom`, never stored or sent.
+   */
+  @IsOptionalNotNull()
+  @IsIn(TASK_VISIBILITIES, { message: 'visibility must be published or hidden' })
+  visibility?: (typeof TASK_VISIBILITIES)[number];
 }
 
 /** Every field optional; `undefined` leaves it alone. */
@@ -302,6 +313,11 @@ export class UpdateAssessmentDto {
   @IsOptionalNotNull()
   @IsBoolean()
   allowResubmission?: boolean;
+
+  /** Hiding a task that has any submission is a 409 (`D-28`, reading iii). */
+  @IsOptionalNotNull()
+  @IsIn(TASK_VISIBILITIES, { message: 'visibility must be published or hidden' })
+  visibility?: (typeof TASK_VISIBILITIES)[number];
 
   /**
    * `type`, `courseId` and `draftId` are deliberately absent. `draftId` is

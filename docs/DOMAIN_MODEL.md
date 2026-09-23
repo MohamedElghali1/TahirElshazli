@@ -135,13 +135,16 @@ The task. Written once, aimed at groups.
 - **Fields.** existing (`courseId`, `lessonId?`, `title`, `description`, `instructions`, `type`,
   `topics[]`, `availableFrom/To`, `dueAt`, `maxScore`, `allowedFileTypes[]`, `maxFileSizeBytes`,
   `workType`, `externalUrl?`) plus **`visibility`**, **`markerId?`**, **`allowResubmission`**,
-  **`draftId?`** (provenance)
+  **`submissionModes[]`** (`D-31`), **`draftId?`** (provenance) and **`attachments[]`** (unit 6 —
+  each an `Attachment` value object `{url, name, mimeType?, sizeBytes?, audience}`, `D-29`)
 - **`type`** (`homework | assignment | quiz`) is *what it is for*; **`workType`**
   (`file_upload | link | google_form`) is *how it is delivered*. Two axes, deliberately — collapsing
   them would destroy the ability to ask "all quizzes".
-- **`visibility`** (`published | scheduled | hidden`) is **new and distinct from the window**. Today
-  status is derived from timestamps alone, which cannot express "hidden", and cannot show a
-  scheduled task as locked-with-a-date on the student's dashboard.
+- **`visibility`** (`published | hidden`) is **new and distinct from the window** — timestamps alone
+  cannot express "hidden". **Narrowed by `D-28`:** `scheduled` is not stored; it is the derived label
+  for `published ∧ now < availableFrom`, which a student already sees as locked-with-a-date. A
+  `hidden` task is absent from every student read, and a task with any submission cannot be hidden
+  (409).
 - **Derived, never stored.** `AssessmentStatus` = `locked | available | submitted | corrected`,
   computed server-side from the window, the visibility and the submission (`CLAUDE.md` §5.10).
 - **Invariants.** At least one target group. `availableFrom < availableTo`, `dueAt` inside. A

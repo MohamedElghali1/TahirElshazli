@@ -51,16 +51,22 @@ would be a one-way door for no benefit.
 | `courses` | — | — | unchanged |
 | `recordings` | `thumbnail_url` | `TEXT` | Library is thumbnails-by-default |
 | `recordings` | `is_visible` | `BOOLEAN NOT NULL DEFAULT true` | Management screen's toggle |
-| `assessments` | `visibility` | `TEXT NOT NULL DEFAULT 'published' CHECK (visibility IN ('published','scheduled','hidden'))` | Distinct from the window |
-| `assessments` | `marker_id` | `TEXT REFERENCES users(id)` | "Who marks this" |
-| `assessments` | `allow_resubmission` | `BOOLEAN NOT NULL DEFAULT true` | Submission settings |
-| `assessments` | `draft_id` | `TEXT REFERENCES task_drafts(id) ON DELETE SET NULL` | Provenance, not a live link |
+| `assessments` | `visibility` | `TEXT NOT NULL DEFAULT 'published' CHECK (visibility IN ('published','hidden'))` — **narrowed by `D-28`**: `scheduled` is derived, not stored. Migration `018`. | Distinct from the window |
+| `assessments` | `marker_id` | `TEXT REFERENCES users(id)` — `018` | "Who marks this" (`D-32`) |
+| `assessments` | `allow_resubmission` | `BOOLEAN NOT NULL DEFAULT true` — `018` | Submission settings |
+| `assessments` | `submission_modes` | `TEXT[] NOT NULL DEFAULT '{}' CHECK (submission_modes <@ ARRAY['pdf_upload','doc_link','photo_upload'])` — `018`, **added by `D-31`** | Submission settings; multi-file is unit 7's |
+| `assessments` | `draft_id` | `TEXT REFERENCES task_drafts(id) ON DELETE SET NULL` — `018` | Provenance, not a live link |
+| `assessments` | `attachments` | `JSONB NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(attachments) = 'array')` — `018`, **added by unit 6** (it was missing here; `API_GAP_ANALYSIS.md` A4/B3 require attachments on the task itself). Each element carries `audience` (`D-29`). | Copied from a draft, a handful per task, so JSONB rather than a child table |
 | `assessment_submissions` | `returned_at` | `TIMESTAMPTZ(3)` | Save ≠ save-and-return |
 | `assessment_submissions` | `include_in_report` | `BOOLEAN NOT NULL DEFAULT true` | Marking view toggle |
 
-**On `visibility`.** It must be a separate column, not inferred. Today status derives purely from
-timestamps, which cannot express "hidden", and cannot show a scheduled task as *locked with a date*
-on the student's dashboard — the design requires exactly that ("nothing appears out of nowhere").
+**On `visibility`.** It must be a separate column, not inferred: status derived purely from
+timestamps cannot express "hidden". **`D-28` (2026-09-22) narrowed it to `published | hidden`.** The
+second half of the original reasoning was false against the code: a `published` task with a future
+`available_from` already reads to a student as `locked` with its opening date. So `scheduled` is the
+derived *label* for `published ∧ now < available_from`, computed on the staff read and never stored,
+and there is no `publish_at`. A `hidden` task is absent from every student read, and hiding one that
+has a submission is refused (409).
 
 ---
 
@@ -71,7 +77,7 @@ on the student's dashboard — the design requires exactly that ("nothing appear
 | `assistant_scopes` | `user_id PK`, `scope CHECK IN ('all_groups','assigned_groups')` | One row per assistant. **Explicit**, so "no assignment rows" is never ambiguous between "everything" and "nothing yet". |
 | `assistant_group_assignments` | `id`, `user_id`, `group_id`, `assigned_by`, `assigned_at`, `UNIQUE(user_id, group_id)` | Rows exist only when scope is `assigned_groups`. Index on `user_id`. |
 | `assistant_invitations` | `id`, `email`, `role`, `scope`, `group_ids TEXT[]`, `token UNIQUE`, `expires_at`, `accepted_at`, `invited_by` | Single-use; accepting creates the user and its scope in one transaction. |
-| `task_drafts` | `id`, `course_id`, `type`, `work_type`, `title`, `description`, `instructions`, `attachments JSONB`, `used_count INT NOT NULL DEFAULT 0`, `created_by`, `updated_at` | The reuse library. |
+| `task_drafts` | `id`, `course_id`, `type`, `work_type`, `title`, `description`, `instructions`, `attachments JSONB`, `used_count INT NOT NULL DEFAULT 0`, `created_by`, `created_at`, `updated_at` (both `TIMESTAMPTZ(3)`) | The reuse library. Migration `018`. `created_at` added by unit 6 (the §9 convention; this list was shorthand). |
 | `submission_annotations` | `id`, `submission_id CASCADE`, `page INT`, `x_percent NUMERIC(5,2)`, `y_percent NUMERIC(5,2)`, `kind CHECK IN ('comment','tick','cross')`, `text`, `created_by`, `created_at` | Stored as **data**, not a flattened file — which is what makes them editable and deletable. Index `(submission_id, page)`. |
 | `weekly_reports` | `id`, `student_id`, `group_id`, `course_id`, `week_number INT`, `period_start DATE`, `period_end DATE`, `generated_at`, `status CHECK IN ('new','under_review','reviewed','sent')`, `assigned_assistant_id`, `assistant_note`, `teacher_note`, `reviewed_by`, `reviewed_at`, `sent_at`, `sent_to`, `file_url`, `UNIQUE(student_id, week_number)` | The flagship new entity. Index `(group_id, week_number, status)`. |
 | `notification_preferences` | `user_id PK`, four booleans | |

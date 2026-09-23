@@ -73,9 +73,11 @@ session state (Redis) or the tab is dropped for launch. **Decision required.**
 Authoring exists (`POST /staff/courses/:id/assessments` and friends, TA-reachable, audited). What
 changes:
 
-- **Visibility becomes explicit** — `published | scheduled | hidden`, distinct from the
-  availability window. Today status is derived purely from timestamps, so "hidden" is inexpressible
-  and a scheduled task cannot be shown as locked-with-a-date.
+- **Visibility becomes explicit** — `published | hidden`, distinct from the availability window.
+  Today status is derived purely from timestamps, so "hidden" is inexpressible. **`D-28`
+  (2026-09-22):** `scheduled` is not a stored value — it is the label for a published task whose
+  window has not opened, which students already see as locked-with-a-date. A task anyone has
+  submitted to cannot be hidden.
 - **A draft library** `[NEW]` — reusable task templates with a reuse count; "Save as draft", and
   "start from a draft" prefills content, instructions and attachments.
 - **Attachments** `[NEW]` — a passage, an audio file, a mark scheme, alongside the task.

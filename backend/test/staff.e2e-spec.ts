@@ -2123,4 +2123,116 @@ describe('Staff and admin API (e2e)', () => {
         .expect(400);
     });
   });
+
+  describe('visibility (D-28): published | hidden, scheduled derived', () => {
+    const server = () => app.getHttpServer();
+    let cohort: string;
+    const base = {
+      title: 'E2E visibility task',
+      type: 'homework',
+      availableFrom: '2026-01-01T00:00:00.000Z',
+      availableTo: '2099-01-01T00:00:00.000Z',
+      dueAt: '2098-01-01T00:00:00.000Z',
+      maxScore: 10,
+      allowedFileTypes: ['application/pdf'],
+      maxFileSizeBytes: 1048576,
+    };
+    beforeAll(async () => {
+      cohort = (
+        await request(server())
+          .post('/admin/groups')
+          .set(bearer(adminToken))
+          .send({ name: 'E2E - visibility cohort', courseId: 'course-1' })
+          .expect(201)
+      ).body.id;
+      await request(server())
+        .post(`/staff/groups/${cohort}/members`)
+        .set(bearer(adminToken))
+        .send({ studentId: 'student-1' })
+        .expect(201);
+    });
+
+    it('hides a task from the student list, and 404s detail and submit identically to a miss', async () => {
+      const task = await request(server())
+        .post('/staff/courses/course-1/assessments')
+        .set(bearer(assignedTaToken))
+        .send({ ...base, targets: [{ groupId: cohort }] })
+        .expect(201);
+      await request(server())
+        .patch(`/staff/assessments/${task.body.id}`)
+        .set(bearer(assignedTaToken))
+        .send({ visibility: 'hidden' })
+        .expect(200);
+
+      const list = await request(server())
+        .get('/courses/course-1/assessments')
+        .set(bearer(studentToken))
+        .expect(200);
+      expect(list.body.map((a: { id: string }) => a.id)).not.toContain(task.body.id);
+
+      const hidden = await request(server()).get(`/assessments/${task.body.id}`).set(bearer(studentToken)).expect(404);
+      const missing = await request(server()).get('/assessments/nope').set(bearer(studentToken)).expect(404);
+      expect(JSON.stringify(hidden.body) === JSON.stringify(missing.body)).toBe(true);
+
+      const hiddenSubmit = await request(server())
+        .post(`/assessments/${task.body.id}/submissions`)
+        .set(bearer(studentToken))
+        .send({ answerText: 'x' })
+        .expect(404);
+      const missingSubmit = await request(server())
+        .post('/assessments/nope/submissions')
+        .set(bearer(studentToken))
+        .send({ answerText: 'x' })
+        .expect(404);
+      expect(JSON.stringify(hiddenSubmit.body) === JSON.stringify(missingSubmit.body)).toBe(true);
+
+      // The staff list still shows it, labelled.
+      const staff = await request(server()).get('/staff/tasks').set(bearer(adminToken)).expect(200);
+      const row = staff.body.find((t: { id: string }) => t.id === task.body.id);
+      expect(row.visibility).toBe('hidden');
+      expect(row.visibilityState).toBe('hidden');
+
+      await request(server()).delete(`/staff/assessments/${task.body.id}`).set(bearer(adminToken)).expect(204);
+    });
+
+    it('refuses to hide a task with a submission: 409', async () => {
+      await request(server())
+        .patch('/staff/assessments/assess-3')
+        .set(bearer(adminToken))
+        .send({ visibility: 'hidden' })
+        .expect(409);
+    });
+
+    it('refuses scheduled, and any other value, at the boundary: 400', async () => {
+      for (const visibility of ['scheduled', 'draft', null]) {
+        await request(server())
+          .post('/staff/courses/course-1/assessments')
+          .set(bearer(adminToken))
+          .send({ ...base, targets: [{ groupId: cohort }], visibility })
+          .expect(400);
+      }
+      await request(server())
+        .patch('/staff/assessments/assess-1')
+        .set(bearer(adminToken))
+        .send({ visibility: 'scheduled' })
+        .expect(400);
+    });
+
+    it('labels a published task with a future window scheduled on the staff list', async () => {
+      const task = await request(server())
+        .post('/staff/courses/course-1/assessments')
+        .set(bearer(adminToken))
+        .send({
+          ...base,
+          availableFrom: '2098-01-01T00:00:00.000Z',
+          dueAt: '2098-06-01T00:00:00.000Z',
+          targets: [{ groupId: cohort }],
+        })
+        .expect(201);
+      expect(task.body.visibility).toBe('published');
+      const staff = await request(server()).get('/staff/tasks').set(bearer(adminToken)).expect(200);
+      expect(staff.body.find((t: { id: string }) => t.id === task.body.id).visibilityState).toBe('scheduled');
+      await request(server()).delete(`/staff/assessments/${task.body.id}`).set(bearer(adminToken)).expect(204);
+    });
+  });
 });

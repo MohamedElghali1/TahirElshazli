@@ -57,6 +57,7 @@ import type {
   AttachmentInput,
   StaffTask,
   TaskDraft,
+  TaskVisibility,
   TaskDraftUpdate,
   TaskDraftWrite,
   WorkType,
@@ -691,6 +692,8 @@ export const api = {
         attachments?: AttachmentInput[];
         /** Omitted is `true`: resubmission until the window ends. */
         allowResubmission?: boolean;
+        /** `published` (default) or `hidden`. `scheduled` is derived, never sent. */
+        visibility?: TaskVisibility;
       },
     ) =>
       request<AuthoredAssessment>(`/staff/courses/${courseId}/assessments`, {
@@ -719,6 +722,8 @@ export const api = {
         /** Replaces the whole list; `[]` clears it. */
         attachments?: AttachmentInput[];
         allowResubmission?: boolean;
+        /** `hidden` 409s once anything has been submitted. */
+        visibility?: TaskVisibility;
       },
     ) =>
       request<AuthoredAssessment>(`/staff/assessments/${assessmentId}`, {

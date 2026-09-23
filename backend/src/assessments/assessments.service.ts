@@ -11,6 +11,7 @@ import type {
   AssessmentType,
   AssessmentRepository,
   StoredAssessment,
+  TaskVisibility,
   StoredSubmission,
   SubmissionRevision,
 } from './interfaces/assessment-repository.interface.js';
@@ -22,6 +23,21 @@ import type {
   WorkType,
 } from './interfaces/work-repository.interface.js';
 import { WORK_REPOSITORY } from './interfaces/work-repository.interface.js';
+
+/**
+ * Whether a student may see this task at all (`D-28`).
+ *
+ * `hidden` removes a task from **every** student read - the list, the detail,
+ * the submit route, and the performance entries a report averages - and from
+ * the staff read of one student's work, which exists to agree with the
+ * student's own screen. `scheduled` is not a stored value: a published task
+ * whose window has not opened is already `locked` with its date.
+ *
+ * One predicate, so the five reads cannot disagree about what "hidden" means.
+ */
+export function isVisibleToStudents(task: { visibility: TaskVisibility }): boolean {
+  return task.visibility !== 'hidden';
+}
 
 export interface AssessmentListItem {
   id: string;
@@ -172,7 +188,9 @@ export class AssessmentsService {
           assessmentId,
           groupIds,
         );
-        if (targeted) {
+        // A hidden task (`D-28`) falls through to the same 404 as a task that
+        // does not exist - its body must not confirm there is something here.
+        if (targeted && isVisibleToStudents(targeted)) {
           // The targeted row, not the raw one: its window carries this group's
           // overrides, so every downstream status and deadline decision
           // (§5.10) is made on the terms this student was actually set.
@@ -326,11 +344,9 @@ export class AssessmentsService {
     // student gets an empty list rather than an error - §7.2's state, and what
     // §5.16 warns will look like a working course that happens to be empty.
     const groupIds = await this.studentGroups.groupIdsFor(courseId, studentId);
-    const assessments = await this.assessmentRepo.findByCourseForGroups(
-      courseId,
-      groupIds,
-      filter,
-    );
+    const assessments = (
+      await this.assessmentRepo.findByCourseForGroups(courseId, groupIds, filter)
+    ).filter(isVisibleToStudents);
     const submissions = await this.submissionsByAssessment(assessments, studentId);
     // One batched count for the whole list rather than a lookup per row -
     // external work has no submission of ours, so without this every completed
@@ -502,10 +518,12 @@ export class AssessmentsService {
     // never set would be a lower mark than they earned, on a number §5.6 says
     // the teacher reads as authoritative.
     const groupIds = await this.studentGroups.groupIdsFor(courseId, studentId);
-    const assessments = await this.assessmentRepo.findByCourseForGroups(
-      courseId,
-      groupIds,
-    );
+    // A hidden task is not work this student was set (`D-28`): a report that
+    // averaged it would count "not submitted" against something they could
+    // never see.
+    const assessments = (
+      await this.assessmentRepo.findByCourseForGroups(courseId, groupIds)
+    ).filter(isVisibleToStudents);
     const submissions = await this.submissionsByAssessment(assessments, studentId);
     const externals = await this.work.countResultsByAssessments(
       assessments.map((a) => a.id),

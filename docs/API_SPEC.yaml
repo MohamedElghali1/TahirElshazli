@@ -159,7 +159,12 @@ components:
     # it is the same reconciliation unit 1 did for `Assistant`.
     SessionMode:  { type: string, enum: [on_ground, online] }
     AttendanceStatus: { type: string, enum: [present, absent, late] }
-    TaskVisibility:   { type: string, enum: [published, scheduled, hidden] }
+    # `D-28`: two STORED values. `scheduled` is not stored and never accepted -
+    # see `VisibilityState`.
+    TaskVisibility:   { type: string, enum: [published, hidden] }
+    # What a staff screen shows: `scheduled` is DERIVED on the server for a
+    # `published` task whose own `availableFrom` is in the future.
+    VisibilityState:  { type: string, enum: [published, scheduled, hidden] }
     # How a student may hand the work in (`D-31`). Multi-file is unit 7's.
     SubmissionMode:   { type: string, enum: [pdf_upload, doc_link, photo_upload] }
     WorkType:         { type: string, enum: [file_upload, link, google_form] }
@@ -544,9 +549,10 @@ components:
       allOf:
         - { $ref: '#/components/schemas/AuthoredAssessment' }
         - type: object
-          required: [targets]
+          required: [targets, visibilityState]
           properties:
             targets: { type: array, items: { $ref: '#/components/schemas/StaffTaskTarget' } }
+            visibilityState: { $ref: '#/components/schemas/VisibilityState' }
 
     # `POST /staff/courses/{courseId}/assessments`. The body is authoritative:
     # `draftId` records provenance and bumps the draft's `usedCount`, and the
@@ -582,6 +588,7 @@ components:
           maxItems: 10
           items: { $ref: '#/components/schemas/Attachment' }
         allowResubmission: { type: boolean, default: true }
+        visibility: { $ref: '#/components/schemas/TaskVisibility' }
 
     # `PATCH /staff/assessments/{assessmentId}`. Every field optional and never
     # null. `type`, `courseId` and `draftId` are not patchable.
@@ -607,6 +614,8 @@ components:
           maxItems: 10
           items: { $ref: '#/components/schemas/Attachment' }
         allowResubmission: { type: boolean }
+        # `hidden` on a task with any submission is a 409 (`D-28`).
+        visibility: { $ref: '#/components/schemas/TaskVisibility' }
 
     # --- Marking -----------------------------------------------------------
     Annotation:
@@ -1445,6 +1454,8 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: '`visibility: hidden` on a task that has any submission (`D-28`).'
       x-audit: assessment.updated
     delete:
       tags: [tasks]
@@ -1489,6 +1500,21 @@ paths:
       x-audit: assessment.targeted
 
   # --- The student's task routes (only what unit 6 changed) ------------------
+  /courses/{courseId}/assessments:
+    get:
+      tags: [tasks]
+      summary: The student's task list for one course
+      description: >
+        A `hidden` task (`D-28`) is absent. A `published` task with a future window
+        is present as `locked`, with its `availableFrom` - that is what "scheduled"
+        means to a student.
+      x-roles: [student]
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200': { description: OK }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /assessments/{assessmentId}/submissions:
     parameters:
       - { name: assessmentId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
@@ -1498,6 +1524,7 @@ paths:
       description: >
         A second submission to a task with `allowResubmission: false` is a 409
         (unit 6). With `true`, resubmission runs until the window ends, as before.
+        A `hidden` task 404s with a body identical to a nonexistent id (`D-28`).
       x-roles: [student]
       responses:
         '201': { description: Created }

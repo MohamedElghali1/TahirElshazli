@@ -207,6 +207,7 @@ export class StaffManageController {
       draftId: body.draftId,
       attachments: body.attachments,
       allowResubmission: body.allowResubmission,
+      visibility: body.visibility,
     });
   }
 

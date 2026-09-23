@@ -20,6 +20,7 @@ import { WORK_REPOSITORY } from '../assessments/interfaces/work-repository.inter
 import type { StaffActor } from '../staff/staff-scope.service.js';
 import { StaffScopeService } from '../staff/staff-scope.service.js';
 import { StudentGroupsService } from '../groups/student-groups.service.js';
+import { isVisibleToStudents } from '../assessments/assessments.service.js';
 import {
   WorkAnalyticsService,
   type StudentWorkResult,
@@ -104,10 +105,11 @@ export class WorkAnalyticsGateService {
     // An unplaced student has been set nothing, so this is legitimately empty
     // rather than an error (§7.2) - the same state the student's own screen
     // shows, and the staff view must agree with it.
-    const assessments = await this.assessments.findByCourseForGroups(
-      courseId,
-      groupIds,
-    );
+    // Hidden tasks are dropped for the same reason: this view must agree with
+    // the student's own screen, which does not show them (`D-28`).
+    const assessments = (
+      await this.assessments.findByCourseForGroups(courseId, groupIds)
+    ).filter(isVisibleToStudents);
     return this.analytics.forStudent(assessments, studentId);
   }
 

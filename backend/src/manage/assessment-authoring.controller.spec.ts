@@ -2,7 +2,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { TASK_DRAFT_REPOSITORY } from './interfaces/task-draft-repository.interface.js';
 import { InMemoryTaskDraftRepository } from './repositories/in-memory-task-draft.repository.js';
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
-import { AssessmentAuthoringService, ASSESSMENT_NOT_FOUND } from './assessment-authoring.service.js';
+import {
+  AssessmentAuthoringService,
+  ASSESSMENT_NOT_FOUND,
+  visibilityStateOf,
+} from './assessment-authoring.service.js';
 import { TASK_DRAFT_NOT_FOUND } from './task-drafts.service.js';
 import type { TaskDraftRepository } from './interfaces/task-draft-repository.interface.js';
 import { AssessmentsController } from '../assessments/assessments.controller.js';
@@ -62,6 +66,7 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
   let groups: InMemoryGroupRepository;
   let drafts: TaskDraftRepository;
   let scopes: InMemoryAssistantScopeRepository;
+  let studentService: AssessmentsService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -110,6 +115,7 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
     groups = module.get(GROUP_REPOSITORY);
     drafts = module.get(TASK_DRAFT_REPOSITORY);
     scopes = module.get(ASSISTANT_SCOPE_REPOSITORY);
+    studentService = module.get(AssessmentsService);
   });
 
   const entries = async () => (await audit.find({ limit: 50 })).entries;
@@ -542,6 +548,93 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
     it('filters by search, literally', async () => {
       const found = await authoring.listForStaff(ADMIN, { search: 'group 3' });
       expect(found.map((t) => t.id)).toEqual([onlyGroup3]);
+    });
+  });
+
+  /** `D-28` (B-1 → C + iii). */
+  describe('visibility: published | hidden, scheduled derived (D-28)', () => {
+    const OPEN_WINDOW = {
+      availableFrom: '2026-01-01T00:00:00Z',
+      availableTo: '2099-01-01T00:00:00Z',
+      dueAt: '2098-01-01T00:00:00Z',
+    };
+
+    it('hidden: no row in the student list, and detail and submit 404 identically to a genuine miss', async () => {
+      const created = await authoring.create('course-1', ADMIN, { ...TASK, ...OPEN_WINDOW });
+      await authoring.update(created.id, ADMIN, { visibility: 'hidden' });
+
+      const list = await student.listAssessments('course-1', {}, STUDENT_1);
+      expect(list.map((a) => a.id)).not.toContain(created.id);
+
+      const hiddenDetail = await notFoundMessage(student.getAssessmentDetail(created.id, STUDENT_1));
+      const missingDetail = await notFoundMessage(student.getAssessmentDetail('nope', STUDENT_1));
+      expect(hiddenDetail === missingDetail).toBe(true);
+
+      const hiddenSubmit = await notFoundMessage(
+        student.submitAssessment(created.id, { answerText: 'x' }, STUDENT_1),
+      );
+      const missingSubmit = await notFoundMessage(
+        student.submitAssessment('nope', { answerText: 'x' }, STUDENT_1),
+      );
+      expect(hiddenSubmit === missingSubmit).toBe(true);
+    });
+
+    it('published again: the task comes back for the student', async () => {
+      const created = await authoring.create('course-1', ADMIN, {
+        ...TASK,
+        ...OPEN_WINDOW,
+        visibility: 'hidden',
+      });
+      expect(created.visibility).toBe('hidden');
+      await authoring.update(created.id, ADMIN, { visibility: 'published' });
+      const list = await student.listAssessments('course-1', {}, STUDENT_1);
+      expect(list.map((a) => a.id)).toContain(created.id);
+    });
+
+    it('refuses to hide a task that has any submission, with 409, and leaves it published', async () => {
+      // assess-3 carries sub-1.
+      await expect(
+        authoring.update('assess-3', ADMIN, { visibility: 'hidden' }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      const list = await authoring.list('course-1', ADMIN);
+      expect(list.find((a) => a.id === 'assess-3')?.visibility).toBe('published');
+    });
+
+    it('drops a hidden task from the performance entries a report averages', async () => {
+      const created = await authoring.create('course-1', ADMIN, {
+        ...TASK,
+        ...OPEN_WINDOW,
+        visibility: 'hidden',
+      });
+      const performance = await studentService.getPerformanceEntries('course-1', 'student-1');
+      expect(performance.map((e) => e.assessmentId)).not.toContain(created.id);
+    });
+
+    it('records visibility on assessment.updated, before and after', async () => {
+      const created = await authoring.create('course-1', ADMIN, { ...TASK, ...OPEN_WINDOW });
+      await authoring.update(created.id, TA, { visibility: 'hidden' });
+      const entry = (await entries()).find((e) => e.action === 'assessment.updated');
+      expect(entry?.before).toMatchObject({ visibility: 'published' });
+      expect(entry?.after).toMatchObject({ visibility: 'hidden' });
+    });
+
+    it('derives scheduled from a published task with a future availableFrom; never stores it', () => {
+      const now = new Date('2026-09-22T12:00:00Z');
+      expect(visibilityStateOf({ visibility: 'published', availableFrom: '2026-10-01T00:00:00Z' }, now)).toBe('scheduled');
+      expect(visibilityStateOf({ visibility: 'published', availableFrom: '2026-09-01T00:00:00Z' }, now)).toBe('published');
+      expect(visibilityStateOf({ visibility: 'hidden', availableFrom: '2026-10-01T00:00:00Z' }, now)).toBe('hidden');
+    });
+
+    it('carries the derived label on the staff task list', async () => {
+      const future = await authoring.create('course-1', ADMIN, {
+        ...TASK,
+        availableFrom: '2098-01-01T00:00:00Z',
+        availableTo: '2099-01-01T00:00:00Z',
+        dueAt: '2098-06-01T00:00:00Z',
+      });
+      const row = (await authoring.listForStaff(ADMIN, {})).find((t) => t.id === future.id);
+      expect(row?.visibility).toBe('published');
+      expect(row?.visibilityState).toBe('scheduled');
     });
   });
 });
