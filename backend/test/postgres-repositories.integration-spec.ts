@@ -2723,6 +2723,44 @@ describeIfDb('Postgres repositories', () => {
       expect(byName.assistant_invitations_token_idx).toContain('token');
     });
   });
+
+  describe('notification preferences', () => {
+    it('returns the opt-out defaults when no row exists', async () => {
+      const repo = new PostgresNotificationPreferencesRepository(db);
+      const prefs = await repo.get('student-1'); // Student exists, but no prefs row
+      expect(prefs).toEqual({
+        submissions: true,
+        registrations: true,
+        unmatched: true,
+        weeklySummary: true,
+      });
+    });
+
+    it('upserts a row and updates it on conflict', async () => {
+      const repo = new PostgresNotificationPreferencesRepository(db);
+
+      await repo.upsert('student-1', {
+        submissions: false,
+        registrations: true,
+        unmatched: false,
+        weeklySummary: false,
+      });
+      let prefs = await repo.get('student-1');
+      expect(prefs.submissions).toBe(false);
+      expect(prefs.registrations).toBe(true);
+
+      // Now conflict update
+      await repo.upsert('student-1', {
+        submissions: true,
+        registrations: false,
+        unmatched: true,
+        weeklySummary: false,
+      });
+      prefs = await repo.get('student-1');
+      expect(prefs.submissions).toBe(true);
+      expect(prefs.registrations).toBe(false);
+    });
+  });
 });
 
 /**
@@ -3084,42 +3122,4 @@ describeIfDb('migration 015 backfills the course grants it drops', () => {
       await drop(client, schema);
     }
   }, 60_000);
-
-  describe('notification preferences', () => {
-    it('returns the opt-out defaults when no row exists', async () => {
-      const repo = new PostgresNotificationPreferencesRepository(db);
-      const prefs = await repo.get('student-1'); // Student exists, but no prefs row
-      expect(prefs).toEqual({
-        submissions: true,
-        registrations: true,
-        unmatched: true,
-        weeklySummary: true,
-      });
-    });
-
-    it('upserts a row and updates it on conflict', async () => {
-      const repo = new PostgresNotificationPreferencesRepository(db);
-      
-      await repo.upsert('student-1', {
-        submissions: false,
-        registrations: true,
-        unmatched: false,
-        weeklySummary: false,
-      });
-      let prefs = await repo.get('student-1');
-      expect(prefs.submissions).toBe(false);
-      expect(prefs.registrations).toBe(true);
-
-      // Now conflict update
-      await repo.upsert('student-1', {
-        submissions: true,
-        registrations: false,
-        unmatched: true,
-        weeklySummary: false,
-      });
-      prefs = await repo.get('student-1');
-      expect(prefs.submissions).toBe(true);
-      expect(prefs.registrations).toBe(false);
-    });
-  });
 });

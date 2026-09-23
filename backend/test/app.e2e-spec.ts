@@ -888,20 +888,16 @@ describe('Student API (e2e)', () => {
       const res = await request(app.getHttpServer())
         .post('/students/me/avatar')
         .set('Authorization', `Bearer ${accessToken}`)
-        .attach('file', 'avatar.svg');
+        .attach('file', Buffer.from('<svg></svg>'), 'avatar.svg');
       expect(res.status).toBe(415);
     });
 
     it('rejects an oversized file', async () => {
-      try {
-        await request(app.getHttpServer())
-          .post('/students/me/avatar')
-          .set('Authorization', `Bearer ${accessToken}`)
-          .attach('file', 'large.jpg');
-        throw new Error('Should have failed');
-      } catch (err: any) {
-        expect(err.status).toBe(413);
-      }
+      const res = await request(app.getHttpServer())
+        .post('/students/me/avatar')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .attach('file', Buffer.alloc(5 * 1024 * 1024 + 1024), 'large.jpg');
+      expect(res.status).toBe(413);
     });
 
     it('rejects a staff role', async () => {
@@ -913,7 +909,7 @@ describe('Student API (e2e)', () => {
       const res = await request(app.getHttpServer())
         .post('/students/me/avatar')
         .set('Authorization', `Bearer ${staffToken}`)
-        .attach('file', 'avatar.png');
+        .attach('file', Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), 'avatar.png');
       expect(res.status).toBe(403);
     });
 
@@ -921,9 +917,9 @@ describe('Student API (e2e)', () => {
       const res = await request(app.getHttpServer())
         .post('/students/me/avatar')
         .set('Authorization', `Bearer ${accessToken}`)
-        .attach('file', 'avatar.png');
+        .attach('file', Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), 'avatar.png');
       expect(res.status).toBe(201);
-      expect(res.body.url).toMatch(/^\/uploads\/[0-9a-f-]+\.png$/);
+      expect(res.body.avatarUrl).toMatch(/^\/uploads\/[0-9a-f-]+\.png$/);
     });
   });
 });

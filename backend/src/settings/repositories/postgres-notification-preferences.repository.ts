@@ -19,8 +19,8 @@ export class PostgresNotificationPreferencesRepository implements NotificationPr
       [userId],
     );
 
-    if (result.rows.length > 0) {
-      const row = result.rows[0];
+    if (result.length > 0) {
+      const row = result[0];
       return {
         submissions: row.submissions,
         registrations: row.registrations,

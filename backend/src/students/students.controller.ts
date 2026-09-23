@@ -10,6 +10,7 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFile,
+  UnsupportedMediaTypeException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { RateLimit } from '../common/rate-limit/rate-limit.guard.js';
@@ -77,6 +78,11 @@ export class StudentsController {
     @UploadedFile() file: Express.Multer.File,
     @Request() req: { user: JwtPayload },
   ): Promise<StudentProfileView> {
+    if (file && !ALLOWED_AVATAR_MIME_TYPES.includes(file.mimetype?.toLowerCase())) {
+      throw new UnsupportedMediaTypeException(
+        `Files of type "${file.mimetype}" are not accepted. Allowed: ${ALLOWED_AVATAR_MIME_TYPES.join(', ')}.`,
+      );
+    }
     const result = await this.uploadsService.store(file, {
       maxBytes: AVATAR_MAX_UPLOAD_BYTES,
       allowedTypes: ALLOWED_AVATAR_MIME_TYPES,

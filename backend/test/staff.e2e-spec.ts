@@ -2754,4 +2754,63 @@ describe('Staff and admin API (e2e)', () => {
       await request(app.getHttpServer()).delete(`/staff/assessments/${task.body.id}`).set(bearer(adminToken)).expect(204);
     });
   });
+
+  describe('settings and account (/me)', () => {
+    describe.each([
+      { role: 'teacher', getToken: () => adminToken, email: 'teacher@example.com' },
+      { role: 'assistant', getToken: () => assignedTaToken, email: 'assistant@example.com' },
+    ])('for a $role', ({ getToken, email }) => {
+      it('reads and updates staff profile', async () => {
+        const token = getToken();
+        const profile = await request(app.getHttpServer())
+          .get('/me/profile')
+          .set(bearer(token))
+          .expect(200);
+        expect(profile.body.email).toBe(email);
+
+        const updated = await request(app.getHttpServer())
+          .patch('/me/profile')
+          .set(bearer(token))
+          .send({ name: 'Updated Name' })
+          .expect(200);
+        expect(updated.body.name).toBe('Updated Name');
+      });
+
+      it('reads and updates notification preferences', async () => {
+        const token = getToken();
+        const prefs = await request(app.getHttpServer())
+          .get('/me/notification-preferences')
+          .set(bearer(token))
+          .expect(200);
+        expect(prefs.body).toEqual({
+          submissions: true,
+          registrations: true,
+          unmatched: true,
+          weeklySummary: true,
+        });
+
+        await request(app.getHttpServer())
+          .put('/me/notification-preferences')
+          .set(bearer(token))
+          .send({
+            submissions: false,
+            registrations: true,
+            unmatched: false,
+            weeklySummary: false,
+          })
+          .expect(200);
+
+        const updated = await request(app.getHttpServer())
+          .get('/me/notification-preferences')
+          .set(bearer(token))
+          .expect(200);
+        expect(updated.body).toEqual({
+          submissions: false,
+          registrations: true,
+          unmatched: false,
+          weeklySummary: false,
+        });
+      });
+    });
+  });
 });
