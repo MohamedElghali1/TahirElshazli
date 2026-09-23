@@ -1430,7 +1430,9 @@ paths:
       description: >
         A `draftId` that is missing, on another course, or unreachable is one
         identical 404 (`Task draft not found`); authoring from a draft adds one to
-        its `usedCount` in the same transaction.
+        its `usedCount` in the same transaction. `D-33`: a target group the caller
+        does not hold is a 404 with the same message a group not on the course
+        gets (`Group <id> is not enrolled in this course`).
       requestBody:
         required: true
         content:
@@ -1490,6 +1492,13 @@ paths:
     post:
       tags: [tasks]
       summary: Replace the whole audience (a set, not a diff)
+      description: >
+        `D-33`. A scoped assistant re-aiming a task whose CURRENT audience includes
+        a group they cannot reach is a 403 - refused rather than silently dropping
+        groups they cannot see (the task is on their screen). Adding a group they
+        do not hold is a 404 whose message is byte-identical to
+        `Group <id> is not enrolled in this course` for that id. The teacher, an
+        admin and an `all_groups` assistant are unaffected.
       x-roles: [assistant, teacher, admin]
       requestBody:
         required: true
@@ -1514,6 +1523,25 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
       x-audit: assessment.targeted
+
+  /staff/courses/{courseId}/groups:
+    get:
+      tags: [groups]
+      summary: The groups studying a course that the CALLER reaches
+      description: >
+        Narrowed to held groups by `D-33` (unit 6), so the task-authoring picker
+        offers only groups the targeting write accepts. An unreachable course is
+        still the course's 404. `memberCount` is a per-group fact.
+      x-roles: [assistant, teacher, admin]
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Group' } }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   # --- The student's task routes (only what unit 6 changed) ------------------
   /courses/{courseId}/assessments:

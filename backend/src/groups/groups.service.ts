@@ -554,15 +554,35 @@ export class GroupsService {
     };
   }
 
-  /** Every group studying one course - the course console's tab. Scoped. */
+  /**
+   * The groups studying one course **that the caller reaches** - the course
+   * console's tab and the task-authoring picker.
+   *
+   * Narrowed to held groups by `D-33` (unit 6): before it, one held cohort
+   * listed every cohort on the course, and the authoring picker offered groups
+   * the targeting write then refused. `memberCount` is a per-group fact, not an
+   * aggregate that depends on who is looking, so narrowing the rows is enough.
+   * The course itself is still asserted first: an unreachable course stays the
+   * same 404 it always was.
+   */
   async listForCourse(
     courseId: string,
     actor: StaffActor,
   ): Promise<GroupSummary[]> {
     await this.scope.assertAssigned(courseId, actor);
-    // One indexed read where this used to be two: the course is a column on
-    // the group now, so there is no pairing to resolve back into groups.
-    const groups = await this.groupRepo.findByCourse(courseId);
+    const reachable = await this.scope.reachableGroupIds(actor);
+    // Restricted in the read, not filtered after a wider one: a scoped caller's
+    // query names only their own group ids.
+    const groups =
+      reachable === null
+        ? await this.groupRepo.findByCourse(courseId)
+        : (await this.groupRepo.findByIds(reachable))
+            .filter((group) => group.courseId === courseId)
+            // `findByIds` promises no order; this is `findByCourse`'s.
+            .sort(
+              (a, b) =>
+                a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
+            );
     const counts = await this.groupRepo.countMembersByGroups(
       groups.map((g) => g.id),
     );

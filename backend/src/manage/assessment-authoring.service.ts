@@ -102,6 +102,15 @@ export const MARKER_NOT_ELIGIBLE =
 export const MARKER_TEACHER_ONLY = 'Only the teacher or an admin can choose who marks a task';
 
 /**
+ * `D-33`: a scoped caller re-aiming a task that is also set for a group they
+ * cannot reach. Refused rather than applied, because `setTargets` replaces the
+ * whole audience and the caller cannot see - so would silently drop - the
+ * groups they do not hold. A 403: the task is on their screen.
+ */
+export const RETARGET_UNREACHABLE_AUDIENCE =
+  'This task is also set for groups you do not hold, so only the teacher or an admin can change who it is set for';
+
+/**
  * `D-28`'s label, derived on every read from the stored value and the task's
  * **own** window - never accepted from a client.
  */
@@ -364,6 +373,7 @@ export class AssessmentAuthoringService {
   private async assertTargets(
     courseId: string,
     targets: readonly NewAssessmentTarget[],
+    actor: StaffActor,
   ): Promise<void> {
     if (targets.length === 0) {
       throw new BadRequestException(
@@ -378,7 +388,14 @@ export class AssessmentAuthoringService {
       (await this.groupRepo.findByCourse(courseId)).map((group) => group.id),
     );
     for (const groupId of groupIds) {
-      if (!studying.has(groupId)) {
+      // `D-33`: an assistant may not add a group they do not hold. The refusal
+      // is the SAME message a group not on this course gets, byte for byte, so
+      // it confirms nothing about another cohort. `mayReachGroup` is true for
+      // the teacher, an admin and an `all_groups` assistant.
+      if (
+        !studying.has(groupId) ||
+        !(await this.scope.mayReachGroup(groupId, actor))
+      ) {
         throw new NotFoundException(
           `Group ${groupId} is not enrolled in this course`,
         );
@@ -554,7 +571,7 @@ export class AssessmentAuthoringService {
     return this.db.runInTransaction(async () => {
       await this.scope.assertAssigned(courseId, actor);
       this.assertWindow(input.availableFrom, input.availableTo, input.dueAt);
-      await this.assertTargets(courseId, input.targets);
+      await this.assertTargets(courseId, input.targets, actor);
       await this.assertMarker(
         actor,
         input.markerId,
@@ -764,9 +781,17 @@ export class AssessmentAuthoringService {
   ): Promise<AuthoredAssessment> {
     return this.db.runInTransaction(async () => {
       const assessment = await this.loadInScope(assessmentId, actor);
-      await this.assertTargets(assessment.courseId, targets);
-
       const before = await this.assessmentRepo.findTargets(assessmentId);
+      // `D-33`: refuse, rather than silently drop the groups this caller
+      // cannot see. Checked before the new set, so every group that is then
+      // refused below is one they are trying to ADD.
+      for (const target of before) {
+        if (!(await this.scope.mayReachGroup(target.groupId, actor))) {
+          throw new ForbiddenException(RETARGET_UNREACHABLE_AUDIENCE);
+        }
+      }
+      await this.assertTargets(assessment.courseId, targets, actor);
+
       const after = await this.assessmentRepo.setTargets(assessmentId, targets);
       await this.audit.record({
         actorId: actor.id,

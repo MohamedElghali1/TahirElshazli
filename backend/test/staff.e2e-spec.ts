@@ -2153,14 +2153,15 @@ describe('Staff and admin API (e2e)', () => {
     });
 
     it('hides a task from the student list, and 404s detail and submit identically to a miss', async () => {
+      // The teacher: this cohort is not one assistant-1 holds (`D-33`).
       const task = await request(server())
         .post('/staff/courses/course-1/assessments')
-        .set(bearer(assignedTaToken))
+        .set(bearer(adminToken))
         .send({ ...base, targets: [{ groupId: cohort }] })
         .expect(201);
       await request(server())
         .patch(`/staff/assessments/${task.body.id}`)
-        .set(bearer(assignedTaToken))
+        .set(bearer(adminToken))
         .send({ visibility: 'hidden' })
         .expect(200);
 
@@ -2324,6 +2325,89 @@ describe('Staff and admin API (e2e)', () => {
           markerId: 'teacher-1',
         })
         .expect(403);
+    });
+  });
+
+  describe('D-33: the targeting write and the picker are held-group only', () => {
+    const server = () => app.getHttpServer();
+    let group3: string;
+    const base = {
+      title: 'E2E D-33 task',
+      type: 'homework',
+      availableFrom: '2026-01-01T00:00:00.000Z',
+      availableTo: '2099-01-01T00:00:00.000Z',
+      dueAt: '2098-01-01T00:00:00.000Z',
+      maxScore: 10,
+      allowedFileTypes: ['application/pdf'],
+      maxFileSizeBytes: 1048576,
+    };
+    const created: string[] = [];
+    beforeAll(async () => {
+      group3 = (
+        await request(server())
+          .post('/admin/groups')
+          .set(bearer(adminToken))
+          .send({ name: 'E2E - D-33 unheld cohort', courseId: 'course-1' })
+          .expect(201)
+      ).body.id;
+    });
+    afterAll(async () => {
+      for (const id of created) {
+        await request(server()).delete(`/staff/assessments/${id}`).set(bearer(adminToken));
+      }
+    });
+
+    it('404s assistant-1 targeting group-3, with the same message as a group not on the course', async () => {
+      const unheld = await request(server())
+        .post('/staff/courses/course-1/assessments')
+        .set(bearer(assignedTaToken))
+        .send({ ...base, targets: [{ groupId: group3 }] })
+        .expect(404);
+      expect(unheld.body.message).toBe(`Group ${group3} is not enrolled in this course`);
+      const offCourse = await request(server())
+        .post('/staff/courses/course-1/assessments')
+        .set(bearer(assignedTaToken))
+        .send({ ...base, targets: [{ groupId: 'group-2' }] })
+        .expect(404);
+      expect(
+        JSON.stringify(unheld.body).replace(group3, '<id>') ===
+          JSON.stringify(offCourse.body).replace('group-2', '<id>'),
+      ).toBe(true);
+    });
+
+    it('403s assistant-1 re-targeting a task shared with group-3, and the audience survives', async () => {
+      const shared = await request(server())
+        .post('/staff/courses/course-1/assessments')
+        .set(bearer(adminToken))
+        .send({ ...base, targets: [{ groupId: 'group-1' }, { groupId: group3 }] })
+        .expect(201);
+      created.push(shared.body.id);
+      await request(server())
+        .post(`/staff/assessments/${shared.body.id}/targets`)
+        .set(bearer(assignedTaToken))
+        .send({ targets: [{ groupId: 'group-1' }] })
+        .expect(403);
+      const tasks = await request(server()).get('/staff/tasks').set(bearer(adminToken)).expect(200);
+      const row = tasks.body.find((t: { id: string }) => t.id === shared.body.id);
+      expect(row.targets.map((t: { groupId: string }) => t.groupId).sort()).toEqual(['group-1', group3].sort());
+    });
+
+    it('leaves the teacher and the full admin free to target any group', async () => {
+      for (const token of [adminToken, fullAdminToken]) {
+        const res = await request(server())
+          .post('/staff/courses/course-1/assessments')
+          .set(bearer(token))
+          .send({ ...base, targets: [{ groupId: group3 }] })
+          .expect(201);
+        created.push(res.body.id);
+      }
+    });
+
+    it('narrows GET /staff/courses/:id/groups to held groups for assistant-1', async () => {
+      const ta = await request(server()).get('/staff/courses/course-1/groups').set(bearer(assignedTaToken)).expect(200);
+      expect(ta.body.map((g: { id: string }) => g.id)).toEqual(['group-1']);
+      const teacher = await request(server()).get('/staff/courses/course-1/groups').set(bearer(adminToken)).expect(200);
+      expect(teacher.body.map((g: { id: string }) => g.id)).toEqual(expect.arrayContaining(['group-1', group3]));
     });
   });
 });

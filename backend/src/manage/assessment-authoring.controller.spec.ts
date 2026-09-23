@@ -11,6 +11,7 @@ import {
   AssessmentAuthoringService,
   ASSESSMENT_NOT_FOUND,
   MARKER_NOT_ELIGIBLE,
+  RETARGET_UNREACHABLE_AUDIENCE,
   visibilityStateOf,
 } from './assessment-authoring.service.js';
 import { TASK_DRAFT_NOT_FOUND } from './task-drafts.service.js';
@@ -754,6 +755,85 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
       const theirs = (await authoring.listForStaff(TA, {})).find((t) => t.id === created.id);
       expect(theirs?.markerDrift).toBe(true);
       expect(theirs?.targets.map((t) => t.groupId)).toEqual(['group-1']);
+    });
+  });
+
+  /** `D-33` (B-6 → A+): the targeting-write half of `AUTH-6`. */
+  describe('an assistant may not add a group they do not hold (D-33)', () => {
+    let group3: string;
+    beforeEach(async () => {
+      group3 = (
+        await groups.create({
+          name: 'Unheld cohort',
+          teacherId: 'teacher-1',
+          courseId: 'course-1',
+          assistantId: null,
+          meets: null,
+          room: null,
+        })
+      ).id;
+    });
+
+    it('404s assistant-1 creating a task for group-3 with the byte-identical not-enrolled message', async () => {
+      const unheld = await notFoundMessage(
+        authoring.create('course-1', TA, { ...TASK, targets: [{ groupId: group3 }] }),
+      );
+      expect(unheld).toBe(`Group ${group3} is not enrolled in this course`);
+      // The same template a group genuinely off this course gets.
+      const offCourse = await notFoundMessage(
+        authoring.create('course-1', TA, { ...TASK, targets: [{ groupId: 'group-2' }] }),
+      );
+      expect(offCourse).toBe('Group group-2 is not enrolled in this course');
+      expect(unheld.replace(group3, '<id>') === offCourse.replace('group-2', '<id>')).toBe(true);
+      // And mixed with a held group it is still refused, writing nothing.
+      await expect(
+        authoring.create('course-1', TA, {
+          ...TASK,
+          title: 'Mixed',
+          targets: [{ groupId: 'group-1' }, { groupId: group3 }],
+        }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      const list = await authoring.list('course-1', ADMIN);
+      expect(list.map((a) => a.title)).not.toContain('Mixed');
+    });
+
+    it('404s assistant-1 re-targeting their own task to add group-3, identically', async () => {
+      const mine = await authoring.create('course-1', TA, TASK);
+      const message = await notFoundMessage(
+        authoring.setTargets(mine.id, TA, [{ groupId: 'group-1' }, { groupId: group3 }]),
+      );
+      expect(message).toBe(`Group ${group3} is not enrolled in this course`);
+      // Re-aiming within what they hold still works.
+      const moved = await authoring.setTargets(mine.id, TA, [
+        { groupId: 'group-1', dueAt: '2026-11-30T23:59:59Z' },
+      ]);
+      expect(moved.targets.map((t) => t.groupId)).toEqual(['group-1']);
+    });
+
+    it('403s assistant-1 re-targeting a task also set for a group they cannot reach, and drops nothing', async () => {
+      const shared = await authoring.create('course-1', ADMIN, {
+        ...TASK,
+        targets: [{ groupId: 'group-1' }, { groupId: group3 }],
+      });
+      await expect(
+        authoring.setTargets(shared.id, TA, [{ groupId: 'group-1' }]),
+      ).rejects.toThrow(RETARGET_UNREACHABLE_AUDIENCE);
+      await expect(
+        authoring.setTargets(shared.id, TA, [{ groupId: 'group-1' }]),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      const after = (await authoring.list('course-1', ADMIN)).find((a) => a.id === shared.id);
+      expect(after?.targets.map((t) => t.groupId).sort()).toEqual(['group-1', group3].sort());
+    });
+
+    it('leaves the teacher, an admin and an all_groups assistant unaffected', async () => {
+      const teacher = await authoring.create('course-1', ADMIN, { ...TASK, targets: [{ groupId: group3 }] });
+      await authoring.setTargets(teacher.id, { id: 'admin-1', role: 'admin' }, [
+        { groupId: 'group-1' },
+        { groupId: group3 },
+      ]);
+      await scopes.setScope('assistant-2', 'all_groups');
+      const wide = await authoring.create('course-1', OTHER_TA, { ...TASK, targets: [{ groupId: group3 }] });
+      await authoring.setTargets(wide.id, OTHER_TA, [{ groupId: 'group-1' }]);
     });
   });
 });

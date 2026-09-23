@@ -666,4 +666,18 @@ describe('Groups', () => {
       expect(heldMiss).toBe(unknownMiss);
     });
   });
+
+  /**
+   * `D-33`: the course group list is narrowed to the groups the caller holds,
+   * so the task-authoring picker offers only what the targeting write accepts.
+   */
+  describe('the course group list is narrowed to held groups (D-33)', () => {
+    it('lists only group-1 for assistant-1, and every group for the teacher', async () => {
+      const second = await admin.create({ name: 'Chemistry — Unheld', courseId: 'course-1' }, ADMIN);
+      const forTa = await staff.listForCourse('course-1', ASSIGNED_TA);
+      expect(forTa.map((g) => g.id)).toEqual(['group-1']);
+      const forTeacher = await staff.listForCourse('course-1', ADMIN);
+      expect(forTeacher.map((g) => g.id).sort()).toEqual(['group-1', second.id].sort());
+    });
+  });
 });
