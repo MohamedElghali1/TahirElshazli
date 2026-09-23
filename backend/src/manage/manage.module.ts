@@ -23,14 +23,23 @@ import { StudentRepositoryModule } from '../students/student-repository.module.j
 import { MailModule } from '../mail/mail.module.js';
 import { AssistantScopeRepositoryModule } from '../staff/assistant-scope-repository.module.js';
 import { AssistantInvitationRepositoryModule } from './assistant-invitation-repository.module.js';
+import { TaskDraftsController } from './task-drafts.controller.js';
+import { TaskDraftsService } from './task-drafts.service.js';
+import type { TaskDraftRepository } from './interfaces/task-draft-repository.interface.js';
+import { TASK_DRAFT_REPOSITORY } from './interfaces/task-draft-repository.interface.js';
+import { InMemoryTaskDraftRepository } from './repositories/in-memory-task-draft.repository.js';
+import { PostgresTaskDraftRepository } from './repositories/postgres-task-draft.repository.js';
+import { repositoryProvider } from '../database/repository.provider.js';
 
 /**
  * The TA and admin work surface: overview, roster, grading, the recording
  * library, the live-session schedule, and the people directory.
  *
- * It provides no repositories of its own. Every one is imported from the module
- * that owns it, because re-providing a token here would build a *second*
- * instance - and under the in-memory driver that means a second array, so a
+ * It provides one repository of its own, `TASK_DRAFT_REPOSITORY` (`TASK-2`):
+ * only this module consumes it, so unlike the invitation repository it needs
+ * no separate module to break a cycle. Every other repository is imported from
+ * the module that owns it, because re-providing a token here would build a
+ * *second* instance - and under the in-memory driver that means a second array, so a
  * grade written through this module would be invisible to the student reading
  * it through `AssessmentsModule`. The exported tokens exist for exactly this.
  *
@@ -58,6 +67,7 @@ import { AssistantInvitationRepositoryModule } from './assistant-invitation-repo
     StaffManageController,
     AdminManageController,
     WorkAnalyticsController,
+    TaskDraftsController,
   ],
   providers: [
     ManageService,
@@ -85,6 +95,15 @@ import { AssistantInvitationRepositoryModule } from './assistant-invitation-repo
     // before it can be scoped on - one service rather than four lines repeated
     // per handler (CLAUDE.md §5.11).
     WorkAnalyticsGateService,
+    // The draft library (`TASK-2`), and the one repository this module owns.
+    TaskDraftsService,
+    InMemoryTaskDraftRepository,
+    PostgresTaskDraftRepository,
+    repositoryProvider<TaskDraftRepository>(
+      TASK_DRAFT_REPOSITORY,
+      InMemoryTaskDraftRepository,
+      PostgresTaskDraftRepository,
+    ),
   ],
 })
 export class ManageModule {}

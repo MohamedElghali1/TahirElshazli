@@ -395,9 +395,14 @@ components:
           items: { $ref: '#/components/schemas/GroupReportEntry' }
 
     # --- Tasks -------------------------------------------------------------
+    # A draft-library template (`TASK-2`) - the RESPONSE shape. Content only:
+    # no window, audience or submission settings. `usedCount`, `createdBy` and
+    # the timestamps are server-owned; the request bodies are `TaskDraftWrite`
+    # and `TaskDraftUpdate` below (unit 6 corrected this schema being used as a
+    # request body, which required `id` and `usedCount` from the client).
     TaskDraft:
       type: object
-      required: [id, courseId, type, workType, title, usedCount]
+      required: [id, courseId, type, workType, title, description, instructions, attachments, usedCount, createdBy, createdAt, updatedAt]
       properties:
         id:        { $ref: '#/components/schemas/Id' }
         courseId:  { $ref: '#/components/schemas/Id' }
@@ -407,17 +412,57 @@ components:
         description:  { type: string }
         instructions: { type: string }
         attachments:  { type: array, items: { $ref: '#/components/schemas/Attachment' } }
-        usedCount: { type: integer }
+        # How many tasks were authored from this draft. A global fact about the
+        # draft, not a number that depends on who is looking.
+        usedCount: { type: integer, minimum: 0 }
+        createdBy: { $ref: '#/components/schemas/Id' }
+        createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
 
+    # `POST /staff/task-drafts`. Undeclared fields are stripped, never honoured.
+    TaskDraftWrite:
+      type: object
+      required: [courseId, type, title]
+      properties:
+        courseId:     { $ref: '#/components/schemas/Id' }
+        type:         { $ref: '#/components/schemas/AssessmentType' }
+        workType:     { $ref: '#/components/schemas/WorkType' }
+        # Must contain a non-space character.
+        title:        { type: string, minLength: 1, maxLength: 200 }
+        description:  { type: string, maxLength: 1000 }
+        instructions: { type: string, maxLength: 5000 }
+        attachments:
+          type: array
+          maxItems: 10
+          items: { $ref: '#/components/schemas/Attachment' }
+
+    # `PATCH /staff/task-drafts/{draftId}`. Every field optional and NEVER null
+    # (`D-11`: each is a NOT NULL column). `courseId` is fixed after creation.
+    TaskDraftUpdate:
+      type: object
+      properties:
+        type:         { $ref: '#/components/schemas/AssessmentType' }
+        workType:     { $ref: '#/components/schemas/WorkType' }
+        title:        { type: string, minLength: 1, maxLength: 200 }
+        description:  { type: string, maxLength: 1000 }
+        instructions: { type: string, maxLength: 5000 }
+        attachments:
+          type: array
+          maxItems: 10
+          items: { $ref: '#/components/schemas/Attachment' }
+
+    # A file or link on a task or a draft (`TASK-4`). `url` is an uploaded
+    # `/uploads/<name>` path or a public http(s) URL - `javascript:` and `data:`
+    # are refused (`IsMediaUrl`), and the URL is never fetched server-side.
+    # `mimeType` and `sizeBytes` are display-only.
     Attachment:
       type: object
       required: [url, name]
       properties:
         url:       { type: string, maxLength: 2048 }
-        name:      { type: string, maxLength: 200 }
-        mimeType:  { type: [string, 'null'] }
-        sizeBytes: { type: [integer, 'null'] }
+        name:      { type: string, minLength: 1, maxLength: 200 }
+        mimeType:  { type: [string, 'null'], maxLength: 120 }
+        sizeBytes: { type: [integer, 'null'], minimum: 0 }
 
     # --- Marking -----------------------------------------------------------
     Annotation:
@@ -1110,6 +1155,13 @@ paths:
   /staff/task-drafts:
     get:
       tags: [tasks]
+      summary: The draft library, scoped to the courses the caller reaches
+      description: >
+        Grain: a draft carries no group, so it is visible when the caller
+        reaches its course through a held group (`AUTHORIZATION_MODEL.md` §4).
+        Both filters NARROW - a `courseId` the caller cannot reach answers
+        `200 []` exactly as an unknown one does. A never-configured assistant
+        gets `[]`. Ordered most recently edited first.
       x-roles: [assistant, teacher, admin]
       parameters:
         - { name: courseId, in: query, schema: { $ref: '#/components/schemas/Id' } }
@@ -1120,20 +1172,29 @@ paths:
           content:
             application/json:
               schema: { type: array, items: { $ref: '#/components/schemas/TaskDraft' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
     post:
       tags: [tasks]
       x-roles: [assistant, teacher, admin]
+      description: >
+        `courseId` goes through `StaffScopeService.assertAssigned`: an
+        unreachable course and a nonexistent one are the same 404
+        (`Course not found or not assigned to you`).
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/TaskDraft' }
+            schema: { $ref: '#/components/schemas/TaskDraftWrite' }
       responses:
         '201':
           description: Created
           content:
             application/json:
               schema: { $ref: '#/components/schemas/TaskDraft' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
       x-audit: task_draft.created
 
   /staff/task-drafts/{draftId}:
@@ -1144,20 +1205,35 @@ paths:
       x-roles: [assistant, teacher, admin]
       description: >
         Editing a draft never changes a task already created from it — the
-        content is copied at authoring time, not referenced.
+        content is copied at authoring time, not referenced. Any staff member
+        in scope may edit any draft in scope (no own-only rule). A draft on a
+        course the caller cannot reach and a nonexistent draft answer the same
+        404 body (`Task draft not found`).
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/TaskDraft' }
+            schema: { $ref: '#/components/schemas/TaskDraftUpdate' }
       responses:
-        '200': { description: OK }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskDraft' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
       x-audit: task_draft.updated
     delete:
       tags: [tasks]
       x-roles: [assistant, teacher, admin]
+      description: >
+        Tasks authored from the draft keep their content; their `draftId`
+        becomes null. Same 404 rule as PATCH.
       responses:
         '204': { description: Deleted }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
       x-audit: task_draft.deleted
 
   /staff/tasks:

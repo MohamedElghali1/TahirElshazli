@@ -1647,4 +1647,197 @@ describe('Staff and admin API (e2e)', () => {
         .expect(404);
     });
   });
+
+  /**
+   * The draft library over the wire (`TASK-2`). Course reach through a held
+   * group is the grain; a draft on an unreachable course and a missing draft
+   * answer byte-identical 404s.
+   *
+   * There is no parent account in the fixtures, so the role gate is proven
+   * with a student token - the same `RolesGuard` refuses every non-staff role.
+   */
+  describe('task drafts', () => {
+    const draft = {
+      courseId: 'course-1',
+      type: 'homework',
+      title: 'E2E draft',
+      instructions: 'Read the passage.',
+      attachments: [{ url: '/uploads/passage.pdf', name: 'Passage' }],
+    };
+    const server = () => app.getHttpServer();
+
+    it.each([
+      ['get', '/staff/task-drafts'],
+      ['post', '/staff/task-drafts'],
+      ['patch', '/staff/task-drafts/any'],
+      ['delete', '/staff/task-drafts/any'],
+    ] as const)('refuses a student token on %s %s', async (method, path) => {
+      await request(server())[method](path).set(bearer(studentToken)).send(draft).expect(403);
+    });
+
+    it('lets an assigned assistant create, list, edit and delete on course-1', async () => {
+      const created = await request(server())
+        .post('/staff/task-drafts')
+        .set(bearer(assignedTaToken))
+        .send(draft)
+        .expect(201);
+      expect(created.body).toMatchObject({
+        courseId: 'course-1',
+        title: 'E2E draft',
+        usedCount: 0,
+        createdBy: 'assistant-1',
+        attachments: [{ url: '/uploads/passage.pdf', name: 'Passage', mimeType: null, sizeBytes: null }],
+      });
+
+      const listed = await request(server())
+        .get('/staff/task-drafts?courseId=course-1')
+        .set(bearer(assignedTaToken))
+        .expect(200);
+      expect(listed.body.map((d: { id: string }) => d.id)).toContain(created.body.id);
+
+      const edited = await request(server())
+        .patch(`/staff/task-drafts/${created.body.id}`)
+        .set(bearer(assignedTaToken))
+        .send({ title: 'E2E draft, edited' })
+        .expect(200);
+      expect(edited.body.title).toBe('E2E draft, edited');
+
+      await request(server())
+        .delete(`/staff/task-drafts/${created.body.id}`)
+        .set(bearer(assignedTaToken))
+        .expect(204);
+    });
+
+    it('404s a course-2 draft for assistant-1 with a body byte-identical to a nonexistent draft', async () => {
+      const elsewhere = await request(server())
+        .post('/staff/task-drafts')
+        .set(bearer(adminToken))
+        .send({ ...draft, courseId: 'course-2' })
+        .expect(201);
+
+      for (const method of ['patch', 'delete'] as const) {
+        const denied = await request(server())
+          [method](`/staff/task-drafts/${elsewhere.body.id}`)
+          .set(bearer(assignedTaToken))
+          .send({ title: 'x' })
+          .expect(404);
+        const gone = await request(server())
+          [method]('/staff/task-drafts/draft-nope')
+          .set(bearer(assignedTaToken))
+          .send({ title: 'x' })
+          .expect(404);
+        expect(JSON.stringify(denied.body) === JSON.stringify(gone.body)).toBe(true);
+        expect(denied.body.message).toBe('Task draft not found');
+      }
+
+      // Creating on an unreachable course is the course's own identical 404.
+      const deniedCourse = await request(server())
+        .post('/staff/task-drafts')
+        .set(bearer(assignedTaToken))
+        .send({ ...draft, courseId: 'course-2' })
+        .expect(404);
+      const goneCourse = await request(server())
+        .post('/staff/task-drafts')
+        .set(bearer(assignedTaToken))
+        .send({ ...draft, courseId: 'course-nope' })
+        .expect(404);
+      expect(JSON.stringify(deniedCourse.body) === JSON.stringify(goneCourse.body)).toBe(true);
+
+      // An unreachable courseId filter narrows to [] rather than 404ing.
+      const filtered = await request(server())
+        .get('/staff/task-drafts?courseId=course-2')
+        .set(bearer(assignedTaToken))
+        .expect(200);
+      expect(filtered.body).toEqual([]);
+
+      await request(server())
+        .delete(`/staff/task-drafts/${elsewhere.body.id}`)
+        .set(bearer(adminToken))
+        .expect(204);
+    });
+
+    it('gives an assistant who holds nothing an empty library', async () => {
+      const created = await request(server())
+        .post('/staff/task-drafts')
+        .set(bearer(adminToken))
+        .send(draft)
+        .expect(201);
+      const listed = await request(server())
+        .get('/staff/task-drafts')
+        .set(bearer(unassignedTaToken))
+        .expect(200);
+      expect(listed.body).toEqual([]);
+      await request(server())
+        .delete(`/staff/task-drafts/${created.body.id}`)
+        .set(bearer(adminToken))
+        .expect(204);
+    });
+
+    it.each([
+      ['the teacher', () => adminToken],
+      ['the full admin', () => fullAdminToken],
+    ])('lets %s manage drafts on any course', async (_label, token) => {
+      const created = await request(server())
+        .post('/staff/task-drafts')
+        .set(bearer(token()))
+        .send({ ...draft, courseId: 'course-2' })
+        .expect(201);
+      await request(server())
+        .patch(`/staff/task-drafts/${created.body.id}`)
+        .set(bearer(token()))
+        .send({ type: 'quiz' })
+        .expect(200);
+      await request(server())
+        .delete(`/staff/task-drafts/${created.body.id}`)
+        .set(bearer(token()))
+        .expect(204);
+    });
+
+    it('validates the body: blank title, javascript: URL, null field, too many attachments', async () => {
+      const post = (body: object) =>
+        request(server()).post('/staff/task-drafts').set(bearer(adminToken)).send(body);
+      await post({ ...draft, title: '   ' }).expect(400);
+      await post({ ...draft, attachments: [{ url: 'javascript:alert(1)', name: 'x' }] }).expect(400);
+      await post({ ...draft, attachments: [{ url: 'data:text/html,hi', name: 'x' }] }).expect(400);
+      await post({ ...draft, instructions: null }).expect(400);
+      await post({
+        ...draft,
+        attachments: Array.from({ length: 11 }, (_, i) => ({ url: `/uploads/f${i}.pdf`, name: `f${i}` })),
+      }).expect(400);
+    });
+
+    it('writes the three audit actions, and the log filter accepts them', async () => {
+      const created = await request(server())
+        .post('/staff/task-drafts')
+        .set(bearer(assignedTaToken))
+        .send(draft)
+        .expect(201);
+      await request(server())
+        .patch(`/staff/task-drafts/${created.body.id}`)
+        .set(bearer(assignedTaToken))
+        .send({ title: 'Audited' })
+        .expect(200);
+      await request(server())
+        .delete(`/staff/task-drafts/${created.body.id}`)
+        .set(bearer(assignedTaToken))
+        .expect(204);
+
+      for (const action of ['task_draft.created', 'task_draft.updated', 'task_draft.deleted']) {
+        const log = await request(server())
+          .get(`/admin/audit-log?action=${action}`)
+          .set(bearer(adminToken))
+          .expect(200);
+        expect(
+          log.body.entries.some(
+            (e: { targetId: string; actorId: string }) =>
+              e.targetId === created.body.id && e.actorId === 'assistant-1',
+          ),
+        ).toBe(true);
+      }
+      await request(server())
+        .get('/admin/audit-log?targetType=task_draft')
+        .set(bearer(adminToken))
+        .expect(200);
+    });
+  });
 });

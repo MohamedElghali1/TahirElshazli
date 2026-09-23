@@ -115,6 +115,9 @@ const EXPECTED: Record<string, readonly Role[]> = {
   StaffGroupsController: STAFF_ALL,
   StaffManageController: STAFF_ALL,
   StaffController: STAFF_ALL,
+  // The draft library (`TASK-2`, unit 6). Assistant-reachable by
+  // `AUTHORIZATION_MODEL.md` §3; scoped by course reach in the service.
+  TaskDraftsController: STAFF_ALL,
   UploadsController: STAFF_ALL,
   WorkAnalyticsController: STAFF_ALL,
 
@@ -143,12 +146,13 @@ const PER_METHOD_CONTROLLERS = ['AppController', 'AuthController'];
 
 describe('the authorization boundary', () => {
   it('discovers every controller in the build', () => {
-    // 29 controller files, 29 classes. If this number moves, a controller was
+    // 30 controller files, 30 classes. If this number moves, a controller was
     // added or removed and its row below has to be decided rather than
     // defaulted - which is the entire point of asserting a count.
     // `AdminCoursesController` (`DOM-5`) was the thirtieth; `AdminStaffController`
     // left with `course_staff_assignments` (`AUTH-2`), which is a net -1.
-    expect(CONTROLLERS).toHaveLength(29);
+    // `TaskDraftsController` (`TASK-2`, unit 6) is the thirtieth again.
+    expect(CONTROLLERS).toHaveLength(30);
     const named = CONTROLLERS.map((c) => c.name);
     expect(new Set(named).size).toBe(named.length);
     for (const name of [
@@ -158,7 +162,7 @@ describe('the authorization boundary', () => {
     ]) {
       expect(named).toContain(name);
     }
-    expect(Object.keys(EXPECTED)).toHaveLength(25);
+    expect(Object.keys(EXPECTED)).toHaveLength(26);
   });
 
   describe('@Roles, read back off the decorator', () => {
@@ -340,11 +344,14 @@ describe('the authorization boundary', () => {
       // narrows that to authorship (`blog.service.ts` `assertMayMutate`) - and
       // may delete a task. They may not remove a person from a group: that is
       // AUTH-3's narrowing, and `StaffGroupsController.removeMember` was in
-      // this list before it.
+      // this list before it. They may delete any draft in the library on a
+      // course they reach - `AUTHORIZATION_MODEL.md` §3 grants "Manage the
+      // draft library" with no own-only rule (unit 6, `TASK-2`).
       expect(assistantDeletes.sort()).toEqual(
         [
           'StaffBlogController.remove',
           'StaffManageController.deleteAssessment',
+          'TaskDraftsController.remove',
         ].sort(),
       );
     });

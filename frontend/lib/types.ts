@@ -262,6 +262,12 @@ export interface RecordingProgress {
    submission state. The client renders it and never recomputes it. */
 
 export type AssessmentType = 'homework' | 'assignment' | 'quiz';
+
+/**
+ * How a task is delivered - a different axis from `AssessmentType`, which says
+ * what it is *for* (migration 010). What the design calls Document vs Google Form.
+ */
+export type WorkType = 'file_upload' | 'link' | 'google_form';
 export type AssessmentStatus = 'locked' | 'available' | 'submitted' | 'corrected';
 
 export interface AssessmentListItem {
@@ -727,7 +733,10 @@ export type AuditAction =
   | 'blog_post.created'
   | 'blog_post.updated'
   | 'blog_post.media_set'
-  | 'blog_post.deleted';
+  | 'blog_post.deleted'
+  | 'task_draft.created'
+  | 'task_draft.updated'
+  | 'task_draft.deleted';
 
 export interface AuditLogEntry {
   id: string;
@@ -961,6 +970,59 @@ export interface AssessmentTargetInput {
   availableTo?: string;
   dueAt?: string;
 }
+
+/**
+ * A file or link that travels with a task or a draft (`TASK-4`). `url` is an
+ * uploaded `/uploads/...` path or a public http(s) URL - the API refuses
+ * anything else. `mimeType` and `sizeBytes` are display-only.
+ */
+export interface Attachment {
+  url: string;
+  name: string;
+  mimeType: string | null;
+  sizeBytes: number | null;
+}
+
+/** An attachment as a form sends it; the two display fields may be omitted. */
+export interface AttachmentInput {
+  url: string;
+  name: string;
+  mimeType?: string | null;
+  sizeBytes?: number | null;
+}
+
+/**
+ * A reusable task template in the draft library (`TASK-2`). Content only - no
+ * window, audience or settings. `usedCount` is server-owned.
+ */
+export interface TaskDraft {
+  id: string;
+  courseId: string;
+  type: AssessmentType;
+  workType: WorkType;
+  title: string;
+  description: string;
+  instructions: string;
+  attachments: Attachment[];
+  usedCount: number;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** `POST /staff/task-drafts` - the `TaskDraftWrite` schema. */
+export interface TaskDraftWrite {
+  courseId: string;
+  type: AssessmentType;
+  workType?: WorkType;
+  title: string;
+  description?: string;
+  instructions?: string;
+  attachments?: AttachmentInput[];
+}
+
+/** `PATCH /staff/task-drafts/:id` - `courseId` is fixed after creation. */
+export type TaskDraftUpdate = Partial<Omit<TaskDraftWrite, 'courseId'>>;
 
 /**
  * An announcement, as both the staff console and the student course page read

@@ -59,6 +59,9 @@ const ACTION_LABEL: Record<AuditAction, string> = {
   'assistant.removed': 'cancelled an invitation',
   'course.created': 'created a course',
   'course.updated': 'edited a course',
+  'task_draft.created': 'created a draft task',
+  'task_draft.updated': 'edited a draft task',
+  'task_draft.deleted': 'deleted a draft task',
 };
 
 /**
@@ -109,6 +112,10 @@ const ACTION_TONE: Record<AuditAction, TagTone> = {
   'assistant.removed': 'red',
   'course.created': 'green',
   'course.updated': 'amber',
+  // The draft library follows the `assessment.*` precedent above.
+  'task_draft.created': 'green',
+  'task_draft.updated': 'amber',
+  'task_draft.deleted': 'red',
 };
 
 export default function ActivityLogPage() {

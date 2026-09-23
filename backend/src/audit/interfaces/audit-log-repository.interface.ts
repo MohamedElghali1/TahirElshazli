@@ -125,7 +125,13 @@ export type AuditAction =
   // `updated`, because losing a post's images and rewording its title are
   // different mistakes and the log should distinguish them.
   | 'blog_post.media_set'
-  | 'blog_post.deleted';
+  | 'blog_post.deleted'
+  // The draft library (`TASK-2`). Reachable by an assistant with no own-only
+  // rule (`AUTHORIZATION_MODEL.md` §3), so "who edited the template this week's
+  // homework came from" is a question the log has to be able to answer.
+  | 'task_draft.created'
+  | 'task_draft.updated'
+  | 'task_draft.deleted';
 
 /** What the action happened *to*. Grows with `AuditAction`, for the same reason. */
 export type AuditTargetType =
@@ -196,7 +202,11 @@ export type AuditTargetType =
   // an open item in `docs/phases/unit-5/REVIEW_5C.md` rather than guessed.
   | 'assistant'
   // The course itself, for create and update.
-  | 'course';
+  | 'course'
+  // A draft-library template (`TASK-2`). Its own target type rather than
+  // `assessment`: a draft is not a task anybody was set, and "what happened to
+  // this template" is a different question from "what happened to this task".
+  | 'task_draft';
 
 /**
  * One side of a before/after pair.

@@ -54,6 +54,9 @@ import type {
   BlogPostStatus,
   PublicBlogPost,
   StaffBlogPost,
+  TaskDraft,
+  TaskDraftUpdate,
+  TaskDraftWrite,
   UploadConfig,
   UploadResult,
 } from './types';
@@ -713,6 +716,29 @@ export const api = {
         method: 'DELETE',
         token,
       }),
+
+    /* --------------------------------------------------------------------
+       The draft library (`TASK-2`). Scoped to the courses the caller reaches
+       through a held group; a draft elsewhere 404s exactly like a missing one.
+       -------------------------------------------------------------------- */
+
+    taskDrafts: (
+      token: string,
+      filter: { courseId?: string; type?: TaskDraft['type'] } = {},
+    ) => request<TaskDraft[]>(`/staff/task-drafts${qs(filter)}`, { token }),
+
+    createTaskDraft: (token: string, body: TaskDraftWrite) =>
+      request<TaskDraft>('/staff/task-drafts', { method: 'POST', token, body }),
+
+    updateTaskDraft: (token: string, draftId: string, body: TaskDraftUpdate) =>
+      request<TaskDraft>(`/staff/task-drafts/${draftId}`, {
+        method: 'PATCH',
+        token,
+        body,
+      }),
+
+    deleteTaskDraft: (token: string, draftId: string) =>
+      request<void>(`/staff/task-drafts/${draftId}`, { method: 'DELETE', token }),
 
     announcements: (token: string, courseId: string) =>
       request<Announcement[]>(`/staff/courses/${courseId}/announcements`, {

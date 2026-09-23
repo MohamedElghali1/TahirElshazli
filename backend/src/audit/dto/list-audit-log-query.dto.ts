@@ -63,6 +63,9 @@ const AUDIT_ACTION_VALUES: Record<AuditAction, true> = {
   'external_result.attached': true,
   'google.connected': true,
   'google.disconnected': true,
+  'task_draft.created': true,
+  'task_draft.updated': true,
+  'task_draft.deleted': true,
 };
 
 const AUDIT_TARGET_TYPE_VALUES: Record<AuditTargetType, true> = {
@@ -81,6 +84,7 @@ const AUDIT_TARGET_TYPE_VALUES: Record<AuditTargetType, true> = {
   student: true,
   course: true,
   assistant: true,
+  task_draft: true,
 };
 
 export const AUDIT_ACTIONS = Object.keys(
