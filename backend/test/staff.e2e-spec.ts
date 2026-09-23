@@ -79,6 +79,8 @@ describe('Staff and admin API (e2e)', () => {
   describe('authentication and role gates', () => {
     it.each([
       '/staff/courses',
+        '/me/profile',
+        '/me/notification-preferences',
       '/staff/overview',
       '/staff/courses/course-1/roster',
       '/staff/courses/course-1/submissions',
@@ -95,6 +97,8 @@ describe('Staff and admin API (e2e)', () => {
 
     it.each([
       '/staff/courses',
+        '/me/profile',
+        '/me/notification-preferences',
       '/staff/overview',
       '/staff/courses/course-1/roster',
       '/staff/courses/course-1/submissions',
@@ -146,6 +150,36 @@ describe('Staff and admin API (e2e)', () => {
         .set(bearer(assignedTaToken))
         .send({ title: 'TA should not be able to rename this' })
         .expect(403);
+    });
+
+    it('refuses a TA GET /admin/courses/:courseId', async () => {
+      await request(app.getHttpServer())
+        .get('/admin/courses/course-1')
+        .set(bearer(assignedTaToken))
+        .expect(403);
+    });
+
+    it('allows teacher and admin GET /admin/courses/:courseId', async () => {
+      const teacherRes = await request(app.getHttpServer())
+        .get('/admin/courses/course-1')
+        .set(bearer(adminToken))
+        .expect(200);
+      expect(teacherRes.body).toMatchObject({
+        id: 'course-1',
+        slug: 'as-chemistry',
+        title: 'AS Chemistry',
+      });
+
+      const fullAdminRes = await request(app.getHttpServer())
+        .get('/admin/courses/course-1')
+        .set(bearer(fullAdminToken))
+        .expect(200);
+      expect(fullAdminRes.body.id).toBe('course-1');
+
+      await request(app.getHttpServer())
+        .get('/admin/courses/course-does-not-exist')
+        .set(bearer(adminToken))
+        .expect(404);
     });
 
     it('refuses a TA the recording writes, even on a course they hold', async () => {
@@ -2841,6 +2875,65 @@ describe('Staff and admin API (e2e)', () => {
         .send({ markerId: 'teacher-1' })
         .expect(403);
       await request(app.getHttpServer()).delete(`/staff/assessments/${task.body.id}`).set(bearer(adminToken)).expect(204);
+    });
+  });
+
+  describe('settings and account (/me)', () => {
+    describe.each([
+      { role: 'teacher', getToken: () => adminToken, email: 'teacher@example.com' },
+      { role: 'assistant', getToken: () => assignedTaToken, email: 'assistant@example.com' },
+    ])('for a $role', ({ getToken, email }) => {
+      it('reads and updates staff profile', async () => {
+        const token = getToken();
+        const profile = await request(app.getHttpServer())
+          .get('/me/profile')
+          .set(bearer(token))
+          .expect(200);
+        expect(profile.body.email).toBe(email);
+
+        const updated = await request(app.getHttpServer())
+          .patch('/me/profile')
+          .set(bearer(token))
+          .send({ name: 'Updated Name' })
+          .expect(200);
+        expect(updated.body.name).toBe('Updated Name');
+      });
+
+      it('reads and updates notification preferences', async () => {
+        const token = getToken();
+        const prefs = await request(app.getHttpServer())
+          .get('/me/notification-preferences')
+          .set(bearer(token))
+          .expect(200);
+        expect(prefs.body).toEqual({
+          submissions: true,
+          registrations: true,
+          unmatched: true,
+          weeklySummary: true,
+        });
+
+        await request(app.getHttpServer())
+          .put('/me/notification-preferences')
+          .set(bearer(token))
+          .send({
+            submissions: false,
+            registrations: true,
+            unmatched: false,
+            weeklySummary: false,
+          })
+          .expect(200);
+
+        const updated = await request(app.getHttpServer())
+          .get('/me/notification-preferences')
+          .set(bearer(token))
+          .expect(200);
+        expect(updated.body).toEqual({
+          submissions: false,
+          registrations: true,
+          unmatched: false,
+          weeklySummary: false,
+        });
+      });
     });
   });
 });

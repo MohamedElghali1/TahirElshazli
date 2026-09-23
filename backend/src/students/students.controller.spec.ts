@@ -10,6 +10,7 @@ import { InMemoryUserRepository } from '../auth/repositories/in-memory-user.repo
 import { BcryptPasswordHasher } from '../auth/bcrypt-password-hasher.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { RolesGuard } from '../auth/roles.guard.js';
+import { UploadsService } from '../common/storage/uploads.service.js';
 
 const STUDENT = {
   user: { sub: 'student-1', email: 'student@example.com', role: 'student', jti: 'j1' },
@@ -27,6 +28,7 @@ describe('StudentsController', () => {
         { provide: STUDENT_REPOSITORY, useClass: InMemoryStudentRepository },
         { provide: USER_REPOSITORY, useClass: InMemoryUserRepository },
         { provide: PASSWORD_HASHER, useClass: BcryptPasswordHasher },
+        { provide: UploadsService, useValue: { store: async () => 'mock-url' } },
       ],
     })
       .overrideGuard(JwtAuthGuard)

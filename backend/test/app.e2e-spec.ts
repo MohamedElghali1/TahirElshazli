@@ -882,6 +882,46 @@ describe('Student API (e2e)', () => {
     await request(app.getHttpServer()).post('/auth/logout').set(header).expect(200);
     await request(app.getHttpServer()).get('/notifications').set(header).expect(401);
   });
+
+  describe('avatar upload', () => {
+    it('rejects an SVG', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/students/me/avatar')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .attach('file', Buffer.from('<svg></svg>'), 'avatar.svg');
+      expect(res.status).toBe(415);
+    });
+
+    it('rejects an oversized file', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/students/me/avatar')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .attach('file', Buffer.alloc(5 * 1024 * 1024 + 1024), 'large.jpg');
+      expect(res.status).toBe(413);
+    });
+
+    it('rejects a staff role', async () => {
+      const login = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ email: 'teacher@example.com', password: 'password123' });
+      const staffToken = login.body.accessToken;
+
+      const res = await request(app.getHttpServer())
+        .post('/students/me/avatar')
+        .set('Authorization', `Bearer ${staffToken}`)
+        .attach('file', Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), 'avatar.png');
+      expect(res.status).toBe(403);
+    });
+
+    it('accepts a valid image and returns a server-minted path', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/students/me/avatar')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .attach('file', Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), 'avatar.png');
+      expect(res.status).toBe(201);
+      expect(res.body.avatarUrl).toMatch(/^\/uploads\/[0-9a-f-]+\.png$/);
+    });
+  });
 });
 
 /**

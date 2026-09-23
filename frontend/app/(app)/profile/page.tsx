@@ -5,7 +5,7 @@ import { api, ApiError } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
 import { formatDate } from '@/lib/format';
 import type { StudentProfile } from '@/lib/types';
-import { Panel, EmptyState, Loader, Button, TextInput, InlineBanner } from '@/components/ui';
+import { Panel, EmptyState, Loader, Button, TextInput, InlineBanner, Avatar } from '@/components/ui';
 import { PageTitle } from '@/components/shell/page-chrome';
 
 const PASSWORD_RULE = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
@@ -40,12 +40,79 @@ export default function ProfilePage() {
         )}
         {data && (
           <>
+            <AvatarPanel profile={data} onSaved={reload} />
             <DetailsPanel profile={data} onSaved={reload} />
             <PasswordPanel />
           </>
         )}
       </div>
     </>
+  );
+}
+
+function AvatarPanel({ profile, onSaved }: { profile: StudentProfile; onSaved: () => void }) {
+  const { token } = useSession();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleFile(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file || !token) return;
+
+    setError(null);
+    setBusy(true);
+    try {
+      await api.students.uploadAvatar(token, file);
+      onSaved();
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.status === 413) {
+        setError('That image is too large (max 5MB).');
+      } else if (cause instanceof ApiError && cause.status === 415) {
+        setError('Unsupported file type. Please upload a JPG or PNG.');
+      } else {
+        setError(cause instanceof ApiError ? cause.message : 'Could not upload avatar. Please try again.');
+      }
+    } finally {
+      setBusy(false);
+      event.target.value = ''; // Reset input
+    }
+  }
+
+  return (
+    <Panel title="Profile picture">
+      <div className="flex items-center gap-6">
+        <div className="shrink-0">
+          <Avatar
+            name={profile.name}
+            src={profile.avatarUrl ?? undefined}
+            size={64}
+          />
+        </div>
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-4">
+            <label className="relative cursor-pointer">
+              <Button type="button" variant="secondary" disabled={busy} onClick={(e) => {
+                const input = e.currentTarget.nextElementSibling as HTMLInputElement;
+                if (input) input.click();
+              }}>
+                {busy ? <Loader size={3} label="Uploading" /> : 'Upload photo'}
+              </Button>
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleFile}
+                disabled={busy}
+              />
+            </label>
+          </div>
+          <p className="text-xs text-fg-3">
+            JPG, PNG or WEBP. Max 5MB.
+          </p>
+          {error && <InlineBanner tone="danger">{error}</InlineBanner>}
+        </div>
+      </div>
+    </Panel>
   );
 }
 
