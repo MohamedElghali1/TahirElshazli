@@ -329,20 +329,34 @@ Unit-7 follow-ups (found, recorded, **not** fixed here):
 `RPT-9` `[ ]` Student Marks page (the report *is* the page)
 
 ### Phase 12 — Announcements
-`ANN-1` `[ ]` `group:<id>` audience · `ANN-2` `[ ]` Media · `ANN-3` `[ ]` Draft + publish ·
-`ANN-4` `[ ]` Email fan-out, idempotent on `published_at` (`MAIL-3`) ·
-`ANN-5` `[ ]` Live reach preview · `ANN-6` `[ ]` Compose screen with student-view preview
+Slice 10a (backend) is merged and `APPROVED`; slice 10b (frontend) is in progress, so every
+row below that needs a screen is `[~]`, not `[x]`.
+
+`ANN-1` `[~]` `group:<id>` audience — backend done (migration `021` widens the `audience_type` CHECK; both repository drivers; parser and DTO pattern kept in step). Picker pending 10b ·
+`ANN-2` `[~]` Media — backend done (`mediaKind`/`mediaUrl` pair, validated). Picker pending 10b, reusing `/staff/uploads` ·
+`ANN-3` `[~]` Draft + publish — backend done. **Draft-ness is derived from `published_at IS NULL`**, the house idiom; there is deliberately no status column ·
+`ANN-4` `[x]` Email fan-out, idempotent on `published_at` (`MAIL-3`) — `publish()` is the only writer of that column and `updateDraft()` never touches it, so editing a published announcement cannot re-send. Proven by test (publish twice → second is 409, mail sent once) ·
+`ANN-5` `[~]` Live reach preview — `GET /staff/announcements/reach` exists and is group-scoped; an unheld group answers 404 with the byte-identical `GROUP_NOT_FOUND` string. Counter pending 10b ·
+`ANN-6` `[~]` Compose screen with student-view preview — pending 10b
+
+Two authorization holes were found and closed here across two review rounds, both recorded in
+`docs/CHANGELOG.md`: `B-ANN-1` (an assistant could publish through two undocumented `/staff/*`
+routes) and `B-ANN-2` (round 1's own fix shared a DTO with the staff PATCH routes, letting an
+assistant retarget their draft platform-wide for a teacher to publish unaware).
 
 ### Phase 13 — Google Forms surface  *(frontend only — backend complete)*
 `WORK-1` `[x]` Task results screen (`Score`/`Meter` split, understated-figure banner) — `manage/tasks/[id]/results/page.tsx`, reviewer-`APPROVED` (`docs/phases/unit-11/REVIEW.md`) ·
 `WORK-2` `[x]` Unmatched queue + match-student — same page, reviewer-`APPROVED` ·
 `WORK-3` `[x]` `SyncStatus` on every mirrored surface built this unit — present on the results screen ·
-`WORK-4` `[!]` Student Quizzes surface driven by `work_type: google_form` — **no quiz engine**. Blocked: every `agy` implementer model hit a shared account-wide quota (429) before this slice could be dispatched (2026-09-23). Not a requirements blocker — a precise, self-contained build checklist is in `docs/phases/unit-11/REVIEW.md` §"Slice C checklist", ready to execute once implementer capacity returns.
+`WORK-4` `[x]` Student Quizzes surface driven by `work_type: google_form` — **no quiz engine**. Built 2026-09-23 as unit 11 slice C against the checklist in `docs/phases/unit-11/REVIEW.md`, independently reviewed and `APPROVED` (`docs/phases/unit-11/REVIEW_SLICE_C.md`). Four states only: open (a primary link leaving the app), submitted and awaiting Google, marked, locked. Never driven in a real browser.
 
 ### Phase 14 — Settings and account
-`SET-1` `[ ]` `/me/profile` for staff · `SET-2` `[ ]` Notification preferences ·
-`SET-3` `[ ]` Google panel over the 5 existing routes (four states) ·
-`SET-4` `[ ]` Courses tab (`DOM-5`) · `SET-5` `[ ]` Groups tab · `SET-6` `[ ]` Student Settings + avatar upload
+`SET-1` `[x]` `/me/profile` for staff — unit 12; positive-path e2e for a teacher **and** an assistant ·
+`SET-2` `[x]` Notification preferences — migration `022`, both repository drivers; defaults are **opt-out / all true**, and the DB `DEFAULT true` and the service's no-row fallback agree by test. Tab visible to assistants (client ruling) ·
+`SET-3` `[x]` Google panel over the 5 existing routes — **found already built server-side**, not rebuilt. Admin-only; the refusal is proven by `role-guards.spec.ts` (`AdminGoogleIntegrationController: STAFF_ADMIN`) ·
+`SET-4` `[x]` Courses tab (`DOM-5`) — backend already existed. The edit form was broken for every caller who could reach it (it read the student-only `GET /courses/:id`); fixed by adding `GET /admin/courses/:courseId`, a user-approved scope change ·
+`SET-5` `[x]` Groups tab — **no remaining gap**: full group CRUD shipped in unit 5. Verified, not rebuilt ·
+`SET-6` `[x]` Student Settings + avatar upload — the upload path is student-reachable for the first time. Server-minted filename, MIME whitelist, size cap, no SVG; a disallowed type is 415 and an oversized file a clean 413
 
 ---
 
