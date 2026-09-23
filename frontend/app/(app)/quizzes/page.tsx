@@ -187,8 +187,10 @@ function QuizRow({ item }: { item: AssessmentDetail }) {
         ? 'gray'
         : 'blue';
 
+  // No `corrected` branch: `computeStatus` returns `submitted` the moment an
+  // external result lands, so google_form work never reaches `corrected`.
   const statusLabel = isMarked
-    ? (item.status === 'corrected' ? ASSESSMENT_STATUS_LABEL.corrected : 'Marked')
+    ? 'Marked'
     : isBeingMarked
       ? ASSESSMENT_STATUS_LABEL.submitted
       : isLocked
