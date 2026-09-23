@@ -1,4 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { randomUUID } from 'node:crypto';
+import { UploadsService } from '../common/storage/uploads.service.js';
+import { FILE_STORAGE } from '../common/storage/file-storage.interface.js';
 import { SUBMISSION_ANNOTATION_REPOSITORY } from '../assessments/interfaces/submission-annotation-repository.interface.js';
 import { InMemorySubmissionAnnotationRepository } from '../assessments/repositories/in-memory-submission-annotation.repository.js';
 import { TASK_DRAFT_REPOSITORY } from './interfaces/task-draft-repository.interface.js';
@@ -16,6 +19,7 @@ import {
   RETARGET_UNREACHABLE_AUDIENCE,
   staffTaskStatusOf,
   visibilityStateOf,
+  UPLOAD_MODES_NEED_STORAGE,
 } from './assessment-authoring.service.js';
 import { TASK_DRAFT_NOT_FOUND } from './task-drafts.service.js';
 import type { TaskDraftRepository } from './interfaces/task-draft-repository.interface.js';
@@ -73,6 +77,7 @@ const TASK = {
 
 describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
   let authoring: AssessmentAuthoringService;
+  let uploads: UploadsService;
   let student: AssessmentsController;
   let audit: AuditService;
   let groups: InMemoryGroupRepository;
@@ -86,6 +91,20 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AssessmentsController],
       providers: [
+        // Storage is ON here: `D-48` (b) refuses upload modes without it. A
+        // double of the port, so nothing touches disk.
+        UploadsService,
+        {
+          provide: FILE_STORAGE,
+          useValue: {
+            save: async (i: { bytes: Buffer; mimeType: string; extension: string }) => ({
+              url: `/uploads/${randomUUID()}.${i.extension}`,
+              sizeBytes: i.bytes.length,
+              mimeType: i.mimeType,
+            }),
+            remove: async () => true,
+          },
+        },
         AssessmentAuthoringService,
         AssessmentsService,
         EnrollmentsService,
@@ -127,6 +146,7 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
       .compile();
 
     authoring = module.get(AssessmentAuthoringService);
+    uploads = module.get(UploadsService);
     student = module.get(AssessmentsController);
     audit = module.get(AuditService);
     groups = module.get(GROUP_REPOSITORY);
@@ -898,6 +918,41 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
       const created = await authoring.create('course-1', ADMIN, TASK);
       expect(created.submissionModes).toEqual([]);
       expect(created.allowedFileTypes).toEqual(['application/pdf']);
+    });
+
+    it('D-47: derives the accepted file types from the modes, on create and on update', async () => {
+      const created = await authoring.create('course-1', ADMIN, {
+        ...TASK,
+        allowedFileTypes: ['text/plain'],
+        submissionModes: ['photo_upload'],
+      });
+      expect(created.allowedFileTypes).toEqual(['image/jpeg', 'image/png', 'image/webp']);
+      const pdf = await authoring.update(created.id, ADMIN, { submissionModes: ['pdf_upload'] });
+      expect(pdf.allowedFileTypes).toEqual(['application/pdf']);
+      // A lone edit of the types cannot make them disagree with the stated modes.
+      const forced = await authoring.update(created.id, ADMIN, { allowedFileTypes: ['text/plain'] });
+      expect(forced.allowedFileTypes).toEqual(['application/pdf']);
+    });
+
+    it('D-48 (b): refuses an upload mode while file storage is off, and still allows a link', async () => {
+      const off = vi.spyOn(uploads, 'enabled', 'get').mockReturnValue(false);
+      try {
+        await expect(
+          authoring.create('course-1', ADMIN, { ...TASK, submissionModes: ['pdf_upload'] }),
+        ).rejects.toThrow(UPLOAD_MODES_NEED_STORAGE);
+        await expect(
+          authoring.create('course-1', ADMIN, { ...TASK, submissionModes: ['doc_link', 'photo_upload'] }),
+        ).rejects.toThrow(UPLOAD_MODES_NEED_STORAGE);
+        const link = await authoring.create('course-1', ADMIN, { ...TASK, submissionModes: ['doc_link'] });
+        expect(link.submissionModes).toEqual(['doc_link']);
+        await expect(
+          authoring.update(link.id, ADMIN, { submissionModes: ['photo_upload'] }),
+        ).rejects.toThrow(UPLOAD_MODES_NEED_STORAGE);
+        // An edit that does not SET the modes is not refused (an older task keeps them).
+        await expect(authoring.update(link.id, ADMIN, { title: 'Renamed' })).resolves.toMatchObject({ title: 'Renamed' });
+      } finally {
+        off.mockRestore();
+      }
     });
   });
 

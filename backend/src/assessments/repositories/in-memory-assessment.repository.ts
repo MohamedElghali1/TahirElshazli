@@ -10,6 +10,7 @@ import type {
   StaffTaskFilter,
   StoredAssessment,
   StoredSubmission,
+  SubmissionFile,
   SubmissionRevision,
   TargetedAssessment,
 } from '../interfaces/assessment-repository.interface.js';
@@ -57,12 +58,12 @@ function copyAssessment<T extends StoredAssessment>(a: T): T {
 }
 
 /**
- * A submission that shares nothing with its source. Same reason as
- * `copyAssessment`: a read that feeds an audit `before` must never alias its
- * `after`.
+ * A submission that shares no array or object with its source - the file set
+ * holds objects. Same reason as `copyAssessment`: a read that feeds an audit
+ * `before` must never alias its `after`.
  */
 function copySubmission(s: StoredSubmission): StoredSubmission {
-  return { ...s };
+  return { ...s, files: s.files.map((f) => ({ ...f })) };
 }
 
 const SEED_ASSESSMENTS: SeedAssessment[] = [
@@ -244,6 +245,7 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       assessmentId: 'assess-3',
       studentId: 'student-1',
       fileUrl: 'https://storage.example.com/submissions/midterm.pdf',
+      files: [],
       answerText: null,
       submittedAt: '2026-08-20T15:30:00Z',
       lastSubmittedAt: '2026-08-20T15:30:00Z',
@@ -260,6 +262,7 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       assessmentId: 'assess-4',
       studentId: 'student-1',
       fileUrl: 'https://storage.example.com/submissions/moles-hw.pdf',
+      files: [],
       answerText: null,
       submittedAt: '2026-08-24T19:10:00Z',
       lastSubmittedAt: '2026-08-24T19:10:00Z',
@@ -275,6 +278,7 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       assessmentId: 'assess-5',
       studentId: 'student-1',
       fileUrl: 'https://storage.example.com/submissions/nomenclature.pdf',
+      files: [],
       answerText: null,
       submittedAt: '2026-07-12T14:00:00Z',
       lastSubmittedAt: '2026-07-12T14:00:00Z',
@@ -290,6 +294,7 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       assessmentId: 'assess-6',
       studentId: 'student-1',
       fileUrl: 'https://storage.example.com/submissions/energetics.pdf',
+      files: [],
       answerText: null,
       submittedAt: '2026-06-22T20:00:00Z',
       lastSubmittedAt: '2026-06-22T20:00:00Z',
@@ -305,6 +310,7 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       assessmentId: 'assess-7',
       studentId: 'student-1',
       fileUrl: 'https://storage.example.com/submissions/synthesis.pdf',
+      files: [],
       answerText: null,
       submittedAt: '2026-08-08T17:45:00Z',
       lastSubmittedAt: '2026-08-08T17:45:00Z',
@@ -320,6 +326,7 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       assessmentId: 'assess-8',
       studentId: 'student-1',
       fileUrl: 'https://storage.example.com/submissions/atomic-hw.pdf',
+      files: [],
       answerText: null,
       submittedAt: '2026-05-18T16:20:00Z',
       lastSubmittedAt: '2026-05-18T16:20:00Z',
@@ -714,6 +721,7 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
     studentId: string,
     fileUrl: string | null,
     answerText: string | null,
+    files: readonly SubmissionFile[] = [],
   ): Promise<StoredSubmission> {
     const now = new Date().toISOString();
     const submission: StoredSubmission = {
@@ -721,6 +729,7 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       assessmentId,
       studentId,
       fileUrl,
+      files: files.map((f) => ({ ...f })),
       answerText,
       submittedAt: now,
       lastSubmittedAt: now,
@@ -738,8 +747,9 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
   async updateSubmission(
     submissionId: string,
     studentId: string,
-    fileUrl: string | undefined,
+    fileUrl: string | null | undefined,
     answerText: string | undefined,
+    files?: readonly SubmissionFile[],
   ): Promise<StoredSubmission | null> {
     const submission = this.submissions.find(
       (s) => s.id === submissionId && s.studentId === studentId,
@@ -755,6 +765,8 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       id: randomUUID(),
       submissionId: submission.id,
       fileUrl: submission.fileUrl,
+      // The whole set, archived whole (`D-48` (c)).
+      files: submission.files.map((f) => ({ ...f })),
       answerText: submission.answerText,
       submittedAt: submission.lastSubmittedAt,
       replacedAt: now,
@@ -767,6 +779,9 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
     }
     if (answerText !== undefined) {
       submission.answerText = answerText;
+    }
+    if (files !== undefined) {
+      submission.files = files.map((f) => ({ ...f }));
     }
     submission.lastSubmittedAt = now;
     submission.updatedAt = now;

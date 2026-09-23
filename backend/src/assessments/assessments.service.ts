@@ -14,9 +14,20 @@ import type {
   StoredAssessment,
   TaskVisibility,
   StoredSubmission,
+  SubmissionFile,
+  SubmissionMode,
   SubmissionRevision,
 } from './interfaces/assessment-repository.interface.js';
 import { ASSESSMENT_REPOSITORY } from './interfaces/assessment-repository.interface.js';
+import {
+  checkSubmission,
+  hasUploadMode,
+  mimeTypesForModes,
+  type SubmissionInput,
+} from './submission-rules.js';
+
+/** `D-48` (a): the ceiling on one student upload, whatever the task allows. */
+export const STUDENT_UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
 import { EnrollmentsService } from '../enrollments/enrollments.service.js';
 import { StudentGroupsService } from '../groups/student-groups.service.js';
 import type {
@@ -97,6 +108,8 @@ export interface AssessmentListItem {
 export interface SubmissionView {
   id: string;
   fileUrl: string | null;
+  /** The uploaded files, in the student's order (`D-47`, `D-48`). */
+  files: SubmissionFile[];
   answerText: string | null;
   submittedAt: string;
   lastSubmittedAt: string;
@@ -168,6 +181,11 @@ export type WorkExpectation =
       kind: 'file_upload';
       allowedFileTypes: string[];
       maxFileSizeBytes: number;
+      /**
+       * What the hand-in may be (`D-47`). Empty keeps the old rule - a link
+       * and/or a typed answer. Otherwise exactly one of these per submission.
+       */
+      submissionModes: SubmissionMode[];
     }
   | { kind: 'link'; url: string }
   | {
@@ -401,6 +419,7 @@ export class AssessmentsService {
       kind: 'file_upload',
       allowedFileTypes: assessment.allowedFileTypes,
       maxFileSizeBytes: assessment.maxFileSizeBytes,
+      submissionModes: assessment.submissionModes,
     };
   }
 
@@ -496,6 +515,7 @@ export class AssessmentsService {
         ? {
             id: submission.id,
             fileUrl: submission.fileUrl,
+            files: submission.files,
             answerText: submission.answerText,
             submittedAt: submission.submittedAt,
             lastSubmittedAt: submission.lastSubmittedAt,
@@ -539,11 +559,41 @@ export class AssessmentsService {
    * availability window is still open and nothing has been marked yet - the
    * "edit before the deadline" case. Once corrected, the submission is frozen.
    */
+  /**
+   * `D-48` (a): what this student may upload for this task, or a refusal.
+   *
+   * The same gates as a submission - enrolled, targeted, visible (404 like
+   * every student read), `file_upload` work, inside the window - plus an
+   * upload mode stated on the task. The types are derived from the modes
+   * (`D-47`); the ceiling is the task's own size cap, never above 20 MB.
+   * Storing is `UploadsService`'s: this decides, it writes nothing.
+   */
+  async uploadRulesFor(
+    assessmentId: string,
+    studentId: string,
+  ): Promise<{ allowedMimeTypes: string[]; maxBytes: number }> {
+    const assessment = await this.loadForStudent(assessmentId, studentId);
+    if (assessment.workType !== 'file_upload') {
+      throw new BadRequestException('This task is not handed in here.');
+    }
+    if (!this.isWithinWindow(assessment, new Date())) {
+      throw new BadRequestException('Assessment is not currently available for submission');
+    }
+    if (!hasUploadMode(assessment.submissionModes)) {
+      throw new BadRequestException(
+        'This task takes a link or a typed answer, not uploaded files.',
+      );
+    }
+    return {
+      allowedMimeTypes: mimeTypesForModes(assessment.submissionModes),
+      maxBytes: Math.min(assessment.maxFileSizeBytes, STUDENT_UPLOAD_MAX_BYTES),
+    };
+  }
+
   async submitAssessment(
     assessmentId: string,
     studentId: string,
-    fileUrl: string | undefined,
-    answerText: string | undefined,
+    input: SubmissionInput,
   ): Promise<StoredSubmission> {
     const assessment = await this.loadForStudent(assessmentId, studentId);
     // Only file-upload work is submitted through this platform. A form is
@@ -565,11 +615,9 @@ export class AssessmentsService {
         'Assessment is not currently available for submission',
       );
     }
-    if (!fileUrl && !answerText) {
-      throw new BadRequestException(
-        'At least one of fileUrl or answerText must be provided',
-      );
-    }
+    // `D-47`: what this hand-in may be, decided by the task's modes. A task
+    // stating none keeps the rule it always had.
+    const write = checkSubmission(assessment.submissionModes, input);
 
     const existing = await this.assessmentRepo.findSubmission(
       assessmentId,
@@ -587,8 +635,9 @@ export class AssessmentsService {
       return this.assessmentRepo.createSubmission(
         assessmentId,
         studentId,
-        fileUrl ?? null,
-        answerText ?? null,
+        write.fileUrl ?? null,
+        write.answerText ?? null,
+        write.files ?? [],
       );
     }
     if (existing.correctedAt) {
@@ -596,13 +645,16 @@ export class AssessmentsService {
         'This submission has already been corrected and can no longer be changed',
       );
     }
-    // Passed through as-is rather than coerced to null: an edit that supplies
-    // only one field must leave the other one standing.
+    // A task stating no modes passes fields through as-is: an edit that
+    // supplies only one must leave the other standing. A task stating modes
+    // replaces the whole hand-in - link and file set - and archives the old one
+    // whole (`D-48` (c)).
     const updated = await this.assessmentRepo.updateSubmission(
       existing.id,
       studentId,
-      fileUrl,
-      answerText,
+      write.fileUrl,
+      write.answerText,
+      write.files,
     );
     if (!updated) {
       throw new NotFoundException('Submission not found');

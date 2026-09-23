@@ -593,7 +593,7 @@ components:
         availableTo:   { type: string, format: date-time }
         dueAt:         { type: string, format: date-time }
         maxScore:      { type: integer, minimum: 1, maximum: 1000 }
-        allowedFileTypes: { type: array, minItems: 1, maxItems: 20, items: { type: string } }
+        allowedFileTypes: { type: array, minItems: 1, maxItems: 20, items: { type: string }, description: 'Kept as sent only when no `submissionModes` are stated. With modes it is DERIVED (`D-47`): pdf_upload -> application/pdf; photo_upload -> image/jpeg, image/png, image/webp; doc_link alone -> []. An upload mode is refused (400) while the server stores no files (`D-48` (b)).' }
         maxFileSizeBytes: { type: integer, minimum: 1, maximum: 104857600 }
         workType:    { $ref: '#/components/schemas/WorkType' }
         externalUrl: { type: string, maxLength: 2048 }
@@ -634,7 +634,7 @@ components:
         availableTo:   { type: string, format: date-time }
         dueAt:         { type: string, format: date-time }
         maxScore:      { type: integer, minimum: 1, maximum: 1000 }
-        allowedFileTypes: { type: array, minItems: 1, maxItems: 20, items: { type: string } }
+        allowedFileTypes: { type: array, minItems: 1, maxItems: 20, items: { type: string }, description: 'Kept as sent only when no `submissionModes` are stated. With modes it is DERIVED (`D-47`): pdf_upload -> application/pdf; photo_upload -> image/jpeg, image/png, image/webp; doc_link alone -> []. An upload mode is refused (400) while the server stores no files (`D-48` (b)).' }
         maxFileSizeBytes: { type: integer, minimum: 1, maximum: 104857600 }
         workType:    { $ref: '#/components/schemas/WorkType' }
         externalUrl: { type: string, maxLength: 2048 }
@@ -739,9 +739,17 @@ components:
           maxItems: 2000
           items: { $ref: '#/components/schemas/AnnotationPoint' }
 
-    # The file of a submission as the marking view renders it - server-derived.
-    # Zero or one today (a submission is one `fileUrl`); a list because MARK-6
-    # (B-1/B-2, open) may allow several.
+    # One uploaded file of a submission (`D-47`, `D-48`). `mimeType` is read by
+    # the server from the URL's server-minted extension, never from the client.
+    SubmissionFile:
+      type: object
+      required: [url, mimeType]
+      properties:
+        url:      { type: string, maxLength: 2048 }
+        mimeType: { type: string }
+
+    # A file of a submission as the marking view renders it - server-derived:
+    # the uploaded set in order (`D-47`), then a pasted link if there is one.
     # `image`/`pdf` are platform-stored and annotatable; `file` is platform-
     # stored but not renderable; `link` is a pasted URL, graded without mark-up
     # (`D-41`).
@@ -1818,6 +1826,8 @@ paths:
         `submission.annotations` (`StudentAnnotation[]`, `MARK-5`) is empty until
         the work is returned, and never carries who drew a mark. It is only ever
         the caller's own submission - resolved from the token, never from an id.
+        `submission.files` (`SubmissionFile[]`, `D-48`) lists the uploaded files;
+        `work.submissionModes` says what the hand-in may be (`D-47`).
       x-roles: [student]
       parameters:
         - { name: assessmentId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
@@ -1851,12 +1861,73 @@ paths:
         A second submission to a task with `allowResubmission: false` is a 409
         (unit 6). With `true`, resubmission runs until the window ends, as before.
         A `hidden` task 404s with a body identical to a nonexistent id (`D-28`).
+        **`D-47` (unit 7):** a task stating no `submissionModes` keeps the old
+        rule - `fileUrl` (public link) and/or `answerText`, and no `files`. A task
+        stating modes takes exactly one mode per submission: `pdf_upload` = one
+        PDF in `files`; `photo_upload` = 1-5 JPEG/PNG/WebP photos in `files`;
+        `doc_link` = one public `fileUrl`. `answerText` is a note beside any of
+        them, never alone. Each `files` URL must come from
+        `POST /assessments/{assessmentId}/files` (platform-stored); its type is
+        read from the server-minted extension. A moded resubmission replaces the
+        whole hand-in and archives the old set whole (`D-48` (c)).
       x-roles: [student]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fileUrl:    { type: string, format: uri, maxLength: 2048, description: A public http(s) link. }
+                answerText: { type: string, maxLength: 50000 }
+                files:
+                  type: array
+                  maxItems: 5
+                  items: { type: string, maxLength: 2048 }
       responses:
         '201': { description: Created }
         '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+
+  /assessments/{assessmentId}/files:
+    parameters:
+      - { name: assessmentId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    post:
+      tags: [tasks]
+      summary: Upload one file for a submission to this task (D-48)
+      description: >
+        The first upload a student can make, with its own contract
+        (`SECURITY.md` §2.4) rather than a widened staff route. Gated like every
+        student task read: not enrolled, not targeted or hidden is a 404 identical
+        to a missing id. 400 when the task is not uploaded work, is outside its
+        window, states no upload mode, or the file's type is not one the modes
+        admit (`pdf_upload` -> PDF; `photo_upload` -> JPEG/PNG/WebP; no HEIC).
+        413 above `min(task.maxFileSizeBytes, 20 MB)`. 503 when this server stores
+        no files (`STORAGE_DRIVER=none`). The stored name is server-minted; the
+        client filename is never read. Rate-limited (12/min). Attaches nothing:
+        the file becomes work only when the submit route names it. Not audited
+        (a student's own action).
+      x-roles: [student]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201':
+          description: Stored
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubmissionFile' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { description: Larger than the task's cap }
+        '503': { description: This server stores no files }
 
   /staff/tasks:
     get:

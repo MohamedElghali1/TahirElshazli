@@ -2914,6 +2914,96 @@ describe('Staff and admin API (e2e)', () => {
     });
   });
 
+  describe('unit 7: MARK-6 - submission modes and student uploads (D-47, D-48)', () => {
+    const server = () => app.getHttpServer();
+    // A 1x1 PNG and the smallest PDF header: the whitelist reads the declared
+    // type (SECURITY.md §3.4), so the bytes only need to be non-empty.
+    const png = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da6364f8ff0f0003030200f7d3f6b40000000049454e44ae426082', 'hex');
+    const pdf = Buffer.from('%PDF-1.4\n%%EOF\n');
+    let photoTask = '';
+    let pdfTask = '';
+    let linkTask = '';
+
+    const make = async (title: string, submissionModes: string[]) =>
+      (
+        await request(server()).post('/staff/courses/course-1/assessments').set(bearer(adminToken))
+          .send({ ...unit7Task, title, submissionModes, targets: [{ groupId: 'group-1' }] }).expect(201)
+      ).body as { id: string; allowedFileTypes: string[] };
+    const upload = (task: string, token: string, bytes: Buffer, type: string, name: string) =>
+      request(server()).post(`/assessments/${task}/files`).set(bearer(token)).attach('file', bytes, { filename: name, contentType: type });
+
+    beforeAll(async () => {
+      await unit7Setup('mark6');
+      const photos = await make('E2E photos', ['photo_upload']);
+      expect(photos.allowedFileTypes).toEqual(['image/jpeg', 'image/png', 'image/webp']);
+      photoTask = photos.id;
+      pdfTask = (await make('E2E pdf', ['pdf_upload'])).id;
+      linkTask = (await make('E2E link', ['doc_link'])).id;
+    });
+
+    it('lets a targeted student upload a file the task\'s modes admit, typed by the server', async () => {
+      const res = await upload(photoTask, studentToken, png, 'image/png', '../../evil.php.png').expect(201);
+      expect(res.body.url).toMatch(/^\/uploads\/[0-9a-f-]{36}\.png$/);
+      expect(res.body.mimeType).toBe('image/png');
+    });
+
+    it('refuses a type the task does not take, and a task that takes no uploads', async () => {
+      await upload(photoTask, studentToken, pdf, 'application/pdf', 'a.pdf').expect(400);
+      await upload(linkTask, studentToken, png, 'image/png', 'a.png').expect(400);
+      await upload(photoTask, studentToken, png, 'image/svg+xml', 'a.svg').expect(400);
+    });
+
+    it('404s an untargeted task exactly like a missing one, and refuses staff', async () => {
+      const gone = await upload('nope', studentToken, png, 'image/png', 'a.png').expect(404);
+      const untargeted = await upload(unit7.g3Task, studentToken, png, 'image/png', 'a.png').expect(404);
+      expect(JSON.stringify(untargeted.body) === JSON.stringify(gone.body)).toBe(true);
+      await upload(photoTask, adminToken, png, 'image/png', 'a.png').expect(403);
+      await request(server()).post(`/assessments/${photoTask}/files`).attach('file', png, { filename: 'a.png', contentType: 'image/png' }).expect(401);
+    });
+
+    it('submits photos, refuses a note alone or a link, and replaces the set WHOLE on resubmission', async () => {
+      const a = (await upload(photoTask, studentToken, png, 'image/png', 'a.png').expect(201)).body.url as string;
+      const b = (await upload(photoTask, studentToken, png, 'image/png', 'b.png').expect(201)).body.url as string;
+      await request(server()).post(`/assessments/${photoTask}/submissions`).set(bearer(studentToken))
+        .send({ answerText: 'only a note' }).expect(400);
+      await request(server()).post(`/assessments/${photoTask}/submissions`).set(bearer(studentToken))
+        .send({ fileUrl: 'https://docs.google.com/document/d/x' }).expect(400);
+      await request(server()).post(`/assessments/${photoTask}/submissions`).set(bearer(studentToken))
+        .send({ files: ['https://example.com/x.png'] }).expect(400);
+      const first = await request(server()).post(`/assessments/${photoTask}/submissions`).set(bearer(studentToken))
+        .send({ files: [a, b], answerText: 'my photos' }).expect(201);
+      expect(first.body.files).toEqual([
+        { url: a, mimeType: 'image/png' },
+        { url: b, mimeType: 'image/png' },
+      ]);
+      const c = (await upload(photoTask, studentToken, png, 'image/png', 'c.png').expect(201)).body.url as string;
+      await request(server()).post(`/assessments/${photoTask}/submissions`).set(bearer(studentToken))
+        .send({ files: [c] }).expect(201);
+      const detail = await request(server()).get(`/assessments/${photoTask}`).set(bearer(studentToken)).expect(200);
+      expect(detail.body.work.submissionModes).toEqual(['photo_upload']);
+      expect(detail.body.submission.files).toEqual([{ url: c, mimeType: 'image/png' }]);
+      expect(detail.body.submission.revisions.at(-1).files).toHaveLength(2);
+    });
+
+    it('takes one PDF on a PDF task and a link on a link task', async () => {
+      const p = (await upload(pdfTask, studentToken, pdf, 'application/pdf', 'essay.pdf').expect(201)).body.url as string;
+      await request(server()).post(`/assessments/${pdfTask}/submissions`).set(bearer(studentToken))
+        .send({ files: [p] }).expect(201);
+      await request(server()).post(`/assessments/${linkTask}/submissions`).set(bearer(studentToken))
+        .send({ fileUrl: 'https://docs.google.com/document/d/abc' }).expect(201);
+    });
+
+    it('lists the uploaded photos as documents staff can mark up', async () => {
+      const queue = await request(server()).get(`/staff/assessments/${photoTask}/submissions`).set(bearer(adminToken)).expect(200);
+      const row = (queue.body.rows as { studentId: string; submissionId: string; documents: { url: string; kind: string; annotatable: boolean }[] }[])
+        .find((r) => r.studentId === 'student-1')!;
+      expect(row.documents).toHaveLength(1);
+      expect(row.documents[0]).toMatchObject({ kind: 'image', annotatable: true });
+      await request(server()).post(`/staff/submissions/${row.submissionId}/annotations`).set(bearer(adminToken))
+        .send({ fileUrl: row.documents[0]!.url, page: 1, kind: 'tick', xPercent: 10, yPercent: 10 }).expect(201);
+    });
+  });
+
   describe('unit 7: return, and saved is not returned (MARK-2)', () => {
     const server = () => app.getHttpServer();
     beforeAll(() => unit7Setup('return'));

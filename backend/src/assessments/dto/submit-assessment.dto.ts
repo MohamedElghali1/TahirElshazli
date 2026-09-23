@@ -1,4 +1,4 @@
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsOptional, IsString, MaxLength } from 'class-validator';
 import { IsPublicHttpUrl } from '../../common/validators/is-public-http-url.validator.js';
 
 /** Roughly 20 pages of prose - generous for a typed answer, bounded for storage. */
@@ -18,4 +18,16 @@ export class SubmitAssessmentDto {
   @IsString()
   @MaxLength(MAX_ANSWER_LENGTH)
   answerText?: string;
+
+  /**
+   * Platform-stored URLs from `POST /assessments/:id/files` (`D-47`, `D-48`):
+   * one PDF, or 1-5 photos. Shape here; the service checks each is stored by
+   * the platform and fits the task's mode.
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5)
+  @IsString({ each: true })
+  @MaxLength(2048, { each: true })
+  files?: string[];
 }

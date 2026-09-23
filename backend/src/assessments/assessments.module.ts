@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { StorageModule } from '../common/storage/storage.module.js';
 import { AssessmentsController } from './assessments.controller.js';
 import { AssessmentsService } from './assessments.service.js';
 import type { AssessmentRepository } from './interfaces/assessment-repository.interface.js';
@@ -43,6 +44,8 @@ import { GoogleIntegrationModule } from '../integrations/google/google-integrati
     AuthModule,
     EnrollmentsModule,
     GoogleIntegrationModule,
+    // `UploadsService` for the student submission upload (`D-48`).
+    StorageModule,
   ],
   controllers: [AssessmentsController],
   providers: [

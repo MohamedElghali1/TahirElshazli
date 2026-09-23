@@ -15,6 +15,7 @@ import type {
   StoredAssessment,
   SubmissionMode,
   StoredSubmission,
+  SubmissionFile,
   SubmissionRevision,
   TargetedAssessment,
 } from '../interfaces/assessment-repository.interface.js';
@@ -72,6 +73,8 @@ interface SubmissionRow {
   assessment_id: string;
   student_id: string;
   file_url: string | null;
+  /** JSONB arrives parsed. */
+  files: SubmissionFile[];
   answer_text: string | null;
   submitted_at: Date;
   last_submitted_at: Date;
@@ -87,6 +90,7 @@ interface RevisionRow {
   id: string;
   submission_id: string;
   file_url: string | null;
+  files: SubmissionFile[];
   answer_text: string | null;
   submitted_at: Date;
   replaced_at: Date;
@@ -126,10 +130,10 @@ function likeContains(term: string): string {
 /**
  * Every submission read and every `RETURNING` uses this one list, so a column
  * added here reaches all of them (unit 6 plan, Risk 2). `returned_at` is
- * migration `019`'s.
+ * migration `019`'s and `files` is `020`'s.
  */
 const SUBMISSION_COLUMNS = `
-  id, assessment_id, student_id, file_url, answer_text, submitted_at,
+  id, assessment_id, student_id, file_url, files, answer_text, submitted_at,
   last_submitted_at, updated_at, score, corrected_at, feedback,
   annotated_file_url, returned_at
 `;
@@ -191,6 +195,7 @@ function toSubmission(row: SubmissionRow): StoredSubmission {
     assessmentId: row.assessment_id,
     studentId: row.student_id,
     fileUrl: row.file_url,
+    files: row.files,
     answerText: row.answer_text,
     submittedAt: iso(row.submitted_at),
     lastSubmittedAt: iso(row.last_submitted_at),
@@ -208,6 +213,7 @@ function toRevision(row: RevisionRow): SubmissionRevision {
     id: row.id,
     submissionId: row.submission_id,
     fileUrl: row.file_url,
+    files: row.files,
     answerText: row.answer_text,
     submittedAt: iso(row.submitted_at),
     replacedAt: iso(row.replaced_at),
@@ -735,13 +741,16 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
     studentId: string,
     fileUrl: string | null,
     answerText: string | null,
+    files: readonly SubmissionFile[] = [],
   ): Promise<StoredSubmission> {
     const row = await this.db.queryOne<SubmissionRow>(
       `INSERT INTO assessment_submissions
-         (id, assessment_id, student_id, file_url, answer_text)
-       VALUES ($1, $2, $3, $4, $5)
+         (id, assessment_id, student_id, file_url, answer_text, files)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb)
        RETURNING ${SUBMISSION_COLUMNS}`,
-      [randomUUID(), assessmentId, studentId, fileUrl, answerText],
+      // Serialised explicitly: `pg` would send a JS array as a Postgres array
+      // literal, which is not JSON (the `attachments` precedent).
+      [randomUUID(), assessmentId, studentId, fileUrl, answerText, JSON.stringify(files)],
     );
     return toSubmission(row!);
   }
@@ -749,8 +758,9 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
   async updateSubmission(
     submissionId: string,
     studentId: string,
-    fileUrl: string | undefined,
+    fileUrl: string | null | undefined,
     answerText: string | undefined,
+    files?: readonly SubmissionFile[],
   ): Promise<StoredSubmission | null> {
     // Archiving the old content and overwriting it must be one unit. Half of
     // this is a submission whose previous version was lost, which is exactly
@@ -771,14 +781,16 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
         return null;
       }
 
+      // The whole file set is archived with the rest (`D-48` (c)).
       await client.query(
         `INSERT INTO submission_revisions
-           (id, submission_id, file_url, answer_text, submitted_at, replaced_at)
-         VALUES ($1, $2, $3, $4, $5, now())`,
+           (id, submission_id, file_url, files, answer_text, submitted_at, replaced_at)
+         VALUES ($1, $2, $3, $4::jsonb, $5, $6, now())`,
         [
           randomUUID(),
           current.id,
           current.file_url,
+          JSON.stringify(current.files),
           current.answer_text,
           current.last_submitted_at,
         ],
@@ -791,6 +803,8 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
         `UPDATE assessment_submissions
          SET file_url          = CASE WHEN $2::boolean THEN $3::text ELSE file_url END,
              answer_text       = CASE WHEN $4::boolean THEN $5::text ELSE answer_text END,
+             -- Replaced whole, never merged (D-48 (c)).
+             files             = CASE WHEN $7::boolean THEN $8::jsonb ELSE files END,
              last_submitted_at = now(),
              updated_at        = now()
          WHERE id = $1 AND student_id = $6
@@ -802,6 +816,8 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
           answerText !== undefined,
           answerText ?? null,
           studentId,
+          files !== undefined,
+          JSON.stringify(files ?? []),
         ],
       );
       return toSubmission(updated.rows[0]!);
@@ -815,7 +831,7 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
     // A revision row carries no studentId, so ownership is proven by joining
     // back to the submission it archives.
     const rows = await this.db.query<RevisionRow>(
-      `SELECT r.id, r.submission_id, r.file_url, r.answer_text,
+      `SELECT r.id, r.submission_id, r.file_url, r.files, r.answer_text,
               r.submitted_at, r.replaced_at
        FROM submission_revisions r
        JOIN assessment_submissions s ON s.id = r.submission_id

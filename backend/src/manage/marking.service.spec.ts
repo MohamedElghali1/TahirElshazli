@@ -323,19 +323,34 @@ describe('MarkingService', () => {
 
   describe('documentsOf', () => {
     it('marks a pasted link unannotatable and a stored image or PDF annotatable', () => {
-      expect(documentsOf({ fileUrl: 'https://docs.google.com/x' })).toEqual([
+      expect(documentsOf({ fileUrl: 'https://docs.google.com/x', files: [] })).toEqual([
         { url: 'https://docs.google.com/x', kind: 'link', annotatable: false },
       ]);
-      expect(documentsOf({ fileUrl: '/uploads/a.jpg' })).toEqual([
+      expect(documentsOf({ fileUrl: '/uploads/a.jpg', files: [] })).toEqual([
         { url: '/uploads/a.jpg', kind: 'image', annotatable: true },
       ]);
-      expect(documentsOf({ fileUrl: '/uploads/b.pdf' })).toEqual([
+      expect(documentsOf({ fileUrl: '/uploads/b.pdf', files: [] })).toEqual([
         { url: '/uploads/b.pdf', kind: 'pdf', annotatable: true },
       ]);
-      expect(documentsOf({ fileUrl: '/uploads/b.txt' })).toEqual([
+      expect(documentsOf({ fileUrl: '/uploads/b.txt', files: [] })).toEqual([
         { url: '/uploads/b.txt', kind: 'file', annotatable: false },
       ]);
-      expect(documentsOf({ fileUrl: null })).toEqual([]);
+      expect(documentsOf({ fileUrl: null, files: [] })).toEqual([]);
+    });
+
+    it('lists an uploaded set in order, each judged by its server-minted type (D-47)', () => {
+      expect(
+        documentsOf({
+          fileUrl: null,
+          files: [
+            { url: '/uploads/a.jpg', mimeType: 'image/jpeg' },
+            { url: '/uploads/b.png', mimeType: 'image/png' },
+          ],
+        }),
+      ).toEqual([
+        { url: '/uploads/a.jpg', kind: 'image', annotatable: true },
+        { url: '/uploads/b.png', kind: 'image', annotatable: true },
+      ]);
     });
   });
   describe('annotations (MARK-1, D-42)', () => {

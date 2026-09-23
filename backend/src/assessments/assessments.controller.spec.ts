@@ -1,4 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { randomUUID } from 'node:crypto';
+import { UploadsService } from '../common/storage/uploads.service.js';
+import { FILE_STORAGE } from '../common/storage/file-storage.interface.js';
 import { SUBMISSION_ANNOTATION_REPOSITORY } from './interfaces/submission-annotation-repository.interface.js';
 import { InMemorySubmissionAnnotationRepository } from './repositories/in-memory-submission-annotation.repository.js';
 import { AssessmentsController } from './assessments.controller.js';
@@ -37,6 +40,20 @@ describe('AssessmentsController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AssessmentsController],
       providers: [
+        // Storage is ON here: `D-48` (b) refuses upload modes without it. A
+        // double of the port, so nothing touches disk.
+        UploadsService,
+        {
+          provide: FILE_STORAGE,
+          useValue: {
+            save: async (i: { bytes: Buffer; mimeType: string; extension: string }) => ({
+              url: `/uploads/${randomUUID()}.${i.extension}`,
+              sizeBytes: i.bytes.length,
+              mimeType: i.mimeType,
+            }),
+            remove: async () => true,
+          },
+        },
         EnrollmentsService,
         { provide: ENROLLMENT_REPOSITORY, useClass: InMemoryEnrollmentRepository },
         // Work is set per group now (CLAUDE.md §5.16), so the student read

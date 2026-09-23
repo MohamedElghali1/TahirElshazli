@@ -1,4 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { randomUUID } from 'node:crypto';
+import { UploadsService } from '../common/storage/uploads.service.js';
+import { FILE_STORAGE } from '../common/storage/file-storage.interface.js';
 import { TASK_DRAFT_REPOSITORY } from './interfaces/task-draft-repository.interface.js';
 import { InMemoryTaskDraftRepository } from './repositories/in-memory-task-draft.repository.js';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
@@ -83,6 +86,20 @@ describe('Manage surface', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [StaffManageController, AdminManageController],
       providers: [
+        // Storage is ON here: `D-48` (b) refuses upload modes without it. A
+        // double of the port, so nothing touches disk.
+        UploadsService,
+        {
+          provide: FILE_STORAGE,
+          useValue: {
+            save: async (i: { bytes: Buffer; mimeType: string; extension: string }) => ({
+              url: `/uploads/${randomUUID()}.${i.extension}`,
+              sizeBytes: i.bytes.length,
+              mimeType: i.mimeType,
+            }),
+            remove: async () => true,
+          },
+        },
         ManageService,
         GradingService,
         // `/grade` is group-grain since `D-44` (unit 7).

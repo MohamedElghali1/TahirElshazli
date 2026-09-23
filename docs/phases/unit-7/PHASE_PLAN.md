@@ -128,6 +128,86 @@ to keep them. The implementation pass re-verifies each against this plan, and
 
 ---
 
+## Revision 2: `MARK-6` ruled, 2026-09-23 (the coordinator's planning pass for slice 7i)
+
+**Ruling.** The user: *"Go with what you recommend for MARK-6."* `B-1` and `B-2` are closed on the
+§8 recommendations, recorded as **`D-47`** and **`D-48`**. They take new ids because `D-38`/`D-39` stay
+on record as accepted-then-withdrawn. The user also reported the browser pass for 7h as **complete**
+(user-performed, not observed by the coordinator).
+
+**`D-47` (`B-1`, reading A): the modes are the rule, at submit time.**
+- A task stating **no** modes keeps today's rule unchanged: a public `fileUrl` and/or `answerText`.
+- A task stating modes takes **exactly one mode per submission**:
+  - `pdf_upload`: exactly one platform-stored PDF in `files`; no `fileUrl`.
+  - `photo_upload`: 1–5 platform-stored JPEG/PNG/WebP images in `files`; no `fileUrl`.
+  - `doc_link`: one public `https` `fileUrl` (`IsPublicHttpUrl`, any host); no `files`.
+  - `answerText` may go with any mode, as a note. It is **never** enough on its own when modes are
+    stated (400).
+  - Mixing modes (a PDF plus photos, or files plus a link) is a 400.
+- `allowedFileTypes` is **derived from the modes** on create and update when modes are stated
+  (`pdf_upload` → `application/pdf`; `photo_upload` → `image/jpeg`, `image/png`, `image/webp`; the
+  union when both are stated). Kept as authored when no modes are stated. The authoring form hides the
+  field when modes are chosen.
+
+**`D-48` (`B-2`): student upload and the file set.**
+- (a) New route **`POST /assessments/:assessmentId/files`**, `@Roles(Student)`, multipart `file`.
+  - Gated by `loadForStudent`: enrolled, targeted at one of the student's groups, visible. A miss is
+    the same 404 as today's student routes.
+  - Also refused (400) when the task is not `file_upload`, is outside its window, or states no upload
+    mode.
+  - MIME set derived from the task's modes. Cap = `min(task.maxFileSizeBytes, 20 MB)`. Its own rate
+    limit, `STUDENT_UPLOAD_LIMIT`.
+  - Otherwise the same validation as `UploadsService.store`: server-minted name, whitelist, no SVG,
+    and the client's filename is never read. Returns `{ url, mimeType }`. Not audited, because students'
+    own actions are not staff mutations. It attaches nothing: the file becomes work only when the
+    submit route names it.
+  - Storage `none` → the same explicit 503 as the staff route.
+- (b) **Author-time refusal:** `create`/`update` of a task refuse (400) any upload mode while
+  `UploadsService.enabled` is false. The authoring form disables those choices from
+  `GET /staff/uploads/config`. A URL is never accepted quietly where a file was promised. A task that
+  already carries an upload mode from unit 6 keeps it; its students meet the 503.
+- (c) A resubmission **replaces the whole set** and **archives the whole set** in the revision.
+- (d) **No HEIC**: it is not in the whitelist. The file picker says which types are accepted.
+- Storage **reading A**: `files JSONB NOT NULL DEFAULT '[]'` on `assessment_submissions` and
+  `submission_revisions`, CHECK: an array of at most 5. Element shape `{ url, mimeType }`, where
+  `mimeType` is **re-derived by the server** from the URL's server-minted extension
+  (`storedMimeTypeOf`). No new table, so no new repository pair; both assessment drivers change.
+  **Migration `020`**: `019` has now shipped in verified form and is not edited again.
+
+**Assumption A-15 (for the reviewer).** The submit route accepts a `files` URL only if it is
+platform-stored (`/uploads/<uuid>.<ext>`) and its type fits the mode. It does **not** prove the student
+uploaded that file. The residual case: a student names another platform file they can see, such as the
+task's own student-visible attachment, or a file a classmate sent them. That is equivalent to handing
+in someone else's file, visible to the marker, with no data exposure. Binding would need an upload
+table (two more repositories) or a signed token. Recorded rather than built; `SECURITY.md` says so.
+
+**7i, ordered:**
+1. Migration `020`, run from an empty database first.
+2. `files` in both assessment drivers, with integration tests: round-trip, whole-set archive,
+   CHECK ≤ 5.
+3. `D-47` enforcement in `submitAssessment`, plus the student read exposing `submissionModes`,
+   `allowedFileTypes` and `files`.
+4. The student upload route (`D-48` (a)).
+5. The author-time refusal and `allowedFileTypes` derivation (`D-48` (b), `D-47`).
+6. `documentsOf` includes the file set; the per-task queue and the marking view handle several files
+   (a file switcher, with pages per file).
+7. The student view: a mode picker, a PDF or photo upload or a link, an optional note, and the marked
+   copy per file.
+8. The authoring form: upload modes disabled while storage is off, and the file-type field hidden when
+   modes are chosen.
+9. Tests:
+   - Unit: every `D-47` rule, both directions.
+   - e2e: the upload route (student happy path; 404 unenrolled or untargeted; 400 on wrong mode, type
+     or size; staff token 403; 503 storage off where testable) and the submit rules.
+   - Integration: as in step 2.
+10. `API_SPEC`, `SECURITY.md` §2.4/§4, `DATABASE_PLAN.md` §7 (`020`), and the docs listed in §7.
+
+**Refusal tests required:** a student not enrolled or not targeted gets a 404 identical to a missing
+task. A staff token on the student route gets a 403. A file URL that is not platform-stored, or has the
+wrong type for the mode, gets a 400. More than 5 photos gets a 400.
+
+---
+
 ## 0. Headline
 
 **Where the work splits:** annotations, save versus return, the per-task queue with non-submitters,

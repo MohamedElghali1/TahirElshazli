@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { StorageModule } from '../common/storage/storage.module.js';
 import { StaffManageController } from './staff-manage.controller.js';
 import { AdminManageController } from './admin-manage.controller.js';
 import { ManageService } from './manage.service.js';
@@ -53,6 +54,9 @@ import { repositoryProvider } from '../database/repository.provider.js';
 @Module({
   imports: [
     AuthModule,
+    // `UploadsService.enabled`: a task may not ask for uploads the server
+    // cannot take (`D-48` (b)).
+    StorageModule,
     StaffModule,
     CoursesModule,
     EnrollmentsModule,

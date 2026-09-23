@@ -25,6 +25,7 @@ import { EnrollmentsService } from '../enrollments/enrollments.service.js';
 import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js';
 import { InMemoryUserRepository } from '../auth/repositories/in-memory-user.repository.js';
 import { ASSESSMENT_REPOSITORY } from '../assessments/interfaces/assessment-repository.interface.js';
+import type { NewAssessment } from '../assessments/interfaces/assessment-repository.interface.js';
 import { WORK_REPOSITORY } from '../assessments/interfaces/work-repository.interface.js';
 import { InMemoryWorkRepository } from '../assessments/repositories/in-memory-work.repository.js';
 import { InMemoryAssessmentRepository } from '../assessments/repositories/in-memory-assessment.repository.js';
@@ -680,13 +681,13 @@ describe('Groups', () => {
    * em-dash (null) for a missing mark, performance only.
    */
   describe('mark book (BOOK-1, D-45, D-46)', () => {
-    const TASK = {
+    const TASK: NewAssessment = {
       courseId: 'course-1',
       lessonId: null,
       title: 'Essay',
       description: '',
       instructions: '',
-      type: 'homework' as const,
+      type: 'homework',
       topics: [],
       availableFrom: '2026-01-01T00:00:00.000Z',
       availableTo: '2099-01-01T00:00:00.000Z',
@@ -694,9 +695,9 @@ describe('Groups', () => {
       maxScore: 20,
       allowedFileTypes: ['application/pdf'],
       maxFileSizeBytes: 1048576,
-      workType: 'file_upload' as const,
+      workType: 'file_upload',
       externalUrl: null,
-      visibility: 'published' as const,
+      visibility: 'published',
       markerId: null,
       allowResubmission: true,
       submissionModes: [],
@@ -715,7 +716,7 @@ describe('Groups', () => {
       for (const studentId of ['student-1', 'student-2']) {
         await groupRepo.addMember({ groupId: gid, studentId, assignedBy: 'teacher-1' });
       }
-      const make = async (over: Partial<typeof TASK> & { workType?: 'file_upload' | 'link' | 'google_form' }) => {
+      const make = async (over: Partial<NewAssessment>) => {
         const t = await assessmentRepo.create({ ...TASK, ...over });
         await assessmentRepo.setTargets(t.id, [{ groupId: gid }]);
         return t;

@@ -29,6 +29,16 @@ export interface UploadedFileLike {
   size: number;
 }
 
+/**
+ * A narrower contract for one caller - the student submission upload
+ * (`D-48` (a)): a subset of the whitelist and a lower ceiling. It can only
+ * narrow: a type outside `ALLOWED_UPLOAD_TYPES` is still refused.
+ */
+export interface UploadRules {
+  allowedMimeTypes: readonly string[];
+  maxBytes: number;
+}
+
 export interface UploadResult extends StoredFile {
   /** What it is, decided from the validated MIME type - see `UploadKind`. */
   kind: UploadKind;
@@ -49,7 +59,7 @@ export class UploadsService {
     @Inject(FILE_STORAGE) private readonly storage: FileStorage | null,
   ) {}
 
-  async store(file: UploadedFileLike | undefined): Promise<UploadResult> {
+  async store(file: UploadedFileLike | undefined, rules?: UploadRules): Promise<UploadResult> {
     if (!this.storage) {
       // STORAGE_DRIVER=none, which is the production default. A 503 and not a
       // 500: the endpoint is understood and correct, the capability is simply
@@ -65,11 +75,10 @@ export class UploadsService {
     // Re-checked against the buffer we actually hold, even though multer is
     // configured with the same ceiling. A limit enforced in one place is a
     // limit that depends on that place having been wired up correctly.
-    if (file.buffer.byteLength > MAX_UPLOAD_BYTES) {
+    const maxBytes = Math.min(MAX_UPLOAD_BYTES, rules?.maxBytes ?? MAX_UPLOAD_BYTES);
+    if (file.buffer.byteLength > maxBytes) {
       throw new PayloadTooLargeException(
-        `That file is larger than the ${Math.floor(
-          MAX_UPLOAD_BYTES / (1024 * 1024),
-        )} MB limit.`,
+        `That file is larger than the ${Math.max(1, Math.floor(maxBytes / (1024 * 1024)))} MB limit.`,
       );
     }
 
@@ -83,11 +92,15 @@ export class UploadsService {
     // `X-Content-Type-Options: nosniff` (helmet, globally) from a server that
     // executes nothing, and because §8's "virus scan where feasible" is the
     // real answer and belongs with R2.
-    const type = ALLOWED_UPLOAD_TYPES[file.mimetype.toLowerCase()];
+    const allowed = rules
+      ? ALLOWED_UPLOAD_MIME_TYPES.filter((m) => rules.allowedMimeTypes.includes(m))
+      : ALLOWED_UPLOAD_MIME_TYPES;
+    const claimed = file.mimetype.toLowerCase();
+    const type = allowed.includes(claimed) ? ALLOWED_UPLOAD_TYPES[claimed] : undefined;
     if (!type) {
       throw new BadRequestException(
-        `Files of type "${file.mimetype}" are not accepted. Allowed: ` +
-          `${ALLOWED_UPLOAD_MIME_TYPES.join(', ')}.`,
+        `Files of type "${file.mimetype}" are not accepted here. Allowed: ` +
+          `${allowed.join(', ')}.`,
       );
     }
 

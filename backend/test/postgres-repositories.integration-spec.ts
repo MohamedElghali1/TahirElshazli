@@ -2781,6 +2781,61 @@ describeIfDb('Postgres repositories', () => {
     });
   });
 
+  /**
+   * Migration `020` and the multi-file submission (`MARK-6`, `D-47`, `D-48`).
+   */
+  describe('migration 020: the submission file set (MARK-6)', () => {
+    const repo = () => new PostgresAssessmentRepository(db);
+    const photos = [
+      { url: '/uploads/11111111-1111-4111-8111-111111111111.jpg', mimeType: 'image/jpeg' },
+      { url: '/uploads/22222222-2222-4222-8222-222222222222.png', mimeType: 'image/png' },
+    ];
+
+    it('refuses more than five files, and a non-array, on submissions and revisions', async () => {
+      const task = (await repo().create({ ...NEW_TASK, title: '020 checks' })).id;
+      const sub = (await repo().createSubmission(task, 'student-1', null, 'x')).id;
+      const six = JSON.stringify(Array.from({ length: 6 }, (_, i) => ({ url: `/uploads/${i}.png`, mimeType: 'image/png' })));
+      await expect(db.query(`UPDATE assessment_submissions SET files = $1::jsonb WHERE id = $2`, [six, sub]))
+        .rejects.toThrow(/assessment_submissions_files_is_list/);
+      await expect(db.query(`UPDATE assessment_submissions SET files = '{}'::jsonb WHERE id = $1`, [sub]))
+        .rejects.toThrow(/assessment_submissions_files_is_list/);
+      await expect(
+        db.query(
+          `INSERT INTO submission_revisions (id, submission_id, submitted_at, files) VALUES ('rev-020', $1, now(), $2::jsonb)`,
+          [sub, six],
+        ),
+      ).rejects.toThrow(/submission_revisions_files_is_list/);
+    });
+
+    it('defaults every existing and new row to an empty set', async () => {
+      expect((await repo().findSubmissionById('sub-1'))!.files).toEqual([]);
+      const task = (await repo().create({ ...NEW_TASK, title: '020 default' })).id;
+      expect((await repo().createSubmission(task, 'student-1', null, 'x')).files).toEqual([]);
+    });
+
+    it('stores a file set, and a resubmission archives and replaces it WHOLE (D-48 (c))', async () => {
+      const task = (await repo().create({ ...NEW_TASK, title: 'Photos' })).id;
+      const created = await repo().createSubmission(task, 'student-2', null, 'note', photos);
+      expect(created.files).toEqual(photos);
+      expect(created.fileUrl).toBeNull();
+
+      const pdf = [{ url: '/uploads/33333333-3333-4333-8333-333333333333.pdf', mimeType: 'application/pdf' }];
+      const updated = await repo().updateSubmission(created.id, 'student-2', null, undefined, pdf);
+      expect(updated!.files).toEqual(pdf);
+      expect(updated!.answerText).toBe('note');
+      const revisions = await repo().findRevisions(created.id, 'student-2');
+      expect(revisions).toHaveLength(1);
+      expect(revisions[0]!.files).toEqual(photos);
+
+      // `undefined` leaves the set alone, like the other two fields.
+      const noteOnly = await repo().updateSubmission(created.id, 'student-2', undefined, 'new note');
+      expect(noteOnly!.files).toEqual(pdf);
+      // Every read carries it.
+      expect((await repo().findSubmission(task, 'student-2'))!.files).toEqual(pdf);
+      expect((await repo().findSubmissionsForStudents([task], ['student-2']))[0]!.files).toEqual(pdf);
+    });
+  });
+
   describe('assessments: returned_at and the marker claim (unit 7)', () => {
     const repo = () => new PostgresAssessmentRepository(db);
     let taskId: string;

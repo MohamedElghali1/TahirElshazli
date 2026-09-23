@@ -65,13 +65,13 @@ export interface SubmissionDocument {
 }
 
 /**
- * The file this submission currently carries, as the marking view renders it.
- * Zero or one today - a submission is one `fileUrl` - and a list because
- * `MARK-6` (open, B-1/B-2) may make it several; the anchor on `fileUrl`
- * (A-11) already allows that.
+ * The files this submission currently carries, in order, as the marking view
+ * renders them: the uploaded set (`D-47`, `D-48` - one PDF or 1-5 photos),
+ * then a pasted link if there is one. A mark anchors on one of these URLs
+ * (A-11); a mark on a URL no longer here is stale (`D-42` (c)).
  */
-export function documentsOf(s: Pick<StoredSubmission, 'fileUrl'>): SubmissionDocument[] {
-  const urls = s.fileUrl ? [s.fileUrl] : [];
+export function documentsOf(s: Pick<StoredSubmission, 'fileUrl' | 'files'>): SubmissionDocument[] {
+  const urls = [...s.files.map((f) => f.url), ...(s.fileUrl ? [s.fileUrl] : [])];
   return urls.map((url) => {
     if (!isPlatformStored(url)) {
       return { url, kind: 'link', annotatable: false };
