@@ -365,9 +365,18 @@ describe('Staff and admin API (e2e)', () => {
         .get('/courses/course-1/live-sessions')
         .set(bearer(studentToken))
         .expect(200);
+      // `durationMinutes` is gone since migration 019 (`endsAt` is stored
+      // directly, `DOMAIN_MODEL.md` §5); the 75-minute input is still visible
+      // as the gap between the two stored timestamps.
+      const scheduled = studentView.body.upcoming.find(
+        (s: { id: string }) => s.id === scheduledId,
+      );
+      expect(scheduled).toMatchObject({ title: 'Scheduled over HTTP' });
       expect(
-        studentView.body.upcoming.find((s: { id: string }) => s.id === scheduledId),
-      ).toMatchObject({ title: 'Scheduled over HTTP', durationMinutes: 75 });
+        (new Date(scheduled.endsAt).getTime() -
+          new Date(scheduled.scheduledAt).getTime()) /
+          60_000,
+      ).toBe(75);
     });
 
     it('shows it to the assigned TA read-only, and 404s another course', async () => {

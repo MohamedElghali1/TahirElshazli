@@ -1,10 +1,33 @@
+/**
+ * A live session, keyed to the group that meets in it (migration 019, `SESS-1`).
+ *
+ * `groupId` replaces `courseId` - re-parenting is the point (`DOMAIN_MODEL.md`
+ * §5): two groups on the same course meet at different times, and "which
+ * group does this session belong to" was previously unanswerable from the
+ * row itself.
+ *
+ * No `mode`, no `location`. `D-9` (`CHANGELOG.md`) settled a session's
+ * "room or meeting link" to the link, and there is exactly one - `meetingLink`
+ * - nullable because a `planned` session need not have one yet.
+ */
 export interface LiveSession {
   id: string;
-  courseId: string;
+  groupId: string;
   title: string;
-  zoomLink: string;
+  meetingLink: string | null;
   scheduledAt: string;
-  durationMinutes: number;
+  endsAt: string;
+  /**
+   * Display-only pairing with a co-teaching assistant, never an authorization
+   * input - the same rule `groups.assistant_id` carries (migration 013).
+   */
+  assistantId: string | null;
+  description: string | null;
+  /** Staff-only. The student serializer must never carry this (`PHASE_PLAN.md` §3.5). */
+  privateNotes: string | null;
+  isVisible: boolean;
+  /** `planned` is the draft timetable, locked until its date; `published` is live. */
+  state: 'planned' | 'published';
 }
 
 export interface AttendanceRecord {
@@ -20,42 +43,54 @@ export interface LiveSessionWithAttendance extends LiveSession {
 }
 
 /**
- * What the teacher supplies when scheduling a session.
+ * What the caller supplies when scheduling a session.
  *
- * `id` is the repository's to assign. The Zoom link is whatever the teacher
- * pastes - there is no Zoom API automation in this phase (CLAUDE.md §11), so
- * this table stores a link rather than provisioning a meeting.
+ * `id` is the repository's to assign. The meeting link is whatever the
+ * teacher pastes - there is no Zoom API automation in this phase
+ * (CLAUDE.md §11), so this table stores a link rather than provisioning one.
  */
 export interface NewLiveSession {
-  courseId: string;
+  groupId: string;
   title: string;
-  zoomLink: string;
+  meetingLink: string | null;
   scheduledAt: string;
-  durationMinutes: number;
+  endsAt: string;
+  assistantId: string | null;
+  description: string | null;
+  privateNotes: string | null;
+  isVisible: boolean;
+  state: 'planned' | 'published';
 }
 
 /**
  * A partial edit; `undefined` leaves a field alone, matching
  * `RecordingUpdate` and `AssessmentRepository.updateSubmission`.
  *
- * `courseId` is absent on purpose. Moving a session to another course would
- * move it out from under the enrollment check that gates every read of it -
- * and would strand the attendance rows that key on the session - so a move is
- * a delete and a re-create, not a PATCH.
+ * `groupId` is absent on purpose. Moving a session to another group would
+ * move it out from under the scope check that gates every read of it - and
+ * would strand the attendance rows that key on the session - so a move is a
+ * delete and a re-create, not a PATCH.
  */
 export interface LiveSessionUpdate {
   title?: string;
-  zoomLink?: string;
+  meetingLink?: string | null;
   scheduledAt?: string;
-  durationMinutes?: number;
+  endsAt?: string;
+  assistantId?: string | null;
+  description?: string | null;
+  privateNotes?: string | null;
+  isVisible?: boolean;
+  state?: 'planned' | 'published';
 }
 
 export interface LiveSessionRepository {
-  findByCourse(courseId: string): Promise<LiveSession[]>;
-  findAttendanceForCourse(
-    courseId: string,
-    studentId: string,
-  ): Promise<AttendanceRecord[]>;
+  /**
+   * Every session of every named group, unordered guarantee aside from the
+   * sort applied here - by `scheduledAt`, matching `findByCourse`'s old
+   * contract. Empty array in, empty array out, the same as
+   * `GroupRepository.findByIds`.
+   */
+  findByGroups(groupIds: readonly string[]): Promise<LiveSession[]>;
   /** Null when there is no such session; the caller turns that into a 404. */
   findById(sessionId: string): Promise<LiveSession | null>;
   create(input: NewLiveSession): Promise<LiveSession>;

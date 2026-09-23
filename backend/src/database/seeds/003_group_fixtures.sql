@@ -74,3 +74,30 @@ SELECT 'assessment-target-' || a.id, a.id, 'group-1', NULL, NULL, NULL
   FROM assessments a
  WHERE a.course_id = 'course-1'
 ON CONFLICT (assessment_id, group_id) DO NOTHING;
+
+-- ============================================================
+-- Live sessions and attendance (`SESS-1`, `SESS-3` - migration 019)
+-- ============================================================
+--
+-- Moved here from 001: group-keyed since the re-parent, so the rows they
+-- reference must already exist. group-1 studies course-1, group-2 studies
+-- course-2 - the same 1:1 mapping the old `course_id` values encoded.
+
+INSERT INTO live_sessions
+  (id, group_id, title, meeting_link, scheduled_at, ends_at, state, is_visible) VALUES
+  ('sess-1', 'group-1', 'Revision: Moles & Titrations',     'https://zoom.us/j/98765432101', '2026-08-20T18:00:00Z', '2026-08-20T19:30:00Z', 'published', true),
+  ('sess-2', 'group-1', 'Organic Chemistry Q&A',            'https://zoom.us/j/98765432102', '2026-08-27T18:00:00Z', '2026-08-27T19:30:00Z', 'published', true),
+  ('sess-3', 'group-1', 'Past Paper Walkthrough - Paper 1', 'https://zoom.us/j/98765432103', '2026-09-03T18:00:00Z', '2026-09-03T20:00:00Z', 'published', true),
+  ('sess-4', 'group-2', 'IELTS Speaking Practice',          'https://zoom.us/j/12345678901', '2026-08-29T16:00:00Z', '2026-08-29T17:00:00Z', 'published', true),
+  ('sess-5', 'group-2', 'IELTS Writing Task 2 Clinic',      'https://zoom.us/j/12345678902', '2026-08-15T16:00:00Z', '2026-08-15T17:00:00Z', 'published', true),
+  ('sess-6', 'group-2', 'IELTS Listening Strategies',       'https://zoom.us/j/12345678903', '2026-08-08T16:00:00Z', '2026-08-08T17:00:00Z', 'published', true)
+ON CONFLICT (id) DO NOTHING;
+
+-- `marked_by` is teacher-1 on every row: both seeded groups are theirs
+-- (`groups.teacher_id` above), matching migration 019's own backfill rule for
+-- the rows this replaces.
+INSERT INTO attendance (session_id, student_id, status, marked_at, marked_by) VALUES
+  ('sess-1', 'student-1', 'present', '2026-08-20T18:02:00Z', 'teacher-1'),
+  ('sess-5', 'student-1', 'present', '2026-08-15T16:01:00Z', 'teacher-1'),
+  ('sess-6', 'student-1', 'absent',  '2026-08-08T16:05:00Z', 'teacher-1')
+ON CONFLICT (session_id, student_id) DO NOTHING;

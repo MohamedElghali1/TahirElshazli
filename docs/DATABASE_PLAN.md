@@ -204,7 +204,7 @@ before → `assistant_group_assignments` 1 row after (the one course had one gro
 migration. `StaffScopeService` fails closed on a missing row — an assistant without one reaches
 nothing — but **unit 5's `PEOPLE-4` must write the row** when it gains the ability to create one.
 
-### 4.3 `attendance.attended BOOLEAN` → `status` enum
+### 4.3 `attendance.attended BOOLEAN` → `status` enum — **SHIPPED as `019`, unit 8 slice S1**
 
 ```
 ALTER TABLE attendance ADD COLUMN status TEXT CHECK (status IN ('present','absent','late'));
@@ -221,30 +221,56 @@ read-side today. This is the cheapest it will ever be.
 Historical rows become `present`/`absent`; no existing row can be `late`, which is correct — nobody
 ever recorded one.
 
-### 4.4 `live_sessions` re-parents to the group
+**`marked_by` has no historical answer** — the boolean carried no actor. As shipped, it backfills
+from the owning session's group's `teacher_id` (`groups.teacher_id`, NOT NULL since migration 006),
+via `live_sessions.group_id` — populated by §4.4's re-parent earlier in the same file, so the join is
+total by construction and this backfill has no abort path reachable from valid data. `marked_at`
+(renamed from `attended_at`) had a real nullable row in the shipped fixtures
+(`('sess-6','student-1', false, NULL)`); it backfills to `now()` — the migration's own run time,
+stated as a placeholder rather than a fabricated moment, the same honesty the `marked_by` backfill
+states for itself.
+
+### 4.4 `live_sessions` re-parents to the group — **SHIPPED as `019`, unit 8 slice S1**
+
+No `mode`, no `location` — `D-9` (`CHANGELOG.md`) had already struck both in favour of one
+`meeting_link` before this migration was authored; the SQL below is what actually shipped, not the
+`mode`/`location` shape this section described before unit 8.
 
 ```
 ALTER TABLE live_sessions ADD COLUMN group_id TEXT REFERENCES groups(id) ON DELETE CASCADE;
+-- abort if any session's course holds zero or several groups (LEFT JOIN, not
+-- plain JOIN — a plain JOIN misses the zero case; see the migration's comment)
+UPDATE live_sessions s SET group_id = g.id FROM groups g WHERE g.course_id = s.course_id;
+ALTER TABLE live_sessions ALTER COLUMN group_id SET NOT NULL;
+
+ALTER TABLE live_sessions RENAME COLUMN zoom_link TO meeting_link;
+ALTER TABLE live_sessions ALTER COLUMN meeting_link DROP NOT NULL;
+
 ALTER TABLE live_sessions ADD COLUMN ends_at TIMESTAMPTZ;
-ALTER TABLE live_sessions ADD COLUMN mode TEXT NOT NULL DEFAULT 'online'
-  CHECK (mode IN ('on_ground','online'));
-ALTER TABLE live_sessions ADD COLUMN location TEXT;       -- room OR meeting link
-ALTER TABLE live_sessions ADD COLUMN assistant_id TEXT REFERENCES users(id);
+UPDATE live_sessions SET ends_at = scheduled_at + (duration_minutes * INTERVAL '1 minute');
+ALTER TABLE live_sessions ALTER COLUMN ends_at SET NOT NULL;
+ALTER TABLE live_sessions DROP COLUMN duration_minutes;
+
+ALTER TABLE live_sessions ADD COLUMN assistant_id TEXT REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE live_sessions ADD COLUMN description TEXT;
-ALTER TABLE live_sessions ADD COLUMN private_notes TEXT;
+ALTER TABLE live_sessions ADD COLUMN private_notes TEXT;     -- staff-only, never serialized to a student
 ALTER TABLE live_sessions ADD COLUMN is_visible BOOLEAN NOT NULL DEFAULT true;
 ALTER TABLE live_sessions ADD COLUMN state TEXT NOT NULL DEFAULT 'published'
   CHECK (state IN ('planned','published'));
--- backfill group_id from the course's single group where unambiguous, else refuse
-UPDATE live_sessions SET ends_at = scheduled_at + (duration_minutes || ' minutes')::interval;
+
+ALTER TABLE live_sessions DROP COLUMN course_id;
 ```
 
-`zoom_link` folds into `location`; `duration_minutes` folds into `ends_at`. Keep both old columns
-for one migration, then drop them once the readers are switched — a two-step is cheap insurance on
-the table the student timetable depends on.
+One migration, not a two-step: `course_id`/`duration_minutes`/`zoom_link` are dropped or renamed in
+the same file as the backfill, because every reader of this table (`LiveSessionRepository` and its
+two implementations) moved in the same slice (`S2`). A two-step would leave the repository unable to
+compile against a schema in between.
 
-**Backfill hazard:** a course with two groups has no single correct `group_id`. Refuse and let a
-human assign, exactly as in 4.1.
+**Backfill hazard, as shipped:** a course with two groups — or zero — has no single correct
+`group_id`. Both abort, naming the count of affected sessions (not the course, since a session's own
+id is what an operator needs to hand-fix). Exercised against real Postgres in
+`postgres-repositories.integration-spec.ts`'s `migration 019 refuses rather than guessing` block, the
+same pattern §4.1's guard uses.
 
 ---
 
@@ -290,9 +316,19 @@ this scale round trips and row volume matter and query counts mostly do not.
 `DOM-1`/`DOM-2`) · `014` `users.status` (registration approval, `DOM-4`) **+** student profile fields
 (`DOM-3`) · `015` **assistant scope tables + data move** (`AUTH-2`, destructive, **applied and verified**) ·
 `016` mail deliveries (**applied**, unit 3) · `017` assistant invitations (**applied**, unit 5) ·
-`018` **task drafts + assessment columns** (**applied and verified**, unit 6) · `019` annotations +
-submission columns · `020` sessions rework · `021` attendance enum · `022` weekly reports ·
-`023` announcements (group audience, media, draft) · `024` notification preferences
+`018` **task drafts + assessment columns** (**applied and verified**, unit 6) · `019`
+**sessions and attendance** (`SESS-1`/`SESS-3`, destructive, two abort paths, §4.3/§4.4, unit 8
+slice S1) · `020` weekly reports (unit 9, claimed by a parallel checkout) · `021` announcements
+(group audience, media, draft) · `022` notification preferences
+
+**Renumbered again, 2026-09-23, unit 8.** The list previously split the sessions/attendance rework
+into two files (`020` sessions, `021` attendance) with `019` reserved for annotations/submission
+columns that were never built as their own migration. Unit 8's `PHASE_PLAN.md` §2 claims `019` for
+both reshapes together — one file, since the attendance backfill's `marked_by` join depends on the
+session re-parent having already run, and splitting them would cost a second migration number to
+save nothing (the same reasoning `018` gave for folding `DOM-2`'s three columns into one file with
+`013`). Unit 7, running in a parallel checkout, takes `020` for its own migration
+(`PHASE_PLAN.md` §7.1) rather than the numbers this list previously reserved.
 
 **Renumbered 2026-09-22, unit 6.** The list had assigned `016` to task drafts, but `016` shipped as
 `mail_deliveries` and `017` as `assistant_invitations`, so every planned entry shifts: task drafts

@@ -12,6 +12,7 @@ import { PostgresEnrollmentRepository } from '../src/enrollments/repositories/po
 import { PostgresMaterialRepository } from '../src/materials/repositories/postgres-material.repository.js';
 import { PostgresRecordingRepository } from '../src/recordings/repositories/postgres-recording.repository.js';
 import { PostgresLiveSessionRepository } from '../src/live-sessions/repositories/postgres-live-session.repository.js';
+import { PostgresAttendanceRepository } from '../src/live-sessions/repositories/postgres-attendance.repository.js';
 import { PostgresAssessmentRepository } from '../src/assessments/repositories/postgres-assessment.repository.js';
 import { PostgresReportRepository } from '../src/reports/repositories/postgres-report.repository.js';
 import { PostgresNotificationRepository } from '../src/notifications/repositories/postgres-notification.repository.js';
@@ -655,33 +656,41 @@ describeIfDb('Postgres repositories', () => {
     });
   });
 
+  /**
+   * Migration 019 (`SESS-1`, `SESS-3`, unit 8): `live_sessions` re-parented
+   * onto `group_id`, attendance's boolean became a three-state `status` with
+   * `markedBy`. group-1 studies course-1, group-2 studies course-2 - the same
+   * 1:1 mapping the dropped `courseId` values encoded (`003_group_fixtures.sql`).
+   */
   describe('live sessions', () => {
-    it('scopes attendance to the course through the session join', async () => {
+    it('reads every session of a set of groups, ordered by when they meet', async () => {
       const repo = new PostgresLiveSessionRepository(db);
-      expect(await repo.findByCourse('course-1')).toHaveLength(3);
-
-      const courseTwo = await repo.findAttendanceForCourse('course-2', 'student-1');
-      expect(courseTwo.map((a) => a.sessionId).sort()).toEqual(['sess-5', 'sess-6']);
-      expect(await repo.findAttendanceForCourse('course-1', 'student-2')).toEqual([]);
+      expect(await repo.findByGroups(['group-1'])).toHaveLength(3);
+      expect(await repo.findByGroups([])).toEqual([]);
     });
 
     it('schedules a session into the running order and reads it back', async () => {
       const repo = new PostgresLiveSessionRepository(db);
       const created = await repo.create({
-        courseId: 'course-1',
+        groupId: 'group-1',
         title: 'Integration clinic',
-        zoomLink: 'https://zoom.us/j/70000000001',
+        meetingLink: 'https://zoom.us/j/70000000001',
         scheduledAt: '2026-08-25T18:00:00Z',
-        durationMinutes: 45,
+        endsAt: '2026-08-25T18:45:00Z',
+        assistantId: null,
+        description: null,
+        privateNotes: null,
+        isVisible: true,
+        state: 'published',
       });
       expect(await repo.findById(created.id)).toMatchObject({
         title: 'Integration clinic',
-        durationMinutes: 45,
+        endsAt: '2026-08-25T18:45:00.000Z',
       });
 
       // ORDER BY scheduled_at, so it lands between sess-1 and sess-2 rather
       // than at the end - the thing an append-ordered list would get wrong.
-      const schedule = await repo.findByCourse('course-1');
+      const schedule = await repo.findByGroups(['group-1']);
       expect(schedule.map((s) => s.id)).toEqual([
         'sess-1',
         created.id,
@@ -692,45 +701,71 @@ describeIfDb('Postgres repositories', () => {
       await repo.remove(created.id);
     });
 
-    it('leaves an omitted field alone on update', async () => {
+    it('leaves an omitted field alone on update, and clears a nullable one only when told to', async () => {
       const repo = new PostgresLiveSessionRepository(db);
       const created = await repo.create({
-        courseId: 'course-1',
+        groupId: 'group-1',
         title: 'Before',
-        zoomLink: 'https://zoom.us/j/70000000002',
+        meetingLink: 'https://zoom.us/j/70000000002',
         scheduledAt: '2026-11-01T18:00:00Z',
-        durationMinutes: 60,
+        endsAt: '2026-11-01T19:00:00Z',
+        assistantId: null,
+        description: 'Original description',
+        privateNotes: null,
+        isVisible: true,
+        state: 'published',
       });
 
-      // The COALESCE path: `zoom_link` was not supplied and must survive.
+      // The COALESCE path: `meeting_link` was not supplied and must survive.
       const updated = await repo.update(created.id, { title: 'After' });
       expect(updated).toMatchObject({
         title: 'After',
-        zoomLink: 'https://zoom.us/j/70000000002',
-        durationMinutes: 60,
+        meetingLink: 'https://zoom.us/j/70000000002',
+        description: 'Original description',
       });
+
+      // The CASE-WHEN path: an explicit `null` clears a nullable column,
+      // which plain COALESCE could never do (`GroupPatch`'s nullable trio
+      // carries the same distinction, `PostgresGroupRepository.update`).
+      const cleared = await repo.update(created.id, { meetingLink: null });
+      expect(cleared?.meetingLink).toBeNull();
+      expect(cleared?.description).toBe('Original description');
+
       expect(await repo.update('nope', { title: 'x' })).toBeNull();
 
       await repo.remove(created.id);
     });
 
-    it('cancels a session, taking its attendance with it', async () => {
+    it('cancellation itself leaves attendance alone - the service owns that cascade now', async () => {
+      // `PostgresLiveSessionRepository.remove` no longer describes deleting
+      // attendance: attendance is a separate repository behind its own
+      // interface (CLAUDE.md §5 - one repository never reaches into another
+      // aggregate). Postgres's own `ON DELETE CASCADE` still removes the rows
+      // at the database level regardless of which repository issued the
+      // DELETE, which this proves; the service-level cascade
+      // (`ManageLiveSessionsService.remove` calling
+      // `AttendanceRepository.removeForSession` first, for its audit count)
+      // is asserted in the unit spec, not here.
       const repo = new PostgresLiveSessionRepository(db);
       const created = await repo.create({
-        courseId: 'course-1',
+        groupId: 'group-1',
         title: 'Doomed',
-        zoomLink: 'https://zoom.us/j/70000000003',
+        meetingLink: 'https://zoom.us/j/70000000003',
         scheduledAt: '2026-11-08T18:00:00Z',
-        durationMinutes: 30,
+        endsAt: '2026-11-08T18:30:00Z',
+        assistantId: null,
+        description: null,
+        privateNotes: null,
+        isVisible: true,
+        state: 'published',
       });
       await db.query(
-        `INSERT INTO attendance (session_id, student_id, attended) VALUES ($1, 'student-1', true)`,
+        `INSERT INTO attendance (session_id, student_id, status, marked_by)
+         VALUES ($1, 'student-1', 'present', 'teacher-1')`,
         [created.id],
       );
 
       expect(await repo.remove(created.id)).toBe(true);
-      // ON DELETE CASCADE, which is a real loss of history and the reason the
-      // audit entry keeps a full `before` snapshot.
       const orphans = await db.query(
         'SELECT session_id FROM attendance WHERE session_id = $1',
         [created.id],
@@ -739,6 +774,90 @@ describeIfDb('Postgres repositories', () => {
       // A second removal is false, not a lie about having deleted something.
       expect(await repo.remove(created.id)).toBe(false);
       expect(await repo.findById(created.id)).toBeNull();
+    });
+  });
+
+  describe('attendance', () => {
+    it('reads every mark for a session, and one student across a set of sessions', async () => {
+      const repo = new PostgresAttendanceRepository(db);
+      const sessionOne = await repo.findBySession('sess-1');
+      expect(sessionOne).toEqual([
+        expect.objectContaining({
+          sessionId: 'sess-1',
+          studentId: 'student-1',
+          status: 'present',
+          markedBy: 'teacher-1',
+        }),
+      ]);
+
+      const forStudent = await repo.findForStudent('student-1', [
+        'sess-5',
+        'sess-6',
+      ]);
+      expect(forStudent.map((a) => [a.sessionId, a.status]).sort()).toEqual([
+        ['sess-5', 'present'],
+        ['sess-6', 'absent'],
+      ]);
+      expect(await repo.findForStudent('student-1', [])).toEqual([]);
+    });
+
+    it('upserts idempotently on the (session, student) key, correcting a mis-tap', async () => {
+      const repo = new PostgresAttendanceRepository(db);
+      const first = await repo.upsert({
+        sessionId: 'sess-4',
+        studentId: 'student-1',
+        status: 'absent',
+        markedBy: 'teacher-1',
+        markedAt: '2026-08-29T16:05:00.000Z',
+      });
+      expect(first.status).toBe('absent');
+
+      // The same key, corrected - not a second row.
+      const corrected = await repo.upsert({
+        sessionId: 'sess-4',
+        studentId: 'student-1',
+        status: 'late',
+        markedBy: 'teacher-1',
+        markedAt: '2026-08-29T16:10:00.000Z',
+      });
+      expect(corrected.status).toBe('late');
+
+      const rows = await db.query(
+        `SELECT status FROM attendance WHERE session_id = 'sess-4' AND student_id = 'student-1'`,
+      );
+      expect(rows).toEqual([{ status: 'late' }]);
+
+      await db.query(
+        `DELETE FROM attendance WHERE session_id = 'sess-4' AND student_id = 'student-1'`,
+      );
+    });
+
+    it('removeForSession returns the count it removed, for the cancellation audit', async () => {
+      const sessionRepo = new PostgresLiveSessionRepository(db);
+      const attendanceRepo = new PostgresAttendanceRepository(db);
+      const created = await sessionRepo.create({
+        groupId: 'group-1',
+        title: 'Counted',
+        meetingLink: null,
+        scheduledAt: '2026-11-15T18:00:00Z',
+        endsAt: '2026-11-15T19:00:00Z',
+        assistantId: null,
+        description: null,
+        privateNotes: null,
+        isVisible: true,
+        state: 'published',
+      });
+      await db.query(
+        `INSERT INTO attendance (session_id, student_id, status, marked_by) VALUES
+           ($1, 'student-1', 'present', 'teacher-1'),
+           ($1, 'student-2', 'absent',  'teacher-1')`,
+        [created.id],
+      );
+
+      expect(await attendanceRepo.removeForSession(created.id)).toBe(2);
+      expect(await attendanceRepo.removeForSession(created.id)).toBe(0);
+
+      await sessionRepo.remove(created.id);
     });
   });
 
@@ -2958,6 +3077,205 @@ describeIfDb('migration 015 backfills the course grants it drops', () => {
         'SELECT count(*)::int AS n FROM assistant_group_assignments',
       );
       expect(grants.rows[0]!.n).toBe(0);
+    } finally {
+      await drop(client, schema);
+    }
+  }, 60_000);
+});
+
+/**
+ * **Migration 019's two destructive backfills, exercised rather than believed.**
+ *
+ * `live_sessions` re-parenting onto `group_id` aborts on a course holding
+ * zero or several groups rather than guess which one a session meant
+ * (`PHASE_PLAN.md` §2.1); `attendance.marked_by`'s backfill has no abort path
+ * reachable from valid data (§2.2's join is total by construction), so only
+ * the happy path is asserted for it here.
+ */
+describeIfDb('migration 019 refuses rather than guessing', () => {
+  const migrationsDir = fileURLToPath(
+    new URL('../src/database/migrations', import.meta.url),
+  );
+
+  /** 001-018, in order. 019 is applied separately so its failure is the test. */
+  const upTo018 = async (client: Pool) => {
+    const files = (await readdir(migrationsDir))
+      .filter((n) => n.endsWith('.sql') && n < '019')
+      .sort();
+    for (const name of files) {
+      await client.query(await readFile(join(migrationsDir, name), 'utf8'));
+    }
+  };
+
+  const apply019 = async (client: Pool) =>
+    client.query(
+      await readFile(
+        join(migrationsDir, '019_sessions_and_attendance.sql'),
+        'utf8',
+      ),
+    );
+
+  const inFreshSchema = async (schema: string) => {
+    const admin = new Pool({ connectionString });
+    await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+    await admin.query(`CREATE SCHEMA ${schema}`);
+    await admin.end();
+    const scoped = new Pool({
+      connectionString,
+      options: `-c search_path=${schema}`,
+    });
+    await upTo018(scoped);
+    return scoped;
+  };
+
+  const seedTeacher = async (client: Pool, id: string) => {
+    await client.query(
+      `INSERT INTO users (id, email, password_hash, name, role)
+       VALUES ($1, $1 || '@example.com', 'x', 'Teacher', 'teacher')`,
+      [id],
+    );
+  };
+
+  const seedCourse = async (client: Pool, id: string) => {
+    await client.query(
+      `INSERT INTO courses (id, slug, is_published, title, description, teacher_name)
+       VALUES ($1, $1, true, $1, $1, 'Dr. Tahir')`,
+      [id],
+    );
+  };
+
+  const drop = async (client: Pool, schema: string) => {
+    await client.end();
+    const admin = new Pool({ connectionString });
+    await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+    await admin.end();
+  };
+
+  const columnsOfLiveSessions = async (client: Pool, schema: string) => {
+    const res = await client.query<{ column_name: string }>(
+      `SELECT column_name FROM information_schema.columns
+        WHERE table_schema = $1 AND table_name = 'live_sessions'`,
+      [schema],
+    );
+    return res.rows.map((r) => r.column_name);
+  };
+
+  it('aborts on a course holding two groups, and leaves the schema untouched', async () => {
+    const schema = 'migtest_019_two_groups';
+    const client = await inFreshSchema(schema);
+    try {
+      await seedTeacher(client, 't1');
+      await seedCourse(client, 'c1');
+      await client.query(
+        `INSERT INTO groups (id, name, teacher_id, course_id)
+         VALUES ('g1', 'Group A', 't1', 'c1'), ('g2', 'Group B', 't1', 'c1')`,
+      );
+      await client.query(
+        `INSERT INTO live_sessions (id, course_id, title, zoom_link, scheduled_at, duration_minutes)
+         VALUES ('s1', 'c1', 'Ambiguous session', 'https://zoom.us/j/1', now(), 60)`,
+      );
+
+      await expect(apply019(client)).rejects.toThrow(
+        /Cannot re-parent 1 live_sessions: their course holds zero or several groups/,
+      );
+
+      // The transaction rolled back whole: no group_id column, the original
+      // row untouched.
+      expect(await columnsOfLiveSessions(client, schema)).not.toContain('group_id');
+      const row = await client.query('SELECT course_id FROM live_sessions WHERE id = $1', [
+        's1',
+      ]);
+      expect(row.rows[0]!.course_id).toBe('c1');
+    } finally {
+      await drop(client, schema);
+    }
+  }, 60_000);
+
+  it('aborts on a course holding no group at all, the case a plain JOIN would miss', async () => {
+    // `PHASE_PLAN.md` §2.1's own guard SQL uses a plain `JOIN`, which only
+    // catches "several groups" - a course with zero groups produces no row in
+    // that join and would otherwise surface three statements later as a bare
+    // NOT NULL violation naming a column, not a session. This is the guard
+    // widened to `LEFT JOIN` to catch that too (see the migration's own
+    // comment).
+    const schema = 'migtest_019_no_group';
+    const client = await inFreshSchema(schema);
+    try {
+      await seedTeacher(client, 't1');
+      await seedCourse(client, 'c1');
+      await client.query(
+        `INSERT INTO live_sessions (id, course_id, title, zoom_link, scheduled_at, duration_minutes)
+         VALUES ('s1', 'c1', 'Orphaned session', 'https://zoom.us/j/1', now(), 60)`,
+      );
+
+      await expect(apply019(client)).rejects.toThrow(
+        /Cannot re-parent 1 live_sessions: their course holds zero or several groups/,
+      );
+
+      expect(await columnsOfLiveSessions(client, schema)).not.toContain('group_id');
+    } finally {
+      await drop(client, schema);
+    }
+  }, 60_000);
+
+  it('re-parents cleanly and backfills marked_by from the session group teacher, when the data is sound', async () => {
+    const schema = 'migtest_019_happy';
+    const client = await inFreshSchema(schema);
+    try {
+      await seedTeacher(client, 'group-teacher');
+      await seedCourse(client, 'c1');
+      await client.query(
+        `INSERT INTO groups (id, name, teacher_id, course_id)
+         VALUES ('g1', 'Saturday', 'group-teacher', 'c1')`,
+      );
+      await client.query(
+        `INSERT INTO live_sessions (id, course_id, title, zoom_link, scheduled_at, duration_minutes)
+         VALUES ('s1', 'c1', 'Revision', 'https://zoom.us/j/1', '2026-08-20T18:00:00Z', 90)`,
+      );
+      await client.query(
+        `INSERT INTO users (id, email, password_hash, name, role)
+         VALUES ('student-1', 'student-1@example.com', 'x', 'Student', 'student')`,
+      );
+      // The shape migration 019's own comment names: a row marked absent with
+      // no timestamp at all (`seeds/001_development_fixtures.sql`'s
+      // `('sess-6', 'student-1', false, NULL)`, pre-move).
+      await client.query(
+        `INSERT INTO attendance (session_id, student_id, attended, attended_at)
+         VALUES ('s1', 'student-1', false, NULL)`,
+      );
+
+      await apply019(client);
+
+      const session = await client.query(
+        `SELECT group_id, meeting_link, scheduled_at, ends_at, state, is_visible
+           FROM live_sessions WHERE id = 's1'`,
+      );
+      expect(session.rows[0]).toMatchObject({
+        group_id: 'g1',
+        meeting_link: 'https://zoom.us/j/1',
+        state: 'published',
+        is_visible: true,
+      });
+      expect(new Date(session.rows[0]!.ends_at).getTime()).toBe(
+        new Date('2026-08-20T19:30:00Z').getTime(),
+      );
+
+      const attendance = await client.query(
+        `SELECT status, marked_by, marked_at FROM attendance WHERE session_id = 's1'`,
+      );
+      expect(attendance.rows[0]).toMatchObject({
+        status: 'absent',
+        // Backfilled from the session's group's teacher, not the course's
+        // free-text `teacher_name` and not any other user in the database -
+        // the whole point of the guard test above proving it is total.
+        marked_by: 'group-teacher',
+      });
+      expect(attendance.rows[0]!.marked_at).not.toBeNull();
+
+      expect(await columnsOfLiveSessions(client, schema)).not.toContain('course_id');
+      expect(await columnsOfLiveSessions(client, schema)).not.toContain(
+        'duration_minutes',
+      );
     } finally {
       await drop(client, schema);
     }

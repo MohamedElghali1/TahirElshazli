@@ -5,6 +5,10 @@ import type {
   LiveSessionWithAttendance,
 } from './interfaces/live-session-repository.interface.js';
 import { LIVE_SESSION_REPOSITORY } from './interfaces/live-session-repository.interface.js';
+import type { AttendanceRepository } from './interfaces/attendance-repository.interface.js';
+import { ATTENDANCE_REPOSITORY } from './interfaces/attendance-repository.interface.js';
+import type { GroupRepository } from '../groups/interfaces/group-repository.interface.js';
+import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interface.js';
 import { EnrollmentsService } from '../enrollments/enrollments.service.js';
 
 export interface LiveSessionListResponse {
@@ -25,40 +29,71 @@ export interface AttendanceSummary {
   }[];
 }
 
+/**
+ * **This whole service is course-keyed and superseded.** `PHASE_PLAN.md`
+ * (unit 8) `[REPLACE]`s `GET /courses/:id/live-sessions` and `.../next` with
+ * `GET /students/me/timetable` (§3.2, slice S4 - not yet built in this
+ * checkout), because a session no longer belongs to a course at all: it
+ * belongs to a group (migration 019, `SESS-1`), and a course can hold more
+ * than one group.
+ *
+ * Kept compiling and working for the courses/dashboard callers that still use
+ * it (`CoursesService.getProgress`, `DashboardService.getNextSession`) by
+ * resolving the course to its groups first (`GroupRepository.findByCourse`,
+ * unmodified) and unioning their sessions - the same translation a course
+ * with exactly one group always resolved to before this reshape, and the
+ * fixtures are exactly that shape. A course with several groups now shows the
+ * union of all of them rather than an arbitrary one, which is a strict
+ * improvement over what course-keying could ever represent, not a regression
+ * S4 needs to fix.
+ *
+ * "Late" has no representation in this legacy boolean shape; `attended` here
+ * means `status === 'present'` specifically, the same reading `AttendanceSummary`
+ * used before `status` existed. S4's `GET /students/me/attendance` is where
+ * the three-state projection described in `PHASE_PLAN.md` §3.3 belongs.
+ */
 @Injectable()
 export class LiveSessionsService {
   constructor(
     @Inject(LIVE_SESSION_REPOSITORY)
     private readonly liveSessionRepo: LiveSessionRepository,
+    @Inject(ATTENDANCE_REPOSITORY)
+    private readonly attendanceRepo: AttendanceRepository,
+    @Inject(GROUP_REPOSITORY)
+    private readonly groupRepo: GroupRepository,
     private readonly enrollmentsService: EnrollmentsService,
   ) {}
 
   private hasEnded(session: LiveSession, now: Date): boolean {
-    const endsAt =
-      new Date(session.scheduledAt).getTime() + session.durationMinutes * 60_000;
-    return endsAt <= now.getTime();
+    return new Date(session.endsAt).getTime() <= now.getTime();
+  }
+
+  private async sessionsForCourse(courseId: string): Promise<LiveSession[]> {
+    const groups = await this.groupRepo.findByCourse(courseId);
+    return this.liveSessionRepo.findByGroups(groups.map((g) => g.id));
   }
 
   async getSessionsForCourse(
     courseId: string,
     studentId: string,
   ): Promise<LiveSessionListResponse> {
-    // Zoom links are private to enrolled students.
+    // Meeting links are private to enrolled students.
     await this.enrollmentsService.assertEnrolled(courseId, studentId);
     const now = new Date();
-    const [sessions, attendance] = await Promise.all([
-      this.liveSessionRepo.findByCourse(courseId),
-      this.liveSessionRepo.findAttendanceForCourse(courseId, studentId),
-    ]);
+    const sessions = await this.sessionsForCourse(courseId);
+    const attendance = await this.attendanceRepo.findForStudent(
+      studentId,
+      sessions.map((s) => s.id),
+    );
     const upcoming: LiveSession[] = [];
     const past: LiveSessionWithAttendance[] = [];
     for (const session of sessions) {
       if (this.hasEnded(session, now)) {
-        const record = attendance.find((a) => a.sessionId === session.id);
+        const mark = attendance.find((a) => a.sessionId === session.id);
         past.push({
           ...session,
-          attended: record?.attended ?? false,
-          attendedAt: record?.attendedAt ?? null,
+          attended: mark?.status === 'present',
+          attendedAt: mark?.markedAt ?? null,
         });
       } else {
         upcoming.push(session);
@@ -74,7 +109,7 @@ export class LiveSessionsService {
   ): Promise<LiveSession | null> {
     await this.enrollmentsService.assertEnrolled(courseId, studentId);
     const now = new Date();
-    const sessions = await this.liveSessionRepo.findByCourse(courseId);
+    const sessions = await this.sessionsForCourse(courseId);
     return sessions.find((s) => !this.hasEnded(s, now)) ?? null;
   }
 
@@ -84,17 +119,19 @@ export class LiveSessionsService {
     studentId: string,
   ): Promise<AttendanceSummary> {
     const now = new Date();
-    const [sessions, attendance] = await Promise.all([
-      this.liveSessionRepo.findByCourse(courseId),
-      this.liveSessionRepo.findAttendanceForCourse(courseId, studentId),
-    ]);
+    const sessions = await this.sessionsForCourse(courseId);
     // Only sessions that have already happened can count against attendance.
     const heldSessions = sessions.filter((s) => this.hasEnded(s, now));
+    const attendance = await this.attendanceRepo.findForStudent(
+      studentId,
+      heldSessions.map((s) => s.id),
+    );
     const timeline = heldSessions.map((s) => ({
       sessionId: s.id,
       title: s.title,
       sessionDate: s.scheduledAt,
-      attended: attendance.find((a) => a.sessionId === s.id)?.attended ?? false,
+      attended:
+        attendance.find((a) => a.sessionId === s.id)?.status === 'present',
     }));
     const attendedSessions = timeline.filter((t) => t.attended).length;
     return {

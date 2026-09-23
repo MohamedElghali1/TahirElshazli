@@ -9,6 +9,8 @@ import { InMemoryRecordingRepository } from '../recordings/repositories/in-memor
 import { LiveSessionsService } from '../live-sessions/live-sessions.service.js';
 import { LIVE_SESSION_REPOSITORY } from '../live-sessions/interfaces/live-session-repository.interface.js';
 import { InMemoryLiveSessionRepository } from '../live-sessions/repositories/in-memory-live-session.repository.js';
+import { ATTENDANCE_REPOSITORY } from '../live-sessions/interfaces/attendance-repository.interface.js';
+import { InMemoryAttendanceRepository } from '../live-sessions/repositories/in-memory-attendance.repository.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { RolesGuard } from '../auth/roles.guard.js';
 import { EnrollmentsService } from '../enrollments/enrollments.service.js';
@@ -47,6 +49,7 @@ describe('CoursesController', () => {
         { provide: COURSE_REPOSITORY, useClass: InMemoryCourseRepository },
         { provide: RECORDING_REPOSITORY, useClass: InMemoryRecordingRepository },
         { provide: LIVE_SESSION_REPOSITORY, useClass: InMemoryLiveSessionRepository },
+        { provide: ATTENDANCE_REPOSITORY, useClass: InMemoryAttendanceRepository },
       ],
     })
       .overrideGuard(JwtAuthGuard)

@@ -1,9 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { DatabaseService } from '../../database/database.service.js';
-import { iso, isoOrNull } from '../../database/database.types.js';
+import { iso } from '../../database/database.types.js';
 import type {
-  AttendanceRecord,
   LiveSession,
   LiveSessionRepository,
   LiveSessionUpdate,
@@ -12,31 +11,34 @@ import type {
 
 interface SessionRow {
   id: string;
-  course_id: string;
+  group_id: string;
   title: string;
-  zoom_link: string;
+  meeting_link: string | null;
   scheduled_at: Date;
-  duration_minutes: number;
-}
-
-interface AttendanceRow {
-  session_id: string;
-  student_id: string;
-  attended: boolean;
-  attended_at: Date | null;
+  ends_at: Date;
+  assistant_id: string | null;
+  description: string | null;
+  private_notes: string | null;
+  is_visible: boolean;
+  state: 'planned' | 'published';
 }
 
 const SESSION_COLUMNS =
-  'id, course_id, title, zoom_link, scheduled_at, duration_minutes';
+  'id, group_id, title, meeting_link, scheduled_at, ends_at, assistant_id, description, private_notes, is_visible, state';
 
 function toSession(row: SessionRow): LiveSession {
   return {
     id: row.id,
-    courseId: row.course_id,
+    groupId: row.group_id,
     title: row.title,
-    zoomLink: row.zoom_link,
+    meetingLink: row.meeting_link,
     scheduledAt: iso(row.scheduled_at),
-    durationMinutes: row.duration_minutes,
+    endsAt: iso(row.ends_at),
+    assistantId: row.assistant_id,
+    description: row.description,
+    privateNotes: row.private_notes,
+    isVisible: row.is_visible,
+    state: row.state,
   };
 }
 
@@ -44,37 +46,18 @@ function toSession(row: SessionRow): LiveSession {
 export class PostgresLiveSessionRepository implements LiveSessionRepository {
   constructor(private readonly db: DatabaseService) {}
 
-  async findByCourse(courseId: string): Promise<LiveSession[]> {
+  async findByGroups(groupIds: readonly string[]): Promise<LiveSession[]> {
+    if (groupIds.length === 0) {
+      return [];
+    }
     const rows = await this.db.query<SessionRow>(
       `SELECT ${SESSION_COLUMNS}
        FROM live_sessions
-       WHERE course_id = $1
+       WHERE group_id = ANY($1::text[])
        ORDER BY scheduled_at`,
-      [courseId],
+      [groupIds],
     );
     return rows.map(toSession);
-  }
-
-  async findAttendanceForCourse(
-    courseId: string,
-    studentId: string,
-  ): Promise<AttendanceRecord[]> {
-    // Attendance keys on the session (CLAUDE.md §6.1), so scoping it to a
-    // course means joining through live_sessions rather than storing a
-    // redundant course_id on the attendance row.
-    const rows = await this.db.query<AttendanceRow>(
-      `SELECT a.session_id, a.student_id, a.attended, a.attended_at
-       FROM attendance a
-       JOIN live_sessions s ON s.id = a.session_id
-       WHERE s.course_id = $1 AND a.student_id = $2`,
-      [courseId, studentId],
-    );
-    return rows.map((row) => ({
-      sessionId: row.session_id,
-      studentId: row.student_id,
-      attended: row.attended,
-      attendedAt: isoOrNull(row.attended_at),
-    }));
   }
 
   async findById(sessionId: string): Promise<LiveSession | null> {
@@ -88,16 +71,21 @@ export class PostgresLiveSessionRepository implements LiveSessionRepository {
   async create(input: NewLiveSession): Promise<LiveSession> {
     const row = await this.db.queryOne<SessionRow>(
       `INSERT INTO live_sessions
-         (id, course_id, title, zoom_link, scheduled_at, duration_minutes)
-       VALUES ($1, $2, $3, $4, $5, $6)
+         (id, group_id, title, meeting_link, scheduled_at, ends_at, assistant_id, description, private_notes, is_visible, state)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING ${SESSION_COLUMNS}`,
       [
         randomUUID(),
-        input.courseId,
+        input.groupId,
         input.title,
-        input.zoomLink,
+        input.meetingLink,
         input.scheduledAt,
-        input.durationMinutes,
+        input.endsAt,
+        input.assistantId,
+        input.description,
+        input.privateNotes,
+        input.isVisible,
+        input.state,
       ],
     );
     if (!row) {
@@ -116,30 +104,51 @@ export class PostgresLiveSessionRepository implements LiveSessionRepository {
     // omitted it, which keeps this one statement instead of a SET list
     // assembled by string concatenation (CLAUDE.md §8 - no string-built SQL).
     // The casts are needed because a bare NULL parameter has no type.
+    //
+    // `meetingLink`, `assistantId`, `description` and `privateNotes` are
+    // nullable columns, so COALESCE cannot tell "leave alone" from "set to
+    // NULL" - both arrive as NULL. Each gets a `!== undefined` boolean
+    // alongside it that says which was meant, the same pattern
+    // `PostgresGroupRepository.update` uses for `GroupPatch`'s nullable trio.
     const row = await this.db.queryOne<SessionRow>(
       `UPDATE live_sessions SET
-         title            = COALESCE($2::text, title),
-         zoom_link        = COALESCE($3::text, zoom_link),
-         scheduled_at     = COALESCE($4::timestamptz, scheduled_at),
-         duration_minutes = COALESCE($5::integer, duration_minutes)
+         title          = COALESCE($2::text, title),
+         meeting_link   = CASE WHEN $3 THEN $4::text ELSE meeting_link END,
+         scheduled_at   = COALESCE($5::timestamptz, scheduled_at),
+         ends_at        = COALESCE($6::timestamptz, ends_at),
+         assistant_id   = CASE WHEN $7 THEN $8::text ELSE assistant_id END,
+         description    = CASE WHEN $9 THEN $10::text ELSE description END,
+         private_notes  = CASE WHEN $11 THEN $12::text ELSE private_notes END,
+         is_visible     = COALESCE($13::boolean, is_visible),
+         state          = COALESCE($14::text, state)
        WHERE id = $1
        RETURNING ${SESSION_COLUMNS}`,
       [
         sessionId,
         patch.title ?? null,
-        patch.zoomLink ?? null,
+        patch.meetingLink !== undefined,
+        patch.meetingLink ?? null,
         patch.scheduledAt ?? null,
-        patch.durationMinutes ?? null,
+        patch.endsAt ?? null,
+        patch.assistantId !== undefined,
+        patch.assistantId ?? null,
+        patch.description !== undefined,
+        patch.description ?? null,
+        patch.privateNotes !== undefined,
+        patch.privateNotes ?? null,
+        patch.isVisible ?? null,
+        patch.state ?? null,
       ],
     );
     return row ? toSession(row) : null;
   }
 
   async remove(sessionId: string): Promise<boolean> {
-    // attendance rows go with it through ON DELETE CASCADE. That is a real
-    // loss of history - the same caveat `ManageRecordingsService.remove`
-    // carries - and is why cancelling a session is audited with a before
-    // snapshot (CLAUDE.md §5.4).
+    // No FK-cascade side effect to describe here any more: attendance is a
+    // separate repository behind its own interface, and Postgres's
+    // `ON DELETE CASCADE` still removes those rows at the database level, but
+    // the caller is responsible for including that in its own before/after
+    // audit snapshot (`AttendanceRepository.removeForSession`).
     const rows = await this.db.query<{ id: string }>(
       'DELETE FROM live_sessions WHERE id = $1 RETURNING id',
       [sessionId],

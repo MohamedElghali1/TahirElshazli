@@ -21,6 +21,8 @@ import { RECORDING_REPOSITORY } from '../recordings/interfaces/recording-reposit
 import { InMemoryRecordingRepository } from '../recordings/repositories/in-memory-recording.repository.js';
 import { LIVE_SESSION_REPOSITORY } from '../live-sessions/interfaces/live-session-repository.interface.js';
 import { InMemoryLiveSessionRepository } from '../live-sessions/repositories/in-memory-live-session.repository.js';
+import { ATTENDANCE_REPOSITORY } from '../live-sessions/interfaces/attendance-repository.interface.js';
+import { InMemoryAttendanceRepository } from '../live-sessions/repositories/in-memory-attendance.repository.js';
 import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js';
 import { InMemoryUserRepository } from '../auth/repositories/in-memory-user.repository.js';
 import { AUDIT_LOG_REPOSITORY } from '../audit/interfaces/audit-log-repository.interface.js';
@@ -69,6 +71,7 @@ describe('RegistrationApprovalService', () => {
         { provide: ENROLLMENT_REPOSITORY, useClass: InMemoryEnrollmentRepository },
         { provide: RECORDING_REPOSITORY, useClass: InMemoryRecordingRepository },
         { provide: LIVE_SESSION_REPOSITORY, useClass: InMemoryLiveSessionRepository },
+        { provide: ATTENDANCE_REPOSITORY, useClass: InMemoryAttendanceRepository },
         { provide: AUDIT_LOG_REPOSITORY, useClass: InMemoryAuditLogRepository },
       ],
     }).compile();

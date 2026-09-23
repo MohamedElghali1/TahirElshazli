@@ -45,6 +45,8 @@ import { RECORDING_REPOSITORY } from '../recordings/interfaces/recording-reposit
 import { InMemoryRecordingRepository } from '../recordings/repositories/in-memory-recording.repository.js';
 import { LIVE_SESSION_REPOSITORY } from '../live-sessions/interfaces/live-session-repository.interface.js';
 import { InMemoryLiveSessionRepository } from '../live-sessions/repositories/in-memory-live-session.repository.js';
+import { ATTENDANCE_REPOSITORY } from '../live-sessions/interfaces/attendance-repository.interface.js';
+import { InMemoryAttendanceRepository } from '../live-sessions/repositories/in-memory-attendance.repository.js';
 import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js';
 import { Role } from '../auth/roles.enum.js';
 import { InMemoryUserRepository } from '../auth/repositories/in-memory-user.repository.js';
@@ -140,6 +142,7 @@ describe('Manage surface', () => {
         { provide: TASK_DRAFT_REPOSITORY, useClass: InMemoryTaskDraftRepository },
         { provide: RECORDING_REPOSITORY, useClass: InMemoryRecordingRepository },
         { provide: LIVE_SESSION_REPOSITORY, useClass: InMemoryLiveSessionRepository },
+        { provide: ATTENDANCE_REPOSITORY, useClass: InMemoryAttendanceRepository },
         { provide: USER_REPOSITORY, useClass: InMemoryUserRepository },
         { provide: AUDIT_LOG_REPOSITORY, useClass: InMemoryAuditLogRepository },
       ],
@@ -525,7 +528,7 @@ describe('Manage surface', () => {
     it('lets an assigned assistant read the schedule', async () => {
       const list = await staff.listLiveSessions('course-1', ASSIGNED_TA);
       expect(list.length).toBeGreaterThan(0);
-      expect(list[0]).toHaveProperty('zoomLink');
+      expect(list[0]).toHaveProperty('meetingLink');
     });
 
     it('404s the schedule of a course the assistant does not hold', async () => {
@@ -537,7 +540,10 @@ describe('Manage surface', () => {
     it('schedules a session the course then lists', async () => {
       const before = await staff.listLiveSessions('course-1', ADMIN);
       const created = await admin.createLiveSession('course-1', SESSION, ADMIN);
-      expect(created).toMatchObject({ courseId: 'course-1', title: 'Paper 2 clinic' });
+      // course-1's one group, per `InMemoryGroupRepository`'s seed - the
+      // course-to-group translation `ManageLiveSessionsService` is a stopgap
+      // around (migration 019 re-parented the table onto `group_id`).
+      expect(created).toMatchObject({ groupId: 'group-1', title: 'Paper 2 clinic' });
 
       const after = await staff.listLiveSessions('course-1', ADMIN);
       expect(after).toHaveLength(before.length + 1);
@@ -559,7 +565,7 @@ describe('Manage surface', () => {
       );
       expect(updated.scheduledAt).toBe('2026-10-02T18:00:00Z');
       expect(updated.title).toBe('Paper 2 clinic');
-      expect(updated.zoomLink).toBe(SESSION.zoomLink);
+      expect(updated.meetingLink).toBe(SESSION.zoomLink);
     });
 
     it('404s an edit or a cancel of a session that is not there', async () => {

@@ -139,24 +139,9 @@ INSERT INTO recording_progress (recording_id, student_id, watched_seconds, compl
   ('rec-6', 'student-1', 1140, false, NULL,                   '2026-03-11T19:00:00Z')
 ON CONFLICT (recording_id, student_id) DO NOTHING;
 
--- ============================================================
--- Live sessions and attendance
--- ============================================================
-
-INSERT INTO live_sessions (id, course_id, title, zoom_link, scheduled_at, duration_minutes) VALUES
-  ('sess-1', 'course-1', 'Revision: Moles & Titrations',        'https://zoom.us/j/98765432101', '2026-08-20T18:00:00Z',  90),
-  ('sess-2', 'course-1', 'Organic Chemistry Q&A',               'https://zoom.us/j/98765432102', '2026-08-27T18:00:00Z',  90),
-  ('sess-3', 'course-1', 'Past Paper Walkthrough - Paper 1',    'https://zoom.us/j/98765432103', '2026-09-03T18:00:00Z', 120),
-  ('sess-4', 'course-2', 'IELTS Speaking Practice',             'https://zoom.us/j/12345678901', '2026-08-29T16:00:00Z',  60),
-  ('sess-5', 'course-2', 'IELTS Writing Task 2 Clinic',         'https://zoom.us/j/12345678902', '2026-08-15T16:00:00Z',  60),
-  ('sess-6', 'course-2', 'IELTS Listening Strategies',          'https://zoom.us/j/12345678903', '2026-08-08T16:00:00Z',  60)
-ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO attendance (session_id, student_id, attended, attended_at) VALUES
-  ('sess-1', 'student-1', true,  '2026-08-20T18:02:00Z'),
-  ('sess-5', 'student-1', true,  '2026-08-15T16:01:00Z'),
-  ('sess-6', 'student-1', false, NULL)
-ON CONFLICT (session_id, student_id) DO NOTHING;
+-- Live sessions and attendance move to 003_group_fixtures.sql: since migration
+-- 019 (`SESS-1`) re-parents `live_sessions` onto `group_id`, the rows need the
+-- groups they reference to already exist, and groups are not seeded until 003.
 
 -- ============================================================
 -- Assessments and submissions

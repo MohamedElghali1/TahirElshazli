@@ -3,6 +3,10 @@ import { LiveSessionsController } from './live-sessions.controller.js';
 import { LiveSessionsService } from './live-sessions.service.js';
 import { LIVE_SESSION_REPOSITORY } from './interfaces/live-session-repository.interface.js';
 import { InMemoryLiveSessionRepository } from './repositories/in-memory-live-session.repository.js';
+import { ATTENDANCE_REPOSITORY } from './interfaces/attendance-repository.interface.js';
+import { InMemoryAttendanceRepository } from './repositories/in-memory-attendance.repository.js';
+import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interface.js';
+import { InMemoryGroupRepository } from '../groups/repositories/in-memory-group.repository.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { RolesGuard } from '../auth/roles.guard.js';
 import { EnrollmentsService } from '../enrollments/enrollments.service.js';
@@ -27,6 +31,8 @@ describe('LiveSessionsController', () => {
         { provide: ENROLLMENT_REPOSITORY, useClass: InMemoryEnrollmentRepository },
         LiveSessionsService,
         { provide: LIVE_SESSION_REPOSITORY, useClass: InMemoryLiveSessionRepository },
+        { provide: ATTENDANCE_REPOSITORY, useClass: InMemoryAttendanceRepository },
+        { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -59,7 +65,7 @@ describe('LiveSessionsController', () => {
       id: 'sess-2',
       scheduledAt: '2026-08-27T18:00:00Z',
     });
-    expect(next?.zoomLink).toMatch(/^https:\/\/zoom\.us\//);
+    expect(next?.meetingLink).toMatch(/^https:\/\/zoom\.us\//);
   });
 
   it('should treat a session as upcoming until it has actually ended', async () => {

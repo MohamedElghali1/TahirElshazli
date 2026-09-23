@@ -29,6 +29,8 @@ import { InMemoryMaterialRepository } from '../materials/repositories/in-memory-
 import { LiveSessionsService } from '../live-sessions/live-sessions.service.js';
 import { LIVE_SESSION_REPOSITORY } from '../live-sessions/interfaces/live-session-repository.interface.js';
 import { InMemoryLiveSessionRepository } from '../live-sessions/repositories/in-memory-live-session.repository.js';
+import { ATTENDANCE_REPOSITORY } from '../live-sessions/interfaces/attendance-repository.interface.js';
+import { InMemoryAttendanceRepository } from '../live-sessions/repositories/in-memory-attendance.repository.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { NOTIFICATION_REPOSITORY } from '../notifications/interfaces/notification-repository.interface.js';
 import { InMemoryNotificationRepository } from '../notifications/repositories/in-memory-notification.repository.js';
@@ -86,6 +88,7 @@ describe('DashboardController', () => {
         { provide: RECORDING_REPOSITORY, useClass: InMemoryRecordingRepository },
         { provide: MATERIAL_REPOSITORY, useClass: InMemoryMaterialRepository },
         { provide: LIVE_SESSION_REPOSITORY, useClass: InMemoryLiveSessionRepository },
+        { provide: ATTENDANCE_REPOSITORY, useClass: InMemoryAttendanceRepository },
         { provide: NOTIFICATION_REPOSITORY, useClass: InMemoryNotificationRepository },
       ],
     })

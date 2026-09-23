@@ -1,81 +1,95 @@
 import { Injectable } from '@nestjs/common';
 import type {
-  AttendanceRecord,
   LiveSession,
   LiveSessionRepository,
   LiveSessionUpdate,
   NewLiveSession,
 } from '../interfaces/live-session-repository.interface.js';
 
+/**
+ * Mirrors `InMemoryGroupRepository`'s seed exactly: group-1 studies course-1,
+ * group-2 studies course-2 - the same 1:1 mapping the old `courseId` values
+ * encoded, so every fixture that used to key off a course still resolves to
+ * the same rows keyed off that course's one group.
+ */
 const STUB_SESSIONS: LiveSession[] = [
   {
     id: 'sess-1',
-    courseId: 'course-1',
+    groupId: 'group-1',
     title: 'Revision: Moles & Titrations',
-    zoomLink: 'https://zoom.us/j/98765432101',
+    meetingLink: 'https://zoom.us/j/98765432101',
     scheduledAt: '2026-08-20T18:00:00Z',
-    durationMinutes: 90,
+    endsAt: '2026-08-20T19:30:00Z',
+    assistantId: null,
+    description: null,
+    privateNotes: null,
+    isVisible: true,
+    state: 'published',
   },
   {
     id: 'sess-2',
-    courseId: 'course-1',
+    groupId: 'group-1',
     title: 'Organic Chemistry Q&A',
-    zoomLink: 'https://zoom.us/j/98765432102',
+    meetingLink: 'https://zoom.us/j/98765432102',
     scheduledAt: '2026-08-27T18:00:00Z',
-    durationMinutes: 90,
+    endsAt: '2026-08-27T19:30:00Z',
+    assistantId: null,
+    description: null,
+    privateNotes: null,
+    isVisible: true,
+    state: 'published',
   },
   {
     id: 'sess-3',
-    courseId: 'course-1',
+    groupId: 'group-1',
     title: 'Past Paper Walkthrough - Paper 1',
-    zoomLink: 'https://zoom.us/j/98765432103',
+    meetingLink: 'https://zoom.us/j/98765432103',
     scheduledAt: '2026-09-03T18:00:00Z',
-    durationMinutes: 120,
+    endsAt: '2026-09-03T20:00:00Z',
+    assistantId: null,
+    description: null,
+    privateNotes: null,
+    isVisible: true,
+    state: 'published',
   },
   {
     id: 'sess-4',
-    courseId: 'course-2',
+    groupId: 'group-2',
     title: 'IELTS Speaking Practice',
-    zoomLink: 'https://zoom.us/j/12345678901',
+    meetingLink: 'https://zoom.us/j/12345678901',
     scheduledAt: '2026-08-29T16:00:00Z',
-    durationMinutes: 60,
+    endsAt: '2026-08-29T17:00:00Z',
+    assistantId: null,
+    description: null,
+    privateNotes: null,
+    isVisible: true,
+    state: 'published',
   },
   {
     id: 'sess-5',
-    courseId: 'course-2',
+    groupId: 'group-2',
     title: 'IELTS Writing Task 2 Clinic',
-    zoomLink: 'https://zoom.us/j/12345678902',
+    meetingLink: 'https://zoom.us/j/12345678902',
     scheduledAt: '2026-08-15T16:00:00Z',
-    durationMinutes: 60,
+    endsAt: '2026-08-15T17:00:00Z',
+    assistantId: null,
+    description: null,
+    privateNotes: null,
+    isVisible: true,
+    state: 'published',
   },
   {
     id: 'sess-6',
-    courseId: 'course-2',
+    groupId: 'group-2',
     title: 'IELTS Listening Strategies',
-    zoomLink: 'https://zoom.us/j/12345678903',
+    meetingLink: 'https://zoom.us/j/12345678903',
     scheduledAt: '2026-08-08T16:00:00Z',
-    durationMinutes: 60,
-  },
-];
-
-const STUB_ATTENDANCE: AttendanceRecord[] = [
-  {
-    sessionId: 'sess-1',
-    studentId: 'student-1',
-    attended: true,
-    attendedAt: '2026-08-20T18:02:00Z',
-  },
-  {
-    sessionId: 'sess-5',
-    studentId: 'student-1',
-    attended: true,
-    attendedAt: '2026-08-15T16:01:00Z',
-  },
-  {
-    sessionId: 'sess-6',
-    studentId: 'student-1',
-    attended: false,
-    attendedAt: null,
+    endsAt: '2026-08-08T17:00:00Z',
+    assistantId: null,
+    description: null,
+    privateNotes: null,
+    isVisible: true,
+    state: 'published',
   },
 ];
 
@@ -83,19 +97,12 @@ const STUB_ATTENDANCE: AttendanceRecord[] = [
 export class InMemoryLiveSessionRepository implements LiveSessionRepository {
   /**
    * A per-instance copy of the seed, and a copy of each row rather than a
-   * shallow clone of the array.
-   *
-   * Both halves matter now that this repository has writes. A shared array
-   * would leak a session scheduled in one test into the next; a shallow copy
-   * would leave `update` mutating the module-level seed object through a
-   * shared reference, which is the same class of bug the grading audit entry
-   * hit when `findSubmissionById` handed back the stored object.
+   * shallow clone of the array - a shared array would leak a session
+   * scheduled in one test into the next, and a shallow copy would leave
+   * `update` mutating the module-level seed object through a shared
+   * reference (CLAUDE.md §9's aliasing defect, shipped twice already).
    */
   private readonly sessions: LiveSession[] = STUB_SESSIONS.map((s) => ({ ...s }));
-
-  private readonly attendance: AttendanceRecord[] = STUB_ATTENDANCE.map((a) => ({
-    ...a,
-  }));
 
   /** Sequence for generated ids, so two writes in one millisecond differ. */
   private nextId = 1;
@@ -107,22 +114,11 @@ export class InMemoryLiveSessionRepository implements LiveSessionRepository {
     );
   }
 
-  async findByCourse(courseId: string): Promise<LiveSession[]> {
+  async findByGroups(groupIds: readonly string[]): Promise<LiveSession[]> {
+    const wanted = new Set(groupIds);
     return this.byDate(
-      this.sessions.filter((s) => s.courseId === courseId).map((s) => ({ ...s })),
+      this.sessions.filter((s) => wanted.has(s.groupId)).map((s) => ({ ...s })),
     );
-  }
-
-  async findAttendanceForCourse(
-    courseId: string,
-    studentId: string,
-  ): Promise<AttendanceRecord[]> {
-    const sessionIds = new Set(
-      this.sessions.filter((s) => s.courseId === courseId).map((s) => s.id),
-    );
-    return this.attendance
-      .filter((a) => a.studentId === studentId && sessionIds.has(a.sessionId))
-      .map((a) => ({ ...a }));
   }
 
   async findById(sessionId: string): Promise<LiveSession | null> {
@@ -135,11 +131,16 @@ export class InMemoryLiveSessionRepository implements LiveSessionRepository {
   async create(input: NewLiveSession): Promise<LiveSession> {
     const session: LiveSession = {
       id: `sess-${Date.now()}-${this.nextId++}`,
-      courseId: input.courseId,
+      groupId: input.groupId,
       title: input.title,
-      zoomLink: input.zoomLink,
+      meetingLink: input.meetingLink,
       scheduledAt: input.scheduledAt,
-      durationMinutes: input.durationMinutes,
+      endsAt: input.endsAt,
+      assistantId: input.assistantId,
+      description: input.description,
+      privateNotes: input.privateNotes,
+      isVisible: input.isVisible,
+      state: input.state,
     };
     this.sessions.push(session);
     return { ...session };
@@ -156,11 +157,14 @@ export class InMemoryLiveSessionRepository implements LiveSessionRepository {
     // Field by field rather than a spread of `patch`, so an explicit
     // `undefined` on the wire cannot blank a column.
     if (patch.title !== undefined) existing.title = patch.title;
-    if (patch.zoomLink !== undefined) existing.zoomLink = patch.zoomLink;
+    if (patch.meetingLink !== undefined) existing.meetingLink = patch.meetingLink;
     if (patch.scheduledAt !== undefined) existing.scheduledAt = patch.scheduledAt;
-    if (patch.durationMinutes !== undefined) {
-      existing.durationMinutes = patch.durationMinutes;
-    }
+    if (patch.endsAt !== undefined) existing.endsAt = patch.endsAt;
+    if (patch.assistantId !== undefined) existing.assistantId = patch.assistantId;
+    if (patch.description !== undefined) existing.description = patch.description;
+    if (patch.privateNotes !== undefined) existing.privateNotes = patch.privateNotes;
+    if (patch.isVisible !== undefined) existing.isVisible = patch.isVisible;
+    if (patch.state !== undefined) existing.state = patch.state;
     return { ...existing };
   }
 
@@ -170,14 +174,11 @@ export class InMemoryLiveSessionRepository implements LiveSessionRepository {
       return false;
     }
     this.sessions.splice(index, 1);
-    // Postgres does this through ON DELETE CASCADE on attendance; the memory
-    // driver has to do it by hand or a later attendance read joins onto rows
-    // for a session that no longer exists.
-    for (let i = this.attendance.length - 1; i >= 0; i -= 1) {
-      if (this.attendance[i]!.sessionId === sessionId) {
-        this.attendance.splice(i, 1);
-      }
-    }
+    // Unlike before this repository split, attendance is not deleted here:
+    // it is a separate aggregate behind its own repository now, and a
+    // repository must not reach across to another one (CLAUDE.md §5). The
+    // caller owns the cascade - see `AttendanceRepository.removeForSession`
+    // and its callers.
     return true;
   }
 }

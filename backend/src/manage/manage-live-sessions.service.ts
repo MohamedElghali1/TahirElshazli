@@ -4,17 +4,33 @@ import type {
   LiveSession,
   LiveSessionRepository,
   LiveSessionUpdate,
-  NewLiveSession,
 } from '../live-sessions/interfaces/live-session-repository.interface.js';
 import { LIVE_SESSION_REPOSITORY } from '../live-sessions/interfaces/live-session-repository.interface.js';
+import type { AttendanceRepository } from '../live-sessions/interfaces/attendance-repository.interface.js';
+import { ATTENDANCE_REPOSITORY } from '../live-sessions/interfaces/attendance-repository.interface.js';
+import type { GroupRepository } from '../groups/interfaces/group-repository.interface.js';
+import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interface.js';
 import type { CourseRepository } from '../courses/interfaces/course-repository.interface.js';
 import { COURSE_REPOSITORY } from '../courses/interfaces/course-repository.interface.js';
 import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import { actorRoleOf } from '../auth/actor-role.js';
 
-/** What a teacher supplies to schedule a session. `courseId` comes from the URL. */
-export type ScheduleLiveSessionInput = Omit<NewLiveSession, 'courseId'>;
+/** What a teacher supplies to schedule a session, in the old course-keyed DTO's shape. */
+export interface ScheduleLiveSessionInput {
+  title: string;
+  zoomLink: string;
+  scheduledAt: string;
+  durationMinutes: number;
+}
+
+/** A partial edit, same old shape - `CreateLiveSessionDto`'s fields, all optional. */
+export interface LiveSessionEditInput {
+  title?: string;
+  zoomLink?: string;
+  scheduledAt?: string;
+  durationMinutes?: number;
+}
 
 /**
  * The live-session schedule: the "make announcements of the live sessions"
@@ -28,13 +44,19 @@ export type ScheduleLiveSessionInput = Omit<NewLiveSession, 'courseId'>;
  * words here were about *him* - "he could upload his recordings and make
  * announcements of the live sessions" - so this ships the narrow reading.
  *
- * It takes a `StaffActor` rather than assuming admin for exactly that reason:
- * if §11 resolves the other way, the three write routes move from
- * `AdminManageController` to `StaffManageController` and this file is
- * untouched. Same shape, and same argument, as `ManageRecordingsService`.
- *
- * Zoom is a pasted link, not an API call (§11's other open Zoom question).
- * Nothing here provisions a meeting.
+ * **Stopgap, course-keyed, pending `SESS-1`'s S3 slice.** Migration 019
+ * re-parented `live_sessions` onto `group_id`; `PHASE_PLAN.md` §1.3/§3.1
+ * (`D-6`) rewrites this service to be group-scoped from birth - `mayReachGroup`
+ * instead of `assertAssigned(courseId)` - and deletes the three `/admin/*`
+ * routes it backs outright. That rewrite is out of scope for the slice that
+ * produced this file (S1/S2: schema and repositories only); until it lands,
+ * every method here still takes the course-keyed shape its callers
+ * (`AdminManageController`, `StaffManageController`) already use, and
+ * translates a course to "the one group that studies it"
+ * (`GroupRepository.findByCourse`) to reach the reshaped repository. That
+ * translation requires exactly one group per course, true of every fixture
+ * and of the codebase's current shape (migration 013); it is not the D-6
+ * authorization rewrite and must not be read as one.
  */
 @Injectable()
 export class ManageLiveSessionsService {
@@ -42,39 +64,75 @@ export class ManageLiveSessionsService {
     private readonly scope: StaffScopeService,
     @Inject(LIVE_SESSION_REPOSITORY)
     private readonly sessionRepo: LiveSessionRepository,
+    @Inject(ATTENDANCE_REPOSITORY)
+    private readonly attendanceRepo: AttendanceRepository,
+    @Inject(GROUP_REPOSITORY)
+    private readonly groupRepo: GroupRepository,
     @Inject(COURSE_REPOSITORY) private readonly courseRepo: CourseRepository,
     private readonly audit: AuditService,
     /** `DatabaseModule` is `@Global()`; this needs no import edge. */
     private readonly db: DatabaseService,
   ) {}
 
+  private toEndsAt(scheduledAt: string, durationMinutes: number): string {
+    return new Date(
+      new Date(scheduledAt).getTime() + durationMinutes * 60_000,
+    ).toISOString();
+  }
+
+  private durationMinutesOf(session: LiveSession): number {
+    return Math.round(
+      (new Date(session.endsAt).getTime() -
+        new Date(session.scheduledAt).getTime()) /
+        60_000,
+    );
+  }
+
   /**
-   * Shared read: the TA sees the schedule of a course they hold, the teacher
-   * sees any. A TA who will be marking attendance needs to know which sessions
-   * exist, and reading a schedule is not scheduling one.
+   * The course-to-group translation this whole file is a stopgap around. See
+   * the class comment. Requires exactly one group; a course with none or
+   * several is treated the same as "course not found" rather than guessed at,
+   * consistent with migration 019's own refusal to guess.
    */
+  private async soleGroupOf(courseId: string): Promise<string> {
+    const groups = await this.groupRepo.findByCourse(courseId);
+    if (groups.length !== 1) {
+      throw new NotFoundException('Course not found');
+    }
+    return groups[0]!.id;
+  }
+
   /**
-   * The scope check for a write addressed by session id. Collapses the
-   * out-of-scope 404 into the resource's own wording, so a real id on another
-   * course cannot be told apart from an id that never existed.
+   * The scope check for a write addressed by session id. Resolves the
+   * session's group back to its course (`groupRepo.findById`) and collapses
+   * the out-of-scope 404 into the resource's own wording, so a real id on
+   * another course cannot be told apart from an id that never existed.
+   * Returns the resolved `courseId`, which the caller needs for its audit
+   * entry - the same field the pre-reshape row carried directly.
    */
   private async assertMayWrite(
-    courseId: string,
+    session: LiveSession,
     actor: StaffActor,
-  ): Promise<void> {
+  ): Promise<string> {
+    const group = await this.groupRepo.findById(session.groupId);
+    if (!group) {
+      throw new NotFoundException('Live session not found');
+    }
     try {
-      await this.scope.assertAssigned(courseId, actor);
+      await this.scope.assertAssigned(group.courseId, actor);
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw new NotFoundException('Live session not found');
       }
       throw error;
     }
+    return group.courseId;
   }
 
   async list(courseId: string, actor: StaffActor): Promise<LiveSession[]> {
     await this.scope.assertAssigned(courseId, actor);
-    return this.sessionRepo.findByCourse(courseId);
+    const groups = await this.groupRepo.findByCourse(courseId);
+    return this.sessionRepo.findByGroups(groups.map((g) => g.id));
   }
 
   async create(
@@ -93,7 +151,20 @@ export class ManageLiveSessionsService {
         throw new NotFoundException('Course not found');
       }
 
-      const session = await this.sessionRepo.create({ courseId, ...input });
+      const groupId = await this.soleGroupOf(courseId);
+
+      const session = await this.sessionRepo.create({
+        groupId,
+        title: input.title,
+        meetingLink: input.zoomLink,
+        scheduledAt: input.scheduledAt,
+        endsAt: this.toEndsAt(input.scheduledAt, input.durationMinutes),
+        assistantId: null,
+        description: null,
+        privateNotes: null,
+        isVisible: true,
+        state: 'published',
+      });
 
       await this.audit.record({
         actorId: actor.id,
@@ -106,7 +177,7 @@ export class ManageLiveSessionsService {
         after: {
           title: session.title,
           scheduledAt: session.scheduledAt,
-          durationMinutes: session.durationMinutes,
+          endsAt: session.endsAt,
         },
       });
 
@@ -117,16 +188,34 @@ export class ManageLiveSessionsService {
   async update(
     sessionId: string,
     actor: StaffActor,
-    patch: LiveSessionUpdate,
+    patch: LiveSessionEditInput,
   ): Promise<LiveSession> {
     return this.db.runInTransaction(async () => {
       const existing = await this.sessionRepo.findById(sessionId);
       if (!existing) {
         throw new NotFoundException('Live session not found');
       }
-      await this.assertMayWrite(existing.courseId, actor);
+      const courseId = await this.assertMayWrite(existing, actor);
 
-      const updated = await this.sessionRepo.update(sessionId, patch);
+      const repoPatch: LiveSessionUpdate = {};
+      if (patch.title !== undefined) {
+        repoPatch.title = patch.title;
+      }
+      if (patch.zoomLink !== undefined) {
+        repoPatch.meetingLink = patch.zoomLink;
+      }
+      if (patch.scheduledAt !== undefined || patch.durationMinutes !== undefined) {
+        // `endsAt` is stored, not derived at read time (`DOMAIN_MODEL.md` §5), so
+        // touching either half of the old duration shape recomputes it from
+        // whichever value the patch left alone.
+        const scheduledAt = patch.scheduledAt ?? existing.scheduledAt;
+        const durationMinutes =
+          patch.durationMinutes ?? this.durationMinutesOf(existing);
+        repoPatch.scheduledAt = scheduledAt;
+        repoPatch.endsAt = this.toEndsAt(scheduledAt, durationMinutes);
+      }
+
+      const updated = await this.sessionRepo.update(sessionId, repoPatch);
       if (!updated) {
         throw new NotFoundException('Live session not found');
       }
@@ -137,22 +226,22 @@ export class ManageLiveSessionsService {
         action: 'live_session.updated',
         targetType: 'live_session',
         targetId: sessionId,
-        courseId: existing.courseId,
+        courseId,
         // `existing` was read before the write and both drivers hand back a copy,
         // so these are genuinely two different states. A repository returning the
         // stored object by reference would make before and after the same mutated
         // object - an entry that looks like evidence and shows nothing moving.
         before: {
           title: existing.title,
-          zoomLink: existing.zoomLink,
+          meetingLink: existing.meetingLink,
           scheduledAt: existing.scheduledAt,
-          durationMinutes: existing.durationMinutes,
+          endsAt: existing.endsAt,
         },
         after: {
           title: updated.title,
-          zoomLink: updated.zoomLink,
+          meetingLink: updated.meetingLink,
           scheduledAt: updated.scheduledAt,
-          durationMinutes: updated.durationMinutes,
+          endsAt: updated.endsAt,
         },
       });
 
@@ -163,9 +252,13 @@ export class ManageLiveSessionsService {
   /**
    * Cancel a session.
    *
-   * This destroys the attendance rows for it through the cascade, which is a
-   * real loss of history rather than a tidy-up - the same caveat recordings
-   * carry, and the reason the audit entry keeps a full `before` snapshot.
+   * Attendance is no longer removed by the repository's own cascade in the
+   * memory driver - it is a separate repository behind its own interface now,
+   * so this service owns the cascade explicitly, inside the same transaction.
+   * Postgres still does it via `ON DELETE CASCADE` regardless; calling
+   * `removeForSession` there too keeps both drivers doing the same thing for
+   * the same reason, and gives the audit entry its full `before` snapshot
+   * count without relying on the driver-specific cascade to have already run.
    */
   async remove(
     sessionId: string,
@@ -176,7 +269,9 @@ export class ManageLiveSessionsService {
       if (!existing) {
         throw new NotFoundException('Live session not found');
       }
-      await this.assertMayWrite(existing.courseId, actor);
+      const courseId = await this.assertMayWrite(existing, actor);
+
+      await this.attendanceRepo.removeForSession(sessionId);
 
       const removed = await this.sessionRepo.remove(sessionId);
       if (!removed) {
@@ -191,12 +286,12 @@ export class ManageLiveSessionsService {
         action: 'live_session.cancelled',
         targetType: 'live_session',
         targetId: sessionId,
-        courseId: existing.courseId,
+        courseId,
         before: {
           title: existing.title,
-          zoomLink: existing.zoomLink,
+          meetingLink: existing.meetingLink,
           scheduledAt: existing.scheduledAt,
-          durationMinutes: existing.durationMinutes,
+          endsAt: existing.endsAt,
         },
         after: null,
       });
