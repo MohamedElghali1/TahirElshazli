@@ -334,10 +334,10 @@ Unit-7 follow-ups (found, recorded, **not** fixed here):
 `ANN-5` `[ ]` Live reach preview · `ANN-6` `[ ]` Compose screen with student-view preview
 
 ### Phase 13 — Google Forms surface  *(frontend only — backend complete)*
-`WORK-1` `[ ]` Task results screen (`Score`/`Meter` split, understated-figure banner) ·
-`WORK-2` `[ ]` Unmatched queue + match-student ·
-`WORK-3` `[ ]` `SyncStatus` on every mirrored surface ·
-`WORK-4` `[ ]` Student Quizzes surface driven by `work_type: google_form` — **no quiz engine**
+`WORK-1` `[x]` Task results screen (`Score`/`Meter` split, understated-figure banner) — `manage/tasks/[id]/results/page.tsx`, reviewer-`APPROVED` (`docs/phases/unit-11/REVIEW.md`) ·
+`WORK-2` `[x]` Unmatched queue + match-student — same page, reviewer-`APPROVED` ·
+`WORK-3` `[x]` `SyncStatus` on every mirrored surface built this unit — present on the results screen ·
+`WORK-4` `[!]` Student Quizzes surface driven by `work_type: google_form` — **no quiz engine**. Blocked: every `agy` implementer model hit a shared account-wide quota (429) before this slice could be dispatched (2026-09-23). Not a requirements blocker — a precise, self-contained build checklist is in `docs/phases/unit-11/REVIEW.md` §"Slice C checklist", ready to execute once implementer capacity returns.
 
 ### Phase 14 — Settings and account
 `SET-1` `[ ]` `/me/profile` for staff · `SET-2` `[ ]` Notification preferences ·

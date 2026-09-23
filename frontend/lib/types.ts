@@ -298,6 +298,8 @@ export interface AssessmentListItem {
   title: string;
   description: string;
   type: AssessmentType;
+  /** How this task is delivered. Mirror of `workType` on the backend (`assessments.service.ts:51`). */
+  workType: WorkType;
   topics: string[];
   status: AssessmentStatus;
   availableFrom: string;
@@ -1396,4 +1398,96 @@ export interface UploadConfig {
   enabled: boolean;
   maxBytes: number;
   allowedMimeTypes: string[];
+}
+
+/* --- Work analytics (manage/work-analytics.controller.ts) -----------------
+   Mirrors work-analytics.service.ts and work-repository.interface.ts.
+   Field names copied verbatim from those files. */
+
+/**
+ * Where one student stands on one piece of work.
+ * Source: `work-analytics.service.ts` lines 31-35.
+ */
+export type WorkStatus = 'not_started' | 'submitted' | 'graded' | 'not_available';
+
+/**
+ * The teacher's per-assessment analytics.
+ * Source: `work-analytics.service.ts` `WorkAnalytics` interface (lines 57-84).
+ */
+export interface WorkAnalytics {
+  assessmentId: string;
+  title: string;
+  workType: WorkType;
+  expected: number;
+  completed: number;
+  notCompleted: number;
+  /** 0-100, rounded. Null when nothing was set for anybody. */
+  completionRate: number | null;
+  averageScore: number | null;
+  averageMaxScore: number | null;
+  /** 0-100, rounded. Null unless scores exist. */
+  averagePercentage: number | null;
+  /** >0 means figures above are UNDERSTATED. */
+  unmatched: number;
+  lastSyncedAt: string | null;
+  lastSyncError: string | null;
+  collectsEmail: boolean | null;
+}
+
+/**
+ * One row of the per-student roster.
+ * Source: `work-analytics.service.ts` `StudentWorkRow` (lines 86-93).
+ */
+export interface StudentWorkRow {
+  studentId: string;
+  studentName: string;
+  status: WorkStatus;
+  score: number | null;
+  maxScore: number | null;
+  submittedAt: string | null;
+}
+
+/**
+ * One response mirrored from an external system.
+ * Source: `work-repository.interface.ts` `ExternalResult` (lines 77-92).
+ */
+export interface ExternalResult {
+  id: string;
+  assessmentId: string;
+  provider: 'google_form';
+  externalId: string;
+  studentId: string | null;
+  respondentId: string | null;
+  score: number | null;
+  maxScore: number | null;
+  submittedAt: string;
+  raw: unknown;
+  syncedAt: string;
+}
+
+/**
+ * Outcome of a manual sync trigger.
+ * Source: `google-form-sync.service.ts` `SyncOutcome` (lines 19-33).
+ */
+export interface SyncOutcome {
+  fetched: number;
+  matched: number;
+  unmatched: number;
+  syncedAt: string;
+}
+
+/**
+ * One student's results across a course's work.
+ * Source: `work-analytics.service.ts` `StudentWorkResult` (lines 38-54).
+ */
+export interface StudentWorkResult {
+  assessmentId: string;
+  title: string;
+  workType: WorkType;
+  status: WorkStatus;
+  score: number | null;
+  maxScore: number | null;
+  scorePercentage: number | null;
+  submittedAt: string | null;
+  hasDetail: boolean;
 }

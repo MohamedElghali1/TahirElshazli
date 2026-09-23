@@ -1637,3 +1637,36 @@ prove the student uploaded it (`MARK-F5`). Equivalent to handing in someone else
 Reported **complete by the user** on 2026-09-23. It was performed by the user, not observed by the
 coordinator. The 7i screens (the student upload form, the multi-file marking view, the authoring gate)
 came after it.
+
+---
+
+## 2026-09-23 — Unit 11 (Google Forms surface): frontend mirror drift fixed, no `Modal` built, `WORK-4` blocked on implementer capacity
+
+**Frontend mirror drift, found and fixed.** `frontend/lib/types.ts`'s `AssessmentListItem` was
+missing `workType`, and `AssessmentDetail` had no `work: WorkExpectation` field at all — both
+already returned by the backend (`backend/src/assessments/assessments.service.ts`) on routes this
+unit's own screens call. This is exactly the class of bug §6 already warns about (the `AuditAction`
+union carrying 6 of 27 members). Fixed as a mirror correction in the same change that consumes the
+fields — not a backend change, not scope creep.
+
+**No `Modal`/`SlideOver` primitive built.** `docs/redesign-mapping.md` decision 4 proposed promoting
+one into `components/feedback/`, but it was never executed and no such component exists anywhere in
+`frontend/components/`. Building one is a cross-cutting decision other units will also want, not
+this unit's job. The "view raw response" and "match to student" interactions on the new task results
+screen use inline expansion / inline form controls instead — the same pattern
+`manage/students/[id]/page.tsx` already uses for its editor. If a shared `Modal` lands later, these
+can move to it without any data-layer rework.
+
+**`WORK-4` (student Quizzes surface) is blocked on implementer capacity, not a requirements
+question.** Every `agy` model available to this pipeline —`claude-sonnet-4-6`,
+`gemini-3.1-pro-high`, `claude-opus-4-6-thinking`, `gemini-3.8-flash-high` — returned
+`RESOURCE_EXHAUSTED (429)` on what turned out to be one shared account-wide quota, the same day.
+Recorded rather than worked around: a precise, self-contained build checklist is in
+`docs/phases/unit-11/REVIEW.md` §"Slice C checklist" so the next implementer (any model, once
+capacity returns, or a human) can act without re-deriving anything. Unit 11 stays `[~]` until it
+lands.
+
+**Blocker recorded, not built around:** `GET /staff/courses/:courseId/students/:studentId/work`
+(`StudentWorkResult[]`) has no consuming screen named in `WORK-1`..`WORK-4` or in
+`docs/redesign-mapping.md`'s screen lists. Not built this unit — left for whichever later unit
+(13/14, student or staff profile work) decides it wants a per-student cross-task work table.

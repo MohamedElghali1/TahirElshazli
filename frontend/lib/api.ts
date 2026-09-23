@@ -17,6 +17,7 @@ import type {
   CourseListItem,
   CourseRosterResponse,
   DashboardResponse,
+  ExternalResult,
   GradingQueueItem,
   GradingQueueResponse,
   GradingStatus,
@@ -48,6 +49,7 @@ import type {
   StudentDirectoryEntry,
   StudentHomeResponse,
   StudentProfile,
+  StudentWorkRow,
   AppNotification,
   BlogMediaInput,
   BlogCategory,
@@ -64,10 +66,12 @@ import type {
   Annotation,
   AnnotationPatch,
   AnnotationWrite,
+  SyncOutcome,
   TaskDraft,
   TaskVisibility,
   TaskDraftUpdate,
   TaskDraftWrite,
+  WorkAnalytics,
   WorkType,
   UploadConfig,
   UploadResult,
@@ -1001,6 +1005,55 @@ export const api = {
      */
     upload: (token: string, file: File, signal?: AbortSignal) =>
       uploadFile(token, file, signal),
+
+    /* --------------------------------------------------------------------
+       Work analytics (`WORK-1`…`WORK-3`). All seven routes live on
+       `/staff/assessments/:assessmentId/*` or `/staff/results/:resultId/*`.
+       Source: `manage/work-analytics.controller.ts`.
+       -------------------------------------------------------------------- */
+
+    /** Completion, averages, and the unmatched count for one assessment. */
+    workAnalytics: (token: string, assessmentId: string) =>
+      request<WorkAnalytics>(
+        `/staff/assessments/${assessmentId}/analytics`,
+        { token },
+      ),
+
+    /** Every expected student and where they stand, including non-starters. */
+    workResults: (token: string, assessmentId: string) =>
+      request<StudentWorkRow[]>(
+        `/staff/assessments/${assessmentId}/results`,
+        { token },
+      ),
+
+    /** Responses that matched no student — the reconciliation queue. */
+    workUnmatched: (token: string, assessmentId: string) =>
+      request<ExternalResult[]>(
+        `/staff/assessments/${assessmentId}/unmatched`,
+        { token },
+      ),
+
+    /** Pulls the latest responses from Google. POST because it rewrites the mirror. */
+    workSync: (token: string, assessmentId: string) =>
+      request<SyncOutcome>(`/staff/assessments/${assessmentId}/sync`, {
+        method: 'POST',
+        token,
+      }),
+
+    /** One response in full, including per-question answers. */
+    result: (token: string, resultId: string) =>
+      request<ExternalResult>(`/staff/results/${resultId}`, { token }),
+
+    /**
+     * Attributes an unmatched response to a student.
+     * Body: `{ studentId }` — mirrors `AttachResultDto`.
+     */
+    attachResult: (token: string, resultId: string, studentId: string) =>
+      request<ExternalResult>(`/staff/results/${resultId}/attach`, {
+        method: 'POST',
+        token,
+        body: { studentId },
+      }),
   },
 
   /* ----------------------------------------------------------------------

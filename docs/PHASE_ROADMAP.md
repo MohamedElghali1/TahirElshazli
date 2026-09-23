@@ -556,7 +556,7 @@ route.
 
 ---
 
-### Chat unit 11 — Google Forms surface `[ ]`  *(frontend only — the backend is complete)*
+### Chat unit 11 — Google Forms surface `[~]`  *(frontend only — the backend is complete)*
 
 **Scope** `WORK-1` … `WORK-4`. Seven routes already exist on `WorkAnalyticsController`.
 **Depends on** unit 4.
@@ -564,6 +564,17 @@ route.
 figure banner is **required**, not decorative: an unmatched response means the completion figures are
 understated, and the screen must say so. Student quizzes are driven by `work_type: 'google_form'` —
 **no first-party quiz engine.**
+
+**2026-09-23: `WORK-1`/`WORK-2`/`WORK-3` `[x]`, reviewer-`APPROVED`** (`docs/phases/unit-11/REVIEW.md`)
+— the task results screen, the unmatched-response queue with inline match-to-student, and
+`SyncStatus`, all built and independently verified (`tsc` 0, `npm run lint` clean, `npm test
+--workspace=backend` 660/660 unchanged). **`WORK-4` `[!]` blocked**, not by a requirements question
+but by implementer capacity: every `agy` model available to this pipeline
+(`claude-sonnet-4-6`, `gemini-3.1-pro-high`, `claude-opus-4-6-thinking`, `gemini-3.8-flash-high`)
+returned `RESOURCE_EXHAUSTED (429)` on a shared account-wide quota the same day. A ready-to-execute
+build checklist is recorded in `docs/phases/unit-11/REVIEW.md` §"Slice C checklist". Unit stays
+`[~]` until `WORK-4` lands — `PHASE_ROADMAP.md`'s own completion protocol (§2, condition 9: zero
+unresolved blockers) is not met yet.
 
 ---
 
