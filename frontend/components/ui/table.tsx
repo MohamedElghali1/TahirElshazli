@@ -48,6 +48,7 @@ export function Table<T>({
   onRowClick,
   rowLabel,
   empty,
+  stickyFirstColumn = false,
   className,
   ...rest
 }: {
@@ -63,6 +64,13 @@ export function Table<T>({
   rowLabel?: (row: T) => string;
   /** Rendered in place of the body when there are no rows. */
   empty?: React.ReactNode;
+  /**
+   * Keep the first column in view while the table scrolls sideways - the mark
+   * book's student names. Logical `start`, so in `dir="rtl"` it pins to the
+   * right, where the first column is. The cell takes the surface colour so
+   * scrolled cells pass under it rather than show through.
+   */
+  stickyFirstColumn?: boolean;
   className?: string;
 } & React.HTMLAttributes<HTMLDivElement>) {
   if (rows.length === 0 && empty) {
@@ -86,6 +94,7 @@ export function Table<T>({
                   'whitespace-nowrap border-b border-border-light p-2',
                   'text-xs font-medium leading-body text-fg-3',
                   ALIGN[column.align ?? 'start'],
+                  stickyFirstColumn && i === 0 && 'sticky start-0 z-[1] bg-surface',
                 )}
               >
                 <span className="inline-flex items-center gap-1">
@@ -150,6 +159,7 @@ export function Table<T>({
                       // primary ink and medium weight; everything after it is
                       // an attribute and steps back a tint.
                       colIndex === 0 ? 'font-medium text-fg' : 'text-fg-2',
+                      stickyFirstColumn && colIndex === 0 && 'sticky start-0 z-[1] bg-surface',
                     )}
                   >
                     {column.render(row, rowIndex)}

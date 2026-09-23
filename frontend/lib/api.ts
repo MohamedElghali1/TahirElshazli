@@ -59,6 +59,7 @@ import type {
   StaffTaskStatus,
   SubmissionMode,
   TaskSubmissions,
+  Markbook,
   Annotation,
   AnnotationPatch,
   AnnotationWrite,
@@ -306,6 +307,36 @@ async function uploadFile(
     throw new ApiError(res.status, messageFrom(payload, res.status), payload);
   }
   return payload as UploadResult;
+}
+
+/**
+ * A GET that answers a file rather than JSON - the mark-book CSV (`BOOK-3`).
+ * Same bearer token and the same error mapping as `request`, so a 404 on an
+ * unheld group reads exactly like one from the JSON route.
+ */
+async function requestBlob(
+  path: string,
+  token: string,
+): Promise<{ blob: Blob; filename: string | null }> {
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl()}${path}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    });
+  } catch (cause) {
+    if (cause instanceof DOMException && cause.name === 'AbortError') throw cause;
+    throw new ApiError(0, 'Could not reach the server. Check your connection.');
+  }
+  if (!res.ok) {
+    const text = await res.text();
+    const payload: unknown = text ? safeJson(text) : null;
+    throw new ApiError(res.status, messageFrom(payload, res.status), payload);
+  }
+  // The server mints the name from the group id; read it rather than rebuild it.
+  const disposition = res.headers.get('Content-Disposition') ?? '';
+  const match = /filename="([^"]+)"/.exec(disposition);
+  return { blob: await res.blob(), filename: match ? match[1]! : null };
 }
 
 /* ------------------------------------------------------------------------
@@ -671,6 +702,14 @@ export const api = {
     /** Stats plus a per-student table (`GROUP-4`). No PDF route - the browser's own print-to-PDF renders the file. */
     groupReport: (token: string, groupId: string) =>
       request<GroupReport>(`/staff/groups/${groupId}/report`, { token }),
+
+    /** Student × task grid for one group (`BOOK-1`). Missing marks are null. */
+    markbook: (token: string, groupId: string) =>
+      request<Markbook>(`/staff/groups/${groupId}/markbook`, { token }),
+
+    /** The same grid as a CSV file (`BOOK-3`), with the server-minted filename. */
+    markbookCsv: (token: string, groupId: string) =>
+      requestBlob(`/staff/groups/${groupId}/markbook.csv`, token),
 
     /**
      * Placement - a TA power, granted by the client in as many words (§2.2,

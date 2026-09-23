@@ -588,6 +588,51 @@ export interface GradingQueueItem {
   isLate: boolean;
 }
 
+/* --- the mark book (groups/groups.service.ts, unit 7) ------------------- */
+
+/** A mirrored Google Form cell (`D-46`). */
+export type MirroredStatus = 'no_response' | 'responded' | 'scored';
+
+export interface MarkbookTask {
+  assessmentId: string;
+  title: string;
+  workType: 'file_upload' | 'google_form';
+  /** `platform`: marked here. `mirrored`: copied from Google Forms (`D-46`). */
+  source: 'platform' | 'mirrored';
+  maxScore: number | null;
+  dueAt: string;
+  /** Mirrored only: when the platform last checked the form. */
+  lastSyncedAt: string | null;
+  /** Mirrored only: responses on the whole form that matched no student. */
+  unmatchedCount: number | null;
+}
+
+export interface MarkbookCell {
+  assessmentId: string;
+  /** Null renders an em-dash - never 0. */
+  score: number | null;
+  maxScore: number | null;
+  status: SubmissionStatus | MirroredStatus;
+}
+
+export interface MarkbookStudent {
+  studentId: string;
+  name: string;
+  /** `D-45`: average of work marked in the platform. Null renders an em-dash. */
+  averagePercent: number | null;
+  cells: MarkbookCell[];
+}
+
+export interface Markbook {
+  groupId: string;
+  groupName: string;
+  courseId: string;
+  courseTitle: string;
+  tasks: MarkbookTask[];
+  omittedTasks: { assessmentId: string; title: string; workType: WorkType }[];
+  students: MarkbookStudent[];
+}
+
 /* --- marking (manage/marking.service.ts, unit 7) ------------------------- */
 
 /** Pins and freehand strokes (`D-2`). The eraser is a DELETE, not a kind. */

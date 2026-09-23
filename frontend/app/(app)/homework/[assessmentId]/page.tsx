@@ -26,6 +26,7 @@ import {
   type TagTone,
 } from '@/components/ui';
 import { PageTitle } from '@/components/shell/page-chrome';
+import { MarkedCopy } from '@/components/marking/marked-copy';
 
 // `ASSESSMENT_STATUS_CHIP` (`lib/format.ts`, untouched by the redesign) still
 // speaks the legacy tone name `'neutral'` — the new `Tag` scale calls it `'gray'`.
@@ -260,18 +261,26 @@ function SubmitPanel({
   );
 }
 
-/* --- Marking: the score, the feedback, and the annotated PDF (§5.5) ------ */
+/* --- Marking: shown only once the work is RETURNED (MARK-2) -------------- */
 
+/**
+ * Keyed on `returnedAt`, not `correctedAt`: a saved mark is not the student's
+ * until it is handed back. The server already withholds the score, feedback,
+ * corrected copy and marks until then; this block only chooses the words.
+ */
 function Marking({ assessment }: { assessment: AssessmentDetail }) {
   const submission = assessment.submission;
 
-  if (!submission || submission.correctedAt === null) {
+  if (!submission || submission.returnedAt === null) {
     return (
       <Panel title="Marking">
         <p className="text-base text-fg-3">
-          {submission
-            ? 'Not marked yet. Your score and the corrected copy appear here once Dr. Tahir returns it.'
-            : 'Nothing submitted yet.'}
+          {!submission
+            ? 'Nothing submitted yet.'
+            : submission.correctedAt !== null
+              ? // Saved but not returned (A-2): resubmission is already closed.
+                'Your teacher is marking this. Your score and the marked paper appear here once it is returned.'
+              : 'Not marked yet. Your score and the marked paper appear here once it is returned.'}
         </p>
       </Panel>
     );
@@ -291,12 +300,18 @@ function Marking({ assessment }: { assessment: AssessmentDetail }) {
         </span>
         {percent !== null && <span className="num text-base text-fg-3">{percent}%</span>}
       </div>
-      <p className="num mt-2 text-xxs text-fg-4">Returned {formatDateTime(submission.correctedAt)}</p>
+      <p className="num mt-2 text-xxs text-fg-4">Returned {formatDateTime(submission.returnedAt)}</p>
 
       {submission.feedback && (
-        <p className="mt-4 whitespace-pre-line border-t border-border-light pt-4 text-base leading-body text-fg-2">
+        <p dir="auto" className="mt-4 whitespace-pre-line border-t border-border-light pt-4 text-base leading-body text-fg-2">
           {submission.feedback}
         </p>
+      )}
+
+      {submission.fileUrl && submission.annotations.length > 0 && (
+        <div className="mt-4 border-t border-border-light pt-4">
+          <MarkedCopy fileUrl={submission.fileUrl} annotations={submission.annotations} />
+        </div>
       )}
 
       {submission.annotatedFileUrl && (

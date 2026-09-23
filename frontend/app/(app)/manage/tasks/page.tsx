@@ -120,10 +120,23 @@ export default function TasksPage() {
       render: (t) => <Tag tone={STATUS[t.status].tone}>{STATUS[t.status].label}</Tag>,
     },
     {
+      label: 'Submissions',
+      // Uploaded work only: link and Google Form work is not handed in here (A-6).
+      render: (t) =>
+        t.workType === 'file_upload' ? (
+          <Link href={`/manage/tasks/${t.id}/submissions`} className="text-accent underline-offset-4 hover:underline">
+            Open
+          </Link>
+        ) : (
+          '—'
+        ),
+    },
+    {
       label: 'Marker',
       render: (t) => (
         <span className="inline-flex items-center gap-2 text-fg-2">
-          {t.markerName ?? 'First to open'}
+          {/* `D-43`: advisory, and claimed by the first saved mark - never by opening a page. */}
+          {t.markerName ?? 'First to mark'}
           {t.markerDrift && <Tag tone="amber">No longer reaches every group</Tag>}
         </span>
       ),
