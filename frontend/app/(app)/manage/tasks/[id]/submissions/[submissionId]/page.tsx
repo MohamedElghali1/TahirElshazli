@@ -66,6 +66,13 @@ export default function MarkingPage({
   params: Promise<{ id: string; submissionId: string }>;
 }) {
   const { id, submissionId } = use(params);
+  // Keyed by the paper: moving to the next student must start clean - no
+  // typed mark, unsaved stroke or page number carried over from the last one
+  // (review R-1), whether or not the router reuses this component.
+  return <MarkingView key={submissionId} id={id} submissionId={submissionId} />;
+}
+
+function MarkingView({ id, submissionId }: { id: string; submissionId: string }) {
   const { token, user } = useSession();
   const queue = useApi((t) => api.staff.taskSubmissions(t, id), [id]);
   const listed = useApi((t) => api.staff.annotations.list(t, submissionId), [submissionId]);

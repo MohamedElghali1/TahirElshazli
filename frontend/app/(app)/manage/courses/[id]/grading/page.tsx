@@ -50,7 +50,15 @@ export default function CourseGradingPage({ params }: { params: Promise<{ id: st
     <div className="flex flex-col gap-6 p-6">
       {/* Per-assessment averages across every student - CLAUDE.md §5.6, the
           number that says whether a task was hard or easy. */}
-      <Panel title="Assessment averages" bodyClassName="">
+      <Panel
+        title="Assessment averages"
+        action={
+          // `D-44`: the submissions below are the caller's own groups; these
+          // figures are the whole course's, the same for every viewer.
+          <span className="text-xs text-fg-4">Whole course, every group</span>
+        }
+        bodyClassName=""
+      >
         {loading && (
           <div className="flex justify-center p-8">
             <Loader label="Loading assessment averages" />
