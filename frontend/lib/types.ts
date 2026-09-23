@@ -1296,12 +1296,16 @@ export type TaskDraftUpdate = Partial<Omit<TaskDraftWrite, 'courseId'>>;
 export interface Announcement {
   id: string;
   audience: string;
-  audienceType: 'all_students' | 'course' | 'all_tas';
+  audienceType: 'all_students' | 'course' | 'all_tas' | 'group';
   courseId: string | null;
+  groupId: string | null;
   title: string;
   body: string;
+  mediaKind: 'image' | 'video' | 'youtube' | 'file' | null;
+  mediaUrl: string | null;
   postedBy: string;
-  postedAt: string;
+  createdAt: string;
+  publishedAt: string | null;
   /** How many people it reached, counted at send time - never a stored list. */
   recipientCount: number;
 }

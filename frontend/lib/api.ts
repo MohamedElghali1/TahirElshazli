@@ -918,20 +918,143 @@ export const api = {
     deleteTaskDraft: (token: string, draftId: string) =>
       request<void>(`/staff/task-drafts/${draftId}`, { method: 'DELETE', token }),
 
-    announcements: (token: string, courseId: string) =>
-      request<Announcement[]>(`/staff/courses/${courseId}/announcements`, {
-        token,
-      }),
+    announcementReach: (token: string, audience: string) =>
+      request<{ reach: number }>(`/staff/announcements/reach${qs({ audience })}`, { token }),
 
-    postAnnouncement: (
+    courseAnnouncements: (
       token: string,
       courseId: string,
-      body: { title: string; body: string },
+      query?: { limit?: number; offset?: number; status?: 'draft' | 'published' },
+    ) =>
+      request<Announcement[]>(
+        `/staff/courses/${courseId}/announcements${qs({
+          limit: query?.limit?.toString(),
+          offset: query?.offset?.toString(),
+          status: query?.status,
+        })}`,
+        { token },
+      ),
+
+    announcements: (
+      token: string,
+      courseId: string,
+      query?: { limit?: number; offset?: number; status?: 'draft' | 'published' },
+    ) =>
+      request<Announcement[]>(
+        `/staff/courses/${courseId}/announcements${qs({
+          limit: query?.limit?.toString(),
+          offset: query?.offset?.toString(),
+          status: query?.status,
+        })}`,
+        { token },
+      ),
+
+    postCourseAnnouncement: (
+      token: string,
+      courseId: string,
+      body: {
+        title: string;
+        body: string;
+        mediaKind?: 'image' | 'video' | 'youtube' | 'file' | null;
+        mediaUrl?: string | null;
+      },
     ) =>
       request<Announcement>(`/staff/courses/${courseId}/announcements`, {
         method: 'POST',
         token,
         body,
+      }),
+
+    postAnnouncement: (
+      token: string,
+      courseId: string,
+      body: {
+        title: string;
+        body: string;
+        mediaKind?: 'image' | 'video' | 'youtube' | 'file' | null;
+        mediaUrl?: string | null;
+      },
+    ) =>
+      request<Announcement>(`/staff/courses/${courseId}/announcements`, {
+        method: 'POST',
+        token,
+        body,
+      }),
+
+    updateCourseAnnouncement: (
+      token: string,
+      courseId: string,
+      id: string,
+      body: {
+        title?: string;
+        body?: string;
+        mediaKind?: 'image' | 'video' | 'youtube' | 'file' | null;
+        mediaUrl?: string | null;
+      },
+    ) =>
+      request<Announcement>(`/staff/courses/${courseId}/announcements/${id}`, {
+        method: 'PATCH',
+        token,
+        body,
+      }),
+
+    deleteCourseAnnouncement: (token: string, courseId: string, id: string) =>
+      request<void>(`/staff/courses/${courseId}/announcements/${id}`, {
+        method: 'DELETE',
+        token,
+      }),
+
+    groupAnnouncements: (
+      token: string,
+      groupId: string,
+      query?: { limit?: number; offset?: number; status?: 'draft' | 'published' },
+    ) =>
+      request<Announcement[]>(
+        `/staff/groups/${groupId}/announcements${qs({
+          limit: query?.limit?.toString(),
+          offset: query?.offset?.toString(),
+          status: query?.status,
+        })}`,
+        { token },
+      ),
+
+    postGroupAnnouncement: (
+      token: string,
+      groupId: string,
+      body: {
+        title: string;
+        body: string;
+        mediaKind?: 'image' | 'video' | 'youtube' | 'file' | null;
+        mediaUrl?: string | null;
+      },
+    ) =>
+      request<Announcement>(`/staff/groups/${groupId}/announcements`, {
+        method: 'POST',
+        token,
+        body,
+      }),
+
+    updateGroupAnnouncement: (
+      token: string,
+      groupId: string,
+      id: string,
+      body: {
+        title?: string;
+        body?: string;
+        mediaKind?: 'image' | 'video' | 'youtube' | 'file' | null;
+        mediaUrl?: string | null;
+      },
+    ) =>
+      request<Announcement>(`/staff/groups/${groupId}/announcements/${id}`, {
+        method: 'PATCH',
+        token,
+        body,
+      }),
+
+    deleteGroupAnnouncement: (token: string, groupId: string, id: string) =>
+      request<void>(`/staff/groups/${groupId}/announcements/${id}`, {
+        method: 'DELETE',
+        token,
       }),
 
     /* --------------------------------------------------------------------
@@ -1282,6 +1405,64 @@ export const api = {
 
     resendAssistantInvitation: (token: string, userId: string) =>
       request<{ ok: true }>(`/admin/assistants/${userId}/resend`, {
+        method: 'POST',
+        token,
+      }),
+
+    announcements: (
+      token: string,
+      query?: { limit?: number; offset?: number; status?: 'draft' | 'published' },
+    ) =>
+      request<Announcement[]>(
+        `/admin/announcements${qs({
+          limit: query?.limit?.toString(),
+          offset: query?.offset?.toString(),
+          status: query?.status,
+        })}`,
+        { token },
+      ),
+
+    createAnnouncement: (
+      token: string,
+      body: {
+        audience: string;
+        title: string;
+        body: string;
+        mediaKind?: 'image' | 'video' | 'youtube' | 'file' | null;
+        mediaUrl?: string | null;
+      },
+    ) =>
+      request<Announcement>('/admin/announcements', {
+        method: 'POST',
+        token,
+        body,
+      }),
+
+    updateAnnouncement: (
+      token: string,
+      id: string,
+      body: {
+        audience?: string;
+        title?: string;
+        body?: string;
+        mediaKind?: 'image' | 'video' | 'youtube' | 'file' | null;
+        mediaUrl?: string | null;
+      },
+    ) =>
+      request<Announcement>(`/admin/announcements/${id}`, {
+        method: 'PATCH',
+        token,
+        body,
+      }),
+
+    deleteAnnouncement: (token: string, id: string) =>
+      request<void>(`/admin/announcements/${id}`, {
+        method: 'DELETE',
+        token,
+      }),
+
+    publishAnnouncement: (token: string, id: string) =>
+      request<Announcement>(`/admin/announcements/${id}/publish`, {
         method: 'POST',
         token,
       }),
