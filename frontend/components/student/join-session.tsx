@@ -2,14 +2,14 @@
 
 import { PlusIcon, VideoCameraIcon } from '@phosphor-icons/react';
 import { cx } from '@/components/ui';
-import type { LiveSession } from '@/lib/types';
+import type { StudentSessionView } from '@/lib/types';
 
 export type SessionPhase = 'live' | 'soon' | 'scheduled';
 
-export function phaseOf(session: LiveSession, now: number): SessionPhase {
+export function phaseOf(session: StudentSessionView, now: number): SessionPhase {
   if (now === 0) return 'scheduled';
   const start = new Date(session.scheduledAt).getTime();
-  const end = start + session.durationMinutes * 60_000;
+  const end = new Date(session.endsAt).getTime();
   if (now >= start && now <= end) return 'live';
   if (start > now && start - now <= 30 * 60_000) return 'soon';
   return 'scheduled';
@@ -29,15 +29,21 @@ export function phaseOf(session: LiveSession, now: number): SessionPhase {
  *
  * `aria-disabled` is not used for the same reason: the element is not a
  * disabled button, it is not a button at all.
+ *
+ * `meetingLink` is absent from `StudentSessionView` until 30 minutes before
+ * `scheduledAt` (the T-30 rule, `student-session-view.ts`) - the empty state
+ * below covers both "no session" and "a session exists but the link is not
+ * released yet". Gated on the key's presence, never on a client-computed
+ * window; there is no countdown to a link that is not there.
  */
 export function JoinSessionAction({
   session,
   phase,
 }: {
-  session: LiveSession | null;
+  session: StudentSessionView | null;
   phase: SessionPhase;
 }) {
-  if (!session) {
+  if (!session || !session.meetingLink) {
     return (
       <span
         className={cx(
@@ -54,7 +60,7 @@ export function JoinSessionAction({
 
   return (
     <a
-      href={session.zoomLink}
+      href={session.meetingLink}
       target="_blank"
       rel="noreferrer noopener"
       className={cx(
@@ -88,7 +94,7 @@ export function JoinSessionAction({
  * folding it inside the `<a>` would make the link announce as
  * "Join Session 8:00PM 25/9/2026".
  */
-export function SessionStamp({ session }: { session: LiveSession | null }) {
+export function SessionStamp({ session }: { session: StudentSessionView | null }) {
   if (!session) return null;
   return (
     <span className="num hidden text-[var(--fs-xs)] text-fg-3 sm:inline">

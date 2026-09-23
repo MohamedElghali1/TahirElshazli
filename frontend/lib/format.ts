@@ -122,6 +122,27 @@ export const MATERIAL_CATEGORY_LABEL: Record<MaterialCategory, string> = {
   important_files: 'Important files',
 };
 
+/* --- week grids ------------------------------------------------------------
+   Shared by the student timetable and the staff week grid (`SESS-5`, `SESS-6`)
+   - both build a Monday-start local week and send its bounds to the server as
+   full ISO instants, never bare `YYYY-MM-DD` (the server widens a bare date
+   to `T23:59:59.999Z` UTC, off by two to three hours from Egypt local time). */
+
+/** Monday 00:00 local - the week that contains `d`. */
+export function startOfWeek(d: Date): Date {
+  const start = new Date(d);
+  start.setHours(0, 0, 0, 0);
+  const day = start.getDay(); // 0 = Sunday
+  start.setDate(start.getDate() + (day === 0 ? -6 : 1 - day));
+  return start;
+}
+
+export function addDays(d: Date, n: number): Date {
+  const next = new Date(d);
+  next.setDate(next.getDate() + n);
+  return next;
+}
+
 export function initials(name: string): string {
   return name
     .trim()

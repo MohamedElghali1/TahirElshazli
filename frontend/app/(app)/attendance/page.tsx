@@ -3,104 +3,104 @@
 import { api } from '@/lib/api';
 import { useApi } from '@/lib/session';
 import { formatDate } from '@/lib/format';
-import type { LiveSessionWithAttendance } from '@/lib/types';
-import { Panel, EmptyState, Loader, Tag, Button, Icon } from '@/components/ui';
+import type { AttendanceStatus, StudentAttendanceHistoryItem } from '@/lib/types';
+import { Panel, EmptyState, Loader, Tag, Button, StatNumber, InlineBanner } from '@/components/ui';
+import type { TagTone } from '@/components/ui';
 import { PageTitle } from '@/components/shell/page-chrome';
-import { CourseGate } from '@/components/student/course-gate';
-import { useSelectedCourse } from '@/components/shell/course-context';
+
+const STATUS_TAG: Record<AttendanceStatus, { label: string; tone: TagTone }> = {
+  present: { label: 'Present', tone: 'green' },
+  late: { label: 'Late', tone: 'amber' },
+  absent: { label: 'Absent', tone: 'red' },
+};
 
 /**
  * Attendance (`docs/PRODUCT_SPEC.md` §6: `[NEW]` as a route, "Three states,
- * with 'records can lag'"). The three-state enum is a recorded, undelivered
- * backend decision (`docs/CHANGELOG.md` "Attendance becomes a three-state
- * enum") — `attended` is still a boolean in `lib/types.ts`, so this reads the
- * two states that exist today rather than inventing the third. Course-scoped
- * via the rail's switcher.
+ * with 'records can lag'"). `GET /students/me/attendance` (`SESS-7`) is
+ * every group the student sits in, not one course at a time - the same
+ * whole-student scope as `/timetable`, so there is no course switcher here.
+ *
+ * `late` is its own count, folded into neither `present` nor `absent`
+ * (CLAUDE.md §11.1) - this is attendance, never progress and never
+ * performance, so the headline figures are `StatNumber`s, not a `Meter`.
  */
 export default function AttendancePage() {
-  const { courses, selectedId, loading } = useSelectedCourse();
+  const { data, error, loading, reload } = useApi(
+    (token) => api.students.attendance(token),
+    [],
+  );
 
   return (
     <>
       <PageTitle title="Attendance" />
-      <CourseGate loading={loading} hasCourses={Boolean(courses && courses.length > 0)}>
-        {selectedId && <AttendanceRecord courseId={selectedId} />}
-      </CourseGate>
-    </>
-  );
-}
-
-function AttendanceRecord({ courseId }: { courseId: string }) {
-  const { data, error, loading, reload } = useApi(
-    (token) => api.liveSessions.list(token, courseId),
-    [courseId],
-  );
-
-  const attended = data?.past.filter((s) => s.attended).length ?? 0;
-
-  return (
-    <div className="p-6">
-      <Panel
-        title="Attendance record"
-        action={
-          data && (
-            <span className="num text-xs text-fg-3">
-              {attended} / {data.past.length}
-            </span>
-          )
-        }
-        bodyClassName=""
-      >
-        {loading && (
-          <div className="flex justify-center p-8">
+      <div className="flex flex-col gap-4 p-6">
+        {loading && !data && (
+          <div className="flex justify-center p-12">
             <Loader label="Loading attendance" />
           </div>
         )}
         {error && (
-          <div className="p-6">
-            <EmptyState
-              icon="AlertTriangle"
-              title={error.message}
-              action={<Button onClick={reload}>Try again</Button>}
-            />
-          </div>
-        )}
-        {data && data.past.length === 0 && !loading && (
           <EmptyState
-            icon="CircleCheck"
-            title="No sessions yet"
-            description="Your record starts after the first timetabled class."
+            icon="AlertTriangle"
+            title={error.message}
+            action={<Button onClick={reload}>Try again</Button>}
           />
         )}
-        {data && data.past.length > 0 && (
-          <ul className="divide-y divide-border-light">
-            {data.past.map((session) => (
-              <li key={session.id}>
-                <PastRow session={session} />
-              </li>
-            ))}
-          </ul>
+
+        {data && (
+          <>
+            <InlineBanner tone="blue">
+              Records can lag behind the live session by a day or two.
+            </InlineBanner>
+
+            <Panel>
+              <div className="flex flex-wrap gap-8">
+                <StatNumber label="Present" value={`${data.present} / ${data.expected}`} caption={`${data.percentage}% attendance`} />
+                <StatNumber label="Late" value={data.late} />
+                <StatNumber label="Absent" value={data.absent} />
+              </div>
+            </Panel>
+
+            <Panel title="History" bodyClassName="">
+              {data.history.length === 0 ? (
+                <EmptyState
+                  icon="CircleCheck"
+                  title="No sessions yet"
+                  description="Your record starts after the first timetabled class ends."
+                />
+              ) : (
+                <ul className="divide-y divide-border-light">
+                  {data.history.map((item) => (
+                    <li key={item.sessionId}>
+                      <HistoryRow item={item} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Panel>
+          </>
         )}
-      </Panel>
-    </div>
+      </div>
+    </>
   );
 }
 
-function PastRow({ session }: { session: LiveSessionWithAttendance }) {
+function HistoryRow({ item }: { item: StudentAttendanceHistoryItem }) {
   return (
     <div className="flex items-center gap-3 px-4 py-3">
-      <Icon
-        name={session.attended ? 'CircleCheck' : 'X'}
-        size={16}
-        className={session.attended ? 'shrink-0 text-status-green-text' : 'shrink-0 text-status-red-text'}
-      />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-base text-fg">{session.title}</p>
-        <p className="num mt-1 text-xs text-fg-3">{formatDate(session.scheduledAt)}</p>
+        <p className="truncate text-base text-fg">{item.title}</p>
+        <p className="num mt-1 text-xs text-fg-3">{formatDate(item.scheduledAt)}</p>
       </div>
-      <Tag tone={session.attended ? 'green' : 'red'}>
-        {session.attended ? 'Attended' : 'Missed'}
-      </Tag>
+      {/* A missing mark is an em-dash, never a status - the session happened
+          but attendance has not been recorded for it yet. */}
+      {item.status === null ? (
+        <span className="font-mono text-fg-4" aria-label="Not yet recorded">
+          —
+        </span>
+      ) : (
+        <Tag tone={STATUS_TAG[item.status].tone}>{STATUS_TAG[item.status].label}</Tag>
+      )}
     </div>
   );
 }

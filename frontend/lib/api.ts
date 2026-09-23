@@ -26,7 +26,12 @@ import type {
   GroupSummary,
   GroupWrite,
   LiveSession,
-  LiveSessionListResponse,
+  NewSessionInput,
+  SessionPatch,
+  AttendanceSheetItem,
+  AttendanceMarkInput,
+  StudentSessionView,
+  StudentAttendanceResponse,
   ManageOverview,
   MaterialCategory,
   MaterialsByCategory,
@@ -154,7 +159,7 @@ export class ApiError extends Error {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   body?: unknown;
   token?: string | null;
   signal?: AbortSignal;
@@ -512,18 +517,6 @@ export const api = {
       }),
   },
 
-  liveSessions: {
-    list: (token: string, courseId: string) =>
-      request<LiveSessionListResponse>(`/courses/${courseId}/live-sessions`, {
-        token,
-      }),
-
-    next: (token: string, courseId: string) =>
-      request<LiveSession | null>(`/courses/${courseId}/live-sessions/next`, {
-        token,
-      }),
-  },
-
   reports: {
     summary: (token: string, courseId: string) =>
       request<ReportSummary>(`/courses/${courseId}/reports/summary`, { token }),
@@ -644,6 +637,62 @@ export const api = {
         method: 'DELETE',
         token,
       }),
+
+    /* --------------------------------------------------------------------
+       Sessions and attendance (`SESS-1` .. `SESS-5`). Group-grain: an
+       assistant reaches only sessions of groups they hold.
+       `from`/`to` must be full ISO instants with an offset, never a bare
+       `YYYY-MM-DD` - the server widens a bare date to `T23:59:59.999Z` UTC,
+       which is two to three hours off the school's Egypt-time week.
+       -------------------------------------------------------------------- */
+
+    sessions: {
+      /** The week grid (`SESS-5`). Both `planned` and `published`. */
+      list: (token: string, range: { from: string; to: string; groupId?: string }) =>
+        request<LiveSession[]>(`/staff/sessions${qs(range)}`, { token }),
+
+      /** The draft timetable (`SESS-4`): `planned` sessions only. */
+      planned: (token: string) =>
+        request<LiveSession[]>('/staff/sessions/planned', { token }),
+
+      create: (token: string, groupId: string, body: NewSessionInput) =>
+        request<LiveSession>(`/staff/groups/${groupId}/sessions`, {
+          method: 'POST',
+          token,
+          body,
+        }),
+
+      update: (token: string, sessionId: string, body: SessionPatch) =>
+        request<LiveSession>(`/staff/sessions/${sessionId}`, {
+          method: 'PATCH',
+          token,
+          body,
+        }),
+
+      cancel: (token: string, sessionId: string) =>
+        request<{ removed: true }>(`/staff/sessions/${sessionId}`, {
+          method: 'DELETE',
+          token,
+        }),
+
+      /** Idempotent: publishing an already-published session is a 200 no-op. */
+      publish: (token: string, sessionId: string) =>
+        request<LiveSession>(`/staff/sessions/${sessionId}/publish`, {
+          method: 'POST',
+          token,
+        }),
+
+      /** Every group member, each with a status or `null` when unmarked. No names - join client-side. */
+      attendance: (token: string, sessionId: string) =>
+        request<AttendanceSheetItem[]>(`/staff/sessions/${sessionId}/attendance`, { token }),
+
+      markAttendance: (token: string, sessionId: string, entries: AttendanceMarkInput[]) =>
+        request<{ recorded: true }>(`/staff/sessions/${sessionId}/attendance`, {
+          method: 'PUT',
+          token,
+          body: { entries },
+        }),
+    },
 
     /* --------------------------------------------------------------------
        Authoring (§5.18). On /staff/* and not /admin/*: the client settled
@@ -1138,5 +1187,19 @@ export const api = {
      */
     announcements: (token: string, courseId: string) =>
       request<Announcement[]>(`/courses/${courseId}/announcements`, { token }),
+
+    /**
+     * The week grid (`SESS-6`). Every group the caller sits in, never a
+     * `groupId` from the client - the route takes none.
+     *
+     * `from`/`to` must be full ISO instants with an offset, never a bare
+     * `YYYY-MM-DD` (see the note on `staff.sessions`).
+     */
+    timetable: (token: string, range: { from: string; to: string }) =>
+      request<StudentSessionView[]>(`/students/me/timetable${qs(range)}`, { token }),
+
+    /** `SESS-7`: three-state counts (`late` its own), and the mark history. */
+    attendance: (token: string) =>
+      request<StudentAttendanceResponse>('/students/me/attendance', { token }),
   },
 };

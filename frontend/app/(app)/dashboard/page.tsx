@@ -15,9 +15,9 @@ import type {
   AppNotification,
   AssessmentListItem,
   CourseListItem,
-  LiveSession,
   MaterialCategory,
   StudentHomeEntry,
+  StudentSessionView,
 } from '@/lib/types';
 import {
   Panel,
@@ -105,13 +105,21 @@ function useNow(): number {
 
 type SessionPhase = 'live' | 'soon' | 'scheduled';
 
-function phaseOf(session: LiveSession, now: number): SessionPhase {
+function phaseOf(session: StudentSessionView, now: number): SessionPhase {
   if (now === 0) return 'scheduled';
   const start = new Date(session.scheduledAt).getTime();
-  const end = start + session.durationMinutes * 60_000;
+  const end = new Date(session.endsAt).getTime();
   if (now >= start && now <= end) return 'live';
   if (start > now && start - now <= SOON_MS) return 'soon';
   return 'scheduled';
+}
+
+/** Session length in minutes, for the hero's inline caption - arithmetic on
+ *  the two timestamps the server sends, not a computed authorization window. */
+function sessionMinutes(session: StudentSessionView): number {
+  return Math.round(
+    (new Date(session.endsAt).getTime() - new Date(session.scheduledAt).getTime()) / 60_000,
+  );
 }
 
 function minutesUntil(iso: string, now: number): number {
@@ -225,10 +233,14 @@ export default function DashboardPage() {
   /* --- the one session the hero and the header both speak about ------- */
   const nextSession = useMemo(() => {
     const upcoming = entries
-      .filter((e): e is StudentHomeEntry & { nextLiveSession: LiveSession } =>
+      .filter((e): e is StudentHomeEntry & { nextLiveSession: StudentSessionView } =>
         Boolean(e.nextLiveSession),
       )
-      .map((e) => ({ session: e.nextLiveSession, courseTitle: e.course.title }))
+      .map((e) => ({
+        session: e.nextLiveSession,
+        courseTitle: e.course.title,
+        courseId: e.course.id,
+      }))
       .sort(
         (a, b) => new Date(a.session.scheduledAt).getTime() - new Date(b.session.scheduledAt).getTime(),
       );
@@ -373,7 +385,7 @@ function Hero({
   primaryCourseId,
 }: {
   firstName: string;
-  session: { session: LiveSession; courseTitle: string } | null;
+  session: { session: StudentSessionView; courseTitle: string; courseId: string } | null;
   phase: SessionPhase;
   announcement: AppNotification | null;
   needsAction: number;
@@ -397,21 +409,26 @@ function Hero({
             {session.courseTitle} ·{' '}
             <span className="num">
               {phase === 'live'
-                ? `${formatTime(session.session.scheduledAt)} · ${session.session.durationMinutes} min`
+                ? `${formatTime(session.session.scheduledAt)} · ${sessionMinutes(session.session)} min`
                 : `starts in ${minutesUntil(session.session.scheduledAt, now)} min`}
             </span>
           </p>
           <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-            <a
-              href={session.session.zoomLink}
-              target="_blank"
-              rel="noreferrer noopener"
-              className="inline-flex h-6 items-center gap-2 rounded-md bg-accent px-3 text-xs font-medium text-fg-invert transition-colors duration-[var(--dur-fast)] ease-[var(--ease)] hover:bg-accent-hover"
-            >
-              Join now
-              <Icon name="ArrowUpRight" size={12} />
-            </a>
-            <CourseLink courseId={session.session.courseId} href="/timetable">
+            {/* `meetingLink` is absent until T-30 - gated on the key's
+                presence, not on `phase`, which only says the hero should
+                feature this session, not that the link has been released. */}
+            {session.session.meetingLink && (
+              <a
+                href={session.session.meetingLink}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="inline-flex h-6 items-center gap-2 rounded-md bg-accent px-3 text-xs font-medium text-fg-invert transition-colors duration-[var(--dur-fast)] ease-[var(--ease)] hover:bg-accent-hover"
+              >
+                Join now
+                <Icon name="ArrowUpRight" size={12} />
+              </a>
+            )}
+            <CourseLink courseId={session.courseId} href="/timetable">
               <HeroLinkBody>
                 <Icon name="CalendarEvent" size={12} />
                 Timetable

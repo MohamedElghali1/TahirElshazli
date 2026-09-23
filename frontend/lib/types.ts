@@ -177,25 +177,108 @@ export interface CatalogItem {
 
 /* --- live sessions (live-sessions/interfaces/live-session-repository) -----
    A live session is a scheduled time plus a meeting link the teacher pastes
-   (Google Meet, Zoom, anything). There is no embed and no API automation. */
+   (Google Meet, Zoom, anything). There is no embed and no API automation.
+   `groupId` replaces `courseId` (migration 019, `SESS-1`) - a session belongs
+   to the group that meets in it, not to the course directly. No `mode`: `D-9`
+   collapsed "on-ground/online" to just "live". */
 
+/** The staff shape, everything a teacher/admin/assistant may see. */
 export interface LiveSession {
   id: string;
-  courseId: string;
+  groupId: string;
   title: string;
-  zoomLink: string;
+  /** `null` when a `planned` session has no link pasted yet. */
+  meetingLink: string | null;
   scheduledAt: string;
-  durationMinutes: number;
+  endsAt: string;
+  /** Display-only co-teaching pairing, never an authorization input. */
+  assistantId: string | null;
+  description: string | null;
+  /** Staff-only. Never present on the student view. */
+  privateNotes: string | null;
+  isVisible: boolean;
+  /** `planned` is the draft timetable; `published` is what students may see. */
+  state: 'planned' | 'published';
 }
 
-export interface LiveSessionWithAttendance extends LiveSession {
-  attended: boolean;
-  attendedAt: string | null;
+/** The body of `POST /staff/groups/:groupId/sessions`. */
+export interface NewSessionInput {
+  title: string;
+  meetingLink?: string | null;
+  scheduledAt: string;
+  endsAt: string;
+  assistantId?: string | null;
+  description?: string | null;
+  privateNotes?: string | null;
+  isVisible?: boolean;
+  state?: 'planned' | 'published';
 }
 
-export interface LiveSessionListResponse {
-  upcoming: LiveSession[];
-  past: LiveSessionWithAttendance[];
+/** The body of `PATCH /staff/sessions/:sessionId`. Every field optional. */
+export type SessionPatch = Partial<NewSessionInput>;
+
+/**
+ * The session as a student may see it (`live-sessions/student-session-view.ts`),
+ * an explicit allow-list - `privateNotes` and `assistantId` never appear.
+ *
+ * `meetingLink` is `?:`, not `| null` - the server omits the key entirely
+ * until 30 minutes before `scheduledAt` (the T-30 rule). Gate a Join control
+ * on the key's presence (`'meetingLink' in session` or a truthiness check),
+ * never on a client-computed time window.
+ */
+export interface StudentSessionView {
+  id: string;
+  groupId: string;
+  title: string;
+  scheduledAt: string;
+  endsAt: string;
+  description: string | null;
+  meetingLink?: string;
+}
+
+export type AttendanceStatus = 'present' | 'absent' | 'late';
+
+/** One row of the student's own attendance history. `status` and `markedAt`
+ *  are `null` when the session carries no mark for them - never `absent`. */
+export interface StudentAttendanceHistoryItem {
+  sessionId: string;
+  groupId: string;
+  title: string;
+  scheduledAt: string;
+  status: AttendanceStatus | null;
+  markedAt: string | null;
+}
+
+/**
+ * `GET /students/me/attendance` (`SESS-7`). `late` is its own count, folded
+ * into neither `present` nor `absent` - attendance, never progress or
+ * performance (CLAUDE.md §11.1).
+ */
+export interface StudentAttendanceResponse {
+  present: number;
+  late: number;
+  absent: number;
+  /** Published sessions of the student's groups that have already ended. */
+  expected: number;
+  /** `present / expected`, rounded; `0` when `expected` is `0`. */
+  percentage: number;
+  history: StudentAttendanceHistoryItem[];
+}
+
+/**
+ * One row on the staff attendance sheet (`GET /staff/sessions/:sessionId/attendance`).
+ * No student name - join it client-side from `api.staff.groupMembers`.
+ * An unmarked student has status `null`, never `absent`.
+ */
+export interface AttendanceSheetItem {
+  studentId: string;
+  status: AttendanceStatus | null;
+}
+
+/** One student's mark within the whole-sheet bulk write. */
+export interface AttendanceMarkInput {
+  studentId: string;
+  status: AttendanceStatus;
 }
 
 /* --- materials (materials/interfaces/material-repository) ----------------- */
@@ -363,7 +446,7 @@ export interface DashboardResponse {
   };
   progress: CourseProgress;
   stats: DashboardStats;
-  nextLiveSession: LiveSession | null;
+  nextLiveSession: StudentSessionView | null;
   quickAccess: MaterialCounts;
   unreadNotifications: number;
 }
@@ -381,7 +464,7 @@ export interface StudentHomeEntry {
   course: CourseListItem;
   stats: DashboardStats;
   quickAccess: MaterialCounts;
-  nextLiveSession: LiveSession | null;
+  nextLiveSession: StudentSessionView | null;
   assessments: AssessmentListItem[];
 }
 
