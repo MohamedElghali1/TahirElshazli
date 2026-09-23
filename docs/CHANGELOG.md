@@ -1559,3 +1559,57 @@ inconsistency `D-36` recorded rather than silently fixed is now fixed deliberate
 student visibility from `corrected_at` to `returned_at`; leaving the new column NULL would have
 taken away, on deploy, every mark every student can currently see. Those marks were returned under
 the old rule, which had no way to hold one back.
+
+## 2026-09-23 — `D-41`: `D-40` narrowed to pdf + docx; zip refused
+
+`D-40` said `pdf_upload` admits **pdf, docx, zip**. Implementing it surfaced that the global upload
+whitelist (`common/storage/upload-types.ts`) admits neither docx nor zip, so honouring it meant
+widening the whitelist — a `SECURITY.md` §4 decision, not a detail.
+
+**Ruled (user, 2026-09-23): pdf and docx. Zip is refused.** A zip is a container that can hold
+anything, and §8's rule is that uploads admit nothing executable; a PDF and a docx are
+non-executable containers served with `nosniff` from a server that executes nothing, which is the
+same argument that already admits PDF. Legacy `application/msword` was not asked for and is not
+added.
+
+**A pre-existing gap found in the same pass, and fixed rather than filed (user's call):** a task's
+`allowedFileTypes` was **enforced nowhere**. The upload route validates only the *global* whitelist
+and does not know which task a file is for, so a task stating "PDF only" accepted a `.png`. Open
+since unit 1.
+
+The fix is cheap because of a property already in the code: `UploadsService` mints the stored
+filename's extension from the **already-validated** MIME type and never reads the client's filename,
+so **the extension on a stored URL is server-controlled**. Submit-time enforcement can read it
+without trusting the client.
+
+**Caught in review — do not derive a submission mode from `UploadType.kind`.** The first
+implementation built `pdf_upload`'s permitted set from the whitelist entries with `kind: 'file'`.
+That bucket is `{pdf, txt, docx}`, so a task set to `pdf_upload` silently accepted a **`.txt`** —
+contradicting this very decision, with no test failing, because the tests asserted only the types
+the decision names. `kind` answers *"what is this file"* for the storage layer; it does not answer
+*"what does this mode admit"*, which is a product question. The two nearly coincide, which is what
+makes the coupling easy to write and invisible once written: the next document type added to the
+whitelist would have widened every existing `pdf_upload` task with nothing to catch it.
+
+`pdf_upload` now names its two MIME types outright and derives only the **extensions** from
+`ALLOWED_UPLOAD_TYPES`, keeping one MIME-to-extension mapping. `photo_upload` still derives from
+`kind: 'image'` and should — "is this an image" genuinely is a property of the file, so a new image
+type ought to widen it automatically. The `.txt`-refused test was added and **proved able to fail**
+against the old derivation before the fix landed (`CLAUDE.md` §10).
+
+## 2026-09-23 — migration `020` passes the empty-schema gate
+
+Run by the unit 8 session on **PostgreSQL 15.19**, `psql -v ON_ERROR_STOP=1`, 001→020 in
+lexicographic order against a database created empty moments before. `020` extracted from `8eb6ad9`
+via `git show`; no merge, no checkout touched. It applied on top of a schema that already carried
+019's session/attendance reshaping, which is the harder case.
+
+Verified against the live catalog, not the file: `submission_files` with its `(submission_id,
+position)` unique constraint and both CHECKs; `submission_annotations` with all five CHECKs including
+the `kind <> 'stroke' OR path IS NOT NULL` pair; `returned_at` as `timestamptz`, **datetime_precision
+3**, nullable; `link_url` text, nullable.
+
+**What this does and does not prove.** `CLAUDE.md` §9's gate — the migration applies from nothing —
+is **met**. The **backfill's behaviour is not yet proven**: that run was bare `psql`, so the three
+vitest integration tests (`describe('migration 020')`) did not execute, and on an empty schema the
+`UPDATE` touches zero rows regardless. Those still need a seeded run.

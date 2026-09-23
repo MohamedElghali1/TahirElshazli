@@ -61,6 +61,16 @@ export const ALLOWED_UPLOAD_TYPES: Readonly<Record<string, UploadType>> = {
   'audio/mp4': { extension: 'm4a', kind: 'audio' },
   'application/pdf': { extension: 'pdf', kind: 'file' },
   'text/plain': { extension: 'txt', kind: 'file' },
+  // `D-41`: a student handing in a Word document is the real case behind
+  // `pdf_upload`. **Zip was asked for and refused** - it is a container that
+  // can hold anything, and §8 admits nothing executable. A docx is an
+  // non-executable container served with nosniff from a server that executes
+  // nothing, which is the argument that already admits PDF. Legacy
+  // `application/msword` is deliberately absent: not asked for.
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': {
+    extension: 'docx',
+    kind: 'file',
+  },
 };
 
 /**

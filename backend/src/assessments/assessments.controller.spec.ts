@@ -302,4 +302,366 @@ describe('AssessmentsController', () => {
       ).rejects.toThrow();
     });
   });
+
+  /**
+   * File-type and submission-mode enforcement (slice 7a, gap 1 & 2).
+   *
+   * Each case creates a fresh assessment with the properties under test and
+   * targets it at `group-1` (student-1's group in course-1), then verifies
+   * both the accepted and refused direction. CLAUDE.md §10: "a test that only
+   * proves the happy path is not evidence of a boundary."
+   */
+  describe('allowedFileTypes and submissionModes enforcement', () => {
+    let assessmentRepo: import('./repositories/in-memory-assessment.repository.js').InMemoryAssessmentRepository;
+
+    // A window that is open relative to the pinned clock (2026-08-27T12:00:00Z).
+    const OPEN_WINDOW = {
+      availableFrom: '2026-08-01T00:00:00Z',
+      availableTo: '2026-09-30T23:59:59Z',
+      dueAt: '2026-09-30T23:59:59Z',
+    };
+
+    // Base assessment fields shared by all test tasks created in this block.
+    const BASE_ASSESSMENT = {
+      courseId: 'course-1',
+      lessonId: null,
+      description: 'enforcement test',
+      instructions: 'enforcement test',
+      type: 'homework' as const,
+      workType: 'file_upload' as const,
+      externalUrl: null,
+      topics: [],
+      maxScore: 10,
+      maxFileSizeBytes: 10 * 1024 * 1024,
+      visibility: 'published' as const,
+      markerId: null,
+      allowResubmission: true,
+      draftId: null,
+      attachments: [],
+      ...OPEN_WINDOW,
+    };
+
+    beforeEach(async () => {
+      // Re-compile the module to get a fresh repository instance with no
+      // carry-over from the shared `controller` setup above.
+      const mod = await Test.createTestingModule({
+        controllers: [AssessmentsController],
+        providers: [
+          EnrollmentsService,
+          { provide: ENROLLMENT_REPOSITORY, useClass: InMemoryEnrollmentRepository },
+          { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },
+          StudentGroupsService,
+          AssessmentsService,
+          { provide: ASSESSMENT_REPOSITORY, useClass: InMemoryAssessmentRepository },
+          { provide: WORK_REPOSITORY, useClass: InMemoryWorkRepository },
+        ],
+      })
+        .overrideGuard(JwtAuthGuard)
+        .useValue({ canActivate: () => true })
+        .overrideGuard(RolesGuard)
+        .useValue({ canActivate: () => true })
+        .compile();
+
+      controller = mod.get(AssessmentsController);
+      assessmentRepo = mod.get(ASSESSMENT_REPOSITORY);
+    });
+
+    /** Creates an assessment and targets it at group-1 so loadForStudent finds it. */
+    async function createTargeted(
+      overrides: Partial<Parameters<typeof assessmentRepo.create>[0]>,
+    ) {
+      const created = await assessmentRepo.create({
+        ...BASE_ASSESSMENT,
+        title: 'Enforcement test task',
+        allowedFileTypes: [],
+        submissionModes: [],
+        ...overrides,
+      });
+      await assessmentRepo.setTargets(created.id, [{ groupId: 'group-1' }]);
+      return created;
+    }
+
+    // --- allowedFileTypes tests ---
+
+    it('allowedFileTypes: accepts a .pdf url when pdf-only is set', async () => {
+      const task = await createTargeted({
+        allowedFileTypes: ['application/pdf'],
+        submissionModes: [],
+      });
+      await expect(
+        controller.submitAssessment(
+          task.id,
+          { fileUrl: 'https://storage.example.com/submissions/hw.pdf' },
+          STUDENT,
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it('allowedFileTypes: refuses a .png url when pdf-only is set', async () => {
+      const task = await createTargeted({
+        allowedFileTypes: ['application/pdf'],
+        submissionModes: [],
+      });
+      await expect(
+        controller.submitAssessment(
+          task.id,
+          { fileUrl: 'https://storage.example.com/submissions/hw.png' },
+          STUDENT,
+        ),
+      ).rejects.toThrow('application/pdf');
+    });
+
+    it('allowedFileTypes: empty list accepts any globally-valid file', async () => {
+      // The regression guard: existing tasks with empty allowedFileTypes must
+      // keep working exactly as before this slice.
+      const task = await createTargeted({
+        allowedFileTypes: [],
+        submissionModes: [],
+      });
+      await expect(
+        controller.submitAssessment(
+          task.id,
+          { fileUrl: 'https://storage.example.com/submissions/hw.pdf' },
+          STUDENT,
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it('allowedFileTypes: refuses a url with no extension', async () => {
+      const task = await createTargeted({
+        allowedFileTypes: ['application/pdf'],
+        submissionModes: [],
+      });
+      await expect(
+        controller.submitAssessment(
+          task.id,
+          { fileUrl: 'https://storage.example.com/submissions/homework' },
+          STUDENT,
+        ),
+      ).rejects.toThrow();
+    });
+
+    it('allowedFileTypes: reads the extension correctly through a query string', async () => {
+      const task = await createTargeted({
+        allowedFileTypes: ['application/pdf'],
+        submissionModes: [],
+      });
+      // The url has a query string; the extension must still be read as `pdf`.
+      await expect(
+        controller.submitAssessment(
+          task.id,
+          { fileUrl: 'https://cdn.example.com/hw.pdf?token=abc&v=2' },
+          STUDENT,
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it('allowedFileTypes: comparison is case-insensitive on the extension', async () => {
+      const task = await createTargeted({
+        allowedFileTypes: ['application/pdf'],
+        submissionModes: [],
+      });
+      // `.PDF` must be treated the same as `.pdf`.
+      await expect(
+        controller.submitAssessment(
+          task.id,
+          { fileUrl: 'https://storage.example.com/submissions/hw.PDF' },
+          STUDENT,
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it('allowedFileTypes: answerText-only submission passes even when pdf-only is set', async () => {
+      const task = await createTargeted({
+        allowedFileTypes: ['application/pdf'],
+        submissionModes: [],
+      });
+      await expect(
+        controller.submitAssessment(
+          task.id,
+          { answerText: 'My typed answer.' },
+          STUDENT,
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    // --- submissionModes: pdf_upload tests ---
+
+    it('submissionModes: pdf_upload accepts a .pdf url', async () => {
+      const task = await createTargeted({
+        allowedFileTypes: [],
+        submissionModes: ['pdf_upload'],
+      });
+      await expect(
+        controller.submitAssessment(
+          task.id,
+          { fileUrl: 'https://storage.example.com/submissions/essay.pdf' },
+          STUDENT,
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it('submissionModes: pdf_upload accepts a .docx url', async () => {
+      const task = await createTargeted({
+        allowedFileTypes: [],
+        submissionModes: ['pdf_upload'],
+      });
+      await expect(
+        controller.submitAssessment(
+          task.id,
+          { fileUrl: 'https://storage.example.com/submissions/essay.docx' },
+          STUDENT,
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it('submissionModes: pdf_upload refuses a .txt url', async () => {
+      // `D-41` names pdf and docx, and `text/plain` is in the *global* upload
+      // whitelist - so deriving this mode from the whitelist's `kind: 'file'`
+      // bucket silently admits a .txt. This test is what pins the mode to the
+      // decision instead of to the storage layer's file/image split.
+      const task = await createTargeted({
+        allowedFileTypes: [],
+        submissionModes: ['pdf_upload'],
+      });
+      await expect(
+        controller.submitAssessment(
+          task.id,
+          { fileUrl: 'https://storage.example.com/submissions/notes.txt' },
+          STUDENT,
+        ),
+      ).rejects.toThrow('pdf_upload');
+    });
+
+    it('submissionModes: pdf_upload refuses a .jpg url', async () => {
+      const task = await createTargeted({
+        allowedFileTypes: [],
+        submissionModes: ['pdf_upload'],
+      });
+      await expect(
+        controller.submitAssessment(
+          task.id,
+          { fileUrl: 'https://storage.example.com/submissions/photo.jpg' },
+          STUDENT,
+        ),
+      ).rejects.toThrow('pdf_upload');
+    });
+
+    // --- submissionModes: photo_upload tests ---
+
+    it('submissionModes: photo_upload accepts a .jpg url', async () => {
+      const task = await createTargeted({
+        allowedFileTypes: [],
+        submissionModes: ['photo_upload'],
+      });
+      await expect(
+        controller.submitAssessment(
+          task.id,
+          { fileUrl: 'https://storage.example.com/submissions/work.jpg' },
+          STUDENT,
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it('submissionModes: photo_upload refuses a .pdf url', async () => {
+      const task = await createTargeted({
+        allowedFileTypes: [],
+        submissionModes: ['photo_upload'],
+      });
+      await expect(
+        controller.submitAssessment(
+          task.id,
+          { fileUrl: 'https://storage.example.com/submissions/work.pdf' },
+          STUDENT,
+        ),
+      ).rejects.toThrow('photo_upload');
+    });
+
+    // --- multiple modes ---
+
+    it('submissionModes: a file satisfying either stated mode is accepted', async () => {
+      const task = await createTargeted({
+        allowedFileTypes: [],
+        submissionModes: ['pdf_upload', 'photo_upload'],
+      });
+      // pdf passes pdf_upload
+      await expect(
+        controller.submitAssessment(
+          task.id,
+          { fileUrl: 'https://storage.example.com/submissions/essay.pdf' },
+          STUDENT,
+        ),
+      ).resolves.toBeDefined();
+      // jpg passes photo_upload (resubmission allowed, so the second call also succeeds)
+      await expect(
+        controller.submitAssessment(
+          task.id,
+          { fileUrl: 'https://storage.example.com/submissions/photo.jpg' },
+          STUDENT,
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    // --- both checks are independent ---
+
+    it('both allowedFileTypes and submissionModes must pass independently', async () => {
+      // The task says pdf_upload AND only allows docx. That combination is
+      // internally consistent (docx is a file-kind type accepted by pdf_upload)
+      // but illustrates that both gates are evaluated.
+      const task = await createTargeted({
+        allowedFileTypes: [
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        ],
+        submissionModes: ['pdf_upload'],
+      });
+      // docx passes both
+      await expect(
+        controller.submitAssessment(
+          task.id,
+          { fileUrl: 'https://storage.example.com/submissions/essay.docx' },
+          STUDENT,
+        ),
+      ).resolves.toBeDefined();
+      // pdf passes submissionModes but NOT allowedFileTypes -> rejected
+      await expect(
+        controller.submitAssessment(
+          task.id,
+          { fileUrl: 'https://storage.example.com/submissions/essay.pdf' },
+          STUDENT,
+        ),
+      ).rejects.toThrow();
+    });
+
+    // --- empty modes ---
+
+    it('empty allowedFileTypes AND empty submissionModes: accepts any globally-valid file', async () => {
+      // This is the regression guard for all existing tasks. Their behaviour
+      // must be identical to before this slice was added.
+      const task = await createTargeted({
+        allowedFileTypes: [],
+        submissionModes: [],
+      });
+      await expect(
+        controller.submitAssessment(
+          task.id,
+          { fileUrl: 'https://storage.example.com/submissions/hw.pdf' },
+          STUDENT,
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it('empty allowedFileTypes AND empty submissionModes: answerText-only submission succeeds', async () => {
+      const task = await createTargeted({
+        allowedFileTypes: [],
+        submissionModes: [],
+      });
+      await expect(
+        controller.submitAssessment(
+          task.id,
+          { answerText: 'Text answer, no file.' },
+          STUDENT,
+        ),
+      ).resolves.toBeDefined();
+    });
+  });
 });

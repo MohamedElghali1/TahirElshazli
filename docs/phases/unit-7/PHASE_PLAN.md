@@ -37,6 +37,14 @@ columns, so they went to the user rather than being assumed (`CLAUDE.md` §13). 
 | `D-38` | Multi-file is a **`submission_files` table**, not `TEXT[]`. An annotation FKs to a file **id**, because an array index silently re-aims every later stroke when a photo is deleted or reordered. |
 | `D-39` | `doc_link` admits **either** a file or a link. `link_url` is nullable and sits beside the files. https-only scheme check **in the service**, not a SQL CHECK — one copy of the whitelist. |
 | `D-40` | `pdf_upload` admits **pdf, docx, zip**. `photo_upload` admits images, **five at most**. Enforced at submit time in the service. Supersedes 018's "govern the upload exactly as before". |
+| `D-41` | **Narrows `D-40`: pdf and docx only — zip is refused.** The global upload whitelist admitted neither, so `D-40` required widening it, which is a `SECURITY.md` §4 decision. A zip can hold anything and §8 admits nothing executable. |
+
+**A pre-existing gap found while implementing `D-40`, and fixed on the user's call rather than
+filed:** a task's `allowedFileTypes` was **enforced nowhere** — the upload route validates only the
+global whitelist and does not know which task a file belongs to, so a "PDF only" task accepted a
+`.png`. Open since unit 1. Cheap to close because `UploadsService` mints the stored extension from
+the already-validated MIME and never reads the client's filename, so the extension on a stored URL
+is server-controlled and can be enforced against without trusting the client.
 
 **`TASK-F3` closed in the same pass:** deleting a task with submissions now answers **409**, aligning
 it with `D-36`'s sibling refusal. The e2e moved with it and passes.
@@ -61,15 +69,23 @@ leaving the column NULL would have removed, on deploy, every mark every student 
 
 ---
 
-## 4. What is NOT verified
+## 4. Verification status
 
-**`020` has never run against real PostgreSQL.** Docker Desktop is not running in this environment.
-`CLAUDE.md` §9 makes an empty-schema run a hard gate, and 001-008 each found something on their first
-run. **The unit cannot be called complete until it clears**, and authoring a later migration on top of
-an unverified one is exactly what §9 forbids.
+**`020` PASSES the empty-schema gate.** PostgreSQL 15.19, `psql -v ON_ERROR_STOP=1`, 001→020 in
+lexicographic order against a database created empty moments before — run by the unit 8 session on its
+container, from `8eb6ad9` via `git show`, no merge and no checkout touched. It applied on top of a
+schema already carrying 019's reshaping, so the two compose. Objects confirmed against the live
+catalog: both unique constraints, all five annotation CHECKs, `returned_at` at `datetime_precision 3`.
 
-The backfill `UPDATE` is the specific thing that needs watching: it is the only non-additive statement
-in the file.
+**The backfill's behaviour is still unproven, and this is the one to watch.** That run was bare
+`psql`, so the three vitest tests under `describe('migration 020')` did not execute — and on an empty
+schema the `UPDATE ... WHERE corrected_at IS NOT NULL` touches zero rows regardless. **An empty-schema
+gate is structurally silent about any backfill.** Closing it needs the integration suite run with
+`TEST_DATABASE_URL` against a seeded database; Docker is unavailable here.
+
+Docker Desktop is still down locally, so nothing in this unit can be browser-verified or
+integration-tested in this environment. Substituting curl/direct-API checks, as unit 5 did, and
+saying so rather than implying coverage.
 
 ---
 

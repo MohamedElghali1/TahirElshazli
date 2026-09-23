@@ -12,6 +12,7 @@ import type {
   AssessmentRepository,
   Attachment,
   StoredAssessment,
+  SubmissionMode,
   TaskVisibility,
   StoredSubmission,
   SubmissionRevision,
@@ -24,6 +25,43 @@ import type {
   WorkType,
 } from './interfaces/work-repository.interface.js';
 import { WORK_REPOSITORY } from './interfaces/work-repository.interface.js';
+import { ALLOWED_UPLOAD_TYPES } from '../common/storage/upload-types.js';
+
+/**
+ * What each file-bearing submission mode admits, as extensions.
+ *
+ * The two halves are derived differently **on purpose**, because they answer
+ * different questions:
+ *
+ * - `photo_upload` is every `image` in the whitelist. "Is this an image" is a
+ *   property of the file, so a new image type should widen this automatically.
+ * - `pdf_upload` names its two MIME types outright, because `D-41` decided
+ *   *which documents a teacher means by "pdf upload"* - a product decision, not
+ *   a property of the whitelist. Deriving it from `kind: 'file'` instead would
+ *   admit `text/plain` today, and would silently widen every existing task the
+ *   next time any document type is added to the whitelist.
+ *
+ * Extensions still come from `ALLOWED_UPLOAD_TYPES`, so the MIME-to-extension
+ * mapping is stated in exactly one place.
+ */
+const MODE_EXTENSIONS: Record<
+  Exclude<SubmissionMode, 'doc_link'>,
+  ReadonlySet<string>
+> = {
+  pdf_upload: new Set(
+    [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ]
+      .map((mime) => ALLOWED_UPLOAD_TYPES[mime]?.extension)
+      .filter((ext): ext is string => ext !== undefined),
+  ),
+  photo_upload: new Set(
+    Object.values(ALLOWED_UPLOAD_TYPES)
+      .filter((t) => t.kind === 'image')
+      .map((t) => t.extension),
+  ),
+};
 
 /**
  * Whether a student may see this task at all (`D-28`).
@@ -487,6 +525,72 @@ export class AssessmentsService {
         'At least one of fileUrl or answerText must be provided',
       );
     }
+
+    // File-type and mode enforcement. Only applies when the student is
+    // actually handing in a file - a text-only answer skips every check here.
+    if (fileUrl) {
+      // Strip any query string or fragment before reading the extension, so a
+      // URL like `/uploads/hw.pdf?token=x` is not treated as having the
+      // extension `pdf?token=x`. A path like `/uploads/no-ext` yields an empty
+      // string from the split, which we handle below.
+      const cleanPath = fileUrl.split('?')[0].split('#')[0];
+      const parts = cleanPath.split('.');
+      // Anything after the last dot, or '' when there is no dot and when the
+      // URL ends in one. This splits the whole path rather than the last
+      // segment, so a dotted *directory* (`/v1.2/report`) reads as the nonsense
+      // extension `2/report` - which then matches nothing and is refused. That
+      // is the safe direction, and stored URLs never look like that: the
+      // extension is server-minted from the validated MIME (`UploadsService`),
+      // never taken from the client's filename.
+      const submittedExt =
+        parts.length >= 2 && parts[parts.length - 1] !== ''
+          ? parts[parts.length - 1].toLowerCase()
+          : '';
+
+      // --- 1. allowedFileTypes enforcement ---
+      // Empty allowedFileTypes means "no per-task narrowing" - accept anything
+      // the global whitelist allows. A non-empty list restricts to those types.
+      if (assessment.allowedFileTypes.length > 0) {
+        // Map each allowed MIME through the whitelist to its server-minted
+        // extension. Only MIMEs that are in the global whitelist can produce a
+        // valid extension; anything else is silently skipped (the global check
+        // on upload would have already prevented such a file from being stored).
+        const allowedExts = new Set(
+          assessment.allowedFileTypes
+            .map((mime) => ALLOWED_UPLOAD_TYPES[mime.toLowerCase()]?.extension)
+            .filter((ext): ext is string => ext !== undefined),
+        );
+        if (!submittedExt || !allowedExts.has(submittedExt)) {
+          throw new BadRequestException(
+            `This task only accepts files of type: ${assessment.allowedFileTypes.join(', ')}.`,
+          );
+        }
+      }
+
+      // --- 2. submissionModes enforcement, file side only ---
+      // Empty submissionModes means "not stated" - enforce nothing, exactly as
+      // before. `doc_link` is deliberately excluded from file-mode enforcement:
+      // link submission requires a repository signature change scoped to a
+      // later slice, so a task that states only `doc_link` is treated the same
+      // as "not stated" here and falls through to the allowedFileTypes check.
+      const fileModes = assessment.submissionModes.filter(
+        (m): m is Exclude<SubmissionMode, 'doc_link'> =>
+          m === 'pdf_upload' || m === 'photo_upload',
+      );
+      if (fileModes.length > 0) {
+        // A submission satisfies the mode check if it passes ANY stated mode.
+        const passesMode = fileModes.some(
+          (mode) => submittedExt !== '' && MODE_EXTENSIONS[mode].has(submittedExt),
+        );
+        if (!passesMode) {
+          const modeNames = fileModes.join(', ');
+          throw new BadRequestException(
+            `This task's submission mode (${modeNames}) does not permit that file type.`,
+          );
+        }
+      }
+    }
+
 
     const existing = await this.assessmentRepo.findSubmission(
       assessmentId,
