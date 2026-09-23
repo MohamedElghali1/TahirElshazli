@@ -1088,4 +1088,21 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
       expect(taRow?.visibilityState).toBe('published');
     });
   });
+
+  /** Re-check 1, `R1-1`: the unchanged-marker no-op, and its limit. */
+  describe('R1-1: an assistant re-sending the current marker', () => {
+    it('is a no-op 200 that keeps the marker; a DIFFERENT marker is still 403', async () => {
+      const created = await authoring.create('course-1', ADMIN, { ...TASK, markerId: 'assistant-1' });
+      const saved = await authoring.update(created.id, TA, { title: 'Edited by the TA', markerId: 'assistant-1' });
+      expect(saved.markerId).toBe('assistant-1');
+      expect(saved.title).toBe('Edited by the TA');
+      await expect(
+        authoring.update(created.id, TA, { markerId: 'teacher-1' }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        authoring.update(created.id, TA, { markerId: null }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect((await authoring.list('course-1', ADMIN)).find((a) => a.id === created.id)?.markerId).toBe('assistant-1');
+    });
+  });
 });

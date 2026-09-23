@@ -2717,4 +2717,37 @@ describe('Staff and admin API (e2e)', () => {
       expect(list.body.find((t: { id: string }) => t.id === task.id).visibilityState).toBe('scheduled');
     });
   });
+
+  describe('R1-1 (re-check 1): an assistant re-sending the current marker', () => {
+    it('is a no-op 200; a different marker is still 403', async () => {
+      const task = await request(app.getHttpServer())
+        .post('/staff/courses/course-1/assessments')
+        .set(bearer(adminToken))
+        .send({
+          title: 'E2E R1-1',
+          type: 'homework',
+          availableFrom: '2026-01-01T00:00:00.000Z',
+          availableTo: '2099-01-01T00:00:00.000Z',
+          dueAt: '2098-01-01T00:00:00.000Z',
+          maxScore: 10,
+          allowedFileTypes: ['application/pdf'],
+          maxFileSizeBytes: 1048576,
+          targets: [{ groupId: 'group-1' }],
+          markerId: 'assistant-1',
+        })
+        .expect(201);
+      const same = await request(app.getHttpServer())
+        .patch(`/staff/assessments/${task.body.id}`)
+        .set(bearer(assignedTaToken))
+        .send({ title: 'E2E R1-1 edited', markerId: 'assistant-1' })
+        .expect(200);
+      expect(same.body.markerId).toBe('assistant-1');
+      await request(app.getHttpServer())
+        .patch(`/staff/assessments/${task.body.id}`)
+        .set(bearer(assignedTaToken))
+        .send({ markerId: 'teacher-1' })
+        .expect(403);
+      await request(app.getHttpServer()).delete(`/staff/assessments/${task.body.id}`).set(bearer(adminToken)).expect(204);
+    });
+  });
 });

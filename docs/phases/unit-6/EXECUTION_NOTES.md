@@ -667,3 +667,39 @@ Movement against round 0:
 - integration 145 → **146, 0 skipped**;
 - `tsc` 0; eslint 0; `npm run lint` exits 0, with the same pre-existing warning in a file unit 6 never
   touched.
+
+
+---
+
+## Re-check 1 follow-ups
+
+**Input.** The "Re-check 1" section of `docs/phases/unit-6/REVIEW.md`, committed unmodified as
+`293745e`.
+
+| Item | Done |
+|---|---|
+| **`R1-1`**: after `F-1`, an assistant re-sending the task's *current* marker gets a no-op 200, not `D-32`'s 403 | **Kept as a no-op**, per the coordinator. Recorded in `CHANGELOG.md` as a clarification of `D-32`: an assistant may not *change* the marker, and an identical value changes nothing, matching the existing null-on-unmarked no-op. **Pinned by** a unit test (same marker → 200, kept; different → 403; clearing a set marker → 403) and an e2e test (same → 200, kept; different → 403). |
+| **`TASK-F3`** | Filed in `IMPLEMENTATION_PLAN.md`: deleting a task that has submissions should be 409, not 400 (`CLAUDE.md` §6). **No code change.** |
+| **`tallyResults` note** | **No follow-up for this coverage existed in `IMPLEMENTATION_PLAN.md`.** It was only in the plan's and review's out-of-scope lists, so it is filed as `TASK-F4` (Postgres work/credential integration coverage) with the note: **`PostgresWorkRepository.tallyResults` goes first**, because the `D-36` guards depend on it. Note only. |
+
+**No SQL changed, so the integration suite was not rerun.** It stands at 146, 0 skipped, from the
+round-1 run above. `CLAUDE.md` counts are updated. The coordinator's dev stack was left running.
+
+**Rerun, real output:**
+
+```
+$ npm test
+ Test Files  39 passed (39)
+      Tests  660 passed (660)
+   Start at  21:23:32
+   Duration  4.52s (transform 2.01s, setup 0ms, import 11.51s, tests 13.28s, environment 7ms)
+
+
+$ npm run test:e2e
+ Test Files  4 passed (4)
+      Tests  297 passed (297)
+   Start at  21:23:36
+   Duration  7.95s (transform 368ms, setup 0ms, import 1.50s, tests 6.22s, environment 0ms)
+```
+
+unit 659 → **660**; e2e 296 → **297**.

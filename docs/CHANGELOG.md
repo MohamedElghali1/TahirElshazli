@@ -1494,3 +1494,23 @@ The user ruled on the two open questions it surfaced; the remediation is in the 
 
 **Affected.** `assessment-authoring.service.ts`, `task-drafts.service.ts`, both assessment drivers,
 `task-form.tsx`, `drafts/page.tsx`, `API_SPEC.yaml`, `DOMAIN_MODEL.md`, `IMPLEMENTATION_PLAN.md`.
+
+---
+
+## 2026-09-22 — `D-32` clarified: an unchanged marker is a no-op for everyone (re-check 1, `R1-1`)
+
+**Context.** Review round 1's `F-1` made `update` skip the marker check when `markerId` equals the
+stored value. The reviewer's re-check noted that this also covers an **assistant** re-sending the
+task's *current, non-null* marker: before `F-1` that was a 403 under `D-32`'s "an assistant sending a
+non-null `markerId` gets 403"; now it is a 200 that changes nothing.
+
+**Decision (coordinator, 2026-09-22): keep the no-op.** It matches the no-op `D-32` already allowed an
+assistant — sending `null` on an unmarked task. `D-32`'s rule is read as **"an assistant may not
+*change* the marker"**: setting a different one, or clearing one someone chose, is still **403**. A
+value identical to what is stored changes nothing, so there is nothing to refuse.
+
+**Pinned by** a unit test and an e2e test (`R1-1`): the same marker → 200 with the marker kept; a
+different marker → 403; clearing a set marker → 403 (unit).
+
+**Also filed:** `TASK-F3` (align the submissions-delete refusal to 409) and `TASK-F4` (Postgres
+work/credential integration coverage, `tallyResults` first).

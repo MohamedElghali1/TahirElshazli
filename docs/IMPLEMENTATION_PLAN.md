@@ -278,6 +278,10 @@ way:
 
 `TASK-F2` `[ ]` follow-up (unit-6 review) — **retire `frontend/app/(app)/manage/courses/[id]/assessments/page.tsx` after a consumer count** (the `D-25` discipline). The `/manage/tasks` screens supersede it; it still works today, but it sends no attachment `audience`, so extending it would meet a 400.
 
+`TASK-F3` `[ ]` follow-up (unit-6 re-check 1, user ruling) — **deleting a task that has submissions should return 409, not 400** (`CLAUDE.md` §6: a state conflict is 409). Today `DELETE /staff/assessments/:id` refuses with 400 for `assessment_submissions`, while `D-36`'s external-result refusal is 409. Code **not** changed in unit 6; the e2e `refuses to delete a task that has submissions` asserts 400 and moves with it. Unit 7 rebuilds the submissions surface and is a natural place.
+
+`TASK-F4` `[ ]` follow-up, pre-existing, **filed here because no entry existed** (it was carried only in the unit-6 plan's and review's out-of-scope lists): integration coverage for `PostgresWorkRepository` and `PostgresGoogleCredentialRepository`. **`PostgresWorkRepository.tallyResults` goes first**, because `D-36`'s hide and delete guards now depend on it (unit-6 re-check 1). Their SQL was not changed by unit 6.
+
 `[~]` = built and tested on 2026-09-22; reviewed `APPROVED WITH FOLLOW-UP` (`docs/phases/unit-6/REVIEW.md`), round-1 remediation applied. Unit 6 also closed the
 existence oracle on `PATCH`/`DELETE /staff/assessments/:id` and `POST …/targets` (plan finding 2).
 
