@@ -252,6 +252,9 @@ found 0 vulnerabilities
   - staff mark up an uploaded photo.
 - Integration: three for `020`: the CHECK, the default, and round-trip plus whole-set archive.
 
+**After review (`c4823e4`):** R-6, R-7 and R-8 fixed; unit 750 / 44 files, e2e 337, integration 176 / 0
+skipped (fresh database), backend and frontend `tsc` 0, lint 0.
+
 **Browser.** The 7i screens have **not** been seen in a browser: the student upload form, the file
 switcher in the marking view, and the authoring gate. The preview was not signed in when 7i finished.
 The scratch API was rebuilt with 7i and applied `020` to the browser database, so a signed-in check can

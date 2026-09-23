@@ -490,9 +490,10 @@ not the rule.
 `docs/phases/unit-7/`. The user ran the pipeline without the agent harness: the coordinator did the
 planning pass (Revision 1 of `PHASE_PLAN.md`), the implementation and the review itself, in sequence.
 **`MARK-6` ruled and built the same day:** the user accepted the recommendations (`D-47`, `D-48`), slice 7i.
-**Review** (`REVIEW_7.md`, 2026-09-23): `APPROVED WITH FOLLOW-UP`. Two findings fixed (`R-1`, `R-2`).
-Open conditions: `B-1`/`B-2` ruled and `MARK-6` built (or moved out), and the browser pass
-(`EXECUTION_NOTES.md` §8), which stopped at sign-in and needs the user.
+**Review** (`REVIEW_7.md`, 2026-09-23, with a 7i addendum): `APPROVED WITH FOLLOW-UP`. Findings `R-1`,
+`R-2`, `R-6`…`R-8` fixed. `MARK-6` is ruled and built, and the 7a–7h browser pass was reported complete by
+the user. **One condition left:** a browser check of the three 7i screens (the student upload form, the
+file switcher, the authoring gate). Once the user confirms it, the unit is `[x]`.
 
 **Rulings** `D-40`…`D-46` (`B-3`…`B-9`). `D-38`/`D-39` (`B-1`/`B-2`, the `MARK-6` design) were
 accepted and **withdrawn** the same day; the question is escalated to the user.

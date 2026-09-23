@@ -73,3 +73,50 @@ Yes, within the limit stated in the execution notes' first paragraph.
 
 Once both hold, this review can be closed as **`APPROVED`** without another round, provided the
 browser pass finds nothing and the `MARK-6` work gets its own review.
+
+---
+
+# Addendum — review of slice 7i (`MARK-6`), 2026-09-23
+
+**Range:** `bec909f..c4823e4`. **Against:** `PHASE_PLAN.md` Revision 2 and `D-47`/`D-48`. The same
+limit as above applies: the coordinator reviewed its own work, as a separate pass after the build.
+
+## Verdict: **APPROVED WITH FOLLOW-UP** — unit 7 stays `[~]`
+
+Both conditions of the first review are now met:
+- `MARK-6` is ruled (`D-47`, `D-48`) and built.
+- The browser pass for 7a–7h is **reported complete by the user**. It was not observed by the
+  coordinator.
+
+**One condition remains:** the 7i screens have not been seen in a browser — the student's upload form,
+the file switcher in the marking view, and the authoring gate. Everything under them is covered by unit,
+e2e and integration tests. Once the user confirms those three screens, this review closes as
+**`APPROVED`** with no further round, and every roadmap §2 condition holds.
+
+## Did `MARK-6` land as ruled?
+
+- Modes enforced at submit time, exactly one per submission, a note never alone — `checkSubmission`,
+  tested in both directions (unit and e2e). ✔
+- The student upload route has its own contract: modes-derived types, `min(task, 20 MB)`, its own rate
+  limit, server-minted names, and a 404 identical to a missing task for an untargeted student. Staff
+  get 403 and an anonymous caller 401. ✔
+- Upload modes are refused while storage is off. `allowedFileTypes` is derived, so it cannot disagree
+  with the modes. ✔
+- The file set is replaced and archived whole. Migration `020` ran from an empty schema; both drivers
+  are integration-tested. ✔
+- Staff mark up every file of a hand-in, and a mark on a replaced file counts as stale. ✔
+
+## Findings
+
+| # | Severity | Finding | Status |
+|---|---|---|---|
+| R-6 | Medium | **A moded resubmission kept the old note when none was sent**, contradicting `D-48` (c) (the whole hand-in is replaced); a student could not remove a note. | **Fixed** `c4823e4`, unit + integration |
+| R-7 | Low | **The upload route accepted files that could never be handed in** — after a one-shot submission or once corrected — disk use with no purpose. | **Fixed** `c4823e4`: 409/400 as the submit route would answer; e2e |
+| R-8 | Low | **A submitted file URL was checked by prefix**, so `/uploads/../x.pdf` passed (no exposure: the static server normalises it). | **Fixed** `c4823e4`: the exact minted shape; unit |
+| R-9 | Info | Found while building 7i: the mark-book test fixture failed backend `tsc` (vitest does not typecheck). | Fixed `bec909f`; backend `tsc` added to the recorded checks |
+| R-10 | Info | A-15: a submitted file is not bound to its uploader (`MARK-F5`). An authenticated student can make the server buffer up to 20 MB before the task check, 12/min (`SECURITY.md` §2.4). | Recorded, not built |
+
+## Real output after `c4823e4`
+
+Unit 750 / 44 files · e2e 337 · integration 176, 0 skipped, PostgreSQL 15.19, 001–020 from a database
+with 0 tables · backend `tsc` 0 · frontend `tsc` 0 · lint 0 · `npm audit` 0.
