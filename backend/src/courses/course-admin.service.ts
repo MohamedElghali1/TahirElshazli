@@ -153,4 +153,12 @@ export class CourseAdminService {
       return updated;
     });
   }
+
+  async findById(courseId: string): Promise<StoredCourse> {
+    const course = await this.courseRepo.findById(courseId);
+    if (!course) {
+      throw new NotFoundException(COURSE_NOT_FOUND);
+    }
+    return course;
+  }
 }

@@ -157,4 +157,17 @@ describe('CourseAdminService', () => {
       expect(entry.before).not.toEqual(entry.after);
     });
   });
+
+  describe('findById', () => {
+    it('returns the course when found', async () => {
+      const course = await service.findById('course-1');
+      expect(course).toMatchObject({ id: 'course-1', slug: 'as-chemistry' });
+    });
+
+    it('404s when not found', async () => {
+      await expect(service.findById('course-nope')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+  });
 });

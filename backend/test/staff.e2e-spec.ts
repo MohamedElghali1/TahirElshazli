@@ -152,6 +152,36 @@ describe('Staff and admin API (e2e)', () => {
         .expect(403);
     });
 
+    it('refuses a TA GET /admin/courses/:courseId', async () => {
+      await request(app.getHttpServer())
+        .get('/admin/courses/course-1')
+        .set(bearer(assignedTaToken))
+        .expect(403);
+    });
+
+    it('allows teacher and admin GET /admin/courses/:courseId', async () => {
+      const teacherRes = await request(app.getHttpServer())
+        .get('/admin/courses/course-1')
+        .set(bearer(adminToken))
+        .expect(200);
+      expect(teacherRes.body).toMatchObject({
+        id: 'course-1',
+        slug: 'as-chemistry',
+        title: 'AS Chemistry',
+      });
+
+      const fullAdminRes = await request(app.getHttpServer())
+        .get('/admin/courses/course-1')
+        .set(bearer(fullAdminToken))
+        .expect(200);
+      expect(fullAdminRes.body.id).toBe('course-1');
+
+      await request(app.getHttpServer())
+        .get('/admin/courses/course-does-not-exist')
+        .set(bearer(adminToken))
+        .expect(404);
+    });
+
     it('refuses a TA the recording writes, even on a course they hold', async () => {
       // assistant-1 IS assigned to course-1, so scoping alone would let this
       // through. What stops it is the role: CLAUDE.md 2.2 grants a TA

@@ -112,7 +112,6 @@ export interface CourseListItem {
   id: string;
   title: string;
   description: string;
-  slug: string;
   thumbnailUrl: string | null;
   teacherName: string;
   progress: CourseProgress;

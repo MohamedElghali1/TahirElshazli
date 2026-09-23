@@ -1043,6 +1043,10 @@ export const api = {
         body,
       }),
 
+    /** Course detail for editing (`DOM-5`). */
+    course: (token: string, courseId: string) =>
+      request<AdminCourse>(`/admin/courses/${courseId}`, { token }),
+
     // `courseStaff`/`assignStaff`/`unassignStaff` are gone with
     // `/admin/courses/:courseId/staff` (`AUTH-2`): an assistant's reach is held
     // at the group grain now, and the route that edits it is unit 5's

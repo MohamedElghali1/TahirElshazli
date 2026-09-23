@@ -7,7 +7,7 @@ import { useApi, useSession } from '@/lib/session';
 import { isAdminRole } from '@/lib/roles';
 import { formatDate } from '@/lib/format';
 import type { ManageCourseCard } from '@/lib/types';
-import { Button, EmptyState, Loader, Table, Tag, type Column, Panel, TextInput, Checkbox, InlineBanner } from '@/components/ui';
+import { Button, EmptyState, Loader, Table, Tag, type Column, Panel, TextInput, InlineBanner } from '@/components/ui';
 import { PageTitle } from '@/components/shell/page-chrome';
 
 export default function ManageCoursesPage() {
@@ -189,7 +189,7 @@ function EditCourse({
   const { token } = useSession();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { data: course, loading, error: fetchError } = useApi((t) => api.courses.get(t, courseId), [courseId]);
+  const { data: course, loading, error: fetchError } = useApi((t) => api.admin.course(t, courseId), [courseId]);
 
   if (loading) return <Panel title="Edit Course"><Loader label="Loading course" /></Panel>;
   if (fetchError || !course) return <Panel title="Edit Course"><EmptyState icon="AlertTriangle" title={fetchError?.message ?? 'Not found'} /></Panel>;
@@ -246,7 +246,7 @@ function EditCourse({
             <input type="checkbox" name="sequentialLockEnabled" defaultChecked={course.sequentialLockEnabled} /> Sequential Lock
           </label>
           <label className="flex items-center gap-2 text-14 font-medium text-fg">
-            <input type="checkbox" name="isPublished" defaultChecked={true} /> Published
+            <input type="checkbox" name="isPublished" defaultChecked={course.isPublished} /> Published
           </label>
         </div>
         {error && <InlineBanner tone="danger">{error}</InlineBanner>}
