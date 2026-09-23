@@ -26,7 +26,8 @@ import { DatabaseService } from '../database/database.service.js';
 import { DATABASE_POOL } from '../database/database.tokens.js';
 import { Role } from '../auth/roles.enum.js';
 import { MailService } from '../mail/mail.service.js';
-import { parseAudience, encodeAudience } from './announcement-audience.js';
+import { parseAudience, encodeAudience, AUDIENCE_PATTERN } from './announcement-audience.js';
+import type { PostCourseAnnouncementDto } from './dto/post-announcement.dto.js';
 
 const ASSIGNED_TA = { user: { sub: 'assistant-1', email: 'a1@example.com', role: 'assistant', jti: 'j1' } };
 const UNASSIGNED_TA = { user: { sub: 'assistant-2', email: 'a2@example.com', role: 'assistant', jti: 'j2' } };
@@ -195,5 +196,269 @@ describe('Announcements Unit & Integration', () => {
     // Ensure it remains a draft
     const stillDraft = await service.listAll(10, 0, 'draft');
     expect(stillDraft).toHaveLength(0);
+  });
+
+  describe('the audience codec', () => {
+    it('round-trips every shape CLAUDE.md §6.1 names', () => {
+      for (const raw of ['all_students', 'all_tas', 'course:course-1', 'group:group-1']) {
+        const parsed = parseAudience(raw);
+        expect(parsed).not.toBeNull();
+        expect(encodeAudience(parsed!)).toBe(raw);
+      }
+    });
+
+    it('rejects a malformed audience rather than coercing it', () => {
+      // A half-understood audience is a message delivered to the wrong people.
+      for (const raw of ['', 'course:', 'course', 'all', 'course:a b', 'ALL_TAS', 'group:', 'group:a b']) {
+        expect(parseAudience(raw)).toBeNull();
+      }
+    });
+
+    it('keeps the DTO pattern and the parser in step', () => {
+      // They are written from the same parts; this is the assertion that they
+      // have not drifted into accepting different strings.
+      for (const raw of ['all_students', 'all_tas', 'course:course-1', 'group:group-1']) {
+        expect(AUDIENCE_PATTERN.test(raw)).toBe(true);
+      }
+      for (const raw of ['course:', 'nonsense', 'course:bad id', 'group:', 'group:bad id']) {
+        expect(AUDIENCE_PATTERN.test(raw)).toBe(parseAudience(raw) !== null);
+      }
+    });
+  });
+
+  describe('POST /staff/courses/:id/announcements', () => {
+    it('lets an assigned assistant post to their own course (§2.2)', async () => {
+      const posted = await staff.createCourseDraft('course-1', MESSAGE, ASSIGNED_TA);
+      expect(posted).toMatchObject({
+        audience: 'course:course-1',
+        audienceType: 'course',
+        courseId: 'course-1',
+        postedBy: 'assistant-1',
+        title: 'Class moved',
+      });
+    });
+
+    it('404s a course the assistant does not hold', async () => {
+      await expect(staff.createCourseDraft('course-2', MESSAGE, ASSIGNED_TA)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('gives the same answer for a held-but-wrong course and a nonexistent one', async () => {
+      const wrong = await staff
+        .createCourseDraft('course-2', MESSAGE, ASSIGNED_TA)
+        .catch((e) => e.message);
+      const missing = await staff
+        .createCourseDraft('course-does-not-exist', MESSAGE, ASSIGNED_TA)
+        .catch((e) => e.message);
+      expect(wrong).toBe(missing);
+    });
+
+    it('lets the teacher post to any course through the same route', async () => {
+      await expect(staff.createCourseDraft('course-2', MESSAGE, ADMIN)).resolves.toMatchObject({
+        audience: 'course:course-2',
+        postedBy: 'teacher-1',
+      });
+    });
+
+    it('takes the audience from the URL, so a TA cannot widen it from the body', async () => {
+      // The DTO has no `audience` field at all and the global pipe whitelists,
+      // so this property never reaches the service. Asserted anyway: it is the
+      // difference between a scoped write and a platform-wide one.
+      const smuggled = {
+        ...MESSAGE,
+        audience: 'all_students',
+      } as unknown as PostCourseAnnouncementDto;
+      const posted = await staff.createCourseDraft('course-1', smuggled, ASSIGNED_TA);
+      expect(posted.audience).toBe('course:course-1');
+    });
+  });
+
+  describe('the audience is resolved at send time (§5.14)', () => {
+    it('delivers a course announcement to that course’s enrolled students only', async () => {
+      const draft = await staff.createCourseDraft('course-1', MESSAGE, ASSIGNED_TA);
+      await admin.publish(draft.id, ADMIN);
+
+      // course-1 holds student-1 and student-2; course-2 holds student-1.
+      const one = await notifications.list('student-1', false);
+      const two = await notifications.list('student-2', false);
+      expect(
+        one.notifications.filter((n) => n.type === 'announcement'),
+      ).toHaveLength(1);
+      expect(
+        two.notifications.filter((n) => n.type === 'announcement'),
+      ).toHaveLength(1);
+      // The link is a page route, not an API route.
+      expect(
+        one.notifications.find((n) => n.type === 'announcement')?.link,
+      ).toBe('/learn/course-1');
+    });
+
+    it('carries the whole body, since there is no detail page to click through to', async () => {
+      const draft = await staff.createCourseDraft('course-1', MESSAGE, ASSIGNED_TA);
+      await admin.publish(draft.id, ADMIN);
+      const feed = await notifications.list('student-1', false);
+      expect(feed.notifications.find((n) => n.type === 'announcement')).toMatchObject(
+        { title: 'Class moved', message: 'Sunday moves to 19:00.', read: false },
+      );
+    });
+
+    it('reaches an assistant hired after the announcement was drafted', async () => {
+      // The §5.14 requirement in one test: `all_tas` resolves from
+      // role = 'assistant' at the moment of sending, so a frozen recipient list
+      // captured earlier would miss this account.
+      const draft = await admin.createDraft(
+        { ...MESSAGE, audience: 'all_tas' },
+        ADMIN,
+      );
+
+      const newHire = await users.create({
+        email: 'assistant3@example.com',
+        passwordHash: 'hash',
+        name: 'Late Arrival',
+        role: Role.Assistant,
+        status: 'active',
+      });
+
+      const published = await admin.publish(draft.id, ADMIN);
+      const allTas = await users.findIdsByRole([Role.Assistant, Role.Admin]);
+      expect(published.recipientCount).toBe(allTas.length);
+
+      const feed = await notifications.list(newHire.id, false);
+      expect(feed.notifications).toHaveLength(1);
+      // No page shows a platform-wide announcement, so null rather than a link
+      // that 404s.
+      expect(feed.notifications[0]?.link).toBeNull();
+    });
+
+    it('sends all_students to every student and to no assistant', async () => {
+      const draft = await admin.createDraft(
+        { ...MESSAGE, audience: 'all_students' },
+        ADMIN,
+      );
+      const published = await admin.publish(draft.id, ADMIN);
+      const studentIds = await users.findIdsByRole([Role.Student]);
+      expect(published.recipientCount).toBe(studentIds.length);
+      expect((await notifications.list('assistant-1', false)).notifications).toEqual(
+        [],
+      );
+      expect(
+        (await notifications.list('student-2', false)).unreadCount,
+      ).toBeGreaterThan(0);
+    });
+
+    it('does not store a recipient list, only how many there were', async () => {
+      const draft = await admin.createDraft(
+        { ...MESSAGE, audience: 'all_students' },
+        ADMIN,
+      );
+      const published = await admin.publish(draft.id, ADMIN);
+      expect(Object.keys(published)).not.toContain('recipientIds');
+      expect(JSON.stringify(published)).not.toContain('student-1');
+      expect(published.recipientCount).toBeGreaterThan(0);
+
+      const all = await admin.list({});
+      const stored = all.find((a) => a.id === published.id);
+      expect(stored).toBeDefined();
+      expect(Object.keys(stored!)).not.toContain('recipientIds');
+      expect(JSON.stringify(stored)).not.toContain('student-1');
+      expect(stored!.recipientCount).toBe(published.recipientCount);
+    });
+
+    it('404s a course audience naming a course that does not exist', async () => {
+      const draft = await admin.createDraft(
+        { ...MESSAGE, audience: 'course:nope' },
+        ADMIN,
+      );
+      await expect(admin.publish(draft.id, ADMIN)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('the audit trail (§5.4)', () => {
+    it('records the assistant, the course and the reach', async () => {
+      const draft = await staff.createCourseDraft('course-1', MESSAGE, ASSIGNED_TA);
+      const published = await admin.publish(draft.id, ADMIN);
+
+      const page = await audit.find({ limit: 10 });
+      const createdEntry = page.entries.find((e) => e.action === 'announcement.created');
+      expect(createdEntry).toMatchObject({
+        actorId: 'assistant-1',
+        actorRole: 'assistant',
+        targetType: 'announcement',
+        targetId: draft.id,
+        courseId: 'course-1',
+      });
+
+      const postedEntry = page.entries.find((e) => e.action === 'announcement.posted');
+      expect(postedEntry).toMatchObject({
+        actorId: 'teacher-1',
+        actorRole: 'teacher',
+        targetType: 'announcement',
+        targetId: published.id,
+        courseId: 'course-1',
+      });
+      expect(postedEntry?.before).toBeNull();
+      expect(postedEntry?.after).toMatchObject({
+        audience: 'course:course-1',
+        recipientCount: 2,
+      });
+    });
+
+    it('records the teacher as teacher, not as an assistant', async () => {
+      const draft = await admin.createDraft({ ...MESSAGE, audience: 'all_tas' }, ADMIN);
+      await admin.publish(draft.id, ADMIN);
+      const page = await audit.find({ limit: 10 });
+      const entry = page.entries.find((e) => e.action === 'announcement.posted');
+      expect(entry?.actorRole).toBe('teacher');
+      // Platform-wide, so it belongs to no course.
+      expect(entry?.courseId).toBeNull();
+    });
+  });
+
+  describe('reading them back', () => {
+    it('scopes the course list the same way the write is scoped', async () => {
+      await staff.createCourseDraft('course-1', MESSAGE, ASSIGNED_TA);
+      const mine = await staff.listForCourse('course-1', {}, ASSIGNED_TA);
+      expect(mine).toHaveLength(1);
+      await expect(staff.listForCourse('course-2', {}, ASSIGNED_TA)).rejects.toThrow(
+        NotFoundException,
+      );
+      await expect(staff.listForCourse('course-1', {}, UNASSIGNED_TA)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('keeps a course list to that course', async () => {
+      await staff.createCourseDraft('course-1', MESSAGE, ADMIN);
+      await staff.createCourseDraft('course-2', MESSAGE, ADMIN);
+      await admin.createDraft({ ...MESSAGE, audience: 'all_students' }, ADMIN);
+
+      const courseOne = await staff.listForCourse('course-1', {}, ADMIN);
+      expect(courseOne).toHaveLength(1);
+      expect(courseOne[0]?.courseId).toBe('course-1');
+
+      // The admin history spans every audience, including the platform-wide one.
+      const all = await admin.list({});
+      expect(all).toHaveLength(3);
+      expect(all.map((a) => a.audience)).toContain('all_students');
+    });
+
+    it('returns newest first and pages by offset', async () => {
+      for (const title of ['first', 'second', 'third']) {
+        await admin.createDraft({ title, body: 'x', audience: 'all_tas' }, ADMIN);
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      const page = await admin.list({ limit: 2, offset: 0 });
+      expect(page).toHaveLength(2);
+      const next = await admin.list({ limit: 2, offset: 2 });
+      expect(next).toHaveLength(1);
+      expect([...page, ...next].map((a) => a.title)).toEqual([
+        'third',
+        'second',
+        'first',
+      ]);
+    });
   });
 });
