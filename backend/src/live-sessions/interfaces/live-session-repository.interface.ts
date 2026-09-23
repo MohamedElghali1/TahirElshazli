@@ -30,15 +30,37 @@ export interface LiveSession {
   state: 'planned' | 'published';
 }
 
+/**
+ * Attendance summary on a past session — the bare minimum `LiveSessionsService`
+ * needs to project the legacy course-keyed view (`getSessionsForCourse`,
+ * `getAttendanceSummary`). Only status and markedAt survive migration 019;
+ * the pre-migration boolean `attended` is gone.
+ *
+ * This type is _not_ `Attendance` from `AttendanceRepository`: that carries the
+ * actor (`markedBy`) too, and is owned by the attendance half of the split. This
+ * lighter shape is what the course-keyed service can compute without leaking the
+ * actor to the legacy student surface.
+ */
 export interface AttendanceRecord {
   sessionId: string;
   studentId: string;
-  attended: boolean;
-  attendedAt: string | null;
+  status: 'present' | 'absent' | 'late';
+  markedAt: string;
 }
 
+/**
+ * A past session with the student's own mark attached, for the legacy
+ * `GET /courses/:id/live-sessions` response (`LiveSessionsService`).
+ *
+ * `attended` is the boolean projection (`status === 'present'`) that the old
+ * API shape requires; `late` collapses to `false` there, which the field
+ * comment states. S4 (`/students/me/attendance`) is where the full three-state
+ * shape belongs.
+ */
 export interface LiveSessionWithAttendance extends LiveSession {
+  /** `true` when `status === 'present'`, `false` for `absent` or `late`. */
   attended: boolean;
+  /** `null` when this session has no mark for the student. */
   attendedAt: string | null;
 }
 

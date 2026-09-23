@@ -108,10 +108,15 @@ export class InMemoryLiveSessionRepository implements LiveSessionRepository {
   private nextId = 1;
 
   private byDate(sessions: LiveSession[]): LiveSession[] {
-    return sessions.sort(
-      (a, b) =>
-        new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime(),
-    );
+    return sessions.sort((a, b) => {
+      const tDiff =
+        new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime();
+      // When two sessions share a millisecond (e.g., two writes in one test),
+      // fall back to id so the order is repeatable within this driver.
+      // Cross-driver agreement is not promised: Postgres ids are UUIDs,
+      // memory ids are sequential, so a tied pair may still order differently.
+      return tDiff !== 0 ? tDiff : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    });
   }
 
   async findByGroups(groupIds: readonly string[]): Promise<LiveSession[]> {

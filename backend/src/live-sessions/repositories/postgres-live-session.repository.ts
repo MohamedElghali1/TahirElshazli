@@ -54,7 +54,7 @@ export class PostgresLiveSessionRepository implements LiveSessionRepository {
       `SELECT ${SESSION_COLUMNS}
        FROM live_sessions
        WHERE group_id = ANY($1::text[])
-       ORDER BY scheduled_at`,
+       ORDER BY scheduled_at, id`,
       [groupIds],
     );
     return rows.map(toSession);

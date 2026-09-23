@@ -106,6 +106,12 @@ ALTER TABLE live_sessions
 
 ALTER TABLE live_sessions DROP COLUMN course_id;
 
+-- Always a no-op, and the NOTICE it emits is expected rather than a problem.
+-- Postgres drops every index on a column when that column goes, so the
+-- DROP COLUMN above already took this one with it - how the index was created
+-- (001 built it as a standalone CREATE INDEX) has no bearing on that. Kept as
+-- an explicit statement of intent: the course-keyed index is meant to be gone,
+-- and `IF EXISTS` makes saying so free on any schema where it already is.
 DROP INDEX IF EXISTS live_sessions_course_id_scheduled_at_idx;
 CREATE INDEX live_sessions_group_id_scheduled_at_idx
   ON live_sessions (group_id, scheduled_at);
