@@ -1047,7 +1047,7 @@ describe('Staff and admin API (e2e)', () => {
       await request(app.getHttpServer())
         .delete('/staff/assessments/assess-3')
         .set(bearer(adminToken))
-        .expect(400);
+        .expect(409);
     });
 
     it('records the authoring in the audit log with the TA as actor', async () => {

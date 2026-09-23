@@ -936,16 +936,14 @@ export class AssessmentAuthoringService {
         assessmentId,
       ]);
       if (submissions.length > 0) {
-        throw new BadRequestException(
+        throw new ConflictException(
           'This assessment has submissions and cannot be deleted. ' +
             'Close its availability window or re-target it instead.',
         );
       }
       // `D-36` (review F-3): synced external results are handed-in work too,
       // and deleting the task would cascade them away. Before unit 6's
-      // remediation this path deleted them silently. A 409 - a state conflict
-      // - where the pre-existing submissions refusal above stays a 400
-      // (unchanged, and recorded as an inconsistency, not silently "fixed").
+      // remediation this path deleted them silently.
       if ((await this.externalResultCount(assessmentId)) > 0) {
         throw new ConflictException(
           'Students have already answered this task on its external form, so it ' +

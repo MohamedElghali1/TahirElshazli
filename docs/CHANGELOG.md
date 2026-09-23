@@ -1322,7 +1322,7 @@ edit, unconfigured-assistant and mismatched-role cases.
 `B-6`), each with a recommended reading marked as an *assumption*. On 2026-09-22 the coordinator and
 the user approved slices 6a–6e and ruled on all six, each as the planner's recommendation. The rulings
 below are therefore **decisions**, not assumptions, and slices 6f–6k are built on them. Because `B-1`
-and `B-4` add or narrow columns, both were folded into migration `018` before it first ran — no `019`.
+and `B-4` add or narrow columns, both were folded into migration `018` before it first ran — no `020`.
 
 ### `D-28` — `B-1`: `visibility` stores `published | hidden`; `scheduled` is derived, not stored (reading C + iii)
 
@@ -1514,3 +1514,48 @@ different marker → 403; clearing a set marker → 403 (unit).
 
 **Also filed:** `TASK-F3` (align the submissions-delete refusal to 409) and `TASK-F4` (Postgres
 work/credential integration coverage, `tallyResults` first).
+
+---
+
+## 2026-09-23 — Unit 7 opens: the user rules on `MARK-6`'s three undecided questions (`D-38` … `D-40`)
+
+`IMPLEMENTATION_PLAN.md:293` left `MARK-6` explicitly undecided — "Unit 7 decides what each mode
+admits". All three answers change migration `020`'s columns, so they were put to the user before it
+was authored rather than assumed.
+
+### `D-38` — multi-file is a `submission_files` table, not an array on the submission
+- One row per file, with a stable 0-based `position`. `submission_annotations.file_id` is a real
+  foreign key to it.
+- **Rejected:** `file_urls TEXT[]` with the annotation pointing at an array index. Deleting or
+  reordering one photo silently re-aims every stroke that followed it, and the corruption is
+  invisible — the overlay still renders, just over the wrong page. A row id does not move.
+- **Rejected:** stitching photos into one PDF client-side. Loses the originals.
+- `assessment_submissions.file_url` is **not** dropped. Every existing row and every existing read
+  still uses it, and collapsing the two is a destructive step `020` deliberately does not take. An
+  annotation with `file_id IS NULL` belongs to that pre-`020` single file.
+
+### `D-39` — `doc_link` admits **either** a file or a link
+- Not link-only, and not file-only: `link_url` is nullable and sits beside the files. The student
+  picks. The marker sees whichever arrived.
+- Scheme is validated in the service (https only, so a `javascript:` URL cannot be stored and handed
+  to a marker to click). Not a CHECK constraint — the whitelist lives in one place (`CLAUDE.md` §8)
+  and a second copy in SQL is a second copy to keep in step.
+- The link is never fetched server-side, so this is an XSS/phishing control, not an SSRF one.
+
+### `D-40` — `pdf_upload` admits pdf, docx and zip
+- `photo_upload` admits image types, **five files at most**.
+- Enforced at submit time in the service, not in SQL, for the same one-place reason as `D-39`.
+- Unit 6's `018` comment ("the task's `allowed_file_types` govern the upload exactly as before") is
+  superseded: from `020` the mode narrows the whitelist rather than only describing it.
+
+### `TASK-F3` closed in the same pass
+Deleting a task that has submissions now answers **409**, not 400 — the code `CLAUDE.md` §6 names
+for a state conflict, and what `D-36`'s sibling external-result refusal already used. The
+inconsistency `D-36` recorded rather than silently fixed is now fixed deliberately. The e2e
+`refuses to delete a task that has submissions` asserts 409 and passes.
+
+### One thing the migration does that was not asked for, and why
+`020` **backfills** `returned_at = corrected_at` on every already-corrected row. `MARK-2` moves
+student visibility from `corrected_at` to `returned_at`; leaving the new column NULL would have
+taken away, on deploy, every mark every student can currently see. Those marks were returned under
+the old rule, which had no way to hold one back.

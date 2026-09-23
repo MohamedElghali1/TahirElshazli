@@ -7,9 +7,14 @@ import type {
   AssessmentUpdate,
   NewAssessment,
   NewAssessmentTarget,
+  NewSubmissionAnnotation,
+  NewSubmissionFile,
   StaffTaskFilter,
   StoredAssessment,
   StoredSubmission,
+  SubmissionAnnotation,
+  SubmissionAnnotationUpdate,
+  SubmissionFile,
   SubmissionRevision,
   TargetedAssessment,
 } from '../interfaces/assessment-repository.interface.js';
@@ -54,6 +59,11 @@ function copyAssessment<T extends StoredAssessment>(a: T): T {
     submissionModes: [...a.submissionModes],
     attachments: a.attachments.map((x) => ({ ...x })),
   };
+}
+
+/** Same aliasing rule as `copyAssessment`: `path` holds objects. */
+function copyAnnotation(a: SubmissionAnnotation): SubmissionAnnotation {
+  return { ...a, path: a.path ? a.path.map((p) => ({ ...p })) : null };
 }
 
 const SEED_ASSESSMENTS: SeedAssessment[] = [
@@ -243,6 +253,8 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       correctedAt: '2026-08-22T10:00:00Z',
       feedback: 'Strong titration work. Watch significant figures in part 3.',
       annotatedFileUrl: 'https://storage.example.com/annotated/midterm-corrected.pdf',
+      linkUrl: null,
+      returnedAt: '2026-08-22T10:00:00Z',
     },
     {
       id: 'sub-2',
@@ -257,6 +269,8 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       correctedAt: null,
       feedback: null,
       annotatedFileUrl: null,
+      linkUrl: null,
+      returnedAt: null,
     },
     {
       id: 'sub-3',
@@ -271,6 +285,8 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       correctedAt: '2026-07-15T09:00:00Z',
       feedback: 'Excellent. Only slipped on the halogenoalkane ordering.',
       annotatedFileUrl: null,
+      linkUrl: null,
+      returnedAt: '2026-07-15T09:00:00Z',
     },
     {
       id: 'sub-4',
@@ -285,6 +301,8 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       correctedAt: '2026-06-25T11:00:00Z',
       feedback: 'Revise Hess cycles and the effect of temperature on rate.',
       annotatedFileUrl: null,
+      linkUrl: null,
+      returnedAt: '2026-06-25T11:00:00Z',
     },
     {
       id: 'sub-5',
@@ -299,6 +317,8 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       correctedAt: '2026-08-12T13:00:00Z',
       feedback: 'Good routes. Justify reagent choice more explicitly next time.',
       annotatedFileUrl: null,
+      linkUrl: null,
+      returnedAt: '2026-08-12T13:00:00Z',
     },
     {
       id: 'sub-6',
@@ -313,10 +333,19 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       correctedAt: '2026-05-21T10:30:00Z',
       feedback: 'Solid, but check your mass spectrometry interpretation.',
       annotatedFileUrl: null,
+      linkUrl: null,
+      returnedAt: '2026-05-21T10:30:00Z',
     },
   ];
 
   private revisions: SubmissionRevision[] = [];
+
+  /** Empty seed: no stub submission predates `020`'s multi-file model. */
+  private submissionFiles: SubmissionFile[] = [];
+  private submissionFileSeq = 0;
+
+  private annotations: SubmissionAnnotation[] = [];
+  private annotationSeq = 0;
 
   /**
    * A per-instance copy of the seed, not the module-level array.
@@ -653,6 +682,108 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
     return submission;
   }
 
+  async returnSubmission(
+    submissionId: string,
+  ): Promise<StoredSubmission | null> {
+    const submission = this.submissions.find((s) => s.id === submissionId);
+    if (!submission) {
+      return null;
+    }
+    const now = new Date().toISOString();
+    // Re-returning after a re-mark re-stamps, for the same reason
+    // `correctedAt` does: it is when what the student sees was released.
+    submission.returnedAt = now;
+    submission.updatedAt = now;
+    return { ...submission };
+  }
+
+  async findFilesForSubmissions(
+    submissionIds: readonly string[],
+  ): Promise<SubmissionFile[]> {
+    const wanted = new Set(submissionIds);
+    return this.submissionFiles
+      .filter((f) => wanted.has(f.submissionId))
+      .map((f) => ({ ...f }));
+  }
+
+  async replaceSubmissionFiles(
+    submissionId: string,
+    files: readonly NewSubmissionFile[],
+  ): Promise<SubmissionFile[]> {
+    this.submissionFiles = this.submissionFiles.filter(
+      (f) => f.submissionId !== submissionId,
+    );
+    const now = new Date().toISOString();
+    const created = files.map((f, i) => ({
+      ...f,
+      id: `subfile-${++this.submissionFileSeq}`,
+      submissionId,
+      // The caller's order is the truth; its `position` is not trusted, so a
+      // gap or a duplicate cannot reach the `UNIQUE` column in Postgres.
+      position: i,
+      createdAt: now,
+    }));
+    this.submissionFiles.push(...created);
+    return created.map((f) => ({ ...f }));
+  }
+
+  async findAnnotations(
+    submissionId: string,
+  ): Promise<SubmissionAnnotation[]> {
+    return this.annotations
+      .filter((a) => a.submissionId === submissionId)
+      .map(copyAnnotation);
+  }
+
+  async findAnnotationById(
+    annotationId: string,
+  ): Promise<SubmissionAnnotation | null> {
+    const found = this.annotations.find((a) => a.id === annotationId);
+    return found ? copyAnnotation(found) : null;
+  }
+
+  async createAnnotation(
+    annotation: NewSubmissionAnnotation,
+  ): Promise<SubmissionAnnotation> {
+    const now = new Date().toISOString();
+    const created: SubmissionAnnotation = {
+      ...annotation,
+      path: annotation.path ? annotation.path.map((p) => ({ ...p })) : null,
+      id: `annot-${++this.annotationSeq}`,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.annotations.push(created);
+    return copyAnnotation(created);
+  }
+
+  async updateAnnotation(
+    annotationId: string,
+    update: SubmissionAnnotationUpdate,
+  ): Promise<SubmissionAnnotation | null> {
+    const found = this.annotations.find((a) => a.id === annotationId);
+    if (!found) {
+      return null;
+    }
+    if (update.page !== undefined) found.page = update.page;
+    if (update.x !== undefined) found.x = update.x;
+    if (update.y !== undefined) found.y = update.y;
+    if (update.path !== undefined) {
+      found.path = update.path ? update.path.map((p) => ({ ...p })) : null;
+    }
+    if (update.colour !== undefined) found.colour = update.colour;
+    if (update.width !== undefined) found.width = update.width;
+    if (update.body !== undefined) found.body = update.body;
+    found.updatedAt = new Date().toISOString();
+    return copyAnnotation(found);
+  }
+
+  async deleteAnnotation(annotationId: string): Promise<boolean> {
+    const before = this.annotations.length;
+    this.annotations = this.annotations.filter((a) => a.id !== annotationId);
+    return this.annotations.length !== before;
+  }
+
   async createSubmission(
     assessmentId: string,
     studentId: string,
@@ -673,6 +804,8 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       correctedAt: null,
       feedback: null,
       annotatedFileUrl: null,
+      linkUrl: null,
+      returnedAt: null,
     };
     this.submissions.push(submission);
     return submission;
