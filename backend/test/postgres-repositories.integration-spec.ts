@@ -23,6 +23,7 @@ import { PostgresBlogRepository } from '../src/blog/repositories/postgres-blog.r
 import { PostgresMailDeliveryRepository } from '../src/mail/postgres-mail-delivery.repository.js';
 import { PostgresAssistantInvitationRepository } from '../src/manage/repositories/postgres-assistant-invitation.repository.js';
 import { PostgresTaskDraftRepository } from '../src/manage/repositories/postgres-task-draft.repository.js';
+import { PostgresWorkRepository } from '../src/assessments/repositories/postgres-work.repository.js';
 import type { NewAssessment } from '../src/assessments/interfaces/assessment-repository.interface.js';
 import { Role } from '../src/auth/roles.enum.js';
 
@@ -2599,6 +2600,73 @@ describeIfDb('Postgres repositories', () => {
       const byName = Object.fromEntries(rows.map((r) => [r.indexname, r.indexdef]));
       expect(byName.assistant_invitations_email_idx).toMatch(/WHERE \(accepted_at IS NULL\)/);
       expect(byName.assistant_invitations_token_idx).toContain('token');
+    });
+  });
+
+  /**
+   * `TASK-F4` (unit 7, part): the external-results reads that guard a delete
+   * (`D-36`, `tallyResults`), feed the student list (`countResultsByAssessments`)
+   * and feed the mark book (`findResults`, `findResultsForStudent`, `D-46`).
+   * None had ever run against real Postgres before this block. The SQL is
+   * unchanged: these pin what it already does.
+   */
+  describe('work results (TASK-F4)', () => {
+    const work = () => new PostgresWorkRepository(db);
+    let formTask: string;
+    let emptyTask: string;
+
+    beforeAll(async () => {
+      const assessments = new PostgresAssessmentRepository(db);
+      formTask = (
+        await assessments.create({ ...NEW_TASK, title: 'TASK-F4 form', workType: 'google_form' })
+      ).id;
+      emptyTask = (
+        await assessments.create({ ...NEW_TASK, title: 'TASK-F4 empty', workType: 'google_form' })
+      ).id;
+      await work().replaceResults(formTask, 'google_form', [
+        { assessmentId: formTask, provider: 'google_form', externalId: 'r-1', studentId: 'student-1', respondentId: 'student@example.com', score: 8, maxScore: 10, submittedAt: '2026-09-02T10:00:00.000Z', raw: {} },
+        { assessmentId: formTask, provider: 'google_form', externalId: 'r-2', studentId: 'student-2', respondentId: 's2@example.com', score: 6.5, maxScore: 10, submittedAt: '2026-09-03T10:00:00.000Z', raw: {} },
+        { assessmentId: formTask, provider: 'google_form', externalId: 'r-3', studentId: null, respondentId: 'stranger@example.com', score: 5, maxScore: 10, submittedAt: '2026-09-04T10:00:00.000Z', raw: {} },
+      ]);
+    });
+
+    it('tallyResults counts matched and unmatched, and averages matched scores only', async () => {
+      const tally = await work().tallyResults(formTask);
+      expect(tally).toEqual({ matched: 2, unmatched: 1, averageScore: 7.25, averageMaxScore: 10 });
+      // COUNT is bigint and AVG is numeric: both arrive as strings from `pg`.
+      expect(typeof tally.matched).toBe('number');
+      expect(typeof tally.averageScore).toBe('number');
+    });
+
+    it('tallyResults answers zeros and nulls for a task with no results', async () => {
+      expect(await work().tallyResults(emptyTask)).toEqual({
+        matched: 0,
+        unmatched: 0,
+        averageScore: null,
+        averageMaxScore: null,
+      });
+    });
+
+    it('countResultsByAssessments counts per task for one student, absent meaning none', async () => {
+      expect(await work().countResultsByAssessments([formTask, emptyTask], 'student-1')).toEqual({
+        [formTask]: 1,
+      });
+      expect(await work().countResultsByAssessments([formTask], 'nobody')).toEqual({});
+      expect(await work().countResultsByAssessments([], 'student-1')).toEqual({});
+    });
+
+    it('findResultsForStudent returns only that student’s rows, with numeric scores', async () => {
+      const mine = await work().findResultsForStudent([formTask, emptyTask], 'student-2');
+      expect(mine.map((r) => r.externalId)).toEqual(['r-2']);
+      expect(mine[0]!.score).toBe(6.5);
+      expect(typeof mine[0]!.maxScore).toBe('number');
+      expect(await work().findResultsForStudent([], 'student-2')).toEqual([]);
+    });
+
+    it('findResults returns every row for a task, newest first, unmatched included', async () => {
+      const all = await work().findResults(formTask);
+      expect(all.map((r) => r.externalId)).toEqual(['r-3', 'r-2', 'r-1']);
+      expect(all.find((r) => r.externalId === 'r-3')!.studentId).toBeNull();
     });
   });
 });

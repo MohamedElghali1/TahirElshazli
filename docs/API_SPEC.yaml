@@ -1502,12 +1502,12 @@ paths:
       tags: [tasks]
       x-roles: [assistant, teacher, admin]
       description: >
-        Refused with 400 once anything has been submitted (pre-existing), and with
-        409 once any external result has synced (`D-36`) - deleting would cascade
-        students' form responses away.
+        Refused with 409 once anything has been submitted (`TASK-F3`, unit 7 - it
+        was a 400 until then), and with 409 once any external result has synced
+        (`D-36`) - deleting would cascade students' work away. Both are state
+        conflicts; the messages differ.
       responses:
         '204': { description: Deleted }
-        '400': { $ref: '#/components/responses/BadRequest' }
         '409': { $ref: '#/components/responses/Conflict' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }

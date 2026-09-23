@@ -321,9 +321,14 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
     it('refuses to delete one that has a submission', async () => {
       // assess-3 carries sub-1. A submission is a student's work and §6 keeps
       // history where history matters, so this refuses rather than cascading.
+      // `TASK-F3`: a 409, matching `D-36`'s refusal for synced results.
       await expect(
         authoring.remove('assess-3', ADMIN),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      ).rejects.toBeInstanceOf(ConflictException);
+      await expect(authoring.remove('assess-3', ADMIN)).rejects.toThrow(
+        'This assessment has submissions and cannot be deleted. ' +
+          'Close its availability window or re-target it instead.',
+      );
     });
   });
 

@@ -1043,11 +1043,16 @@ describe('Staff and admin API (e2e)', () => {
     });
 
     it('refuses to delete a task that has submissions', async () => {
-      // assess-3 carries a graded submission.
-      await request(app.getHttpServer())
+      // assess-3 carries a graded submission. `TASK-F3`: 409, a state
+      // conflict, the same status `D-36` gives a task with synced results.
+      const res = await request(app.getHttpServer())
         .delete('/staff/assessments/assess-3')
         .set(bearer(adminToken))
-        .expect(400);
+        .expect(409);
+      expect(res.body.message).toBe(
+        'This assessment has submissions and cannot be deleted. ' +
+          'Close its availability window or re-target it instead.',
+      );
     });
 
     it('records the authoring in the audit log with the TA as actor', async () => {
