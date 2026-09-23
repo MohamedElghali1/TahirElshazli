@@ -1554,8 +1554,35 @@ for a state conflict, and what `D-36`'s sibling external-result refusal already 
 inconsistency `D-36` recorded rather than silently fixed is now fixed deliberately. The e2e
 `refuses to delete a task that has submissions` asserts 409 and passes.
 
+### `D-ANN-1` — unit 10 (Announcements): `/admin/announcements/reach` moves to `/staff/announcements/reach`
+Two documents disagreed. `API_SPEC.yaml` stubbed `GET /admin/announcements/reach` with
+`x-roles: [assistant, teacher, admin]`; `CLAUDE.md` §6's route-split rule is explicit that `/admin/*`
+is teacher-and-admin-only, unscoped — an `/admin/*` route cannot legitimately name `assistant`. That
+is a finding, not a typo to quietly correct: the two documents said different things about who may
+see reach. **Resolution:** the route's *placement* was wrong, not its permissions — `assistant`
+belongs in the roles list, so the route moves to `/staff/announcements/reach` (all three roles,
+`StaffScopeService`-checked like every other `/staff/*` route). `API_SPEC.yaml` corrected in the same
+change (unit 10, slice 10a). Nothing implemented this route before the correction, so there is no
+back-compat cost.
+
+### `D-ANN-2` — unit 10: a published announcement IS editable (reverses the planner's initial assumption)
+The unit-10 phase plan originally assumed a published announcement is immutable — no `PATCH` once
+`published_at` is set — reasoning from the pre-existing `PostgresAnnouncementRepository`'s own
+docstring ("insert-and-read only... a retraction is a second announcement"). **The user ruled
+otherwise, via the coordinator: a typo in a published announcement must be correctable.** `PATCH`
+now works on a published row, editing title/body/media. The **audience** stays refused (`409`) once
+published — widening it after send would mean recipients who never received the original mail, and
+building a delta fan-out for that is a feature nobody asked for; refusing it is both the lazy and
+the honest answer. `DELETE` was not part of this ruling and stays refused on a published row,
+flagged as its own open follow-up rather than assumed either way. The `published_at` column, already
+the guard behind idempotent publish, now also guarantees an edit can never re-trigger the send: only
+`publish()`'s own guarded `UPDATE` ever sets it, and `updateDraft()` never touches it.
+
 ### One thing the migration does that was not asked for, and why
 `020` **backfills** `returned_at = corrected_at` on every already-corrected row. `MARK-2` moves
 student visibility from `corrected_at` to `returned_at`; leaving the new column NULL would have
 taken away, on deploy, every mark every student can currently see. Those marks were returned under
 the old rule, which had no way to hold one back.
+
+### `B-ANN-1` — unit 10: TAs cannot publish announcements
+Fixed a bug introduced earlier in unit 10 where a TA assigned to a course or group could publish an announcement targeted at it through `/staff/.../publish` routes, bypassing teacher/admin review. The staff publish routes were removed, and the `publish()` service method now unconditionally enforces the `teacher` or `admin` role for all announcements, closing the loophole.

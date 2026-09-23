@@ -349,6 +349,8 @@ describe('the authorization boundary', () => {
       // draft library" with no own-only rule (unit 6, `TASK-2`).
       expect(assistantDeletes.sort()).toEqual(
         [
+          'StaffAnnouncementsController.deleteCourseDraft',
+          'StaffAnnouncementsController.deleteGroupDraft',
           'StaffBlogController.remove',
           'StaffManageController.deleteAssessment',
           'TaskDraftsController.remove',

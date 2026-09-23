@@ -1,5 +1,7 @@
 import {
   BadRequestException,
+  ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -8,6 +10,7 @@ import { StaffScopeService, type StaffActor } from '../staff/staff-scope.service
 import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
+import { MailService } from '../mail/mail.service.js';
 import { Role } from '../auth/roles.enum.js';
 import { actorRoleOf } from '../auth/actor-role.js';
 import type { CourseRepository } from '../courses/interfaces/course-repository.interface.js';
@@ -16,6 +19,9 @@ import type { EnrollmentRepository } from '../enrollments/interfaces/enrollment-
 import { ENROLLMENT_REPOSITORY } from '../enrollments/interfaces/enrollment-repository.interface.js';
 import type { UserRepository } from '../auth/interfaces/user-repository.interface.js';
 import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js';
+import type { GroupRepository } from '../groups/interfaces/group-repository.interface.js';
+import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interface.js';
+import { GROUP_NOT_FOUND } from '../groups/groups.service.js';
 import type {
   Announcement,
   AnnouncementRepository,
@@ -25,13 +31,15 @@ import {
   parseAudience,
   type AnnouncementAudience,
 } from './announcement-audience.js';
+import { isUnscopedStaffRole } from '../auth/staff-roles.js';
 
 export interface AnnouncementContent {
   title: string;
   body: string;
+  mediaKind?: 'image' | 'video' | 'youtube' | 'file';
+  mediaUrl?: string;
 }
 
-/** Page size for the announcement lists. Bounded, so neither route drains the table. */
 export const MAX_ANNOUNCEMENT_PAGE_SIZE = 100;
 export const DEFAULT_ANNOUNCEMENT_PAGE_SIZE = 25;
 
@@ -39,119 +47,39 @@ export const DEFAULT_ANNOUNCEMENT_PAGE_SIZE = 25;
 export class AnnouncementsService {
   constructor(
     private readonly scope: StaffScopeService,
-    @Inject(ANNOUNCEMENT_REPOSITORY)
-    private readonly announcementRepo: AnnouncementRepository,
+    @Inject(ANNOUNCEMENT_REPOSITORY) private readonly announcementRepo: AnnouncementRepository,
     @Inject(COURSE_REPOSITORY) private readonly courseRepo: CourseRepository,
-    @Inject(ENROLLMENT_REPOSITORY)
-    private readonly enrollmentRepo: EnrollmentRepository,
+    @Inject(ENROLLMENT_REPOSITORY) private readonly enrollmentRepo: EnrollmentRepository,
     @Inject(USER_REPOSITORY) private readonly userRepo: UserRepository,
+    @Inject(GROUP_REPOSITORY) private readonly groupRepo: GroupRepository,
     private readonly notifications: NotificationsService,
+    private readonly mail: MailService,
     private readonly audit: AuditService,
-    /** `DatabaseModule` is `@Global()`; this needs no import edge. */
     private readonly db: DatabaseService,
   ) {}
 
-  /**
-   * Post to one course.
-   *
-   * The TA's half of §2.2's preset, which grants "post course announcements"
-   * explicitly - for courses they are assigned to and no others. The audience
-   * is `course:<courseId>` taken from the URL, never from the body: there is no
-   * field on `PostCourseAnnouncementDto` that could name a wider one, so a TA
-   * cannot reach `all_students` through this route even by sending it.
-   *
-   * `assertAssigned` is the same check every other TA-reachable route makes,
-   * and it 404s an unassigned course rather than 403ing it (§5.11) - there is
-   * deliberately no second way of deciding this.
-   */
-  async postToCourse(
-    courseId: string,
-    actor: StaffActor,
-    content: AnnouncementContent,
-  ): Promise<Announcement> {
-    await this.scope.assertAssigned(courseId, actor);
-    return this.send({ type: 'course', courseId }, actor, content);
-  }
-
-  /**
-   * Post to any audience. Teacher-only at the controller.
-   *
-   * `all_students` and `all_tas` are reachable from here and nowhere else,
-   * which is what makes them admin-only (§2.2: a TA never sees or addresses
-   * platform-wide data). A teacher may also target a single course through
-   * this route - they are unscoped, so no assignment row is consulted.
-   */
-  async post(
-    actor: StaffActor,
-    rawAudience: string,
-    content: AnnouncementContent,
-  ): Promise<Announcement> {
-    const audience = parseAudience(rawAudience);
-    if (!audience) {
-      // Unreachable through the DTO, which validates the same shape. Kept
-      // because a message delivered to a half-understood audience is a message
-      // delivered to the wrong people.
-      throw new BadRequestException('Unrecognised audience');
-    }
-    return this.send(audience, actor, content);
-  }
-
-  /**
-   * Resolve the audience, write the announcement, fan it out, and log it.
-   *
-   * The order matters. The announcement row is written *before* the fan-out so
-   * that a crash mid-delivery leaves a record of what was sent rather than a
-   * pile of notifications nothing accounts for. The audit entry comes last and
-   * carries the recipient count, so §5.4's "which assistant did what" answers
-   * with the size of the blast radius as well as the text.
-   */
-  private async send(
+  async createDraft(
     audience: AnnouncementAudience,
     actor: StaffActor,
     content: AnnouncementContent,
   ): Promise<Announcement> {
     return this.db.runInTransaction(async () => {
-      const recipientIds = await this.resolveRecipients(audience);
-
       const announcement = await this.announcementRepo.create({
         audienceType: audience.type,
         courseId: audience.courseId,
+        groupId: audience.groupId,
         title: content.title,
         body: content.body,
+        mediaKind: content.mediaKind ?? null,
+        mediaUrl: content.mediaUrl ?? null,
         postedBy: actor.id,
-        recipientCount: recipientIds.length,
-      });
-
-      /**
-       * Delivery is a notification per recipient (§5.14 resolved the audience
-       * above; this is what makes it readable).
-       *
-       * Chosen over a "student fetches announcements for their courses" endpoint
-       * because the platform already has a mailbox with an unread badge, a
-       * read/unread state and a page - all of which an announcement needs and
-       * none of which a new endpoint would have. The cost is one member on the
-       * closed `NotificationType` union and one CHECK constraint in migration
-       * 005.
-       *
-       * The body travels as the notification's message rather than as a link to
-       * a detail page, because there is no announcement detail page - truncating
-       * it would hide text with nowhere to go and read it. The link points at the
-       * course home for a course announcement and is null platform-wide, where no
-       * single page is the subject.
-       */
-      await this.notifications.fanOut(recipientIds, {
-        type: 'announcement',
-        title: content.title,
-        message: content.body,
-        link: audience.courseId ? `/learn/${audience.courseId}` : null,
+        recipientCount: 0,
       });
 
       await this.audit.record({
         actorId: actor.id,
-        // The actor's role as it was (§5.4). A TA posting to their own course and
-        // the teacher posting platform-wide must not read alike in the log.
         actorRole: actorRoleOf(actor),
-        action: 'announcement.posted',
+        action: 'announcement.created',
         targetType: 'announcement',
         targetId: announcement.id,
         courseId: audience.courseId,
@@ -159,7 +87,6 @@ export class AnnouncementsService {
         after: {
           audience: announcement.audience,
           title: announcement.title,
-          recipientCount: announcement.recipientCount,
         },
       });
 
@@ -167,84 +94,224 @@ export class AnnouncementsService {
     });
   }
 
-  /**
-   * Who receives it, decided now (§5.14).
-   *
-   * Nothing here reads a stored list. `all_tas` resolves from the role at this
-   * instant, so an assistant hired after the announcement was drafted is
-   * covered and one who left is not.
-   *
-   * **`all_tas` includes the Full admin** (unit-1 ruling 3, D-a). It is the
-   * staff broadcast channel and there is no other route to staff
-   * (`PHASE_ROADMAP.md` §4), so excluding `admin` would silently drop a
-   * recipient - and a missed recipient is invisible where a redundant one is
-   * merely redundant. `STAFF_ALL` is deliberately *not* used: the teacher is
-   * the person sending, not an audience member.
-   */
-  private async resolveRecipients(
-    audience: AnnouncementAudience,
-  ): Promise<string[]> {
-    if (audience.type === 'all_tas') {
-      return this.userRepo.findIdsByRole([Role.Assistant, Role.Admin]);
-    }
-    if (audience.type === 'all_students') {
-      return this.userRepo.findIdsByRole([Role.Student]);
+  async postToCourse(courseId: string, actor: StaffActor, content: AnnouncementContent): Promise<Announcement> {
+    await this.scope.assertAssigned(courseId, actor);
+    return this.createDraft({ type: 'course', courseId, groupId: null }, actor, content);
+  }
+
+  async postToGroup(groupId: string, actor: StaffActor, content: AnnouncementContent): Promise<Announcement> {
+    const canReach = await this.scope.mayReachGroup(groupId, actor);
+    if (!canReach) throw new NotFoundException(GROUP_NOT_FOUND);
+    return this.createDraft({ type: 'group', courseId: null, groupId }, actor, content);
+  }
+
+  async post(actor: StaffActor, rawAudience: string, content: AnnouncementContent): Promise<Announcement> {
+    const audience = parseAudience(rawAudience);
+    if (!audience) throw new BadRequestException('Unrecognised audience');
+    return this.createDraft(audience, actor, content);
+  }
+
+  async updateDraft(id: string, actor: StaffActor, patch: Partial<AnnouncementContent> & { audience?: string }): Promise<Announcement> {
+    return this.db.runInTransaction(async () => {
+      const existing = await this.announcementRepo.findById(id);
+      if (!existing) throw new NotFoundException('Announcement not found');
+
+      if (existing.courseId) await this.scope.assertAssigned(existing.courseId, actor);
+      if (existing.groupId) {
+        const canReach = await this.scope.mayReachGroup(existing.groupId, actor);
+        if (!canReach) throw new NotFoundException(GROUP_NOT_FOUND);
+      }
+
+      if (existing.publishedAt && patch.audience !== undefined) {
+        throw new ConflictException('Cannot change audience of a published announcement');
+      }
+
+      const updates: Parameters<AnnouncementRepository['update']>[1] = {
+        title: patch.title,
+        body: patch.body,
+        mediaKind: patch.mediaKind === undefined ? undefined : (patch.mediaKind ?? null),
+        mediaUrl: patch.mediaUrl === undefined ? undefined : (patch.mediaUrl ?? null),
+      };
+
+      if (patch.audience !== undefined && !existing.publishedAt) {
+        const parsed = parseAudience(patch.audience);
+        if (!parsed) throw new BadRequestException('Unrecognised audience');
+        if (parsed.courseId) await this.scope.assertAssigned(parsed.courseId, actor);
+        if (parsed.groupId) {
+          const canReach = await this.scope.mayReachGroup(parsed.groupId, actor);
+          if (!canReach) throw new NotFoundException(GROUP_NOT_FOUND);
+        }
+        updates.audienceType = parsed.type;
+        updates.courseId = parsed.courseId;
+        updates.groupId = parsed.groupId;
+      }
+
+      const updated = await this.announcementRepo.update(id, updates);
+      if (!updated) throw new NotFoundException('Announcement not found');
+
+      await this.audit.record({
+        actorId: actor.id,
+        actorRole: actorRoleOf(actor),
+        action: 'announcement.updated',
+        targetType: 'announcement',
+        targetId: updated.id,
+        courseId: updated.courseId,
+        before: { title: existing.title, audience: existing.audience },
+        after: { title: updated.title, audience: updated.audience },
+      });
+
+      return updated;
+    });
+  }
+
+  async deleteDraft(id: string, actor: StaffActor): Promise<void> {
+    return this.db.runInTransaction(async () => {
+      const existing = await this.announcementRepo.findById(id);
+      if (!existing) throw new NotFoundException('Announcement not found');
+
+      if (existing.courseId) await this.scope.assertAssigned(existing.courseId, actor);
+      if (existing.groupId) {
+        const canReach = await this.scope.mayReachGroup(existing.groupId, actor);
+        if (!canReach) throw new NotFoundException(GROUP_NOT_FOUND);
+      }
+
+      if (existing.publishedAt) throw new ConflictException('Cannot delete a published announcement');
+
+      const removed = await this.announcementRepo.remove(id);
+      if (!removed) throw new ConflictException('Failed to remove announcement');
+
+      await this.audit.record({
+        actorId: actor.id,
+        actorRole: actorRoleOf(actor),
+        action: 'announcement.deleted',
+        targetType: 'announcement',
+        targetId: id,
+        courseId: existing.courseId,
+        before: { title: existing.title, audience: existing.audience },
+        after: null,
+      });
+    });
+  }
+
+  async publish(id: string, actor: StaffActor): Promise<Announcement> {
+    return this.db.runInTransaction(async () => {
+      const announcement = await this.announcementRepo.findById(id);
+      if (!announcement) throw new NotFoundException('Announcement not found');
+
+      if (!isUnscopedStaffRole(actorRoleOf(actor))) {
+        throw new ForbiddenException('Only teachers and admins can publish announcements');
+      }
+
+      if (announcement.courseId) await this.scope.assertAssigned(announcement.courseId, actor);
+      if (announcement.groupId) {
+        const canReach = await this.scope.mayReachGroup(announcement.groupId, actor);
+        if (!canReach) throw new NotFoundException(GROUP_NOT_FOUND);
+      }
+
+      const audience: AnnouncementAudience = {
+        type: announcement.audienceType,
+        courseId: announcement.courseId,
+        groupId: announcement.groupId,
+      };
+
+      const recipientIds = await this.resolveRecipients(audience);
+      const published = await this.announcementRepo.publish(id, recipientIds.length);
+      
+      if (!published) throw new ConflictException('Announcement already published');
+
+      await this.notifications.fanOut(recipientIds, {
+        type: 'announcement',
+        title: published.title,
+        message: published.body,
+        link: audience.courseId ? `/learn/${audience.courseId}` : null,
+      });
+
+      const users = await this.userRepo.findByIds(recipientIds);
+      for (const user of users) {
+        if (user.email) {
+          await this.mail.send({
+            to: user.email,
+            template: 'announcement',
+            data: { title: published.title, body: published.body },
+          });
+        }
+      }
+
+      await this.audit.record({
+        actorId: actor.id,
+        actorRole: actorRoleOf(actor),
+        action: 'announcement.posted',
+        targetType: 'announcement',
+        targetId: published.id,
+        courseId: published.courseId,
+        before: null,
+        after: {
+          audience: published.audience,
+          title: published.title,
+          recipientCount: published.recipientCount,
+        },
+      });
+
+      return published;
+    });
+  }
+
+  private async resolveRecipients(audience: AnnouncementAudience): Promise<string[]> {
+    if (audience.type === 'all_tas') return this.userRepo.findIdsByRole([Role.Assistant, Role.Admin]);
+    if (audience.type === 'all_students') return this.userRepo.findIdsByRole([Role.Student]);
+
+    if (audience.type === 'group') {
+      const members = await this.groupRepo.findMembers(audience.groupId!);
+      return members.map(m => m.studentId);
     }
 
     const courseId = audience.courseId!;
     const course = await this.courseRepo.findById(courseId);
-    if (!course) {
-      throw new NotFoundException('Course not found');
-    }
-    // The enrolled roll, not every student: a course announcement addressed to
-    // the platform would be a different feature and a worse one.
+    if (!course) throw new NotFoundException('Course not found');
     const enrollments = await this.enrollmentRepo.findByCourse(courseId);
-    return enrollments.map((enrollment) => enrollment.studentId);
+    return enrollments.map(e => e.studentId);
   }
 
-  /** One course's announcements. TA-scoped through the same check as the write. */
-  async listForCourse(
-    courseId: string,
-    actor: StaffActor,
-    limit: number,
-    offset: number,
-  ): Promise<Announcement[]> {
-    await this.scope.assertAssigned(courseId, actor);
-    return this.announcementRepo.findByCourse(courseId, limit, offset);
-  }
+  async previewReach(rawAudience: string, actor: StaffActor): Promise<{ reach: number }> {
+    const audience = parseAudience(rawAudience);
+    if (!audience) throw new BadRequestException('Unrecognised audience');
 
-  /** Every announcement, whatever the audience. Admin-only; the controller enforces it. */
-  async listAll(limit: number, offset: number): Promise<Announcement[]> {
-    return this.announcementRepo.findAll(limit, offset);
-  }
-
-  /**
-   * What a **student** sees on a course they hold (CLAUDE.md §5.18).
-   *
-   * Until 2026-09-10 an announcement reached a student only as a notification -
-   * the body arrived in the mailbox and there was no page to click through to,
-   * which is why `Notification.link` is null for one. This is that page's read.
-   *
-   * The gate is enrollment, not the staff scope check: a student holds the
-   * course or they do not. Deliberately narrower than `listForCourse` in one
-   * respect - it returns only `course:<id>` rows, and never the platform-wide
-   * `all_students` ones. Those already reached this student's mailbox, and
-   * folding them into a course page would put an announcement about the
-   * platform under a heading about Chemistry.
-   */
-  async listForStudent(
-    courseId: string,
-    studentId: string,
-    limit: number,
-    offset: number,
-  ): Promise<Announcement[]> {
-    const enrollment = await this.enrollmentRepo.find(courseId, studentId);
-    if (!enrollment) {
-      // The same 404 an unenrolled student gets everywhere else, and for the
-      // same reason: it must not distinguish a course that exists from one
-      // that does not.
-      throw new NotFoundException('Course not found or student not enrolled');
+    if (!isUnscopedStaffRole(actorRoleOf(actor))) {
+      if (audience.type === 'all_students' || audience.type === 'all_tas') {
+        throw new ForbiddenException('Cannot preview reach for platform-wide audiences');
+      }
     }
-    return this.announcementRepo.findByCourse(courseId, limit, offset);
+
+    if (audience.type === 'course') {
+      await this.scope.assertAssigned(audience.courseId!, actor);
+    }
+    if (audience.type === 'group') {
+      const canReach = await this.scope.mayReachGroup(audience.groupId!, actor);
+      if (!canReach) throw new NotFoundException(GROUP_NOT_FOUND);
+    }
+
+    const recipientIds = await this.resolveRecipients(audience);
+    return { reach: recipientIds.length };
+  }
+
+  async listForCourse(courseId: string, actor: StaffActor, limit: number, offset: number, status?: 'draft' | 'published'): Promise<Announcement[]> {
+    await this.scope.assertAssigned(courseId, actor);
+    return this.announcementRepo.findByCourse(courseId, limit, offset, status);
+  }
+
+  async listForGroup(groupId: string, actor: StaffActor, limit: number, offset: number, status?: 'draft' | 'published'): Promise<Announcement[]> {
+    const canReach = await this.scope.mayReachGroup(groupId, actor);
+    if (!canReach) throw new NotFoundException(GROUP_NOT_FOUND);
+    return this.announcementRepo.findByGroup(groupId, limit, offset, status);
+  }
+
+  async listAll(limit: number, offset: number, status?: 'draft' | 'published'): Promise<Announcement[]> {
+    return this.announcementRepo.findAll(limit, offset, status);
+  }
+
+  async listForStudent(courseId: string, studentId: string, limit: number, offset: number): Promise<Announcement[]> {
+    const enrollment = await this.enrollmentRepo.find(courseId, studentId);
+    if (!enrollment) throw new NotFoundException('Course not found or student not enrolled');
+    return this.announcementRepo.findByCourse(courseId, limit, offset, 'published');
   }
 }

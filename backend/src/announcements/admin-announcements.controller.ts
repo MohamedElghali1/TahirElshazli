@@ -1,9 +1,12 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
+  Param,
+  Patch,
   Post,
   Query,
   Request,
@@ -19,19 +22,9 @@ import type { Announcement } from './interfaces/announcement-repository.interfac
 import {
   ListAnnouncementsQueryDto,
   PostAnnouncementDto,
+  PatchAnnouncementDraftDto,
 } from './dto/post-announcement.dto.js';
 
-/**
- * `/admin/*` - teacher only and unscoped (CLAUDE.md §5.11). Nothing here joins
- * through `CourseStaffAssignment`, and nothing should.
- *
- * The platform-wide audiences live here and nowhere else. That is the whole
- * role boundary for announcements: §2.2 gives a TA their own courses and never
- * platform-wide data, so `all_students` and `all_tas` are reachable only
- * through a controller a TA cannot enter. A TA who types this URL gets a 403
- * from `RolesGuard` - not a 404 - because unlike an unassigned course, the
- * route is not something they could ever hold.
- */
 @Controller('admin')
 @Roles(...STAFF_ADMIN)
 export class AdminAnnouncementsController {
@@ -41,7 +34,6 @@ export class AdminAnnouncementsController {
     return { id: req.user.sub, role: req.user.role };
   }
 
-  /** Every announcement, whatever its audience - the teacher's sent history. */
   @Get('announcements')
   async list(
     @Query() query: ListAnnouncementsQueryDto,
@@ -49,18 +41,48 @@ export class AdminAnnouncementsController {
     return this.announcements.listAll(
       query.limit ?? DEFAULT_ANNOUNCEMENT_PAGE_SIZE,
       query.offset ?? 0,
+      query.status,
     );
   }
 
   @Post('announcements')
   @HttpCode(HttpStatus.CREATED)
-  async post(
+  async createDraft(
     @Body() body: PostAnnouncementDto,
     @Request() req: { user: JwtPayload },
   ): Promise<Announcement> {
     return this.announcements.post(this.actor(req), body.audience, {
       title: body.title,
       body: body.body,
+      mediaKind: body.mediaKind,
+      mediaUrl: body.mediaUrl,
     });
+  }
+
+  @Patch('announcements/:id')
+  async updateDraft(
+    @Param('id') id: string,
+    @Body() body: PatchAnnouncementDraftDto,
+    @Request() req: { user: JwtPayload },
+  ): Promise<Announcement> {
+    return this.announcements.updateDraft(id, this.actor(req), body);
+  }
+
+  @Delete('announcements/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteDraft(
+    @Param('id') id: string,
+    @Request() req: { user: JwtPayload },
+  ): Promise<void> {
+    await this.announcements.deleteDraft(id, this.actor(req));
+  }
+
+  @Post('announcements/:id/publish')
+  @HttpCode(HttpStatus.OK)
+  async publish(
+    @Param('id') id: string,
+    @Request() req: { user: JwtPayload },
+  ): Promise<Announcement> {
+    return this.announcements.publish(id, this.actor(req));
   }
 }

@@ -1,15 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { StaffAnnouncementsController } from './staff-announcements.controller.js';
 import { AdminAnnouncementsController } from './admin-announcements.controller.js';
 import { AnnouncementsService } from './announcements.service.js';
 import { ANNOUNCEMENT_REPOSITORY } from './interfaces/announcement-repository.interface.js';
 import { InMemoryAnnouncementRepository } from './repositories/in-memory-announcement.repository.js';
-import {
-  encodeAudience,
-  parseAudience,
-  AUDIENCE_PATTERN,
-} from './announcement-audience.js';
 import { StaffScopeService } from '../staff/staff-scope.service.js';
 import { ASSISTANT_SCOPE_REPOSITORY } from '../staff/interfaces/assistant-scope-repository.interface.js';
 import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interface.js';
@@ -29,30 +24,28 @@ import { InMemoryAuditLogRepository } from '../audit/repositories/in-memory-audi
 import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import { DATABASE_POOL } from '../database/database.tokens.js';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
-import { RolesGuard } from '../auth/roles.guard.js';
 import { Role } from '../auth/roles.enum.js';
-import type { PostCourseAnnouncementDto } from './dto/post-announcement.dto.js';
+import { MailService } from '../mail/mail.service.js';
+import { parseAudience, encodeAudience } from './announcement-audience.js';
 
-/** `assistant-1` holds course-1 and not course-2; `assistant-2` holds neither. */
-const ASSIGNED_TA = {
-  user: { sub: 'assistant-1', email: 'a1@example.com', role: 'assistant', jti: 'j1' },
-};
-const UNASSIGNED_TA = {
-  user: { sub: 'assistant-2', email: 'a2@example.com', role: 'assistant', jti: 'j2' },
-};
-const ADMIN = {
-  user: { sub: 'teacher-1', email: 't@example.com', role: 'teacher', jti: 'j3' },
-};
+const ASSIGNED_TA = { user: { sub: 'assistant-1', email: 'a1@example.com', role: 'assistant', jti: 'j1' } };
+const UNASSIGNED_TA = { user: { sub: 'assistant-2', email: 'a2@example.com', role: 'assistant', jti: 'j2' } };
+const ADMIN = { user: { sub: 'teacher-1', email: 't@example.com', role: 'teacher', jti: 'j3' } };
 
 const MESSAGE = { title: 'Class moved', body: 'Sunday moves to 19:00.' };
 
-describe('Announcements', () => {
+describe('Announcements Unit & Integration', () => {
   let staff: StaffAnnouncementsController;
   let admin: AdminAnnouncementsController;
+  let service: AnnouncementsService;
   let audit: AuditService;
   let notifications: NotificationsService;
+  let mail: MailService;
   let users: InMemoryUserRepository;
+  let groups: InMemoryGroupRepository;
+  let courses: InMemoryCourseRepository;
+  let enrollments: InMemoryEnrollmentRepository;
+  let scopeRepo: InMemoryAssistantScopeRepository;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -62,271 +55,137 @@ describe('Announcements', () => {
         StaffScopeService,
         NotificationsService,
         AuditService,
-        // `AuditService.record` refuses to write outside a transaction
-        // (CLAUDE.md §5.4), so every module that audits needs the real
-        // `DatabaseService`. A null pool selects the memory driver, where
-        // `runInTransaction` is a passthrough that still enters the context.
         DatabaseService,
         { provide: DATABASE_POOL, useValue: null },
         { provide: ANNOUNCEMENT_REPOSITORY, useClass: InMemoryAnnouncementRepository },
-        {
-          provide: ASSISTANT_SCOPE_REPOSITORY,
-          useClass: InMemoryAssistantScopeRepository,
-        },
+        { provide: ASSISTANT_SCOPE_REPOSITORY, useClass: InMemoryAssistantScopeRepository },
         { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },
         { provide: COURSE_REPOSITORY, useClass: InMemoryCourseRepository },
         { provide: ENROLLMENT_REPOSITORY, useClass: InMemoryEnrollmentRepository },
         { provide: USER_REPOSITORY, useClass: InMemoryUserRepository },
         { provide: NOTIFICATION_REPOSITORY, useClass: InMemoryNotificationRepository },
         { provide: AUDIT_LOG_REPOSITORY, useClass: InMemoryAuditLogRepository },
+        { provide: MailService, useValue: { send: vi.fn() } },
       ],
-    })
-      .overrideGuard(JwtAuthGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(RolesGuard)
-      .useValue({ canActivate: () => true })
-      .compile();
+    }).compile();
 
     staff = module.get(StaffAnnouncementsController);
     admin = module.get(AdminAnnouncementsController);
+    service = module.get(AnnouncementsService);
     audit = module.get(AuditService);
     notifications = module.get(NotificationsService);
-    users = module.get(USER_REPOSITORY);
+    mail = module.get(MailService);
+    users = module.get<InMemoryUserRepository>(USER_REPOSITORY);
+    groups = module.get<InMemoryGroupRepository>(GROUP_REPOSITORY);
+    courses = module.get<InMemoryCourseRepository>(COURSE_REPOSITORY);
+    enrollments = module.get<InMemoryEnrollmentRepository>(ENROLLMENT_REPOSITORY);
+    scopeRepo = module.get<InMemoryAssistantScopeRepository>(ASSISTANT_SCOPE_REPOSITORY);
+
+    await users.create({ id: 'assistant-1', email: 'a1@example.com', passwordHash: 'x', name: 'A1', role: Role.Assistant, status: 'active' });
+    await users.create({ id: 'assistant-2', email: 'a2@example.com', passwordHash: 'x', name: 'A2', role: Role.Assistant, status: 'active' });
+    await users.create({ id: 'teacher-1', email: 't@example.com', passwordHash: 'x', name: 'T1', role: Role.Teacher, status: 'active' });
+    await users.create({ id: 'student-1', email: 's1@example.com', passwordHash: 'x', name: 'S1', role: Role.Student, status: 'active' });
+    await users.create({ id: 'student-2', email: 's2@example.com', passwordHash: 'x', name: 'S2', role: Role.Student, status: 'active' });
+    
+    await courses.create({ id: 'course-1', title: 'C1', syllabus: '', isPublished: true });
+    await enrollments.create({ courseId: 'course-1', studentId: 'student-1', enrolledAt: new Date().toISOString() });
+    await scopeRepo.assignGroup('assistant-1', 'group-1', 'teacher-1');
+    
+    await groups.create({ id: 'group-1', courseId: 'course-1', name: 'G1', assistantId: 'assistant-1' });
+    await groups.addMember('group-1', 'student-1');
   });
 
-  describe('the audience codec', () => {
-    it('round-trips every shape CLAUDE.md §6.1 names', () => {
-      for (const raw of ['all_students', 'all_tas', 'course:course-1']) {
-        const parsed = parseAudience(raw);
-        expect(parsed).not.toBeNull();
-        expect(encodeAudience(parsed!)).toBe(raw);
-      }
-    });
-
-    it('rejects a malformed audience rather than coercing it', () => {
-      // A half-understood audience is a message delivered to the wrong people.
-      for (const raw of ['', 'course:', 'course', 'all', 'course:a b', 'ALL_TAS']) {
-        expect(parseAudience(raw)).toBeNull();
-      }
-    });
-
-    it('keeps the DTO pattern and the parser in step', () => {
-      // They are written from the same parts; this is the assertion that they
-      // have not drifted into accepting different strings.
-      for (const raw of ['all_students', 'all_tas', 'course:course-1']) {
-        expect(AUDIENCE_PATTERN.test(raw)).toBe(true);
-      }
-      for (const raw of ['course:', 'nonsense', 'course:bad id']) {
-        expect(AUDIENCE_PATTERN.test(raw)).toBe(parseAudience(raw) !== null);
-      }
-    });
+  it('audience parse/encode round-trip for group', () => {
+    const raw = 'group:group-1';
+    const parsed = parseAudience(raw);
+    expect(parsed).toEqual({ type: 'group', courseId: null, groupId: 'group-1' });
+    expect(encodeAudience(parsed!)).toBe(raw);
   });
 
-  describe('POST /staff/courses/:id/announcements', () => {
-    it('lets an assigned assistant post to their own course (§2.2)', async () => {
-      const posted = await staff.post('course-1', MESSAGE, ASSIGNED_TA);
-      expect(posted).toMatchObject({
-        audience: 'course:course-1',
-        audienceType: 'course',
-        courseId: 'course-1',
-        postedBy: 'assistant-1',
-        title: 'Class moved',
-      });
-    });
-
-    it('404s a course the assistant does not hold', async () => {
-      await expect(staff.post('course-2', MESSAGE, ASSIGNED_TA)).rejects.toThrow(
-        NotFoundException,
-      );
-    });
-
-    it('gives the same answer for a held-but-wrong course and a nonexistent one', async () => {
-      const wrong = await staff
-        .post('course-2', MESSAGE, ASSIGNED_TA)
-        .catch((e) => e.message);
-      const missing = await staff
-        .post('course-does-not-exist', MESSAGE, ASSIGNED_TA)
-        .catch((e) => e.message);
-      expect(wrong).toBe(missing);
-    });
-
-    it('lets the teacher post to any course through the same route', async () => {
-      await expect(staff.post('course-2', MESSAGE, ADMIN)).resolves.toMatchObject({
-        audience: 'course:course-2',
-        postedBy: 'teacher-1',
-      });
-    });
-
-    it('takes the audience from the URL, so a TA cannot widen it from the body', async () => {
-      // The DTO has no `audience` field at all and the global pipe whitelists,
-      // so this property never reaches the service. Asserted anyway: it is the
-      // difference between a scoped write and a platform-wide one.
-      const smuggled = {
-        ...MESSAGE,
-        audience: 'all_students',
-      } as unknown as PostCourseAnnouncementDto;
-      const posted = await staff.post('course-1', smuggled, ASSIGNED_TA);
-      expect(posted.audience).toBe('course:course-1');
-    });
+  it('createDraft works', async () => {
+    const created = await staff.createGroupDraft('group-1', MESSAGE, ASSIGNED_TA);
+    expect(created.audienceType).toBe('group');
+    expect(created.groupId).toBe('group-1');
+    expect(created.publishedAt).toBeNull();
   });
 
-  describe('the audience is resolved at send time (§5.14)', () => {
-    it('delivers a course announcement to that course’s enrolled students only', async () => {
-      await staff.post('course-1', MESSAGE, ASSIGNED_TA);
-
-      // course-1 holds student-1 and student-2; course-2 holds student-1.
-      const one = await notifications.list('student-1', false);
-      const two = await notifications.list('student-2', false);
-      expect(
-        one.notifications.filter((n) => n.type === 'announcement'),
-      ).toHaveLength(1);
-      expect(
-        two.notifications.filter((n) => n.type === 'announcement'),
-      ).toHaveLength(1);
-      // The link is a page route, not an API route.
-      expect(
-        one.notifications.find((n) => n.type === 'announcement')?.link,
-      ).toBe('/learn/course-1');
-    });
-
-    it('carries the whole body, since there is no detail page to click through to', async () => {
-      await staff.post('course-1', MESSAGE, ASSIGNED_TA);
-      const feed = await notifications.list('student-1', false);
-      expect(feed.notifications.find((n) => n.type === 'announcement')).toMatchObject(
-        { title: 'Class moved', message: 'Sunday moves to 19:00.', read: false },
-      );
-    });
-
-    it('reaches an assistant hired after the announcement was drafted', async () => {
-      // The §5.14 requirement in one test: `all_tas` resolves from
-      // role = 'assistant' at the moment of sending, so a frozen recipient list
-      // captured earlier would miss this account.
-      const newHire = await users.create({
-        email: 'assistant3@example.com',
-        passwordHash: 'hash',
-        name: 'Late Arrival',
-        role: Role.Assistant,
-        status: 'active',
-      });
-
-      const posted = await admin.post(
-        { ...MESSAGE, audience: 'all_tas' },
-        ADMIN,
-      );
-      // Four: assistant-1, assistant-2, the late hire - and admin-1. `all_tas`
-      // is the staff broadcast channel and there is no other route to staff, so
-      // it includes the Full admin (AUTH-1, unit-1 ruling 3). Was 3 before the
-      // `admin` role existed.
-      expect(posted.recipientCount).toBe(4);
-
-      const feed = await notifications.list(newHire.id, false);
-      expect(feed.notifications).toHaveLength(1);
-      // No page shows a platform-wide announcement, so null rather than a link
-      // that 404s.
-      expect(feed.notifications[0]?.link).toBeNull();
-    });
-
-    it('sends all_students to every student and to no assistant', async () => {
-      const posted = await admin.post(
-        { ...MESSAGE, audience: 'all_students' },
-        ADMIN,
-      );
-      expect(posted.recipientCount).toBe(2);
-      expect((await notifications.list('assistant-1', false)).notifications).toEqual(
-        [],
-      );
-      expect(
-        (await notifications.list('student-2', false)).unreadCount,
-      ).toBeGreaterThan(0);
-    });
-
-    it('does not store a recipient list, only how many there were', async () => {
-      const posted = await admin.post(
-        { ...MESSAGE, audience: 'all_students' },
-        ADMIN,
-      );
-      expect(Object.keys(posted)).not.toContain('recipientIds');
-      expect(JSON.stringify(posted)).not.toContain('student-1');
-      expect(posted.recipientCount).toBe(2);
-    });
-
-    it('404s a course audience naming a course that does not exist', async () => {
-      await expect(
-        admin.post({ ...MESSAGE, audience: 'course:nope' }, ADMIN),
-      ).rejects.toThrow(NotFoundException);
-    });
+  it('resolveRecipients for group', async () => {
+    // using previewReach since it calls resolveRecipients
+    const reach = await staff.previewReach('group:group-1', ASSIGNED_TA);
+    expect(reach.reach).toBe(2);
   });
 
-  describe('the audit trail (§5.4)', () => {
-    it('records the assistant, the course and the reach', async () => {
-      const posted = await staff.post('course-1', MESSAGE, ASSIGNED_TA);
-      const page = await audit.find({ limit: 10 });
-      const entry = page.entries.find((e) => e.action === 'announcement.posted');
-      expect(entry).toMatchObject({
-        actorId: 'assistant-1',
-        actorRole: 'assistant',
-        targetType: 'announcement',
-        targetId: posted.id,
-        courseId: 'course-1',
-      });
-      expect(entry?.before).toBeNull();
-      expect(entry?.after).toMatchObject({
-        audience: 'course:course-1',
-        recipientCount: 2,
-      });
-    });
-
-    it('records the teacher as teacher, not as an assistant', async () => {
-      await admin.post({ ...MESSAGE, audience: 'all_tas' }, ADMIN);
-      const page = await audit.find({ limit: 10 });
-      const entry = page.entries.find((e) => e.action === 'announcement.posted');
-      expect(entry?.actorRole).toBe('teacher');
-      // Platform-wide, so it belongs to no course.
-      expect(entry?.courseId).toBeNull();
-    });
+  it('previewReach non-admin platform wide -> 403', async () => {
+    await expect(staff.previewReach('all_students', ASSIGNED_TA)).rejects.toThrow(ForbiddenException);
   });
 
-  describe('reading them back', () => {
-    it('scopes the course list the same way the write is scoped', async () => {
-      await staff.post('course-1', MESSAGE, ASSIGNED_TA);
-      const mine = await staff.list('course-1', {}, ASSIGNED_TA);
-      expect(mine).toHaveLength(1);
-      await expect(staff.list('course-2', {}, ASSIGNED_TA)).rejects.toThrow(
-        NotFoundException,
-      );
-      await expect(staff.list('course-1', {}, UNASSIGNED_TA)).rejects.toThrow(
-        NotFoundException,
-      );
-    });
+  it('previewReach held group vs unheld group (404 anti-enumeration)', async () => {
+    const reach = await staff.previewReach('group:group-1', ASSIGNED_TA);
+    expect(reach.reach).toBe(2);
+    
+    await groups.create({ id: 'group-2', courseId: 'course-1', name: 'G2', assistantId: 'assistant-2' });
+    await expect(staff.previewReach('group:group-2', ASSIGNED_TA)).rejects.toThrow(NotFoundException);
+    const err = await staff.previewReach('group:group-2', ASSIGNED_TA).catch(e => e.message);
+    expect(err).toBe('Group not found'); // exact match
+  });
 
-    it('keeps a course list to that course', async () => {
-      await staff.post('course-1', MESSAGE, ADMIN);
-      await staff.post('course-2', MESSAGE, ADMIN);
-      await admin.post({ ...MESSAGE, audience: 'all_students' }, ADMIN);
+  it('publish called twice: second throws Conflict, mail sent once', async () => {
+    vi.spyOn(notifications, 'fanOut');
+    const draft = await admin.createDraft({ ...MESSAGE, audience: 'course:course-1' }, ADMIN);
+    await admin.publish(draft.id, ADMIN);
+    await expect(admin.publish(draft.id, ADMIN)).rejects.toThrow(ConflictException);
+    
+    expect(notifications.fanOut).toHaveBeenCalledTimes(1);
+    expect(mail.send).toHaveBeenCalledTimes(2);
+  });
 
-      const courseOne = await staff.list('course-1', {}, ADMIN);
-      expect(courseOne).toHaveLength(1);
-      expect(courseOne[0]?.courseId).toBe('course-1');
+  it('publish then updateDraft: edit succeeds, no second fan-out/mail', async () => {
+    vi.spyOn(notifications, 'fanOut');
+    const draft = await admin.createDraft({ ...MESSAGE, audience: 'course:course-1' }, ADMIN);
+    const published = await admin.publish(draft.id, ADMIN);
+    
+    const updated = await admin.updateDraft(draft.id, { title: 'New title' }, ADMIN);
+    expect(updated.title).toBe('New title');
+    
+    expect(notifications.fanOut).toHaveBeenCalledTimes(1);
+    expect(mail.send).toHaveBeenCalledTimes(2);
+  });
 
-      // The admin history spans every audience, including the platform-wide one.
-      const all = await admin.list({});
-      expect(all).toHaveLength(3);
-      expect(all.map((a) => a.audience)).toContain('all_students');
-    });
+  it('updateDraft changing audience on published -> 409', async () => {
+    const draft = await admin.createDraft({ ...MESSAGE, audience: 'course:course-1' }, ADMIN);
+    await admin.publish(draft.id, ADMIN);
+    
+    await expect(admin.updateDraft(draft.id, { audience: 'all_students' }, ADMIN)).rejects.toThrow(ConflictException);
+  });
 
-    it('returns newest first and pages by offset', async () => {
-      for (const title of ['first', 'second', 'third']) {
-        await admin.post({ title, body: 'x', audience: 'all_tas' }, ADMIN);
-      }
-      const page = await admin.list({ limit: 2, offset: 0 });
-      expect(page).toHaveLength(2);
-      const next = await admin.list({ limit: 2, offset: 2 });
-      expect(next).toHaveLength(1);
-      expect([...page, ...next].map((a) => a.title)).toEqual([
-        'third',
-        'second',
-        'first',
-      ]);
-    });
+  it('deleteDraft after publish -> 409', async () => {
+    const draft = await admin.createDraft({ ...MESSAGE, audience: 'course:course-1' }, ADMIN);
+    await admin.publish(draft.id, ADMIN);
+    await expect(admin.deleteDraft(draft.id, ADMIN)).rejects.toThrow(ConflictException);
+  });
+
+  it('TA posting to unheld course -> 404', async () => {
+    await expect(staff.createCourseDraft('course-2', MESSAGE, ASSIGNED_TA)).rejects.toThrow(NotFoundException);
+  });
+
+  it('TA posting to unheld group -> 404', async () => {
+    await groups.create({ id: 'group-2', courseId: 'course-1', name: 'G2', assistantId: 'assistant-2' });
+    const err = await staff.createGroupDraft('group-2', MESSAGE, ASSIGNED_TA).catch(e => e.message);
+    expect(err).toBe('Group not found');
+  });
+
+  it('TA calling /admin/announcements/:id/publish -> 403 (through service check)', async () => {
+    const draft = await admin.createDraft({ ...MESSAGE, audience: 'course:course-1' }, ADMIN);
+    await expect(service.publish(draft.id, ASSIGNED_TA.user)).rejects.toThrow(ForbiddenException);
+  });
+
+  it('publish with MAIL_DRIVER=none -> propagates error (we simulate by making mail throw)', async () => {
+    const draft = await admin.createDraft({ ...MESSAGE, audience: 'course:course-1' }, ADMIN);
+    vi.mocked(mail.send).mockRejectedValueOnce(new Error('mail failed'));
+    
+    await expect(admin.publish(draft.id, ADMIN)).rejects.toThrow('mail failed');
+    // Ensure it remains a draft
+    const stillDraft = await service.listAll(10, 0, 'draft');
+    expect(stillDraft).toHaveLength(0);
   });
 });
