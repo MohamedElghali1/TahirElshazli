@@ -552,3 +552,22 @@ Every one holds except two, and both clear together when the remaining verificat
 After that:
 - unit 6 and TASK-1..7 may go to `[x]`;
 - `TASK-F1` … `F4`, `MARK-6` and the `AUTH-6` remainder stay open, as filed.
+
+---
+
+## Coordinator closure (2026-09-22) — written by the coordinator, not the reviewer
+
+Re-check 2 set one condition for recording this review as **`APPROVED`** without another round:
+someone signed in confirms browser items 1–4.
+
+The user confirmed all four, in answer to the itemised question:
+1. RTL with `ليلى فهمي` on all four screens.
+2. The assistant-1 view: only group-1, no audience editor on a shared task, a read-only marker, a
+   group-1-only picker, and drafts load.
+3. F-2: a group's own due date survives re-targeting.
+4. F-4: a new attachment shows "Choose…", and Save stays disabled until an audience is chosen.
+
+The coordinator did not observe the pass. It is the user's verification.
+
+**Final verdict, per re-check 2's stated condition: `APPROVED`.**
+

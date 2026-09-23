@@ -437,12 +437,41 @@ decision. `F5-2` and `F5-4`, both unit-4 polish. `F5-6`, an open question about 
 
 ---
 
-### Chat unit 6 — Tasks and the draft library `[~]` in progress — executed 2026-09-22, awaiting review
+### Chat unit 6 — Tasks and the draft library `[x]` **`COMPLETE` 2026-09-22**
 
-> **Status set by the executor, deliberately `[~]`, not `[x]`.** All eleven slices (6a–6k) are
-> committed on `redesign` (`6dabdb8..HEAD`); the user ruled `B-1`…`B-6` as `D-28`…`D-33`. Only the
-> coordinator marks this unit complete, after `redesign-reviewer`'s verdict. Two `D-30` edges are
-> recorded as open questions, not invented (`docs/phases/unit-6/EXECUTION_NOTES.md`).
+**Status 2026-09-22: `COMPLETE`.** Eleven slices (6a–6k) plus two review rounds, on `redesign`
+`6dabdb8..HEAD`, local, not pushed. Artifacts: `docs/phases/unit-6/PHASE_PLAN.md`,
+`EXECUTION_NOTES.md`, `REVIEW.md`.
+
+**Rulings.** The user made fourteen rulings, recorded as `D-28`…`D-37`:
+- `B-1`…`B-6` became `D-28`…`D-33`.
+- The `D-30` edges became `D-34` (`closed`) and `D-35` (the latest due date).
+- Hide and delete are refused when a task has synced results: `D-36`.
+- The `scheduled` label follows the earliest group opening: `D-37`.
+
+**Review.** `redesign-reviewer` went through three rounds:
+1. `APPROVED WITH FOLLOW-UP`: F-1…F-7 were fixed.
+2. Re-check 1, `APPROVED WITH FOLLOW-UP`: R1-1 was pinned.
+3. Re-check 2, `APPROVED WITH FOLLOW-UP`: conditional on four browser items.
+
+The user confirmed all four items. Re-check 2 said that confirmation closes the review as
+**`APPROVED`** without another round, and it is recorded as such in `REVIEW.md`.
+
+**Tests, real output:**
+- 660 unit, 39 files.
+- 297 e2e.
+- **146 integration against PostgreSQL 15.19, 0 skipped.** Migrations 001–018 ran from an empty
+  schema.
+- frontend `tsc` 0, `eslint` 0.
+
+**Caveats, stated rather than hidden:**
+- Node was v26.8.1, not 24.
+- The browser pass was performed and reported by the user, not observed by the coordinator.
+
+**Carried forward, non-blocking:**
+- `MARK-6` (mode enforcement and multi-file, unit 7).
+- `TASK-F1`…`TASK-F4`.
+- `AUTH-6`, now narrowed.
 
 **Scope** `TASK-1` … `TASK-7`. The `visibility` enum distinct from the availability window;
 `task_drafts`; authoring from a draft; attachments; submission settings; marker assignment; the

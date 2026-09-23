@@ -266,13 +266,13 @@ way:
 | `F5-5` `[x]` | Fixed in the closure: the unlayered `a` colour rule beat every utility; `md:translate-x-0` lost to `rtl:translate-x-full`, hiding both sidebars on desktop RTL; `formatPercent(null)` rendered `--` instead of an em-dash. | — |
 
 ### Phase 7 — Tasks
-`TASK-1` `[~]` `visibility` `published | hidden`, distinct from the window; `scheduled` derived (`D-28`, slice 6f) ·
-`TASK-2` `[~]` `task_drafts` (migration `018`, both drivers) + 4 routes + 3 audited actions (6a, 6b) ·
-`TASK-3` `[~]` Author from a draft (copies content, increments `usedCount`; body authoritative, A-2) (6c) ·
-`TASK-4` `[~]` Attachments on the task, per-attachment `audience`, audio uploads (`D-29`; 6c, 6i) ·
-`TASK-5` `[~]` `allowResubmission` (6c), `submissionModes` stored (`D-31`, 6j; enforcement moved to unit 7 as `MARK-6`, with the multi-file model), marker assignment (`D-32`, 6g; follow-up `TASK-F1` below) ·
-`TASK-6` `[~]` Global `GET /staff/tasks`, group-grain (6d) + derived `status` filter `open | marking | marked | closed` (`D-30`, completed by `D-34` `closed` and `D-35` latest due date; never null) ·
-`TASK-7` `[~]` Task list, authoring (new/edit) and draft-library screens (6e; browser pass pending)
+`TASK-1` `[x]` `visibility` `published | hidden`, distinct from the window; `scheduled` derived (`D-28`, slice 6f) ·
+`TASK-2` `[x]` `task_drafts` (migration `018`, both drivers) + 4 routes + 3 audited actions (6a, 6b) ·
+`TASK-3` `[x]` Author from a draft (copies content, increments `usedCount`; body authoritative, A-2) (6c) ·
+`TASK-4` `[x]` Attachments on the task, per-attachment `audience`, audio uploads (`D-29`; 6c, 6i) ·
+`TASK-5` `[x]` `allowResubmission` (6c), `submissionModes` stored (`D-31`, 6j; enforcement moved to unit 7 as `MARK-6`, with the multi-file model), marker assignment (`D-32`, 6g; follow-up `TASK-F1` below) ·
+`TASK-6` `[x]` Global `GET /staff/tasks`, group-grain (6d) + derived `status` filter `open | marking | marked | closed` (`D-30`, completed by `D-34` `closed` and `D-35` latest due date; never null) ·
+`TASK-7` `[x]` Task list, authoring (new/edit) and draft-library screens (6e; browser pass by the user, 2026-09-22: teacher, assistant-1, RTL, F-2, F-4 all confirmed)
 
 `TASK-F1` `[ ]` follow-up, **accepted for now (user, 2026-09-22)** — an admin cannot name the teacher as marker from the form: `GET /admin/assistants` returns assistants and admins, and no staff-reachable route exposes the teacher's id. The teacher picks themselves ("you"), and an existing teacher marker is preserved and shown. Revisit if an admin needs to assign Dr. Tahir.
 
@@ -282,7 +282,7 @@ way:
 
 `TASK-F4` `[ ]` follow-up, pre-existing, **filed here because no entry existed** (it was carried only in the unit-6 plan's and review's out-of-scope lists): integration coverage for `PostgresWorkRepository` and `PostgresGoogleCredentialRepository`. **`PostgresWorkRepository.tallyResults` goes first**, because `D-36`'s hide and delete guards now depend on it (unit-6 re-check 1). Their SQL was not changed by unit 6.
 
-`[~]` = built and tested on 2026-09-22; reviewed `APPROVED WITH FOLLOW-UP` (`docs/phases/unit-6/REVIEW.md`), round-1 remediation applied. Unit 6 also closed the
+`[x]` = built, tested and reviewed **`APPROVED`** on 2026-09-22 (`docs/phases/unit-6/REVIEW.md`, three rounds; closed on the user's browser confirmation per re-check 2). Unit 6 also closed the
 existence oracle on `PATCH`/`DELETE /staff/assessments/:id` and `POST …/targets` (plan finding 2).
 
 ### Phase 8 — Marking

@@ -3754,7 +3754,7 @@ integration, frontend `tsc` 0. Unit 6 (`TASK-7`) is next, in a new chat per CLAU
 
 ---
 
-## 2026-09-22 — Unit 6: tasks and the draft library, executed (awaiting review)
+## 2026-09-22 — Unit 6: tasks and the draft library, COMPLETE
 
 The planner scoped six questions out of unit 6 rather than guess at them. The user ruled on all six
 before execution, each as recommended (`D-28`…`D-33`), so all eleven slices were built:
@@ -3802,3 +3802,17 @@ count as handed-in work, so a task with results can be neither hidden nor delete
 delete half had been possible since before unit 6. The user also ruled that the staff `scheduled`
 label follows the earliest group opening (`D-37`). Counts: 659 unit, 296 e2e, 146 integration. The
 unit stays `[~]`.
+
+**Closed the same day, `APPROVED`.**
+- **Re-check 1 follow-ups.** R1-1 was pinned: an assistant who re-sends the current marker gets a
+  no-op 200, while a different marker gets a 403. `TASK-F3` and `TASK-F4` were filed.
+- **Final counts.** 660 unit, 297 e2e, 146 integration (0 skipped, PostgreSQL 15.19).
+- **Re-check 2** left one condition: a browser pass covering four items.
+  - RTL with a long Arabic name.
+  - The assistant-1 view.
+  - F-2: a group's own dates survive re-targeting.
+  - F-4: an attachment cannot be saved without an audience.
+- **The browser pass.** The user performed it in their own browser and confirmed all four. The
+  coordinator did not observe it; it is recorded as the user's verification.
+- **Status.** Unit 6 is `[x]`. Unit 7 (marking and the mark book) is next, and inherits `MARK-6` and
+  `TASK-F3`.
