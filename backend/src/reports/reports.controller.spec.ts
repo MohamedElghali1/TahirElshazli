@@ -1,4 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { SUBMISSION_ANNOTATION_REPOSITORY } from '../assessments/interfaces/submission-annotation-repository.interface.js';
+import { InMemorySubmissionAnnotationRepository } from '../assessments/repositories/in-memory-submission-annotation.repository.js';
 import { ReportsController } from './reports.controller.js';
 import { ReportsService } from './reports.service.js';
 import { REPORT_REPOSITORY } from './interfaces/report-repository.interface.js';
@@ -59,6 +61,7 @@ describe('ReportsController', () => {
         { provide: REPORT_REPOSITORY, useClass: InMemoryReportRepository },
         { provide: ASSESSMENT_REPOSITORY, useClass: InMemoryAssessmentRepository },
         { provide: WORK_REPOSITORY, useClass: InMemoryWorkRepository },
+        { provide: SUBMISSION_ANNOTATION_REPOSITORY, useClass: InMemorySubmissionAnnotationRepository },
         { provide: COURSE_REPOSITORY, useClass: InMemoryCourseRepository },
         { provide: RECORDING_REPOSITORY, useClass: InMemoryRecordingRepository },
         { provide: LIVE_SESSION_REPOSITORY, useClass: InMemoryLiveSessionRepository },

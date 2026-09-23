@@ -2761,8 +2761,12 @@ describeIfDb('Postgres repositories', () => {
       await repo().create({ submissionId, fileUrl: '/uploads/p.png', page: 1, kind: 'tick', xPercent: 1, yPercent: 1, text: '', path: null, createdBy: 'teacher-1' });
       await repo().create({ submissionId, fileUrl: '/uploads/p.png', page: 1, kind: 'comment', xPercent: 2, yPercent: 2, text: 'ليلى: good', path: null, createdBy: 'assistant-1' });
       const all = await repo().findBySubmission(submissionId);
-      expect(all.map((a) => [a.page, a.kind])).toEqual([[1, 'tick'], [1, 'comment'], [2, 'pen']]);
-      expect(all[1]!.text).toBe('ليلى: good');
+      // Page first. Two marks written in the same millisecond tie on
+      // created_at and fall to the id, so page 1's pair is compared as a set.
+      expect(all.map((a) => a.page)).toEqual([1, 1, 2]);
+      expect(all.slice(0, 2).map((a) => a.kind).sort()).toEqual(['comment', 'tick']);
+      expect(all[2]!.kind).toBe('pen');
+      expect(all.find((a) => a.kind === 'comment')!.text).toBe('ليلى: good');
     });
 
     it('updates only what is supplied, and stamps updated_at', async () => {

@@ -1772,6 +1772,10 @@ paths:
         and the `corrected` status are all null / withheld until the work is
         returned. A saved-not-returned paper reads `submitted` with `canSubmit:
         false` (the existing freeze) and a non-null `correctedAt`.
+        `submission.annotations` (`StudentAnnotation[]`, `MARK-5`) is empty until
+        the work is returned, and never carries who drew a mark. It is only ever
+        the caller's own submission - resolved from the token, never from an id.
+        `submission.files` (`SubmissionFile[]`, `D-39`) lists the uploaded files.
       x-roles: [student]
       parameters:
         - { name: assessmentId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }

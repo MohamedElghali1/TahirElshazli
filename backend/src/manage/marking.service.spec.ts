@@ -366,7 +366,11 @@ describe('MarkingService', () => {
         ...tick, kind: 'pen', path: [[10, 20], [11, 21], [12, 22]],
       });
       expect(stroke.path).toHaveLength(3);
-      expect((await marking.listAnnotations(sub.id, TEACHER)).map((a) => a.id)).toEqual([created.id, stroke.id]);
+      // Same page and possibly the same millisecond, so the order's tie-break
+      // is the id (`(page, createdAt, id)`): compared as a set here.
+      expect((await marking.listAnnotations(sub.id, TEACHER)).map((a) => a.id).sort()).toEqual(
+        [created.id, stroke.id].sort(),
+      );
 
       const moved = await marking.updateAnnotation(sub.id, created.id, A1, { xPercent: 55 });
       expect(moved.xPercent).toBe(55);

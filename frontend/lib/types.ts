@@ -339,6 +339,10 @@ export interface SubmissionView {
   annotatedFileUrl: string | null;
   /** When the marked work came back (`MARK-2`). The key for showing a mark. */
   returnedAt: string | null;
+  /** The uploaded files, in order (`D-39`). Empty for a link or legacy submission. */
+  files: SubmissionFile[];
+  /** Marks on the paper (`MARK-5`): empty until returned, never with an author. */
+  annotations: StudentAnnotation[];
   revisions: SubmissionRevision[];
 }
 

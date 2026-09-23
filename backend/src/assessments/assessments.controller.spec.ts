@@ -1,4 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { SUBMISSION_ANNOTATION_REPOSITORY } from './interfaces/submission-annotation-repository.interface.js';
+import { InMemorySubmissionAnnotationRepository } from './repositories/in-memory-submission-annotation.repository.js';
 import { AssessmentsController } from './assessments.controller.js';
 import { AssessmentsService } from './assessments.service.js';
 import { ASSESSMENT_REPOSITORY } from './interfaces/assessment-repository.interface.js';
@@ -25,6 +27,7 @@ describe('AssessmentsController', () => {
   let controller: AssessmentsController;
   let service: AssessmentsService;
   let repo: InMemoryAssessmentRepository;
+  let marks: InMemorySubmissionAnnotationRepository;
 
   beforeEach(async () => {
     // Status is derived from "now" vs. the stored window, so pin the clock.
@@ -49,6 +52,7 @@ describe('AssessmentsController', () => {
         // is exactly the behaviour every existing assertion depends on, and a
         // stub would let a regression in that path pass unnoticed.
         { provide: WORK_REPOSITORY, useClass: InMemoryWorkRepository },
+        { provide: SUBMISSION_ANNOTATION_REPOSITORY, useClass: InMemorySubmissionAnnotationRepository },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -60,6 +64,7 @@ describe('AssessmentsController', () => {
     controller = module.get<AssessmentsController>(AssessmentsController);
     service = module.get(AssessmentsService);
     repo = module.get(ASSESSMENT_REPOSITORY);
+    marks = module.get(SUBMISSION_ANNOTATION_REPOSITORY);
   });
 
   afterEach(() => {
@@ -368,6 +373,24 @@ describe('AssessmentsController', () => {
       stored!.feedback = 'draft note';
       const detail = await controller.getAssessmentDetail('assess-4', STUDENT);
       expect(detail.submission!.feedback).toBeNull();
+    });
+
+    it('MARK-5: carries the marks only once returned, and never who drew them', async () => {
+      await marks.create({
+        submissionId: 'sub-2', fileUrl: '/uploads/x.png', page: 1, kind: 'comment',
+        xPercent: 10, yPercent: 20, text: 'Units!', path: null, createdBy: 'assistant-1',
+      });
+      await saveMark();
+      const before = await controller.getAssessmentDetail('assess-4', STUDENT);
+      expect(before.submission!.annotations).toEqual([]);
+
+      await repo.returnSubmission('sub-2');
+      const after = await controller.getAssessmentDetail('assess-4', STUDENT);
+      expect(after.submission!.annotations).toHaveLength(1);
+      expect(after.submission!.annotations[0]).toMatchObject({ kind: 'comment', text: 'Units!', xPercent: 10 });
+      expect(Object.keys(after.submission!.annotations[0]!).sort()).toEqual(
+        ['fileUrl', 'id', 'kind', 'page', 'path', 'text', 'xPercent', 'yPercent'],
+      );
     });
 
     it('keeps every fixture mark that predates the split visible (019 backfill parity)', async () => {

@@ -25,6 +25,11 @@ import type {
   WorkType,
 } from './interfaces/work-repository.interface.js';
 import { WORK_REPOSITORY } from './interfaces/work-repository.interface.js';
+import type {
+  StoredAnnotation,
+  SubmissionAnnotationRepository,
+} from './interfaces/submission-annotation-repository.interface.js';
+import { SUBMISSION_ANNOTATION_REPOSITORY } from './interfaces/submission-annotation-repository.interface.js';
 
 /**
  * Whether a student may see this task at all (`D-28`).
@@ -97,9 +102,20 @@ export interface SubmissionView {
   annotatedFileUrl: string | null;
   /** When the marked work came back (`MARK-2`). Null until then. */
   returnedAt: string | null;
+  /**
+   * The marks drawn on the paper (`MARK-5`) - **empty until returned**, and
+   * without who drew them (field minimisation).
+   */
+  annotations: StudentAnnotation[];
   /** Superseded versions, oldest first - the submission history. */
   revisions: SubmissionRevision[];
 }
+
+/** A mark as the student receives it: no author, no staff timestamps. */
+export type StudentAnnotation = Pick<
+  StoredAnnotation,
+  'id' | 'fileUrl' | 'page' | 'kind' | 'xPercent' | 'yPercent' | 'text' | 'path'
+>;
 
 /** An attachment as a student receives it: the audience is implied. */
 export type StudentAttachment = Omit<Attachment, 'audience'>;
@@ -193,6 +209,9 @@ export class AssessmentsService {
      * load) and never writes a result.
      */
     @Inject(WORK_REPOSITORY) private readonly work: WorkRepository,
+    /** The marks on a returned paper (`MARK-5`). Same module (A-13). */
+    @Inject(SUBMISSION_ANNOTATION_REPOSITORY)
+    private readonly annotations: SubmissionAnnotationRepository,
   ) {}
 
   /**
@@ -479,6 +498,21 @@ export class AssessmentsService {
               ? submission.annotatedFileUrl
               : null,
             returnedAt: submission.returnedAt,
+            // Only this student's own submission (resolved from the token,
+            // never from a submission id), and only once returned. Mapped
+            // field by field so `createdBy` can never travel.
+            annotations: isReturnedToStudent(submission)
+              ? (await this.annotations.findBySubmission(submission.id)).map((a) => ({
+                  id: a.id,
+                  fileUrl: a.fileUrl,
+                  page: a.page,
+                  kind: a.kind,
+                  xPercent: a.xPercent,
+                  yPercent: a.yPercent,
+                  text: a.text,
+                  path: a.path,
+                }))
+              : [],
             revisions: await this.assessmentRepo.findRevisions(
               submission.id,
               studentId,

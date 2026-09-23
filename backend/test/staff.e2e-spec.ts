@@ -3022,4 +3022,49 @@ describe('Staff and admin API (e2e)', () => {
       await request(server()).post(`/staff/submissions/${paper}/annotations`).set(bearer(adminToken)).send(tick).expect(201);
     });
   });
+
+  describe('unit 7: the student reads the marks on a returned paper (MARK-5)', () => {
+    const server = () => app.getHttpServer();
+    const PHOTO = '/uploads/cccccccc-0000-4000-8000-000000000001.png';
+    let shared = '';
+    let s1Sub = '';
+    beforeAll(async () => {
+      await unit7Setup('student marks');
+      shared = (
+        await request(server()).post('/staff/courses/course-1/assessments').set(bearer(adminToken))
+          .send({ ...unit7Task, title: 'E2E unit 7 student marks', targets: [{ groupId: 'group-1' }] }).expect(201)
+      ).body.id;
+      s1Sub = (
+        await request(server()).post(`/assessments/${shared}/submissions`).set(bearer(studentToken)).send({ answerText: 'mine' }).expect(201)
+      ).body.id;
+      await request(server()).post(`/assessments/${shared}/submissions`).set(bearer(unit7.student2Token)).send({ answerText: 'theirs' }).expect(201);
+      await app.get<AssessmentRepository>(ASSESSMENT_REPOSITORY).updateSubmission(
+        s1Sub, 'student-1', null, undefined, [{ url: PHOTO, mimeType: 'image/png', sizeBytes: 1 }],
+      );
+      await request(server()).post(`/staff/submissions/${s1Sub}/annotations`).set(bearer(assignedTaToken))
+        .send({ fileUrl: PHOTO, page: 1, kind: 'comment', xPercent: 5, yPercent: 5, text: 'Show working' }).expect(201);
+      await request(server()).post(`/staff/submissions/${s1Sub}/grade`).set(bearer(assignedTaToken)).send({ score: 11 }).expect(200);
+    });
+
+    it('shows no marks before return, then the marks without their author', async () => {
+      const before = await request(server()).get(`/assessments/${shared}`).set(bearer(studentToken)).expect(200);
+      expect(before.body.submission.annotations).toEqual([]);
+      await request(server()).post(`/staff/submissions/${s1Sub}/return`).set(bearer(assignedTaToken)).expect(200);
+      const after = await request(server()).get(`/assessments/${shared}`).set(bearer(studentToken)).expect(200);
+      expect(after.body.submission.annotations).toHaveLength(1);
+      expect(after.body.submission.annotations[0]).toMatchObject({ kind: 'comment', text: 'Show working' });
+      const wire = JSON.stringify(after.body.submission.annotations);
+      expect(wire).not.toContain('assistant-1');
+      expect(wire).not.toContain('Nour Hassan');
+    });
+
+    it('gives student-2 on the same task only their own (unmarked) paper', async () => {
+      // There is no route by which a student names a submission id: the
+      // detail resolves "mine" from the token.
+      const res = await request(server()).get(`/assessments/${shared}`).set(bearer(unit7.student2Token)).expect(200);
+      expect(res.body.submission.id).not.toBe(s1Sub);
+      expect(res.body.submission.annotations).toEqual([]);
+      expect(res.body.submission.score).toBeNull();
+    });
+  });
 });
