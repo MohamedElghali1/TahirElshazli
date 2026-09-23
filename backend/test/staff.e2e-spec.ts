@@ -2869,6 +2869,51 @@ describe('Staff and admin API (e2e)', () => {
     });
   });
 
+  describe('unit 7: the mark book and its CSV (BOOK-1, BOOK-3)', () => {
+    const server = () => app.getHttpServer();
+    beforeAll(() => unit7Setup('markbook'));
+
+    it.each(['markbook', 'markbook.csv'])('%s: teacher and admin read any group; assistant-1 reads group-1', async (route) => {
+      await request(server()).get(`/staff/groups/group-1/${route}`).set(bearer(adminToken)).expect(200);
+      await request(server()).get(`/staff/groups/${unit7.group3}/${route}`).set(bearer(fullAdminToken)).expect(200);
+      await request(server()).get(`/staff/groups/group-1/${route}`).set(bearer(assignedTaToken)).expect(200);
+    });
+
+    it.each(['markbook', 'markbook.csv'])('%s: an unheld group is a 404 equal to a missing one; a student is refused', async (route) => {
+      const gone = await request(server()).get(`/staff/groups/nope/${route}`).set(bearer(assignedTaToken)).expect(404);
+      const unheld = await request(server()).get(`/staff/groups/${unit7.group3}/${route}`).set(bearer(assignedTaToken)).expect(404);
+      const unscoped = await request(server()).get(`/staff/groups/group-1/${route}`).set(bearer(unassignedTaToken)).expect(404);
+      expect(JSON.stringify(unheld.body) === JSON.stringify(gone.body)).toBe(true);
+      expect(JSON.stringify(unscoped.body) === JSON.stringify(gone.body)).toBe(true);
+      await request(server()).get(`/staff/groups/group-1/${route}`).set(bearer(studentToken)).expect(403);
+    });
+
+    it('carries no group-3 student into group-1, and a missing mark is null', async () => {
+      const res = await request(server()).get('/staff/groups/group-1/markbook').set(bearer(adminToken)).expect(200);
+      const cell = (res.body.students as { studentId: string; cells: { assessmentId: string; score: number | null; status: string }[] }[])
+        .find((s) => s.studentId === 'student-1')!.cells.find((c) => c.assessmentId === unit7.g1Task)!;
+      expect(cell).toEqual(expect.objectContaining({ score: null, status: 'submitted' }));
+      expect(JSON.stringify(res.body)).not.toContain(unit7.g3Task);
+    });
+
+    it('downloads a UTF-8 CSV with a BOM, a server-minted filename and an em-dash for no mark', async () => {
+      const res = await request(server()).get('/staff/groups/group-1/markbook.csv').set(bearer(adminToken))
+        .buffer(true).parse((r, done) => {
+          const chunks: Buffer[] = [];
+          r.on('data', (c: Buffer) => chunks.push(c));
+          r.on('end', () => done(null, Buffer.concat(chunks)));
+        })
+        .expect(200);
+      expect(res.headers['content-type']).toBe('text/csv; charset=utf-8');
+      expect(res.headers['content-disposition']).toBe('attachment; filename="markbook-group-1.csv"');
+      const body = res.body as Buffer;
+      expect([...body.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+      const text = body.toString('utf8');
+      expect(text).toContain('\u2014');
+      expect(text.split('\r\n')[0]).toContain('Average of marked work (%)');
+    });
+  });
+
   describe('unit 7: return, and saved is not returned (MARK-2)', () => {
     const server = () => app.getHttpServer();
     beforeAll(() => unit7Setup('return'));

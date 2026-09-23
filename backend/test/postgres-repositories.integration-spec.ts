@@ -2932,6 +2932,30 @@ describeIfDb('Postgres repositories', () => {
       expect(all.map((r) => r.externalId)).toEqual(['r-3', 'r-2', 'r-1']);
       expect(all.find((r) => r.externalId === 'r-3')!.studentId).toBeNull();
     });
+
+    it('findLatestScoresForStudents keeps the LATEST response per student, restricted to those named (D-46)', async () => {
+      const assessments = new PostgresAssessmentRepository(db);
+      const twice = (await assessments.create({ ...NEW_TASK, title: 'Answered twice', workType: 'google_form' })).id;
+      await work().replaceResults(twice, 'google_form', [
+        { assessmentId: twice, provider: 'google_form', externalId: 't-old', studentId: 'student-1', respondentId: 'a', score: 2, maxScore: 10, submittedAt: '2026-09-01T10:00:00.000Z', raw: {} },
+        { assessmentId: twice, provider: 'google_form', externalId: 't-new', studentId: 'student-1', respondentId: 'a', score: 9.5, maxScore: 10, submittedAt: '2026-09-05T10:00:00.000Z', raw: {} },
+      ]);
+      const rows = await work().findLatestScoresForStudents([formTask, twice, emptyTask], ['student-1']);
+      const byTask = Object.fromEntries(rows.map((r) => [r.assessmentId, r]));
+      expect(Object.keys(byTask).sort()).toEqual([formTask, twice].sort());
+      expect(byTask[twice]).toEqual({
+        assessmentId: twice,
+        studentId: 'student-1',
+        score: 9.5,
+        maxScore: 10,
+        submittedAt: '2026-09-05T10:00:00.000Z',
+      });
+      expect(typeof byTask[formTask]!.score).toBe('number');
+      // student-2 answered formTask but was not named; the unmatched row has no student.
+      expect(rows.every((r) => r.studentId === 'student-1')).toBe(true);
+      expect(await work().findLatestScoresForStudents([], ['student-1'])).toEqual([]);
+      expect(await work().findLatestScoresForStudents([formTask], [])).toEqual([]);
+    });
   });
 });
 

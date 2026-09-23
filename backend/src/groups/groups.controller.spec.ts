@@ -25,6 +25,8 @@ import { EnrollmentsService } from '../enrollments/enrollments.service.js';
 import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js';
 import { InMemoryUserRepository } from '../auth/repositories/in-memory-user.repository.js';
 import { ASSESSMENT_REPOSITORY } from '../assessments/interfaces/assessment-repository.interface.js';
+import { WORK_REPOSITORY } from '../assessments/interfaces/work-repository.interface.js';
+import { InMemoryWorkRepository } from '../assessments/repositories/in-memory-work.repository.js';
 import { InMemoryAssessmentRepository } from '../assessments/repositories/in-memory-assessment.repository.js';
 import { AUDIT_LOG_REPOSITORY } from '../audit/interfaces/audit-log-repository.interface.js';
 import { InMemoryAuditLogRepository } from '../audit/repositories/in-memory-audit-log.repository.js';
@@ -64,6 +66,8 @@ describe('Groups', () => {
   let enrollments: InMemoryEnrollmentRepository;
   let groupRepo: InMemoryGroupRepository;
   let scopeRepo: InMemoryAssistantScopeRepository;
+  let assessmentRepo: InMemoryAssessmentRepository;
+  let workRepo: InMemoryWorkRepository;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -95,6 +99,8 @@ describe('Groups', () => {
         { provide: USER_REPOSITORY, useClass: InMemoryUserRepository },
         { provide: AUDIT_LOG_REPOSITORY, useClass: InMemoryAuditLogRepository },
         { provide: ASSESSMENT_REPOSITORY, useClass: InMemoryAssessmentRepository },
+        // The mark book's Google Form columns (`D-46`, unit 7).
+        { provide: WORK_REPOSITORY, useClass: InMemoryWorkRepository },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -115,6 +121,8 @@ describe('Groups', () => {
     // calls rather than a second repository nothing writes to.
     groupRepo = module.get(GROUP_REPOSITORY);
     scopeRepo = module.get(ASSISTANT_SCOPE_REPOSITORY);
+    assessmentRepo = module.get(ASSESSMENT_REPOSITORY);
+    workRepo = module.get(WORK_REPOSITORY);
   });
 
   const entries = async () =>
@@ -664,6 +672,132 @@ describe('Groups', () => {
         .catch((e: Error) => e.message);
       expect(heldMiss).toBe(GROUP_NOT_FOUND);
       expect(heldMiss).toBe(unknownMiss);
+    });
+  });
+
+  /**
+   * The mark book (`BOOK-1`, unit 7): `D-45` average, `D-46` form columns,
+   * em-dash (null) for a missing mark, performance only.
+   */
+  describe('mark book (BOOK-1, D-45, D-46)', () => {
+    const TASK = {
+      courseId: 'course-1',
+      lessonId: null,
+      title: 'Essay',
+      description: '',
+      instructions: '',
+      type: 'homework' as const,
+      topics: [],
+      availableFrom: '2026-01-01T00:00:00.000Z',
+      availableTo: '2099-01-01T00:00:00.000Z',
+      dueAt: '2098-01-01T00:00:00.000Z',
+      maxScore: 20,
+      allowedFileTypes: ['application/pdf'],
+      maxFileSizeBytes: 1048576,
+      workType: 'file_upload' as const,
+      externalUrl: null,
+      visibility: 'published' as const,
+      markerId: null,
+      allowResubmission: true,
+      submissionModes: [],
+      draftId: null,
+      attachments: [],
+    };
+
+    /**
+     * A fresh group on course-1 holding both students (so the seeded group-1
+     * tasks and marks stay out of it), with two uploads, a hidden one, a link
+     * and a form set for it.
+     */
+    let gid = '';
+    async function book() {
+      gid = (await admin.create({ name: 'Mark book group', courseId: 'course-1' }, ADMIN)).id;
+      for (const studentId of ['student-1', 'student-2']) {
+        await groupRepo.addMember({ groupId: gid, studentId, assignedBy: 'teacher-1' });
+      }
+      const make = async (over: Partial<typeof TASK> & { workType?: 'file_upload' | 'link' | 'google_form' }) => {
+        const t = await assessmentRepo.create({ ...TASK, ...over });
+        await assessmentRepo.setTargets(t.id, [{ groupId: gid }]);
+        return t;
+      };
+      const essay = await make({ title: 'Essay', dueAt: '2098-01-01T00:00:00.000Z', maxScore: 20 });
+      const letter = await make({ title: 'Letter', dueAt: '2098-02-01T00:00:00.000Z', maxScore: 10 });
+      const hidden = await make({ title: 'Hidden', visibility: 'hidden' });
+      const reading = await make({ title: 'Reading', workType: 'link', externalUrl: 'https://example.com' });
+      const quiz = await make({ title: 'Quiz', workType: 'google_form', dueAt: '2098-03-01T00:00:00.000Z' });
+      await workRepo.upsertBinding({
+        assessmentId: quiz.id, formId: 'f', responderUri: 'https://docs.google.com/forms/x',
+        title: 'Quiz', isQuiz: true, totalPoints: 9, collectsEmail: true,
+      });
+      await workRepo.markSynced(quiz.id, null);
+      return { essay, letter, hidden, reading, quiz };
+    }
+
+    it('shows each member against each visible task, a missing mark as null, never 0', async () => {
+      const { essay, letter, hidden, reading, quiz } = await book();
+      const s1 = await assessmentRepo.createSubmission(essay.id, 'student-1', null, 'mine');
+      await assessmentRepo.gradeSubmission(s1.id, { score: 0, feedback: null, annotatedFileUrl: undefined });
+      await assessmentRepo.createSubmission(letter.id, 'student-2', null, 'not marked yet');
+
+      const mb = await staff.markbook(gid, ADMIN);
+      expect(mb.tasks.map((t) => t.assessmentId)).toEqual([essay.id, letter.id, quiz.id]);
+      expect(mb.tasks.map((t) => t.assessmentId)).not.toContain(hidden.id);
+      expect(mb.omittedTasks).toEqual([{ assessmentId: reading.id, title: 'Reading', workType: 'link' }]);
+
+      const cell = (studentId: string, taskId: string) =>
+        mb.students.find((s) => s.studentId === studentId)!.cells.find((c) => c.assessmentId === taskId)!;
+      // A real zero is a zero; a saved-not-returned mark is shown to staff, flagged.
+      expect(cell('student-1', essay.id)).toMatchObject({ score: 0, status: 'marked' });
+      expect(cell('student-1', letter.id)).toMatchObject({ score: null, status: 'not_submitted' });
+      expect(cell('student-2', letter.id)).toMatchObject({ score: null, status: 'submitted' });
+      // No completion figure anywhere (CLAUDE.md §11.1).
+      expect(JSON.stringify(mb)).not.toMatch(/progress|completion|percentComplete/i);
+    });
+
+    it('D-45: averages marked platform work only - GROUP-4\'s arithmetic - and is null with nothing marked', async () => {
+      const { essay, letter, quiz } = await book();
+      const e = await assessmentRepo.createSubmission(essay.id, 'student-1', null, 'e');
+      await assessmentRepo.gradeSubmission(e.id, { score: 15, feedback: null, annotatedFileUrl: undefined });
+      const l = await assessmentRepo.createSubmission(letter.id, 'student-1', null, 'l');
+      await assessmentRepo.gradeSubmission(l.id, { score: 5, feedback: null, annotatedFileUrl: undefined });
+      // A perfect quiz score must not move the platform average.
+      await workRepo.replaceResults(quiz.id, 'google_form', [
+        { assessmentId: quiz.id, provider: 'google_form', externalId: 'r1', studentId: 'student-1', respondentId: 's1@example.com', score: 9, maxScore: 9, submittedAt: '2026-09-01T00:00:00.000Z', raw: {} },
+      ]);
+      const mb = await staff.markbook(gid, ADMIN);
+      const s1 = mb.students.find((s) => s.studentId === 'student-1')!;
+      // (15/20 + 5/10) / 2 = 62.5 -> 63
+      expect(s1.averagePercent).toBe(63);
+      expect(mb.students.find((s) => s.studentId === 'student-2')!.averagePercent).toBeNull();
+      // The group report computes the same student's figure the same way.
+      const report = await staff.report(gid, ADMIN);
+      expect(report.entries.find((r) => r.studentId === 'student-1')!.averageScorePercent).toBe(63);
+    });
+
+    it('D-46: form columns are mirrored, carry the sync time and unmatched count, and show the LATEST response', async () => {
+      const { quiz } = await book();
+      await workRepo.replaceResults(quiz.id, 'google_form', [
+        { assessmentId: quiz.id, provider: 'google_form', externalId: 'old', studentId: 'student-1', respondentId: 'a', score: 3, maxScore: 9, submittedAt: '2026-09-01T00:00:00.000Z', raw: {} },
+        { assessmentId: quiz.id, provider: 'google_form', externalId: 'new', studentId: 'student-1', respondentId: 'a', score: 8, maxScore: 9, submittedAt: '2026-09-02T00:00:00.000Z', raw: {} },
+        { assessmentId: quiz.id, provider: 'google_form', externalId: 'nobody', studentId: null, respondentId: 'x@y', score: 1, maxScore: 9, submittedAt: '2026-09-02T00:00:00.000Z', raw: {} },
+      ]);
+      const mb = await staff.markbook(gid, ADMIN);
+      const col = mb.tasks.find((t) => t.assessmentId === quiz.id)!;
+      expect(col).toMatchObject({ source: 'mirrored', maxScore: 9, unmatchedCount: 1 });
+      expect(col.lastSyncedAt).not.toBeNull();
+      const cells = (id: string) => mb.students.find((s) => s.studentId === id)!.cells.find((c) => c.assessmentId === quiz.id)!;
+      expect(cells('student-1')).toMatchObject({ score: 8, maxScore: 9, status: 'scored' });
+      expect(cells('student-2')).toMatchObject({ score: null, status: 'no_response' });
+    });
+
+    it('lets the assistant read the group they hold, and 404s any other exactly like an unknown one', async () => {
+      await expect(staff.markbook('group-1', ASSIGNED_TA)).resolves.toMatchObject({ groupId: 'group-1' });
+      const unheld = await staff.markbook('group-2', ASSIGNED_TA).catch((e: Error) => e.message);
+      const unknown = await staff.markbook('group-nope', ASSIGNED_TA).catch((e: Error) => e.message);
+      const unscoped = await staff.markbook('group-1', UNASSIGNED_TA).catch((e: Error) => e.message);
+      expect(unheld).toBe(GROUP_NOT_FOUND);
+      expect(unheld).toBe(unknown);
+      expect(unscoped).toBe(unknown);
     });
   });
 

@@ -840,6 +840,59 @@ components:
         status:           { type: string, enum: [awaiting, graded] }
         isLate:           { type: boolean }
 
+    # --- The mark book (`BOOK-1`, unit 7) ---------------------------------
+    MarkbookTask:
+      type: object
+      required: [assessmentId, title, workType, source, maxScore, dueAt, lastSyncedAt, unmatchedCount]
+      properties:
+        assessmentId:   { $ref: '#/components/schemas/Id' }
+        title:          { type: string }
+        workType:       { type: string, enum: [file_upload, google_form] }
+        source:         { type: string, enum: [platform, mirrored], description: 'Who decided the number: marked here, or copied from Google Forms (`D-46`).' }
+        maxScore:       { type: [integer, 'null'], description: A form's may be unknown; each cell also carries its own. }
+        dueAt:          { type: string, format: date-time }
+        lastSyncedAt:   { type: [string, 'null'], format: date-time, description: Mirrored only - when the platform last checked the form. }
+        unmatchedCount: { type: [integer, 'null'], description: 'Mirrored only - responses on the whole form that matched no student (a count, no names).' }
+    MarkbookCell:
+      type: object
+      required: [assessmentId, score, maxScore, status]
+      properties:
+        assessmentId: { $ref: '#/components/schemas/Id' }
+        score:        { type: [number, 'null'], description: Null is no mark - rendered as an em-dash, never 0. }
+        maxScore:     { type: [number, 'null'] }
+        status:
+          type: string
+          enum: [not_submitted, submitted, marked, returned, no_response, responded, scored]
+          description: The first four for platform work (`SubmissionStatus`); the last three for mirrored work.
+    Markbook:
+      type: object
+      required: [groupId, groupName, courseId, courseTitle, tasks, omittedTasks, students]
+      properties:
+        groupId:     { $ref: '#/components/schemas/Id' }
+        groupName:   { type: string }
+        courseId:    { $ref: '#/components/schemas/Id' }
+        courseTitle: { type: string }
+        tasks:       { type: array, items: { $ref: '#/components/schemas/MarkbookTask' } }
+        omittedTasks:
+          type: array
+          items:
+            type: object
+            required: [assessmentId, title, workType]
+            properties:
+              assessmentId: { $ref: '#/components/schemas/Id' }
+              title:        { type: string }
+              workType:     { $ref: '#/components/schemas/WorkType' }
+        students:
+          type: array
+          items:
+            type: object
+            required: [studentId, name, averagePercent, cells]
+            properties:
+              studentId:      { $ref: '#/components/schemas/Id' }
+              name:           { type: string, description: Name only - no email. }
+              averagePercent: { type: [integer, 'null'], description: '`D-45` Average of marked work; null (an em-dash) when nothing is marked.' }
+              cells:          { type: array, items: { $ref: '#/components/schemas/MarkbookCell' } }
+
     # --- Sessions ----------------------------------------------------------
     Session:
       type: object
@@ -2061,13 +2114,57 @@ paths:
   /staff/groups/{groupId}/markbook:
     get:
       tags: [markbook]
-      summary: Student × task grid for one group
-      description: A missing mark is null and renders as an em-dash, never as zero.
+      summary: Student × task grid for one group (BOOK-1)
+      description: >
+        Every member of the group against every task set for it and visible to
+        students (A-8), ordered by due date. Scoped like every group read: an
+        unheld group is a 404 byte-identical to a missing one (`D-10`).
+        Uploaded work is `source: platform`; staff see a saved-not-returned mark,
+        flagged `marked`. Google Form work is `source: mirrored` (`D-46`) with
+        `lastSyncedAt` and the form's `unmatchedCount`; each cell is the
+        student's LATEST matched response. Link work has no mark anywhere and is
+        listed in `omittedTasks`. `averagePercent` is "Average of marked work"
+        (`D-45`): the mean of per-task shares over work marked in the platform -
+        `GROUP-4`'s arithmetic, so it agrees with the group report - with
+        mirrored scores, unmarked and missing work excluded. **A missing mark is
+        null and renders as an em-dash, never zero.** No completion figure
+        (CLAUDE.md §11.1).
       x-roles: [assistant, teacher, admin]
       parameters:
         - { name: groupId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
       responses:
-        '200': { description: OK }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Markbook' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /staff/groups/{groupId}/markbook.csv:
+    get:
+      tags: [markbook]
+      summary: The mark book as a CSV download (BOOK-3)
+      description: >
+        Same scope and content as the JSON route. UTF-8 with a BOM (so Excel
+        reads Arabic names and the em-dash), RFC 4180 quoting, CRLF. Any field
+        starting with `=` `+` `-` `@`, TAB or CR is prefixed with `'` (formula
+        injection). Columns: `Student` (name only, no email), one per task as
+        `Title (/max)` with ` [Google Form]` on mirrored ones, then
+        `Average of marked work (%)`. A missing mark is `—` (U+2014), never `0`
+        or empty. The filename is minted from the stored group id, never its
+        name. A read, so not audited.
+      x-roles: [assistant, teacher, admin]
+      parameters:
+        - { name: groupId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200':
+          description: OK
+          headers:
+            Content-Disposition:
+              schema: { type: string, example: 'attachment; filename="markbook-<groupId>.csv"' }
+          content:
+            text/csv; charset=utf-8:
+              schema: { type: string }
         '404': { $ref: '#/components/responses/NotFound' }
 
   # --- Sessions and attendance -------------------------------------------

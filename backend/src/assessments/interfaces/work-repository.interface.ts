@@ -93,6 +93,19 @@ export interface ExternalResult {
 
 export type NewExternalResult = Omit<ExternalResult, 'id' | 'syncedAt'>;
 
+/**
+ * One student's latest mirrored score on one form - the mark book's cell
+ * (unit 7, `D-46`). No payload and no respondent: the grid shows a number.
+ */
+export interface LatestResultScore {
+  assessmentId: string;
+  studentId: string;
+  score: number | null;
+  /** The denominator stored with THIS response. */
+  maxScore: number | null;
+  submittedAt: string;
+}
+
 /** Counts for one assessment, computed in SQL rather than by loading rows. */
 export interface ResultTally {
   /** Responses attributed to a known student. */
@@ -207,6 +220,21 @@ export interface WorkRepository {
     assessmentIds: readonly string[],
     studentId: string,
   ): Promise<Record<string, number>>;
+  /**
+   * The **latest** matched response per (form, student), for many students at
+   * once - the mark book's Google Form columns (unit 7, `D-46`).
+   *
+   * One read for a whole roster, never one per student (CLAUDE.md §1).
+   * "Latest" is decided HERE, by `(submitted_at, id)` descending, so both
+   * drivers agree on which of two responses a student's cell shows. Restricted
+   * to the students named in the query - the batch-read leak
+   * `findResultsForStudent` warns about. Unmatched responses (no student) are
+   * never returned.
+   */
+  findLatestScoresForStudents(
+    assessmentIds: readonly string[],
+    studentIds: readonly string[],
+  ): Promise<LatestResultScore[]>;
 }
 
 export const WORK_REPOSITORY = Symbol('WORK_REPOSITORY');

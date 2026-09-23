@@ -59,6 +59,22 @@ export function isReturnedToStudent(s: { returnedAt: string | null }): boolean {
   return s.returnedAt !== null;
 }
 
+/**
+ * Where one student stands on one task, as STAFF see it - derived on every
+ * read (CLAUDE.md §6): no row, a row with no mark, a saved mark, a returned
+ * mark. The per-task queue and the mark book both use this one definition.
+ * (A student never sees `marked`: to them a saved mark is still `submitted`.)
+ */
+export type SubmissionStatus = 'not_submitted' | 'submitted' | 'marked' | 'returned';
+
+export function submissionStatusOf(
+  s: Pick<StoredSubmission, 'correctedAt' | 'returnedAt'> | null,
+): SubmissionStatus {
+  if (!s) return 'not_submitted';
+  if (s.correctedAt === null) return 'submitted';
+  return isReturnedToStudent(s) ? 'returned' : 'marked';
+}
+
 export interface AssessmentListItem {
   id: string;
   courseId: string;

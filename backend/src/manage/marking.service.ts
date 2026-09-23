@@ -36,6 +36,7 @@ import { isPlatformStored, storedMimeTypeOf } from '../common/storage/upload-typ
 import { SubmissionAccessService, SUBMISSION_NOT_FOUND } from './submission-access.service.js';
 import { GradingService, toGradingQueueItem, type GradingQueueItem } from './grading.service.js';
 import { ASSESSMENT_NOT_FOUND } from './assessment-authoring.service.js';
+import { submissionStatusOf, type SubmissionStatus } from '../assessments/assessments.service.js';
 
 /** A return with no mark to hand back (assumption A-3). */
 export const RETURN_NEEDS_MARK = 'Enter a mark before returning this work.';
@@ -44,17 +45,9 @@ export const RETURN_NEEDS_MARK = 'Enter a mark before returning this work.';
 export const QUEUE_NOT_HANDED_IN_HERE =
   "This task is not handed in here. Its results are on the task's results page.";
 
-/**
- * Where one student stands on one task, derived on every read (CLAUDE.md §6):
- * no row, a row with no mark, a saved mark, a returned mark.
- */
-export type SubmissionStatus = 'not_submitted' | 'submitted' | 'marked' | 'returned';
-
-export function submissionStatusOf(s: StoredSubmission | null): SubmissionStatus {
-  if (!s) return 'not_submitted';
-  if (s.correctedAt === null) return 'submitted';
-  return s.returnedAt === null ? 'marked' : 'returned';
-}
+// The status rule lives beside `isReturnedToStudent` so the mark book
+// (`GroupsService`) and this queue derive it from one definition.
+export { submissionStatusOf, type SubmissionStatus };
 
 /**
  * One file of a submission as the marking view renders it - server-derived,

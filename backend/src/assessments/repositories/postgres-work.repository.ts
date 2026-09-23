@@ -4,6 +4,7 @@ import { DatabaseService } from '../../database/database.service.js';
 import { iso, isoOrNull, numOrNull } from '../../database/database.types.js';
 import type {
   ExternalResult,
+  LatestResultScore,
   GoogleFormBinding,
   NewExternalResult,
   NewGoogleFormBinding,
@@ -340,5 +341,37 @@ export class PostgresWorkRepository implements WorkRepository {
     return Object.fromEntries(
       rows.map((row) => [row.assessment_id, Number(row.count)]),
     );
+  }
+  async findLatestScoresForStudents(
+    assessmentIds: readonly string[],
+    studentIds: readonly string[],
+  ): Promise<LatestResultScore[]> {
+    if (assessmentIds.length === 0 || studentIds.length === 0) {
+      return [];
+    }
+    // DISTINCT ON keeps the first row of each (form, student) in the ORDER BY,
+    // so "latest" is one SQL decision rather than a Map overwrite that depends
+    // on the order rows happen to arrive in.
+    const rows = await this.db.query<{
+      assessment_id: string;
+      student_id: string;
+      score: string | number | null;
+      max_score: string | number | null;
+      submitted_at: Date;
+    }>(
+      `SELECT DISTINCT ON (assessment_id, student_id)
+              assessment_id, student_id, score, max_score, submitted_at
+         FROM external_results
+        WHERE assessment_id = ANY($1) AND student_id = ANY($2)
+        ORDER BY assessment_id, student_id, submitted_at DESC, id DESC`,
+      [[...assessmentIds], [...studentIds]],
+    );
+    return rows.map((row) => ({
+      assessmentId: row.assessment_id,
+      studentId: row.student_id,
+      score: numOrNull(row.score),
+      maxScore: numOrNull(row.max_score),
+      submittedAt: iso(row.submitted_at),
+    }));
   }
 }
