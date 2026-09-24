@@ -104,12 +104,12 @@ function GoogleCallback() {
       <h1 className="text-(length:--fs-h2) font-semibold tracking-[-0.02em] text-fg">
         {error.mode === 'link' ? 'Google was not connected' : 'Google sign-in did not finish'}
       </h1>
-      <div className="mt-[var(--sp-6)]">
+      <div className="mt-6">
         <InlineBanner tone="danger">{error.message}</InlineBanner>
       </div>
       <Link
         href={error.back}
-        className="mt-[var(--sp-8)] inline-block text-(length:--fs-base) text-fg-2 underline underline-offset-4 hover:text-fg"
+        className="mt-8 inline-block text-(length:--fs-base) text-fg-2 underline underline-offset-4 hover:text-fg"
       >
         {error.mode === 'link' ? 'Back to your account' : 'Back to sign in'}
       </Link>
