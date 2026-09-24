@@ -609,16 +609,21 @@ mixes with the console's 13px. `/catalog` and the student `/achievements` rail e
 **State, 2026-09-24: PARTIAL by design, `[~]`.** The session deliberately took a subset while units
 7 and 8 were in flight on other branches.
 
-- **Landed `[x]`:** `SITE-1`…`SITE-5`, `STU-2`, `STU-5`, `STU-7`.
-- **Deferred:** `STU-1` (composes unit 8's attendance figures), `STU-4` (needs unit 7's
-  `returned_at`).
-- **Not taken:** `STU-3` (lesson detail + next-recording) — neither built nor deferred by a
-  dependency; simply out of this session's scope, recorded so it is not mistaken for done.
-- **Blocked `[~]`:** `STU-6`, on `F13-2` — a documentation conflict, not a technical one. See
-  `docs/CHANGELOG.md`.
+- **Landed `[x]`:** `SITE-1`…`SITE-5`, `STU-2`, `STU-4`, `STU-5`, `STU-7`.
+- **Deferred:** `STU-1` — composes unit 8's attendance figures, and migration `019` is still absent
+  from `redesign`. The only item genuinely waiting on another unit.
+- **Partial `[~]`:** `STU-3` — player, chapters, the work set and the next-recording card are built;
+  **"its material" is not**, because `materials` has no relation to a lesson. Recorded rather than
+  invented (§13).
+- **Blocked `[~]`:** `STU-6`, on `F13-2` — a documentation conflict, not a technical one.
 
-The unit cannot go `[x]` until `STU-1`, `STU-3`, `STU-4` land and `F13-2` is ruled on; §2 condition 9
-(zero unresolved blockers) is not met.
+`STU-4` was expected to be deferred and turned out not to be: unit 7's `returnedAt` landed on
+`redesign` mid-session, and the four attempt states were already complete and server-derived. What
+it actually needed was `F13-4` — every Google Form task was rendering on **both** `/homework` and
+`/quizzes`.
+
+The unit cannot go `[x]` until `STU-1` lands, `STU-3`'s material gap is closed or dropped, and
+`F13-2` is ruled on; §2 condition 9 (zero unresolved blockers) is not met.
 
 **The finding that dominated the unit (`F13-1`).** `SITE-1`…`SITE-5` were not a redesign. Every
 marketing and auth surface was still written against the token vocabulary `ad238a7` deleted with

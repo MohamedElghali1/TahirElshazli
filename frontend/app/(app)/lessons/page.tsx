@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
 import { formatDate, formatDuration } from '@/lib/format';
@@ -205,6 +206,13 @@ function RecordingsList({ courseId }: { courseId: string }) {
                       <h2 className="text-lg font-medium text-fg">{selected.title}</h2>
                       <Tag>{selected.chapter}</Tag>
                       {selected.completed && <Tag tone="green">Watched</Tag>}
+                      <Link
+                        href={`/lessons/${selected.id}`}
+                        className="inline-flex items-center gap-1 text-xs text-fg-3 underline underline-offset-2 hover:text-fg"
+                      >
+                        Open lesson page
+                        <Icon name="ArrowUpRight" size={12} />
+                      </Link>
                     </div>
                     <p className="num mt-1 text-xs text-fg-3">
                       {formatDate(selected.lessonDate)} · {formatDuration(selected.durationSeconds)}
