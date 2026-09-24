@@ -1913,3 +1913,83 @@ second half the test would pass merely because that student was never created.
 
 Slice 7a's `[~]` was stale and is now `[x]`: all eight methods verified present in
 `postgres-assessment.repository.ts`, not merely in the interface.
+
+---
+
+## 2026-09-24 — `F13-1`: the public site was still running on a deleted token vocabulary
+
+**Context.** Unit 13 opened expecting `SITE-1`…`SITE-5` to be a styling pass over pages `CLAUDE.md`
+§4.1 describes as already ported. A scan of every `var(--…)` written in `frontend/app` and
+`frontend/components` against every custom property actually defined in `app/tokens/*.css` and
+`app/globals.css` found **38 distinct undefined properties in 491 references across 24 files** —
+`--sp-*`, `--fs-h1/h2/h3/lead/body/display`, `--bg-*`, `--fg-primary`, `--r-*`, `--maxw-*`,
+`--h-sm/md`, `--lh-loose`, `--accent-line/press/edge`.
+
+These are the retired Twenty-derived vocabulary, deleted in `ad238a7` along with
+`frontend/app/tokens.css`. A CSS declaration whose `var()` names an undefined property with no
+fallback is invalid at computed-value time and is dropped, so **every padding, gap, font size,
+radius, max-width and line height they named was not applied at all** on the public site.
+
+**Why nobody caught it.** `tsc`, `eslint` and `next build` all pass on a dead token — Tailwind's
+arbitrary-value syntax accepts any string, so `p-[var(--nope)]` compiles to `padding: var(--nope)`
+and simply renders as nothing. Three independent reviewers have read this code since the tokens
+were deleted. §4.1's claim that `components/site/*` "was ported onto the current `components/ui` API
+in place" is true of the **component imports** and false of the **token vocabulary**; the two were
+conflated.
+
+**This is the third recurrence of one failure class.** §11 rule 1 records 478 colour instances;
+`F5-1` records 113 size instances; this is 491. Same root cause every time.
+
+**Chosen.** Repair all 491, and **verify against the compiled stylesheet rather than the source** —
+the only check that can see this class. Spacing mapped 1:1 (`var(--sp-N)` was `N × 4px`, Tailwind's
+numeric utility N is also `N × 4px`). Colour became named utilities. Marketing type became
+`text-m-*`. Responsive headings keep their `clamp()` and hold the token *inside* it rather than a
+literal pixel value, so the scale stays one source of truth.
+
+**Two sub-decisions worth recording.**
+- **`--r-lg` (16px) collapses to `rounded-md` (8px).** The live system names no 16 step, and
+  `docs/frontend-design-system.md` §4 records that the old implementation "ran one step large
+  throughout — 16px buttons reading as pills — and correcting that is the single most visible change
+  in this rebuild." Restoring 16px would have re-introduced the error the rebuild existed to fix.
+- **Marketing small print is body size at a lower tint, not a smaller size.** 46 references named a
+  *console* size token (`--fs-base` 13px, `--fs-xs` 12px) on a `[data-surface="site"]` page — the
+  scale mixing §11 forbids. The marketing scale has no step below 17px, so the replacement is
+  `text-m-body` + `text-fg-3`, mirroring the console's own "a caption differs from a heading by
+  tint, not size". One deliberate exception: the wordmark's "English Team" tagline takes a literal
+  `text-[12px]`, because 17px under a 20px wordmark collapses the lockup's hierarchy and a lockup is
+  not body copy.
+
+**Affected.** 24 files across `app/(site)`, `app/(auth)`, `components/site`, `components/blog`, plus
+four console files the same rot had reached. New task `OPS-2` in `docs/IMPLEMENTATION_PLAN.md`:
+fail the build on a `var(--x)` naming an undefined property. **A reviewer is the wrong instrument
+for this; a resolver is the right one.**
+
+---
+
+## 2026-09-24 — `F13-2`: two same-rank documents disagree about classmate avatars
+
+**Context.** `CLAUDE.md` §2.3 requires that a conflict between two sources at the same authority
+level be recorded and raised, not silently resolved.
+
+- `docs/PRODUCT_SPEC.md` §6 — Classmates `[EXISTING]`: **"Names and avatars only. Already correct."**
+- `docs/redesign-mapping.md` §Coverage lists classmates under *Maps cleanly* as
+  **"classmates (names only — an exact match)"**.
+
+The implementation agrees with the second. `backend/src/groups/classmates.service.ts` returns
+**"Name and id, and nothing else"**, and says so deliberately: never email, phone, grades, progress
+or attendance, because a classmate list carrying a grade is a leaderboard and that is a different
+product.
+
+`PRODUCT_SPEC` calls the current state "already correct" while naming a field it does not return, so
+at least one of those two sentences is wrong.
+
+**Not resolved here, deliberately.** Adding avatars would publish **a photograph of a child to other
+children**. That is a field-minimisation and privacy decision (`CLAUDE.md` §8, "output filtering and
+field minimisation") and therefore business behaviour — §13: never invent it. It is also not a
+frontend change: it is a payload change plus a ruling.
+
+**Decision needed from the client:** do classmate avatars ship? `STU-6` stays `[~]` until then,
+verified against the narrower reading.
+
+**Affected.** `STU-6`; `docs/PRODUCT_SPEC.md` §6 and `docs/redesign-mapping.md` — one of them needs
+correcting once the ruling lands.

@@ -351,21 +351,60 @@ assistant retarget their draft platform-wide for a teacher to publish unaware).
 
 ## Phases 15–17 — Remaining surfaces
 
-`STU-1` `[ ]` Overview (action-first; **no mark on this page**) ·
-`STU-2` `[ ]` `recordings.thumbnail_url` + library grid/list ·
-`STU-3` `[ ]` Lesson detail + next-recording ·
-`STU-4` `[ ]` Homework + four attempt states ·
-`STU-5` `[ ]` Materials · `STU-6` `[ ]` Classmates (already correct server-side) ·
-`STU-7` `[ ]` Help/WhatsApp
+`STU-1` `[ ]` Overview (action-first; **no mark on this page**) — **deferred**, it composes unit 8's
+attendance figures and unit 8 is in flight ·
+`STU-2` `[x]` `recordings.thumbnail_url` + library grid/list — migration `023`, both repository
+drivers, DTO guarded like `videoUrl` so the field cannot become a `javascript:` URL. Thumbnails
+default with a `surface-3` + icon fallback, because `thumbnail_url` is null for every recording that
+exists today — the null path is the normal path. Watched share is a `Meter`, never a `Score` ·
+`STU-3` `[ ]` Lesson detail + next-recording — **not taken this session**; recorded so it is not
+mistaken for done ·
+`STU-4` `[ ]` Homework + four attempt states — **deferred**, the four states need unit 7's
+`returned_at` ·
+`STU-5` `[x]` Materials — **no gap found.** Course-scoped, on the current kit, and reachable: it has
+no rail slot by design (`PRODUCT_SPEC.md` §6 lists none) and is linked from the Overview's own
+Materials panel. Verified, not rebuilt — the same posture unit 12 took with `SET-3`/`SET-5` ·
+`STU-6` `[~]` Classmates — verified against the narrower reading (names only, no email, mark,
+progress or attendance). **Blocked on a documentation conflict**, `F13-2` below ·
+`STU-7` `[x]` Help/WhatsApp — the card was right; its call to action was a `Button` running
+`window.open`, which cannot be middle-clicked or opened in a new tab and is the exact shape a popup
+blocker suppresses. It would have left the one support route on the platform silently doing nothing.
+Now an anchor
 
-`SITE-1` `[ ]` Homepage · `SITE-2` `[ ]` Course pages · `SITE-3` `[ ]` Blog ·
-`SITE-4` `[ ]` Contact · `SITE-5` `[ ]` Auth screens (sign-in card shape ×4)
+`SITE-1` `[x]` Homepage · `SITE-2` `[x]` Course pages · `SITE-3` `[x]` Blog ·
+`SITE-4` `[x]` Contact · `SITE-5` `[x]` Auth screens (sign-in card shape ×4)
+
+**What `SITE-1`…`SITE-5` turned out to be (`F13-1`).** Not a redesign — a repair. Every marketing
+and auth surface was still written against the token vocabulary `ad238a7` deleted along with
+`frontend/app/tokens.css`: **491 references to 38 custom properties defined nowhere in the
+repository.** A `var()` naming an undefined property with no fallback is invalid at computed-value
+time and is dropped, so every padding, gap, font size, radius and max-width they named was **not
+applied at all**. It typechecked, it linted and it built.
+
+This is the third recurrence of the class `CLAUDE.md` §11 records twice already (478 colour
+instances; then 113 size instances as `F5-1`), and the root cause is identical each time: Tailwind's
+arbitrary-value syntax accepts any string, so nothing in the toolchain distinguishes a live token
+from a dead one. 46 of the references named a **console** size token on a `[data-surface="site"]`
+page — the scale mixing §11 forbids, shipped and invisible.
+
+**It was verified against the compiled stylesheet, not the source**, which is the only check that
+catches this class. All five marketing steps are emitted and defined, and no dead custom property
+reaches the compiled CSS. See `OPS-1` — this wants a build-time check, not a reviewer.
 
 `GAUTH-1` `[ ]` Google OAuth sign-in. **Last.** Nothing depends on it and it replaces a working,
 well-tested mechanism. Non-negotiables in `SECURITY.md` §2.6 — especially: never auto-link a Google
 account to a password account by email alone.
 
 `OPS-1` `[ ]` Regenerate `lib/api.ts` + `lib/types.ts` from `API_SPEC.yaml`, or add a CI drift check.
+
+`OPS-2` `[ ]` **Fail the build on a `var(--x)` that names an undefined custom property.** Added
+2026-09-24 out of `F13-1`. Resolve every custom property written inside a Tailwind arbitrary value
+against the set defined in `app/tokens/*.css` + `app/globals.css`, and fail on a miss. The same
+shape as `OPS-1` and for the same stated reason — **make drift a compile error, not a code review.**
+This defect class has now shipped three times (478, 113, 491 instances) and was invisible to `tsc`,
+`eslint` and `next build` every time, because Tailwind's arbitrary-value syntax accepts any string.
+Three independent reviewers have looked at this code since the tokens were deleted and none caught
+it. A reviewer is the wrong instrument; a resolver is the right one.
 
 ---
 
