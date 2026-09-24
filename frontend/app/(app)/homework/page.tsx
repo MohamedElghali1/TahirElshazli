@@ -9,6 +9,7 @@ import {
   ASSESSMENT_STATUS_LABEL,
   ASSESSMENT_TYPE_LABEL,
   formatDate,
+  isQuizWork,
 } from '@/lib/format';
 import type { AssessmentListItem, AssessmentType } from '@/lib/types';
 import { Panel, EmptyState, Loader, Tag, Button, cx, type TagTone } from '@/components/ui';
@@ -18,11 +19,20 @@ import { useSelectedCourse } from '@/components/shell/course-context';
 
 /**
  * Homework (`docs/PRODUCT_SPEC.md` §6: `[CHANGED]`, "Homework only — no quiz
- * appears here"). Splitting quiz-type work out is content scope this unit
- * does not do (`PHASE_PLAN.md` §1 keeps Quizzes itself out entirely, and this
- * screen's own type filter, including its Quizzes tab, is ported verbatim
- * rather than half-applying that rule and hiding a working feature with
- * nowhere else to go this slice). Course-scoped via the rail's switcher.
+ * appears here". Four attempt states — `STU-4`). Course-scoped via the rail's
+ * switcher.
+ *
+ * The split is by **work type**, not by the `type` label, and the two are
+ * different axes. `workType` is how a task is delivered — `file_upload`,
+ * `link`, `google_form` — and §6 defines the Quizzes page as the `google_form`
+ * one, so that is what this page excludes (`isQuizWork`, `lib/format.ts`).
+ * `type` is what a task is *called* — homework, assignment, quiz — and the
+ * filter tabs below still offer all three, because a task labelled "quiz" that
+ * is handed in as a file upload is delivered here and has nowhere else to go.
+ *
+ * The four states are the server's (`assessments.service.ts:computeStatus`),
+ * derived from stored timestamps and the submission row on every read. They are
+ * grouped here and never recomputed — §6's "status is computed server-side".
  */
 
 // `ASSESSMENT_STATUS_CHIP` (`lib/format.ts`, untouched by the redesign) still
@@ -65,11 +75,20 @@ function HomeworkList({ courseId }: { courseId: string }) {
   );
 
   // Server-derived status (§5.10) is grouped here, never recomputed.
+  //
+  // `google_form` work is excluded: `docs/PRODUCT_SPEC.md` §6 says this page is
+  // "**Homework only** — no quiz appears here", and `/quizzes` selects exactly
+  // the same work type (`quizzes/page.tsx`). One list endpoint serves both
+  // screens, so without this filter every Google Form task appeared on BOTH —
+  // and it read differently on each, because a form is submitted on Google and
+  // never reaches `corrected` here. A student would have seen the same task
+  // twice and been invited to do it again from the wrong one.
   const groups = useMemo(() => {
     const open: AssessmentListItem[] = [];
     const waiting: AssessmentListItem[] = [];
     const done: AssessmentListItem[] = [];
     for (const item of data ?? []) {
+      if (isQuizWork(item.workType)) continue;
       if (item.status === 'available') open.push(item);
       else if (item.status === 'submitted') waiting.push(item);
       else done.push(item);

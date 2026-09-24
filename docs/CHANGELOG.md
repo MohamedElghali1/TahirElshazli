@@ -1949,3 +1949,42 @@ verified against the narrower reading.
 
 **Affected.** `STU-6`; `docs/PRODUCT_SPEC.md` §6 and `docs/redesign-mapping.md` — one of them needs
 correcting once the ruling lands.
+
+---
+
+## 2026-09-24 — `F13-4`: every Google Form task was rendering on two student pages at once
+
+**Context.** `STU-4` was expected to be the four attempt states. Those turned out to be complete
+already — `assessments.service.ts:computeStatus` derives
+`locked | available | submitted | corrected` from stored timestamps and the submission row on every
+read, and the homework page groups them without recomputing. `MARK-2`'s `returnedAt` (unit 7,
+landed on `redesign` this morning) is what unblocked the slice.
+
+The real gap was the split. `docs/PRODUCT_SPEC.md` §6 defines two student work surfaces — Homework
+is *"**Homework only** — no quiz appears here"*, and Quizzes is *"driven by the existing Google Form
+work type"*. **One list endpoint serves both screens.** `/quizzes` filtered to
+`workType === 'google_form'`; `/homework` filtered on nothing at all. So every Google Form task
+appeared on **both pages**, and read differently on each: a form is submitted on Google and never
+reaches `corrected` here, so the same task showed as permanently awaiting marking on Homework while
+Quizzes showed it correctly. A student would have been invited to do it again from the wrong page.
+
+**Chosen.** One exhaustive `Record<WorkType, 'homework' | 'quizzes'>` in `frontend/lib/format.ts`,
+with both pages reading `isQuizWork` from it.
+
+**Why a `Record` and not a filter on each page.** Two hand-written filters are what produced the
+bug, and a third work type would have landed on **neither** page with nothing to catch it. The
+exhaustive record makes adding a `WorkType` a **compile error at the one place that has to decide**.
+This is the mechanism `CLAUDE.md` §10 already prescribes for the `AuditAction` mirror, adopted here
+for the same stated reason: *an array can only prove that what is listed works, never that nothing
+is missing.*
+
+**Two axes that are easy to conflate, recorded because the fix depends on telling them apart.**
+`workType` (`file_upload | link | google_form`) is **how a task is delivered**; `type`
+(`homework | assignment | quiz`) is **what it is called**. §6's Quizzes page is defined by the
+*delivery* axis, so that is what Homework excludes. The Homework page keeps all three `type` filter
+tabs, because a task labelled "quiz" that is handed in as a file upload is delivered there and has
+nowhere else to go. Narrowing on the label axis instead would have hidden working tasks.
+
+**Affected.** `frontend/lib/format.ts`, `app/(app)/homework/page.tsx`, `app/(app)/quizzes/page.tsx`.
+Frontend only — no backend, API or schema change. The server already computes and enforces
+everything this touches.

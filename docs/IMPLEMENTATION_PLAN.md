@@ -377,10 +377,21 @@ attendance figures and unit 8 is in flight ·
 drivers, DTO guarded like `videoUrl` so the field cannot become a `javascript:` URL. Thumbnails
 default with a `surface-3` + icon fallback, because `thumbnail_url` is null for every recording that
 exists today — the null path is the normal path. Watched share is a `Meter`, never a `Score` ·
-`STU-3` `[ ]` Lesson detail + next-recording — **not taken this session**; recorded so it is not
-mistaken for done ·
-`STU-4` `[ ]` Homework + four attempt states — **deferred**, the four states need unit 7's
-`returned_at` ·
+`STU-3` `[~]` Lesson detail + next-recording — `app/(app)/lessons/[recordingId]/page.tsx`. Player
+(reusing `RecordingPlayer`, not a second one), chapter and topics, the work set from the lesson, and
+a next-recording card that stops at the last recording rather than wrapping. **No backend change**:
+`assessments.lessonId` and `recordings.position` already answer both questions, and at ~20
+recordings a course (§1) filtering the existing list client-side is correct, not an N+1.
+**"Its material" is NOT built** — `materials` carries `course_id` and `category` and has *no*
+relation to a lesson or a recording. Closing it needs a `materials.lesson_id` column, both
+repository drivers and a staff control to set it; inventing the join was refused (§13). `[~]` for
+that quarter of the requirement ·
+`STU-4` `[x]` Homework + four attempt states — unblocked when unit 7's `MARK-2` (`returnedAt`)
+landed on `redesign`. **The four states were already complete** and server-derived
+(`assessments.service.ts:computeStatus`); the real gap was the split (`F13-4`). Every
+`google_form` task was rendering on **both** `/homework` and `/quizzes`, and differently on each,
+because one filtered and the other did not. Now one exhaustive
+`Record<WorkType, 'homework' | 'quizzes'>` in `lib/format.ts` that all three student surfaces read ·
 `STU-5` `[x]` Materials — **no gap found.** Course-scoped, on the current kit, and reachable: it has
 no rail slot by design (`PRODUCT_SPEC.md` §6 lists none) and is linked from the Overview's own
 Materials panel. Verified, not rebuilt — the same posture unit 12 took with `SET-3`/`SET-5` ·

@@ -4028,3 +4028,52 @@ Classmates is "Names **and avatars** only. Already correct." while `redesign-map
 "**names only** — an exact match", and the service returns name and id deliberately. Adding avatars
 publishes a child's photograph to other children — a privacy ruling, not a judgment call. Raised as
 `F13-2` rather than decided.
+
+---
+
+## 2026-09-24 — Unit 13, part two: the states were fine, the split was not
+
+Continuing the unit, two of the three items held back turned out to be movable. Unit 7's `MARK-2`
+landed `returnedAt` on `redesign` mid-session, which was `STU-4`'s only stated dependency, and
+`STU-3` had never been blocked at all — it was simply not taken in the first pass.
+
+**`STU-4` was not the work it looked like.** The four attempt states —
+`locked | available | submitted | corrected` — were already complete, already derived server-side in
+`assessments.service.ts:computeStatus` from stored timestamps and the submission row on every read,
+and already grouped without recomputation on the homework page. Nothing to build.
+
+What was actually broken was the split between the two student work surfaces. `PRODUCT_SPEC.md` §6
+defines Homework as *"Homework only — no quiz appears here"* and Quizzes as *"driven by the existing
+Google Form work type"*, and **one list endpoint serves both screens.** `/quizzes` filtered to
+`google_form`; `/homework` filtered on nothing. So **every Google Form task rendered on both pages**
+— and inconsistently, because a form is submitted on Google and never reaches `corrected` here, so
+Homework showed it stuck awaiting marking forever while Quizzes showed it correctly. A student would
+have been invited to redo it from the wrong page.
+
+The fix is one exhaustive `Record<WorkType, 'homework' | 'quizzes'>` in `lib/format.ts`. Not two
+corrected filters: **two hand-written filters are what produced the bug**, and a third work type
+would have landed on *neither* page with nothing to catch it. The record makes adding a `WorkType` a
+compile error at the one place that has to decide — the mechanism §10 already prescribes for the
+`AuditAction` mirror, and for its stated reason: an array proves only that what is listed works,
+never that nothing is missing. All three student surfaces read it now, including the new lesson
+detail page — the implementer had hand-rolled a fourth copy and was redirected to the predicate.
+
+**Two axes that are easy to conflate**, and the fix depends on telling them apart. `workType`
+(`file_upload | link | google_form`) is how a task is *delivered*; `type`
+(`homework | assignment | quiz`) is what it is *called*. §6's Quizzes page is defined by delivery,
+so that is what Homework excludes — and the `type` filter tabs keep all three, because a task
+labelled "quiz" that is handed in as a file upload is delivered on Homework and has nowhere else to
+go. Narrowing on the label axis would have hidden working tasks.
+
+**`STU-3` is `[~]`, and the missing quarter is the interesting part.** Player, chapters, the work
+set from the lesson and a next-recording card that stops at the last recording rather than wrapping
+— all built, and with **no backend change at all**: `assessments.lessonId` and `recordings.position`
+already answer both questions, and at ~20 recordings a course, filtering the list already fetched is
+correct rather than an N+1. But §6 also asks for *"its material"*, and `materials` carries
+`course_id` and `category` and **has no relation to a lesson or a recording**. Closing that needs a
+`materials.lesson_id` column, both repository drivers and a staff control to set it. Inventing the
+join — or quietly showing the whole course's materials as though they were this lesson's — was
+refused. §13: never invent business behaviour. It is recorded as the open half of `STU-3`.
+
+`STU-1` remains the one item genuinely waiting on another unit: migration `019` is still absent from
+`redesign`, so unit 8's attendance figures do not exist to compose.
