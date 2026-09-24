@@ -994,6 +994,54 @@ describe('Manage surface', () => {
       const list = await staff.listRecordings('course-1', ADMIN);
       expect(list.find((r) => r.id === created.id)).toBeUndefined();
     });
+
+    it('round-trips a thumbnail URL supplied at publish time', async () => {
+      const created = await admin.createRecording(
+        'course-1',
+        {
+          moduleId: 'mod-1',
+          lessonId: 'lesson-1',
+          title: 'With a thumbnail',
+          videoUrl: 'https://video.example.com/thumb',
+          durationSeconds: 300,
+          thumbnailUrl: 'https://cdn.example.com/thumb.jpg',
+        },
+        ADMIN,
+      );
+      expect(created.thumbnailUrl).toBe('https://cdn.example.com/thumb.jpg');
+    });
+
+    it('leaves thumbnailUrl null when publishing without one', async () => {
+      const created = await admin.createRecording(
+        'course-1',
+        {
+          moduleId: 'mod-1',
+          lessonId: 'lesson-1',
+          title: 'No thumbnail',
+          videoUrl: 'https://video.example.com/nothumb',
+          durationSeconds: 300,
+        },
+        ADMIN,
+      );
+      expect(created.thumbnailUrl).toBeNull();
+    });
+
+    it('leaves an existing thumbnailUrl alone when a PATCH omits it', async () => {
+      const created = await admin.createRecording(
+        'course-1',
+        {
+          moduleId: 'mod-1',
+          lessonId: 'lesson-1',
+          title: 'Keeps its thumbnail',
+          videoUrl: 'https://video.example.com/keep',
+          durationSeconds: 300,
+          thumbnailUrl: 'https://cdn.example.com/keep.jpg',
+        },
+        ADMIN,
+      );
+      const updated = await admin.updateRecording(created.id, { title: 'Renamed' }, ADMIN);
+      expect(updated.thumbnailUrl).toBe('https://cdn.example.com/keep.jpg');
+    });
   });
 
   describe('live sessions', () => {

@@ -10,6 +10,7 @@ export interface Recording {
   durationSeconds: number;
   lessonDate: string;
   order: number;
+  thumbnailUrl: string | null;
 }
 
 export interface RecordingWithProgress extends Recording {
@@ -53,6 +54,7 @@ export interface NewRecording {
   videoUrl: string;
   durationSeconds: number;
   lessonDate: string;
+  thumbnailUrl?: string | null;
 }
 
 /**
@@ -72,6 +74,7 @@ export interface RecordingUpdate {
   videoUrl?: string;
   durationSeconds?: number;
   lessonDate?: string;
+  thumbnailUrl?: string | null;
 }
 
 export interface RecordingRepository {

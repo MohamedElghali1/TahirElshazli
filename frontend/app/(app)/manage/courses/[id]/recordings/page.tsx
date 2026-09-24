@@ -241,6 +241,7 @@ function NewRecordingForm({
         lessonDate: String(form.get('lessonDate') || '')
           ? new Date(String(form.get('lessonDate'))).toISOString()
           : undefined,
+        thumbnailUrl: String(form.get('thumbnailUrl') ?? '').trim() || undefined,
       });
       onCreated();
     } catch (cause) {
@@ -320,6 +321,16 @@ function NewRecordingForm({
           name="topics"
           placeholder="Atomic Structure, Moles"
           hint="Comma separated. These become the student's topic filter."
+        />
+
+        <TextInput
+          label="Thumbnail URL"
+          id="thumbnailUrl"
+          name="thumbnailUrl"
+          type="url"
+          inputMode="url"
+          placeholder="https://"
+          hint="Optional. Shown on the student's lesson library; falls back to a plain icon when left blank."
         />
 
         {error && <InlineBanner tone="danger">{error}</InlineBanner>}

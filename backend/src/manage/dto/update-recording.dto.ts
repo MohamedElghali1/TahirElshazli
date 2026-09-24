@@ -3,6 +3,7 @@ import {
   IsArray,
   IsInt,
   IsISO8601,
+  IsOptional,
   IsString,
   IsUrl,
   Max,
@@ -52,4 +53,15 @@ export class UpdateRecordingDto {
   @IsOptionalNotNull()
   @IsISO8601()
   lessonDate?: string;
+
+  /**
+   * `thumbnail_url` is a nullable column, unlike its siblings above - so this
+   * uses `@IsOptional()`, not `@IsOptionalNotNull()`: `null` is a real value
+   * here, meaning "clear the thumbnail", and undefined still means "leave it
+   * alone" (`common/validators/is-optional-not-null.ts`).
+   */
+  @IsOptional()
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
+  @MaxLength(2048)
+  thumbnailUrl?: string | null;
 }
