@@ -18,12 +18,12 @@ function Notice({
   body: string;
 }) {
   return (
-    <div className="rounded-[var(--r-lg)] border border-[var(--border-medium)] bg-[var(--bg-primary)] p-[var(--sp-12)]">
-      <p className="text-[var(--fs-lead)] text-fg">{heading}</p>
-      <p className="mt-[var(--sp-3)] max-w-[52ch] text-[var(--fs-body)] leading-[var(--lh-loose)] text-fg-2">
+    <div className="rounded-md border border-[var(--border-medium)] bg-surface p-12">
+      <p className="text-m-lead text-fg">{heading}</p>
+      <p className="mt-3 max-w-[52ch] text-m-body leading-[1.65] text-fg-2">
         {body}
       </p>
-      <ButtonLink href="/contact" variant="primary" size="medium" className="mt-[var(--sp-8)]">
+      <ButtonLink href="/contact" variant="primary" size="medium" className="mt-8">
         Contact us
       </ButtonLink>
     </div>

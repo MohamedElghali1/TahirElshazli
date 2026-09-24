@@ -46,14 +46,14 @@ export default function LoginPage() {
 
   return (
     <>
-      <h1 className="text-[var(--fs-h2)] font-semibold tracking-[-0.02em] text-fg">
+      <h1 className="text-m-h2 font-semibold tracking-[-0.02em] text-fg">
         Sign in
       </h1>
-      <p className="mt-[var(--sp-2)] text-[var(--fs-body)] text-fg-3">
+      <p className="mt-2 text-m-body text-fg-3">
         Use the email address your place was booked under.
       </p>
 
-      <form onSubmit={submit} noValidate className="mt-[var(--sp-8)] flex flex-col gap-[var(--sp-6)]">
+      <form onSubmit={submit} noValidate className="mt-8 flex flex-col gap-6">
         <TextInput
           label="Email"
           id="email"
@@ -80,7 +80,7 @@ export default function LoginPage() {
         </Button>
       </form>
 
-      <div className="mt-[var(--sp-6)] flex flex-col gap-[var(--sp-3)] text-[var(--fs-base)]">
+      <div className="mt-6 flex flex-col gap-3 text-m-body text-fg-3">
         <Link
           href="/forgot-password"
           className="text-fg-2 underline underline-offset-4 hover:text-fg"

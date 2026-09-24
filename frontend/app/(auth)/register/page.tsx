@@ -62,16 +62,16 @@ export default function RegisterPage() {
   if (waiting) {
     return (
       <div role="status">
-        <h1 className="text-[var(--fs-h2)] font-semibold tracking-[-0.02em] text-fg">
+        <h1 className="text-m-h2 font-semibold tracking-[-0.02em] text-fg">
           Your account is being reviewed
         </h1>
-        <p className="mt-[var(--sp-4)] text-[var(--fs-body)] leading-[var(--lh-loose)] text-fg-2">
+        <p className="mt-4 text-m-body leading-[1.65] text-fg-2">
           We will let you know once your place is confirmed. This usually takes
           one working day.
         </p>
         <Link
           href="/login"
-          className="mt-[var(--sp-8)] inline-block text-[var(--fs-base)] text-fg-2 underline underline-offset-4 hover:text-fg"
+          className="mt-8 inline-block text-m-body text-fg-2 underline underline-offset-4 hover:text-fg"
         >
           Back to sign in
         </Link>
@@ -81,14 +81,14 @@ export default function RegisterPage() {
 
   return (
     <>
-      <h1 className="text-[var(--fs-h2)] font-semibold tracking-[-0.02em] text-fg">
+      <h1 className="text-m-h2 font-semibold tracking-[-0.02em] text-fg">
         Create your account
       </h1>
-      <p className="mt-[var(--sp-2)] text-[var(--fs-body)] text-fg-3">
+      <p className="mt-2 text-m-body text-fg-3">
         Once your place is confirmed, this is where your course appears.
       </p>
 
-      <form onSubmit={submit} noValidate className="mt-[var(--sp-8)] flex flex-col gap-[var(--sp-6)]">
+      <form onSubmit={submit} noValidate className="mt-8 flex flex-col gap-6">
         <TextInput
           label="Full name"
           id="name"
@@ -130,7 +130,7 @@ export default function RegisterPage() {
         </Button>
       </form>
 
-      <p className="mt-[var(--sp-6)] text-[var(--fs-base)] text-fg-3">
+      <p className="mt-6 text-m-body text-fg-3">
         Already have an account?{' '}
         <Link
           href="/login"

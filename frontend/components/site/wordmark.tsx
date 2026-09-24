@@ -7,7 +7,7 @@
 export function Wordmark({ size = 'md' }: { size?: 'md' | 'lg' }) {
   const box = size === 'lg' ? 36 : 28;
   return (
-    <span className="inline-flex items-center gap-[var(--sp-3)]">
+    <span className="inline-flex items-center gap-3">
       <svg
         width={box}
         height={box}
@@ -26,7 +26,7 @@ export function Wordmark({ size = 'md' }: { size?: 'md' | 'lg' }) {
         />
         <path
           d="M8 9.5h12M14 9.5V19"
-          stroke="var(--fg-primary)"
+          stroke="var(--fg)"
           strokeWidth="1.75"
           strokeLinecap="square"
         />
@@ -36,12 +36,18 @@ export function Wordmark({ size = 'md' }: { size?: 'md' | 'lg' }) {
         <span
           className={
             'font-semibold tracking-[-0.01em] text-fg ' +
-            (size === 'lg' ? 'text-[var(--fs-h3)]' : 'text-[var(--fs-md)]')
+            (size === 'lg' ? 'text-m-h2' : 'text-m-lead')
           }
         >
           Dr. Tahir Elshazli
         </span>
-        <span className="mt-[3px] text-[var(--fs-xs)] text-fg-3">
+        {/* A literal 12px, not a scale step. The marketing scale bottoms out
+            at 17px body, and 17px under a 20px wordmark collapses the lockup's
+            hierarchy — a lockup is not body copy. The console's 12px token
+            would be the right size and the wrong scale: it may not cross onto
+            a marketing surface (CLAUDE.md §11, "two type scales that never
+            mix"), so the value is written out rather than borrowed. */}
+        <span className="mt-[3px] text-[12px] text-fg-3">
           English Team
         </span>
       </span>

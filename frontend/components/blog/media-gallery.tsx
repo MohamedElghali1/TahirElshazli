@@ -43,7 +43,7 @@ export function MediaGallery({
                  while alt text is a replacement for the image - conflating
                  them means sighted readers lose the caption and screen-reader
                  users hear it twice. */
-              <figcaption className="mt-[var(--sp-2)] text-[var(--fs-base)] leading-[var(--lh-loose)] text-fg-3">
+              <figcaption className="mt-2 text-m-body leading-[1.65] text-fg-3">
                 {item.caption}
               </figcaption>
             )}
@@ -76,7 +76,7 @@ function MediaImage({ item }: { item: BlogMedia }) {
       alt=""
       loading="lazy"
       decoding="async"
-      className="w-full rounded-[var(--r-md)] border border-[var(--border-light)] bg-[var(--bg-tertiary)] object-cover"
+      className="w-full rounded-md border border-[var(--border-light)] bg-surface-3 object-cover"
     />
   );
 }
@@ -90,7 +90,7 @@ function MediaVideo({ item }: { item: BlogMedia }) {
       // video that starts itself is the thing every reader immediately looks
       // for a way to stop.
       preload="metadata"
-      className="w-full rounded-[var(--r-md)] border border-[var(--border-light)] bg-black"
+      className="w-full rounded-md border border-[var(--border-light)] bg-black"
     >
       {/* Reached only by a browser with no <video> support at all. A bare
           player element with nothing in it would render as blank space. */}
@@ -107,18 +107,18 @@ function MediaFile({ item }: { item: BlogMedia }) {
       // off-origin; a new tab keeps the reader's place in the post.
       target="_blank"
       rel="noopener noreferrer"
-      className="flex items-center gap-[var(--sp-3)] rounded-[var(--r-md)] border border-[var(--border-medium)] bg-[var(--bg-secondary)] p-[var(--sp-4)] transition-colors duration-[var(--dur-fast)] hover:border-[var(--border-strong)]"
+      className="flex items-center gap-3 rounded-md border border-[var(--border-medium)] bg-surface-2 p-4 transition-colors duration-[var(--dur-fast)] hover:border-[var(--border-strong)]"
     >
       <FileArrowDownIcon
         size={20}
         aria-hidden
         className="shrink-0 text-fg-3"
       />
-      <span className="min-w-0 flex-1 truncate text-[var(--fs-body)] text-fg">
+      <span className="min-w-0 flex-1 truncate text-m-body text-fg">
         {item.caption ?? 'Attached file'}
       </span>
       {item.sizeBytes !== null && (
-        <span className="shrink-0 font-[family-name:var(--font-mono)] text-[var(--fs-base)] tabular-nums text-fg-3">
+        <span className="shrink-0 font-[family-name:var(--font-mono)] text-m-body tabular-nums text-fg-3">
           {formatFileSize(item.sizeBytes)}
         </span>
       )}

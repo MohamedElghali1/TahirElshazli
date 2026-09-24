@@ -32,7 +32,7 @@ export function TeacherPortrait({
   if (failed) {
     return (
       <span className={cx('flex items-center justify-center', className)}>
-        <Avatar name={name} className="h-[112px] w-[112px] text-[var(--fs-lg)]" />
+        <Avatar name={name} className="h-[112px] w-[112px] text-lg" />
       </span>
     );
   }
