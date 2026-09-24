@@ -638,9 +638,11 @@ mixes with the console's 13px. `/catalog` and the student `/achievements` rail e
 - **Landed `[x]`:** `SITE-1`…`SITE-5`, `STU-2`, `STU-4`, `STU-5`, `STU-7`.
 - **Deferred:** `STU-1` — composes unit 8's attendance figures, and migration `019` is still absent
   from `redesign`. The only item genuinely waiting on another unit.
-- **Partial `[~]`:** `STU-3` — player, chapters, the work set and the next-recording card are built;
-  **"its material" is not**, because `materials` has no relation to a lesson. Recorded rather than
-  invented (§13).
+- **Closed `[x]`:** `STU-3` — player, chapters, the work set, **its material**, and the
+  next-recording card. The material half was the open one; the client ruled 2026-09-24 to follow the
+  design, so migration `025` adds `materials.lesson_id`. No new route and no staff control: the
+  existing materials endpoint carries the field, and materials have no authoring surface to add one
+  to.
 - **Closed `[x]`:** `STU-6` — `F13-2` ruled on by the client 2026-09-24: **no avatars**. Names only,
   which is what the service already returned. `PRODUCT_SPEC.md` §6 was the document in error and was
   corrected at source.
@@ -650,9 +652,10 @@ mixes with the console's 13px. `/catalog` and the student `/achievements` rail e
 it actually needed was `F13-4` — every Google Form task was rendering on **both** `/homework` and
 `/quizzes`.
 
-The unit cannot go `[x]` until `STU-1` lands (waiting on unit 8's attendance migration) and
-`STU-3`'s material gap is closed or dropped. `F13-2` is closed. §2 condition 9 (zero unresolved
-blockers) is therefore still unmet, but by two items rather than three.
+**`STU-1` is the last item.** It composes unit 8's attendance figures, and unit 8 has not landed —
+its migration slot is now `026`, since `025` is taken by this unit's material relation. Everything
+else in unit 13 is `[x]`: `F13-2` ruled on (no avatars), `STU-3`'s material gap closed (follow the
+design). §2 condition 9 is unmet by exactly one dependency, held outside this unit.
 
 **The finding that dominated the unit (`F13-1`).** `SITE-1`…`SITE-5` were not a redesign. Every
 marketing and auth surface was still written against the token vocabulary `ad238a7` deleted with

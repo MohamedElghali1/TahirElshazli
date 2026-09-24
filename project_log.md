@@ -4122,3 +4122,42 @@ silent zero. Reading restored: 388 across 5 files, where the combined run gave n
 Both are recorded in `CLAUDE.md` rather than only in the changelog, because both are durable rules
 about how this repository is checked, not decisions about a feature. The through-line is worth
 keeping: **a reviewer is the wrong instrument for a defect that passes every gate.**
+
+---
+
+## 2026-09-24 — Unit 13, part four: the material relation, and what it did not license
+
+The client ruled on the one requirement unit 13 had declined to invent: **follow the design.**
+`PRODUCT_SPEC.md` §6 asks lesson detail for "its material", and `materials` had no relation to a
+lesson, so migration `025` adds `materials.lesson_id`.
+
+The interesting part was scoping it. My own blocker note had said closing this needed "a
+`materials.lesson_id` column, both repository drivers, **and a staff control to set it**". Checking
+before building showed why that last clause was wrong: **materials have no authoring surface at
+all.** The module exposes exactly one route, `GET /courses/:id/materials`. There is no create, no
+update, no delete, for any field. Every material in the system arrives by seed.
+
+So "a staff control to set the lesson" was never a detail of this change — it is material CRUD, a
+feature in its own right, that nothing in §6 asks for. Building it because my earlier note mentioned
+it would have been scope creep sourced from my own stale sentence. The column shipped; the authoring
+surface did not; the absence is written down in three places so nobody reads it as an oversight.
+
+Three shape decisions worth keeping. Nullable, because **null is the normal case** — a syllabus and
+a past-paper pack belong to a course, not a lesson, and `NOT NULL` would have forced every existing
+row to claim one. `ON DELETE SET NULL` matching `assessments.lesson_id`, because deleting a lesson
+must not delete the course's files. And a partial index, since the rows carrying a lesson are the
+minority and every read is course-scoped before it filters.
+
+No new route: the existing endpoint carries the field, so the page filters what it already fetches —
+the same posture the work set took, and correct at §1's scale. The route moved `[KEEP]` → `[MODIFY]`
+in the gap analysis, because its response shape changed, which is the kind of bookkeeping that goes
+stale silently if it is not done in the same commit.
+
+The tests are aimed at the failure mode rather than the happy path. A mapper that drops a column
+returns `undefined`, the filter matches nothing, and the page renders "nothing attached to this
+lesson" — **a wrong answer wearing a legitimate empty state's clothes.** So both drivers assert the
+attached rows by id *and* that course-wide rows are `null` rather than `undefined`. Migration and
+seed ran from an empty schema against real PostgreSQL before any of it counted.
+
+Unit 13 is now one item from complete: `STU-1`, which composes unit 8's attendance figures. Unit 8
+has still not landed, and its migration slot has moved again — `025` is taken, so it is `026` now.

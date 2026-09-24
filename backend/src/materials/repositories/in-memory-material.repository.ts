@@ -9,6 +9,7 @@ const STUB_MATERIALS: Material[] = [
   {
     id: 'mat-1',
     courseId: 'course-1',
+    lessonId: 'lesson-1',
     title: 'Chapter 1 Notes - Atomic Structure',
     description: 'Full lecture notes covering subatomic particles and isotopes',
     category: 'course_notes',
@@ -21,6 +22,7 @@ const STUB_MATERIALS: Material[] = [
   {
     id: 'mat-2',
     courseId: 'course-1',
+    lessonId: 'lesson-5',
     title: 'Chapter 2 Notes - Moles & Stoichiometry',
     description: 'Worked examples for mole calculations and titrations',
     category: 'course_notes',
@@ -33,6 +35,7 @@ const STUB_MATERIALS: Material[] = [
   {
     id: 'mat-3',
     courseId: 'course-1',
+    lessonId: 'lesson-9',
     title: 'Chapter 3 Notes - Organic Chemistry',
     description: 'Functional groups, nomenclature and reaction mechanisms',
     category: 'course_notes',
@@ -45,6 +48,7 @@ const STUB_MATERIALS: Material[] = [
   {
     id: 'mat-4',
     courseId: 'course-1',
+    lessonId: null,
     title: 'Practice Problems Set 1',
     description: 'Extra practice on atomic structure and periodicity',
     category: 'study_materials',
@@ -57,6 +61,7 @@ const STUB_MATERIALS: Material[] = [
   {
     id: 'mat-5',
     courseId: 'course-1',
+    lessonId: null,
     title: 'Past Paper Pack 2020-2025',
     description: 'Compiled past papers with mark schemes',
     category: 'study_materials',
@@ -69,6 +74,7 @@ const STUB_MATERIALS: Material[] = [
   {
     id: 'mat-6',
     courseId: 'course-1',
+    lessonId: null,
     title: 'Data Booklet',
     description: 'Periodic table and constants sheet used in exams',
     category: 'study_materials',
@@ -81,6 +87,7 @@ const STUB_MATERIALS: Material[] = [
   {
     id: 'mat-7',
     courseId: 'course-1',
+    lessonId: null,
     title: 'AS Chemistry Syllabus 2026',
     description: null,
     category: 'important_files',
@@ -93,6 +100,7 @@ const STUB_MATERIALS: Material[] = [
   {
     id: 'mat-8',
     courseId: 'course-1',
+    lessonId: null,
     title: 'Term 1 Timetable',
     description: 'Live session schedule and submission deadlines',
     category: 'important_files',
@@ -105,6 +113,7 @@ const STUB_MATERIALS: Material[] = [
   {
     id: 'mat-9',
     courseId: 'course-2',
+    lessonId: null,
     title: 'IELTS Speaking Tips',
     description: 'Key tips for the IELTS speaking section',
     category: 'course_notes',

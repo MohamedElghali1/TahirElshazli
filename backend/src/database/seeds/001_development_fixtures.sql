@@ -99,16 +99,19 @@ ON CONFLICT (student_id, course_id) DO NOTHING;
 -- Materials
 -- ============================================================
 
-INSERT INTO materials (id, course_id, title, description, category, chapter, file_url, file_type, file_size_bytes, uploaded_at) VALUES
-  ('mat-1', 'course-1', 'Chapter 1 Notes - Atomic Structure',      'Full lecture notes covering subatomic particles and isotopes', 'course_notes',     'Chapter 1', 'https://storage.example.com/materials/ch1-notes.pdf',         'application/pdf', 1048576, '2026-02-02T10:00:00Z'),
-  ('mat-2', 'course-1', 'Chapter 2 Notes - Moles & Stoichiometry', 'Worked examples for mole calculations and titrations',        'course_notes',     'Chapter 2', 'https://storage.example.com/materials/ch2-notes.pdf',         'application/pdf', 1310720, '2026-03-02T10:00:00Z'),
-  ('mat-3', 'course-1', 'Chapter 3 Notes - Organic Chemistry',     'Functional groups, nomenclature and reaction mechanisms',      'course_notes',     'Chapter 3', 'https://storage.example.com/materials/ch3-notes.pdf',         'application/pdf', 1572864, '2026-04-06T10:00:00Z'),
-  ('mat-4', 'course-1', 'Practice Problems Set 1',                 'Extra practice on atomic structure and periodicity',           'study_materials',  'Chapter 1', 'https://storage.example.com/materials/practice-set1.pdf',     'application/pdf',  524288, '2026-02-20T14:00:00Z'),
-  ('mat-5', 'course-1', 'Past Paper Pack 2020-2025',               'Compiled past papers with mark schemes',                       'study_materials',  NULL,        'https://storage.example.com/materials/past-papers.pdf',       'application/pdf', 6291456, '2026-05-10T14:00:00Z'),
-  ('mat-6', 'course-1', 'Data Booklet',                            'Periodic table and constants sheet used in exams',             'study_materials',  NULL,        'https://storage.example.com/materials/data-booklet.pdf',      'application/pdf',  409600, '2026-01-25T14:00:00Z'),
-  ('mat-7', 'course-1', 'AS Chemistry Syllabus 2026',              NULL,                                                           'important_files',  NULL,        'https://storage.example.com/materials/syllabus-2026.pdf',     'application/pdf', 2097152, '2026-01-20T08:00:00Z'),
-  ('mat-8', 'course-1', 'Term 1 Timetable',                        'Live session schedule and submission deadlines',               'important_files',  NULL,        'https://storage.example.com/materials/term1-timetable.pdf',   'application/pdf',  245760, '2026-01-20T08:00:00Z'),
-  ('mat-9', 'course-2', 'IELTS Speaking Tips',                     'Key tips for the IELTS speaking section',                      'course_notes',     'Chapter 1', 'https://storage.example.com/materials/ielts-speaking-tips.pdf','application/pdf', 768000, '2026-06-05T09:00:00Z')
+-- `lesson_id` (migration 025) is set on the three chapter-notes rows and left
+-- NULL on the rest, which is the shape the column was made nullable for: a
+-- handout belongs to a lesson, a past-paper pack belongs to the course.
+INSERT INTO materials (id, course_id, lesson_id, title, description, category, chapter, file_url, file_type, file_size_bytes, uploaded_at) VALUES
+  ('mat-1', 'course-1', 'lesson-1', 'Chapter 1 Notes - Atomic Structure',      'Full lecture notes covering subatomic particles and isotopes', 'course_notes',     'Chapter 1', 'https://storage.example.com/materials/ch1-notes.pdf',         'application/pdf', 1048576, '2026-02-02T10:00:00Z'),
+  ('mat-2', 'course-1', 'lesson-5', 'Chapter 2 Notes - Moles & Stoichiometry', 'Worked examples for mole calculations and titrations',        'course_notes',     'Chapter 2', 'https://storage.example.com/materials/ch2-notes.pdf',         'application/pdf', 1310720, '2026-03-02T10:00:00Z'),
+  ('mat-3', 'course-1', 'lesson-9', 'Chapter 3 Notes - Organic Chemistry',     'Functional groups, nomenclature and reaction mechanisms',      'course_notes',     'Chapter 3', 'https://storage.example.com/materials/ch3-notes.pdf',         'application/pdf', 1572864, '2026-04-06T10:00:00Z'),
+  ('mat-4', 'course-1', NULL, 'Practice Problems Set 1',                 'Extra practice on atomic structure and periodicity',           'study_materials',  'Chapter 1', 'https://storage.example.com/materials/practice-set1.pdf',     'application/pdf',  524288, '2026-02-20T14:00:00Z'),
+  ('mat-5', 'course-1', NULL, 'Past Paper Pack 2020-2025',               'Compiled past papers with mark schemes',                       'study_materials',  NULL,        'https://storage.example.com/materials/past-papers.pdf',       'application/pdf', 6291456, '2026-05-10T14:00:00Z'),
+  ('mat-6', 'course-1', NULL, 'Data Booklet',                            'Periodic table and constants sheet used in exams',             'study_materials',  NULL,        'https://storage.example.com/materials/data-booklet.pdf',      'application/pdf',  409600, '2026-01-25T14:00:00Z'),
+  ('mat-7', 'course-1', NULL, 'AS Chemistry Syllabus 2026',              NULL,                                                           'important_files',  NULL,        'https://storage.example.com/materials/syllabus-2026.pdf',     'application/pdf', 2097152, '2026-01-20T08:00:00Z'),
+  ('mat-8', 'course-1', NULL, 'Term 1 Timetable',                        'Live session schedule and submission deadlines',               'important_files',  NULL,        'https://storage.example.com/materials/term1-timetable.pdf',   'application/pdf',  245760, '2026-01-20T08:00:00Z'),
+  ('mat-9', 'course-2', NULL, 'IELTS Speaking Tips',                     'Key tips for the IELTS speaking section',                      'course_notes',     'Chapter 1', 'https://storage.example.com/materials/ielts-speaking-tips.pdf','application/pdf', 768000, '2026-06-05T09:00:00Z')
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================

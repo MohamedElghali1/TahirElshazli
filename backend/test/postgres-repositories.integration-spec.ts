@@ -619,6 +619,26 @@ describeIfDb('Postgres repositories', () => {
       expect(notes.every((m) => m.category === 'course_notes')).toBe(true);
       expect(notes).toHaveLength(3);
     });
+
+    it('carries lesson_id, and null where a material is course-wide', async () => {
+      // `STU-3` reads this to show "its material" on the lesson detail page, so
+      // the column has to survive the SELECT list — the failure mode a mapper
+      // that forgets a column produces is `undefined`, which filters to an
+      // empty list and looks exactly like "nothing attached to this lesson".
+      const repo = new PostgresMaterialRepository(db);
+      const all = await repo.findByCourse('course-1');
+
+      const attached = all.filter((m) => m.lessonId !== null);
+      expect(attached.map((m) => m.id).sort()).toEqual(['mat-1', 'mat-2', 'mat-3']);
+      expect(all.find((m) => m.id === 'mat-1')?.lessonId).toBe('lesson-1');
+
+      // Null is a real value here, not an absent one: most materials belong to
+      // the course rather than a lesson, and `undefined` would pass a
+      // `!== null` filter while meaning the mapper dropped the column.
+      const courseWide = all.filter((m) => m.lessonId === null);
+      expect(courseWide.length).toBeGreaterThan(0);
+      expect(courseWide.every((m) => 'lessonId' in m)).toBe(true);
+    });
   });
 
   describe('recordings', () => {

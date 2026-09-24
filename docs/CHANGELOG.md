@@ -2088,3 +2088,45 @@ fired and reported in three of them.
 
 Recorded rather than smoothed over: **the suite is green; the machine is not.** Whoever adds a sixth
 e2e file, or moves CI to a different runner, should read this first.
+
+---
+
+## 2026-09-24 — `STU-3`'s material relation: follow the design
+
+**Context.** Unit 13 built lesson detail but left one quarter of `PRODUCT_SPEC.md` §6's row unbuilt
+— *"Player, chapters, the work set from it, **its material**, and a 'Next recording' card"*.
+`materials` carried `course_id` and `category` and **nothing naming a lesson**, so there was no join
+to derive it from. The two available wrong answers were inventing a relation, or quietly rendering
+the whole course's materials as though they were this lesson's. Both were refused under §13 and the
+gap was recorded instead.
+
+**Chosen — client ruling 2026-09-24: follow the design.** Migration `025` adds
+`materials.lesson_id`.
+
+**Three shape decisions, each with a reason rather than a default.**
+- **Nullable, and null is the *normal* case.** Most materials belong to the course as a whole — a
+  syllabus, a formula sheet, a past-paper pack — and only some are the handout from lesson 4. A
+  `NOT NULL` column would have forced every existing row to claim a lesson it does not have.
+- **`ON DELETE SET NULL`**, matching `assessments.lesson_id` exactly. Deleting a lesson must not
+  delete the course's files; the material outlives the outline entry that referenced it and stays
+  reachable on the course's own Materials page.
+- **Partial index** on `(course_id, lesson_id) WHERE lesson_id IS NOT NULL`, beside the existing
+  category index rather than replacing it. Every read is already course-scoped before it filters by
+  lesson, and the rows that matter to this index are the minority.
+
+**No new route.** `GET /courses/:courseId/materials` already returns the course's materials and now
+carries the field, so the page filters what it already fetches — the same posture the work set took.
+At ~20 recordings and a handful of materials per course (§1) that is correct, not an N+1.
+`API_GAP_ANALYSIS.md` moves the route `[KEEP]` → `[MODIFY]`, because its response shape changed, and
+it is now specified in `API_SPEC.yaml`.
+
+**Deliberately not built: a staff control to set the lesson.** Materials have **no authoring surface
+at all** — the module exposes one `GET` and every material arrives by seed. Adding the column does
+not change that, and building material CRUD to fill the gap would be a feature of its own that
+nothing in §6 asks for. The absence is recorded here so it is not later mistaken for an oversight.
+
+**Tests.** Both drivers, in the shape that catches the actual failure mode: a mapper that drops a
+column yields `undefined`, which filters to an empty list and **looks exactly like "nothing attached
+to this lesson"**. So both the memory and the Postgres case assert the attached rows by id *and*
+that course-wide rows are `null` rather than `undefined`. Migration `025` and the updated seed ran
+from an **empty** schema against real PostgreSQL before this was called done.

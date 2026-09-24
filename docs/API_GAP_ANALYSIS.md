@@ -55,7 +55,7 @@ is otherwise a no-op; it is listed once per controller rather than once per rout
 
 | Route | Verdict | Note |
 |---|---|---|
-| `GET /courses/:id/materials` | `[KEEP]` | |
+| `GET /courses/:id/materials` | `[MODIFY]` | Add `lessonId` (migration `025`, `STU-3`) so the lesson detail page can show "its material". Reclassified 2026-09-24 — it was `[KEEP]` while the response shape was unchanged. |
 | `GET /courses/:id/recordings` | `[MODIFY]` | Add `thumbnailUrl`, honour `isVisible`. |
 | `POST /recordings/:id/progress` | `[KEEP]` | |
 | `GET /courses/:id/live-sessions` | `[REPLACE]` | Sessions re-parent to the group and gain mode/location/state. See B6. |

@@ -3046,3 +3046,40 @@ paths:
       responses:
         '200': { description: Removed }
         '404': { $ref: '#/components/responses/NotFound' }
+
+  # ---------------------------------------------------------------------------
+  # Materials. Reclassified `[MODIFY]` on 2026-09-24 (`API_GAP_ANALYSIS.md`):
+  # the route gains `lessonId` for `STU-3`, so it is now in this file's scope.
+  #
+  # There is deliberately no write route here. Materials have NO authoring
+  # surface — the module exposes this one `GET` and nothing else, and every
+  # material arrives by seed. Building CRUD for them is a feature in its own
+  # right, not a side effect of adding a column, and nothing in
+  # `PRODUCT_SPEC.md` §6 asks for it yet.
+  # ---------------------------------------------------------------------------
+
+  /courses/{courseId}/materials:
+    get:
+      tags: [student]
+      summary: The course's materials, grouped by category
+      description: >
+        `[MODIFY]` — gains `lessonId` (`STU-3`, migration `025`). **Null is the
+        normal case**, not a gap: most materials belong to the course as a whole
+        (a syllabus, a past-paper pack) and only some are the handout from one
+        lesson. The lesson detail page shows those whose `lessonId` matches its
+        recording's; this page shows every material either way, so a null hides
+        nothing from anyone.
+
+        Enrollment is checked in the service: a course the caller is not
+        enrolled in is a 404 whose body is byte-identical to a course that does
+        not exist (`CLAUDE.md` §7).
+      x-roles: [student]
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+        - name: category
+          in: query
+          required: false
+          schema: { type: string, enum: [course_notes, study_materials, important_files] }
+      responses:
+        '200': { description: OK — materials grouped by category }
+        '404': { $ref: '#/components/responses/NotFound' }

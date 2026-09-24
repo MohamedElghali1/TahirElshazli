@@ -208,6 +208,14 @@ export type MaterialCategory =
 export interface Material {
   id: string;
   courseId: string;
+  /**
+   * The lesson this material belongs to, when it belongs to one (migration
+   * `025`). Null is the normal case: most materials are course-wide — a
+   * syllabus, a past-paper pack — and only some are the handout from one
+   * lesson. The lesson detail page shows the matching ones; `/materials` shows
+   * every one regardless, so a null hides nothing.
+   */
+  lessonId: string | null;
   title: string;
   description: string | null;
   category: MaterialCategory;

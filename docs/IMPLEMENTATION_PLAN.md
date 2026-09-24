@@ -377,15 +377,27 @@ attendance figures and unit 8 is in flight ·
 drivers, DTO guarded like `videoUrl` so the field cannot become a `javascript:` URL. Thumbnails
 default with a `surface-3` + icon fallback, because `thumbnail_url` is null for every recording that
 exists today — the null path is the normal path. Watched share is a `Meter`, never a `Score` ·
-`STU-3` `[~]` Lesson detail + next-recording — `app/(app)/lessons/[recordingId]/page.tsx`. Player
-(reusing `RecordingPlayer`, not a second one), chapter and topics, the work set from the lesson, and
-a next-recording card that stops at the last recording rather than wrapping. **No backend change**:
-`assessments.lessonId` and `recordings.position` already answer both questions, and at ~20
-recordings a course (§1) filtering the existing list client-side is correct, not an N+1.
-**"Its material" is NOT built** — `materials` carries `course_id` and `category` and has *no*
-relation to a lesson or a recording. Closing it needs a `materials.lesson_id` column, both
-repository drivers and a staff control to set it; inventing the join was refused (§13). `[~]` for
-that quarter of the requirement ·
+`STU-3` `[x]` Lesson detail + next-recording — `app/(app)/lessons/[recordingId]/page.tsx`. Player
+(reusing `RecordingPlayer`, not a second one), chapter and topics, the work set from the lesson,
+**its material**, and a next-recording card that stops at the last recording rather than wrapping.
+
+**"Its material" closed by client ruling 2026-09-24: follow the design.** It had been the open half
+of this task — `materials` carried `course_id` and `category` and nothing naming a lesson, so unit 13
+raised it rather than showing the whole course's materials as though they were one lesson's.
+Migration `025` adds `materials.lesson_id`: nullable because most materials *are* course-wide (a
+syllabus, a past-paper pack) and only some are the handout from lesson 4; `ON DELETE SET NULL`
+matching `assessments.lesson_id`, because deleting a lesson must not delete the course's files; and
+a partial index on the minority of rows that carry one.
+
+**No backend route was added.** `GET /courses/:courseId/materials` already returns the course's
+materials and now carries `lessonId`, so the page filters what it already fetches — the same posture
+as the work set. `API_GAP_ANALYSIS.md` reclassified the route `[KEEP]` → `[MODIFY]` (the response
+shape changed) and it is specified in `API_SPEC.yaml` accordingly.
+
+**Deliberately NOT built: a staff control to set the lesson.** Materials have no authoring surface
+at all — the module exposes one `GET`, and every material arrives by seed. Material CRUD is a
+feature in its own right, nothing in `PRODUCT_SPEC.md` §6 asks for it, and inventing it here would
+be the scope creep §13 forbids. Recorded so the absence is not mistaken for an oversight ·
 `STU-4` `[x]` Homework + four attempt states — unblocked when unit 7's `MARK-2` (`returnedAt`)
 landed on `redesign`. **The four states were already complete** and server-derived
 (`assessments.service.ts:computeStatus`); the real gap was the split (`F13-4`). Every

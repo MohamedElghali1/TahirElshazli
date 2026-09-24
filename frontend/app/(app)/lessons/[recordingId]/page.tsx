@@ -10,9 +10,10 @@ import {
   ASSESSMENT_TYPE_LABEL,
   formatDate,
   formatDuration,
+  formatFileSize,
   isQuizWork,
 } from '@/lib/format';
-import type { AssessmentListItem, RecordingWithProgress } from '@/lib/types';
+import type { AssessmentListItem, Material, RecordingWithProgress } from '@/lib/types';
 import {
   Panel,
   EmptyState,
@@ -40,11 +41,16 @@ import { RecordingPlayer } from '@/components/student/recording-player';
  * recording missing from the selected course is not a refusal until the
  * student's own other courses have been checked; see `FindInOtherCourses`.
  *
- * "Its material" is NOT built here: `materials` has no relation to a lesson or
- * a recording (`courseId` and `category` only), so there is nothing to filter
- * by without inventing a join (`CLAUDE.md` §13). Closing it needs a
- * `materials.lesson_id` column, both repository drivers, and a staff control to
- * set it. Recorded as the open half of `STU-3`, which stays `[~]`.
+ * "Its material" was the open half of `STU-3` and is now built. `materials`
+ * originally carried `course_id` and `category` and nothing naming a lesson,
+ * so unit 13 raised that as a blocker rather than showing the whole course's
+ * materials as though they were this lesson's. Migration `025` adds
+ * `materials.lesson_id`; the client ruled on 2026-09-24 to follow the design.
+ *
+ * Note what is still NOT here: there is no staff control to *set* that lesson,
+ * because materials have no authoring surface at all — the module exposes one
+ * `GET` and nothing else, and every material arrives by seed. Building CRUD for
+ * them is a feature of its own, not a detail of this page.
  */
 
 // `ASSESSMENT_STATUS_CHIP` still speaks the legacy tone name `'neutral'` — the
@@ -114,6 +120,10 @@ function LessonDetail({
     (token) => api.assessments.list(token, courseId),
     [courseId],
   );
+  const { data: materials } = useApi(
+    (token) => api.materials.list(token, courseId),
+    [courseId],
+  );
 
   if (loading) {
     return (
@@ -171,6 +181,16 @@ function LessonDetail({
   const work = (assessments ?? []).filter(
     (item) => item.lessonId === recording.lessonId && !isQuizWork(item.workType),
   );
+
+  // This lesson's material (`025`, `STU-3`). The endpoint groups by category
+  // because that is what the course Materials page renders; here the grouping
+  // is not the point — the lesson is — so it is flattened and filtered by
+  // `lessonId`. Most materials are course-wide and carry a null, so the common
+  // result is an empty list, and the panel says so rather than implying the
+  // teacher forgot something.
+  const lessonMaterials = Object.values(materials ?? {})
+    .flat()
+    .filter((m) => m.lessonId === recording.lessonId);
 
   const handleProgress = (watchedSeconds: number) => {
     if (!token) return;
@@ -244,9 +264,62 @@ function LessonDetail({
 
         <div className="flex flex-col gap-6">
           <NextRecordingCard next={next} />
+
+          <Panel
+            title="Material from this lesson"
+            action={
+              <Link href="/materials" className="text-xs text-fg-3 hover:text-fg">
+                All materials
+              </Link>
+            }
+            bodyClassName={lessonMaterials.length > 0 ? '' : 'p-4'}
+          >
+            {lessonMaterials.length === 0 ? (
+              <p className="text-base text-fg-4">
+                Nothing is attached to this lesson. The course&rsquo;s own materials are on the
+                materials page.
+              </p>
+            ) : (
+              <ul className="divide-y divide-border-light">
+                {lessonMaterials.map((material) => (
+                  <li key={material.id}>
+                    <MaterialRow material={material} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Panel>
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * One material attached to this lesson.
+ *
+ * Deliberately the same row shape and the same affordances as `/materials` —
+ * an anchor straight to the file, type and size on the end, `rel="noreferrer"`.
+ * A student who has learned to read that row on one page should not have to
+ * learn a second one here.
+ */
+function MaterialRow({ material }: { material: Material }) {
+  return (
+    <a
+      href={material.fileUrl}
+      target="_blank"
+      rel="noreferrer"
+      className="flex items-center gap-3 px-4 py-3 transition-colors duration-[var(--dur-fast)] ease-[var(--ease)] hover:bg-wash-hover"
+    >
+      <Icon name="FileText" size={16} className="shrink-0 text-fg-3" />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-base text-fg">{material.title}</span>
+        <span className="num mt-1 block text-xs text-fg-3">
+          {material.fileType.toUpperCase()} · {formatFileSize(material.fileSizeBytes)}
+        </span>
+      </span>
+      <Icon name="ArrowDown" size={16} className="shrink-0 text-fg-2" />
+    </a>
   );
 }
 
