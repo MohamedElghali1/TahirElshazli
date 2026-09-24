@@ -140,7 +140,14 @@ export type AuditAction =
   // homework came from" is a question the log has to be able to answer.
   | 'task_draft.created'
   | 'task_draft.updated'
-  | 'task_draft.deleted';
+  | 'task_draft.deleted'
+  // Google sign-in (`GAUTH-1`, unit 14). Self-attributed, like an invitation
+  // accept: linking changes who can sign in as this account, so "when did this
+  // account start accepting a Google sign-in, and from which address" is the
+  // first question after a suspected takeover. Sign-in itself is not audited,
+  // matching password login.
+  | 'account.google_linked'
+  | 'account.google_unlinked';
 
 /** What the action happened *to*. Grows with `AuditAction`, for the same reason. */
 export type AuditTargetType =
@@ -215,7 +222,11 @@ export type AuditTargetType =
   // A draft-library template (`TASK-2`). Its own target type rather than
   // `assessment`: a draft is not a task anybody was set, and "what happened to
   // this template" is a different question from "what happened to this task".
-  | 'task_draft';
+  | 'task_draft'
+  // The sign-in link (`user_google_identities`, migration 023), not the user:
+  // "everything that happened to this account's Google sign-in" is its own
+  // question, and the target id is the user id the link belongs to.
+  | 'user_google_identity';
 
 /**
  * One side of a before/after pair.

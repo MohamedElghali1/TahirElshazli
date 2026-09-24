@@ -147,7 +147,7 @@ const EXPECTED: Record<string, readonly Role[]> = {
 const PUBLIC_CONTROLLERS = ['PublicBlogController', 'PublicCoursesController'];
 
 /** Controllers that decorate per method rather than per class. */
-const PER_METHOD_CONTROLLERS = ['AppController', 'AuthController'];
+const PER_METHOD_CONTROLLERS = ['AppController', 'AuthController', 'GoogleSignInController'];
 
 describe('the authorization boundary', () => {
   it('discovers every controller in the build', () => {
@@ -158,8 +158,9 @@ describe('the authorization boundary', () => {
     // left with `course_staff_assignments` (`AUTH-2`), which is a net -1.
     // `TaskDraftsController` (`TASK-2`, unit 6) is the thirtieth again.
     // `MarkingController` (unit 7, `MARK-1`/`MARK-2`/`MARK-3`) is the 31st;
-    // `SettingsController` (unit 12, `SET-1`/`SET-2`) the 32nd.
-    expect(CONTROLLERS).toHaveLength(32);
+    // `SettingsController` (unit 12, `SET-1`/`SET-2`) the 32nd;
+    // `GoogleSignInController` (unit 14, `GAUTH-1`) the 33rd, per-method.
+    expect(CONTROLLERS).toHaveLength(33);
     const named = CONTROLLERS.map((c) => c.name);
     expect(new Set(named).size).toBe(named.length);
     const accounted = [
@@ -312,6 +313,11 @@ describe('the authorization boundary', () => {
           // Google's top-level browser redirect back, which carries no
           // Authorization header. Its own signed-state check is the gate.
           'AdminGoogleIntegrationController.callback',
+          // Google sign-in (`GAUTH-1`): someone signing in has no session yet.
+          // Gated by the signed state, the starting browser's key and a
+          // verified id_token; neither route can create an account or a link.
+          'GoogleSignInController.start',
+          'GoogleSignInController.signIn',
           // The anonymous marketing surface, `@Public()` at class level.
           'PublicBlogController.list',
           'PublicBlogController.get',
@@ -360,8 +366,11 @@ describe('the authorization boundary', () => {
       // draft library" with no own-only rule (unit 6, `TASK-2`). They may
       // erase a mark on a paper - the eraser - but only one they drew
       // (`D-42` (a), `MarkingService.ownAnnotation`), on a paper they reach.
+      // They may disconnect their own Google sign-in (`GAUTH-1`): the route
+      // names no resource, and acts only on the caller's own link.
       expect(assistantDeletes.sort()).toEqual(
         [
+          'GoogleSignInController.unlink',
           'MarkingController.removeAnnotation',
           'StaffAnnouncementsController.deleteCourseDraft',
           'StaffAnnouncementsController.deleteGroupDraft',

@@ -5,6 +5,7 @@ import { AppService } from './app.service.js';
 import { DatabaseModule } from './database/database.module.js';
 import { PublicModule } from './public/public.module.js';
 import { GoogleIntegrationModule } from './integrations/google/google-integration.module.js';
+import { GoogleSignInModule } from './auth/google/google-sign-in.module.js';
 import { RateLimitModule } from './common/rate-limit/rate-limit.module.js';
 import { RateLimitGuard } from './common/rate-limit/rate-limit.guard.js';
 import { AuthModule } from './auth/auth.module.js';
@@ -89,6 +90,8 @@ import { StorageModule } from './common/storage/storage.module.js';
     // registered unconditionally and decides for itself - the module is what
     // knows how to be absent, rather than this list having to.
     GoogleIntegrationModule,
+    // Google sign-in (`GAUTH-1`, unit 14).
+    GoogleSignInModule,
   ],
   controllers: [AppController],
   providers: [
