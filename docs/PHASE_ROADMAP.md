@@ -641,15 +641,18 @@ mixes with the console's 13px. `/catalog` and the student `/achievements` rail e
 - **Partial `[~]`:** `STU-3` — player, chapters, the work set and the next-recording card are built;
   **"its material" is not**, because `materials` has no relation to a lesson. Recorded rather than
   invented (§13).
-- **Blocked `[~]`:** `STU-6`, on `F13-2` — a documentation conflict, not a technical one.
+- **Closed `[x]`:** `STU-6` — `F13-2` ruled on by the client 2026-09-24: **no avatars**. Names only,
+  which is what the service already returned. `PRODUCT_SPEC.md` §6 was the document in error and was
+  corrected at source.
 
 `STU-4` was expected to be deferred and turned out not to be: unit 7's `returnedAt` landed on
 `redesign` mid-session, and the four attempt states were already complete and server-derived. What
 it actually needed was `F13-4` — every Google Form task was rendering on **both** `/homework` and
 `/quizzes`.
 
-The unit cannot go `[x]` until `STU-1` lands, `STU-3`'s material gap is closed or dropped, and
-`F13-2` is ruled on; §2 condition 9 (zero unresolved blockers) is not met.
+The unit cannot go `[x]` until `STU-1` lands (waiting on unit 8's attendance migration) and
+`STU-3`'s material gap is closed or dropped. `F13-2` is closed. §2 condition 9 (zero unresolved
+blockers) is therefore still unmet, but by two items rather than three.
 
 **The finding that dominated the unit (`F13-1`).** `SITE-1`…`SITE-5` were not a redesign. Every
 marketing and auth surface was still written against the token vocabulary `ad238a7` deleted with

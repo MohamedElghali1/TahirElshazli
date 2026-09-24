@@ -61,31 +61,76 @@ if (files.length === 0) {
 let passed = 0;
 let failed = 0;
 const broken = [];
+const retried = [];
 
-for (const file of files) {
-  const rel = `test/${file}`;
-  process.stdout.write(`\n── ${rel}\n`);
+/** vitest prints "Tests  12 passed (12)" or "Tests  1 failed | 11 passed (12)". */
+const SUMMARY = /Tests\s+(?:(\d+) failed \|\s*)?(\d+) passed\s+\((\d+)\)/;
 
+/**
+ * Attempts allowed per file before a summary-less run is called a failure.
+ * Three covers the measured ~1-in-3 crash rate with room to spare; it is NOT a
+ * licence to paper over a file that fails for a real reason, which is caught on
+ * attempt one and never retried. `E2E_ATTEMPTS=1` disables retrying entirely,
+ * which is what you want when investigating the crash itself.
+ */
+const ATTEMPTS = Math.max(1, Number(process.env.E2E_ATTEMPTS ?? 3));
+
+/** Breathing room between attempts; see the clustering note in the loop. */
+const RETRY_PAUSE_MS = Number(process.env.E2E_RETRY_PAUSE_MS ?? 5000);
+
+function runFile(rel) {
   const run = spawnSync(
     process.execPath,
     [VITEST, 'run', '--config', './vitest.config.e2e.ts', rel],
     { cwd: ROOT, encoding: 'utf8', shell: false },
   );
-
   const output = `${run.stdout ?? ''}${run.stderr ?? ''}`;
-  // vitest prints "Tests  12 passed (12)" or "Tests  1 failed | 11 passed (12)".
-  const summary = output.match(/Tests\s+(?:(\d+) failed \|\s*)?(\d+) passed\s+\((\d+)\)/);
+  return { code: run.status, output, summary: output.match(SUMMARY) };
+}
 
-  if (!summary) {
-    // No summary. The process may have exited 0 — that is exactly the failure
-    // mode this runner exists to catch, so it is never treated as a pass.
-    broken.push({ rel, code: run.status, tail: output.trim().split('\n').slice(-6).join('\n') });
-    console.error(`   ✖ NO SUMMARY (exit ${run.status}) — cannot be counted as passing.`);
+for (const file of files) {
+  const rel = `test/${file}`;
+  process.stdout.write(`\n── ${rel}\n`);
+
+  // Retry ONLY when there is no summary at all, up to ATTEMPTS times.
+  //
+  // This cannot mask a real failure, and that is the whole argument for it: a
+  // genuine test failure ALWAYS prints a summary carrying "N failed", so it is
+  // counted on the first attempt and never retried. A summary-less run is the
+  // one outcome that carries no information — the worker died before vitest
+  // could report — and retrying it is the difference between measuring and
+  // guessing.
+  //
+  // Measured on this Windows box: `staff.e2e-spec.ts` (244 cases, one booted
+  // AppModule, real bcrypt) dies with 0xC0000409 roughly one run in three, in
+  // its own process, under BOTH the threads and the forks pool. So it is the
+  // weight of that one file, not cross-file concurrency — which is what the
+  // config's earlier two rounds of this had already narrowed down.
+  //
+  // Every retry is reported, and the run still fails if the budget runs out.
+  // A file that needs a retry every time must not quietly become normal.
+  let attempt = runFile(rel);
+  for (let n = 1; !attempt.summary && n < ATTEMPTS; n += 1) {
+    console.error(`   … no summary (exit ${attempt.code}) — attempt ${n + 1} of ${ATTEMPTS}`);
+    // Pause before retrying. The crashes cluster rather than arriving
+    // independently — three back-to-back attempts on the heavy file all died
+    // where spaced attempts did not — which points at the machine not having
+    // released the previous boot's memory and handles yet, not at anything in
+    // the test. Sleeping synchronously because this runner is a script with
+    // nothing else to do.
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, RETRY_PAUSE_MS);
+    attempt = runFile(rel);
+    if (attempt.summary) retried.push(rel);
+  }
+
+  if (!attempt.summary) {
+    broken.push({ rel, code: attempt.code, tail: attempt.output.trim().split('\n').slice(-6).join('\n') });
+    console.error(`   ✖ NO SUMMARY after ${ATTEMPTS} attempts (exit ${attempt.code}) — not counted as passing.`);
     continue;
   }
 
-  const fileFailed = Number(summary[1] ?? 0);
-  const filePassed = Number(summary[2]);
+  const fileFailed = Number(attempt.summary[1] ?? 0);
+  const filePassed = Number(attempt.summary[2]);
   passed += filePassed;
   failed += fileFailed;
   console.log(`   ${fileFailed > 0 ? '✖' : '✓'} ${filePassed} passed${fileFailed ? `, ${fileFailed} failed` : ''}`);
@@ -93,6 +138,13 @@ for (const file of files) {
 
 console.log(`\n${'─'.repeat(60)}`);
 console.log(`e2e: ${passed} passed${failed ? `, ${failed} failed` : ''} across ${files.length} file(s)`);
+
+if (retried.length > 0) {
+  console.log(
+    `  note: ${retried.length} file(s) died without a summary and passed on retry — ${retried.join(', ')}.`,
+  );
+  console.log('  That is the worker crash, not a test. If it becomes frequent, cut the number of booted apps.');
+}
 
 if (broken.length > 0) {
   console.error(`\n✖ ${broken.length} file(s) produced no summary and were NOT counted:`);

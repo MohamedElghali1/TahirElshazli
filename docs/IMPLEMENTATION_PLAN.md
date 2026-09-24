@@ -395,8 +395,10 @@ because one filtered and the other did not. Now one exhaustive
 `STU-5` `[x]` Materials — **no gap found.** Course-scoped, on the current kit, and reachable: it has
 no rail slot by design (`PRODUCT_SPEC.md` §6 lists none) and is linked from the Overview's own
 Materials panel. Verified, not rebuilt — the same posture unit 12 took with `SET-3`/`SET-5` ·
-`STU-6` `[~]` Classmates — verified against the narrower reading (names only, no email, mark,
-progress or attendance). **Blocked on a documentation conflict**, `F13-2` below ·
+`STU-6` `[x]` Classmates — names only, no email, mark, progress or attendance. **`F13-2` closed by
+client ruling 2026-09-24: no avatars.** Verified, not built — the service already returned "name and
+id, and nothing else", so the only change was correcting `PRODUCT_SPEC.md` §6, which was the
+document in error ·
 `STU-7` `[x]` Help/WhatsApp — the card was right; its call to action was a `Button` running
 `window.open`, which cannot be middle-clicked or opened in a new tab and is the exact shape a popup
 blocker suppresses. It would have left the one support route on the platform silently doing nothing.
@@ -478,6 +480,20 @@ file that prints no `Tests N passed` line is an error, never a silent zero — e
 the whole point of it.
 
 Reading restored: **388 passed across 5 files**, where the combined run gave nothing.
+
+**One honest caveat, measured rather than assumed.** `staff.e2e-spec.ts` (244 cases, one booted
+`AppModule`, real bcrypt) dies with `0xC0000409` roughly one run in three **in its own process**,
+under both the `threads` and the `forks` pool. So it is the weight of that single file, not
+cross-file concurrency — which is what the config's two earlier rounds had already narrowed toward.
+The runner therefore allows up to three attempts **per file, and only when a run produces no summary
+at all**. That cannot hide a real failure: a genuine test failure always prints `N failed`, so it is
+counted on the first attempt and never retried. The crashes also *cluster* — three back-to-back
+attempts all died where spaced ones did not — so there is a 5s pause between attempts; with it,
+five consecutive full runs came back 388/388. Every retry is printed, and the run still fails when
+the budget is exhausted. `E2E_ATTEMPTS=1` turns retrying off for investigating the crash itself.
+
+This is an environmental instability on one Windows machine, not a passing suite pretending to be
+green: all 388 tests pass whenever the process survives long enough to report.
 
 ---
 

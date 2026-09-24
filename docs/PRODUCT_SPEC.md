@@ -214,7 +214,7 @@ accepting / a form response cannot be matched / the week is summarised.
 | Marks | `[CHANGED]` | The weekly report *is* the page; the marks table is secondary. |
 | Timetable | `[CHANGED]` | Week grid; Join appears **only** where a session is live and online. |
 | Attendance | `[NEW]` | Three states, with "records can lag". |
-| Classmates | `[EXISTING]` | Names and avatars only. Already correct. |
+| Classmates | `[EXISTING]` | **Names only** — no avatar. Client ruling, 2026-09-24, closing `F13-2`. Already correct; the service returns name and id and nothing else. |
 | Settings | `[CHANGED]` | Profile photo upload (student-reachable; the upload route is staff-only today). |
 | Help | `[NEW]` | WhatsApp card. Frontend + config only. |
 | Catalog / Achievements | `[REMOVED]` | Not in the design. `/catalog` goes with open enrolment; the blog stays public-facing but leaves the student rail. |

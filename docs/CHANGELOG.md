@@ -2046,3 +2046,45 @@ impossible to mistake for success, which is the actual defect.
 
 **Affected.** `backend/scripts/run-e2e.mjs`, `backend/package.json`. New task `OPS-3` `[x]`.
 Reading restored: **388 passed across 5 files**, where the combined run gave nothing.
+
+---
+
+## 2026-09-24 — `F13-2` CLOSED: classmates carry no avatar
+
+**Context.** Unit 13 raised `F13-2` because two documents at the same authority level disagreed and
+`CLAUDE.md` §2.3 forbids resolving that silently. `PRODUCT_SPEC.md` §6 said Classmates was "Names
+**and avatars** only. Already correct."; `redesign-mapping.md` said "classmates (**names only** — an
+exact match)". The implementation agreed with the second: `classmates.service.ts` returns *"Name and
+id, and nothing else"* — never email, phone, grades, progress or attendance.
+
+The conflict was not resolvable in engineering, because adding avatars would publish **a photograph
+of a child to other children**. That is a field-minimisation and privacy decision (`CLAUDE.md` §8),
+i.e. business behaviour, which §13 says is never invented.
+
+**Chosen — client ruling, 2026-09-24: no avatars.** Classmates stays names-only.
+
+**Consequences.** No code change: the service, the DTO and the screen were already correct, so this
+closes as *verified*, not *built* — the same posture unit 12 took with `SET-3`/`SET-5`.
+`PRODUCT_SPEC.md` §6 was the document in error and has been corrected at source rather than
+annotated, so the next reader does not re-derive the same conflict. `redesign-mapping.md` needed no
+change. `STU-6` moves `[~]` → `[x]`.
+
+**Worth keeping.** The finding cost nothing to raise and would have cost a privacy incident to guess
+wrong. A spec sentence asserting a field the API does not return is the cheap, visible symptom of a
+decision nobody actually made.
+
+**Addendum, same day — what the runner then measured.** Building the check immediately produced
+evidence the combined run had been hiding. `staff.e2e-spec.ts` dies with `0xC0000409` about one run
+in three **in its own process**, under both the `threads` and the `forks` pool — so it is the weight
+of that one file (244 cases, a booted `AppModule`, real bcrypt), not cross-file concurrency. The
+config's two earlier rounds had been narrowing toward that without reaching it, because a run that
+prints nothing tells you nothing.
+
+The runner allows three attempts per file, **only** when a run produces no summary at all, with a 5s
+pause between them (the crashes cluster: three back-to-back attempts all died where spaced ones did
+not). This provably cannot mask a real failure — a genuine failure prints `N failed` and is counted
+on the first attempt, never retried. Five consecutive full runs then came back 388/388, with retries
+fired and reported in three of them.
+
+Recorded rather than smoothed over: **the suite is green; the machine is not.** Whoever adds a sixth
+e2e file, or moves CI to a different runner, should read this first.

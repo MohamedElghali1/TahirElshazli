@@ -11,9 +11,14 @@ import { GROUP_REPOSITORY } from './interfaces/group-repository.interface.js';
  * CLAUDE.md §5.17 is explicit about the field set and about why it is small:
  * never email, phone, grades, progress or attendance. A classmate list that
  * carries a mark is a leaderboard, which is a different product decision with a
- * different answer for a parent. An avatar belongs here when accounts have one;
- * they do not today, and inventing a field to fill a layout is what §11 already
- * declined to do for the course level badge.
+ * different answer for a parent.
+ *
+ * **No avatar, and not "not yet" — ruled out.** `PRODUCT_SPEC.md` §6 used to
+ * say "names and avatars only" while this service returned neither, which unit
+ * 13 raised as `F13-2` rather than guessing: showing a child's photograph to
+ * other children is a privacy decision, not a layout one. The client ruled on
+ * 2026-09-24 that classmates carry **names only**, and the spec was corrected.
+ * Do not add one back because a design shows a circle.
  */
 export interface Classmate {
   studentId: string;
