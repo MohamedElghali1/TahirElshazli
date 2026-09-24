@@ -648,3 +648,84 @@ export function resolveGoogleTokenKey(
   }
   return key;
 }
+
+export interface GoogleSignInConfig {
+  clientId: string;
+  clientSecret: string;
+  /**
+   * Where Google sends the browser back after a sign-in or a link - a page on
+   * the **web app**, not the API, because what comes back has to become a
+   * session in the browser. A second Authorized redirect URI on the same OAuth
+   * client as the Forms integration; Google compares it byte for byte.
+   */
+  redirectUri: string;
+  /**
+   * `D-51`: the Workspace domains a staff account may use Google from, checked
+   * against the verified `id_token`'s `hd` claim. **Empty means staff Google
+   * sign-in is off** and staff keep their passwords. Students are not pinned.
+   */
+  staffDomains: string[];
+}
+
+/** A bare, lowercase domain name: labels of letters, digits and inner hyphens. */
+const DOMAIN_PATTERN = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+
+/**
+ * Google sign-in (`GAUTH-1`). Null - sign-in answers 503 - unless the Google
+ * driver is on (it reuses that OAuth client) **and** a sign-in redirect URI is
+ * set, so a server that has only Forms configured does not suddenly offer a
+ * sign-in button pointing at a redirect nobody registered.
+ *
+ * `STAFF_GOOGLE_DOMAINS` is validated even so: a typo there silently locks
+ * every staff member out of Google, or - if the check were loose - lets the
+ * wrong domain in, so a malformed entry stops the boot.
+ */
+export function resolveGoogleSignInConfig(
+  driver: GoogleDriver,
+  nodeEnv: NodeEnv,
+  env = process.env,
+): GoogleSignInConfig | null {
+  const staffDomains = (env.STAFF_GOOGLE_DOMAINS ?? '')
+    .split(',')
+    .map((d) => d.trim().toLowerCase())
+    .filter(Boolean);
+  const bad = staffDomains.filter((d) => !DOMAIN_PATTERN.test(d));
+  if (bad.length) {
+    throw new Error(
+      `STAFF_GOOGLE_DOMAINS must be bare domain names, comma-separated ` +
+        `(e.g. "tahirelshazli.com"). Not a domain: ${bad.map((d) => `"${d}"`).join(', ')}.`,
+    );
+  }
+
+  const redirectUri = env.GOOGLE_SIGN_IN_REDIRECT_URI?.trim();
+  if (!redirectUri) {
+    return null;
+  }
+  const oauth = resolveGoogleOAuthConfig(driver, env);
+  if (!oauth) {
+    throw new Error(
+      'GOOGLE_SIGN_IN_REDIRECT_URI is set but GOOGLE_DRIVER is not "google". ' +
+        'Google sign-in uses the same OAuth client as the Forms integration; ' +
+        'see docs/google-forms-setup.md.',
+    );
+  }
+  let url: URL;
+  try {
+    url = new URL(redirectUri);
+  } catch {
+    throw new Error(
+      `GOOGLE_SIGN_IN_REDIRECT_URI must be an absolute URL (got "${redirectUri}").`,
+    );
+  }
+  if (nodeEnv === 'production' && url.protocol !== 'https:') {
+    // The authorization code travels to this URL. Over http it is readable in
+    // transit, and the code is what a sign-in is exchanged for.
+    throw new Error('GOOGLE_SIGN_IN_REDIRECT_URI must use https in production.');
+  }
+  return {
+    clientId: oauth.clientId,
+    clientSecret: oauth.clientSecret,
+    redirectUri,
+    staffDomains: [...new Set(staffDomains)],
+  };
+}
