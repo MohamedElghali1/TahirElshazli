@@ -128,6 +128,15 @@ export default function TasksPage() {
         </span>
       ),
     },
+    {
+      label: 'Results',
+      render: (t) =>
+        t.workType === 'google_form' ? (
+          <ButtonLink href={`/manage/tasks/${t.id}/results`} icon="Table" size="small">
+            Results
+          </ButtonLink>
+        ) : null,
+    },
   ];
 
   return (

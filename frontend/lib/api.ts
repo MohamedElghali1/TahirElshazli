@@ -17,12 +17,15 @@ import type {
   CourseListItem,
   CourseRosterResponse,
   DashboardResponse,
+  ExternalResult,
   GradingQueueItem,
   GradingQueueResponse,
   GradingStatus,
   GroupMemberView,
   GroupPatch,
   GroupReport,
+  StaffProfile,
+  NotificationPreferences,
   GroupSummary,
   GroupWrite,
   LiveSession,
@@ -53,6 +56,7 @@ import type {
   StudentDirectoryEntry,
   StudentHomeResponse,
   StudentProfile,
+  StudentWorkRow,
   AppNotification,
   BlogMediaInput,
   BlogCategory,
@@ -63,10 +67,12 @@ import type {
   StaffTask,
   StaffTaskStatus,
   SubmissionMode,
+  SyncOutcome,
   TaskDraft,
   TaskVisibility,
   TaskDraftUpdate,
   TaskDraftWrite,
+  WorkAnalytics,
   WorkType,
   UploadConfig,
   UploadResult,
@@ -283,6 +289,7 @@ const qs = (params: Record<string, string | undefined>) => {
 async function uploadFile(
   token: string,
   file: File,
+  endpoint: string = '/staff/uploads',
   signal?: AbortSignal,
 ): Promise<UploadResult> {
   const form = new FormData();
@@ -290,7 +297,7 @@ async function uploadFile(
 
   let res: Response;
   try {
-    res = await fetch(`${baseUrl()}/staff/uploads`, {
+    res = await fetch(`${baseUrl()}${endpoint}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
       body: form,
@@ -557,6 +564,26 @@ export const api = {
      §5.11 - there is no "fetch everything and hide some" path).
      ---------------------------------------------------------------------- */
   staff: {
+    profile: (token: string) =>
+      request<StaffProfile>('/me/profile', { token }),
+
+    updateProfile: (token: string, body: { name: string }) =>
+      request<StaffProfile>('/me/profile', {
+        method: 'PATCH',
+        token,
+        body,
+      }),
+
+    notificationPreferences: (token: string) =>
+      request<NotificationPreferences>('/me/notification-preferences', { token }),
+
+    updateNotificationPreferences: (token: string, body: NotificationPreferences) =>
+      request<void>('/me/notification-preferences', {
+        method: 'PUT',
+        token,
+        body,
+      }),
+
     /** Courses the caller may work on. Scoped for a TA, all of them for admin. */
     courses: (token: string) =>
       request<StaffCourseSummary[]>('/staff/courses', { token }),
@@ -838,20 +865,143 @@ export const api = {
     deleteTaskDraft: (token: string, draftId: string) =>
       request<void>(`/staff/task-drafts/${draftId}`, { method: 'DELETE', token }),
 
-    announcements: (token: string, courseId: string) =>
-      request<Announcement[]>(`/staff/courses/${courseId}/announcements`, {
-        token,
-      }),
+    announcementReach: (token: string, audience: string) =>
+      request<{ reach: number }>(`/staff/announcements/reach${qs({ audience })}`, { token }),
 
-    postAnnouncement: (
+    courseAnnouncements: (
       token: string,
       courseId: string,
-      body: { title: string; body: string },
+      query?: { limit?: number; offset?: number; status?: 'draft' | 'published' },
+    ) =>
+      request<Announcement[]>(
+        `/staff/courses/${courseId}/announcements${qs({
+          limit: query?.limit?.toString(),
+          offset: query?.offset?.toString(),
+          status: query?.status,
+        })}`,
+        { token },
+      ),
+
+    announcements: (
+      token: string,
+      courseId: string,
+      query?: { limit?: number; offset?: number; status?: 'draft' | 'published' },
+    ) =>
+      request<Announcement[]>(
+        `/staff/courses/${courseId}/announcements${qs({
+          limit: query?.limit?.toString(),
+          offset: query?.offset?.toString(),
+          status: query?.status,
+        })}`,
+        { token },
+      ),
+
+    postCourseAnnouncement: (
+      token: string,
+      courseId: string,
+      body: {
+        title: string;
+        body: string;
+        mediaKind?: 'image' | 'video' | 'youtube' | 'file' | null;
+        mediaUrl?: string | null;
+      },
     ) =>
       request<Announcement>(`/staff/courses/${courseId}/announcements`, {
         method: 'POST',
         token,
         body,
+      }),
+
+    postAnnouncement: (
+      token: string,
+      courseId: string,
+      body: {
+        title: string;
+        body: string;
+        mediaKind?: 'image' | 'video' | 'youtube' | 'file' | null;
+        mediaUrl?: string | null;
+      },
+    ) =>
+      request<Announcement>(`/staff/courses/${courseId}/announcements`, {
+        method: 'POST',
+        token,
+        body,
+      }),
+
+    updateCourseAnnouncement: (
+      token: string,
+      courseId: string,
+      id: string,
+      body: {
+        title?: string;
+        body?: string;
+        mediaKind?: 'image' | 'video' | 'youtube' | 'file' | null;
+        mediaUrl?: string | null;
+      },
+    ) =>
+      request<Announcement>(`/staff/courses/${courseId}/announcements/${id}`, {
+        method: 'PATCH',
+        token,
+        body,
+      }),
+
+    deleteCourseAnnouncement: (token: string, courseId: string, id: string) =>
+      request<void>(`/staff/courses/${courseId}/announcements/${id}`, {
+        method: 'DELETE',
+        token,
+      }),
+
+    groupAnnouncements: (
+      token: string,
+      groupId: string,
+      query?: { limit?: number; offset?: number; status?: 'draft' | 'published' },
+    ) =>
+      request<Announcement[]>(
+        `/staff/groups/${groupId}/announcements${qs({
+          limit: query?.limit?.toString(),
+          offset: query?.offset?.toString(),
+          status: query?.status,
+        })}`,
+        { token },
+      ),
+
+    postGroupAnnouncement: (
+      token: string,
+      groupId: string,
+      body: {
+        title: string;
+        body: string;
+        mediaKind?: 'image' | 'video' | 'youtube' | 'file' | null;
+        mediaUrl?: string | null;
+      },
+    ) =>
+      request<Announcement>(`/staff/groups/${groupId}/announcements`, {
+        method: 'POST',
+        token,
+        body,
+      }),
+
+    updateGroupAnnouncement: (
+      token: string,
+      groupId: string,
+      id: string,
+      body: {
+        title?: string;
+        body?: string;
+        mediaKind?: 'image' | 'video' | 'youtube' | 'file' | null;
+        mediaUrl?: string | null;
+      },
+    ) =>
+      request<Announcement>(`/staff/groups/${groupId}/announcements/${id}`, {
+        method: 'PATCH',
+        token,
+        body,
+      }),
+
+    deleteGroupAnnouncement: (token: string, groupId: string, id: string) =>
+      request<void>(`/staff/groups/${groupId}/announcements/${id}`, {
+        method: 'DELETE',
+        token,
       }),
 
     /* --------------------------------------------------------------------
@@ -946,7 +1096,56 @@ export const api = {
      * write. Uploading and publishing are deliberately two steps.
      */
     upload: (token: string, file: File, signal?: AbortSignal) =>
-      uploadFile(token, file, signal),
+      uploadFile(token, file, '/staff/uploads', signal),
+
+    /* --------------------------------------------------------------------
+       Work analytics (`WORK-1`…`WORK-3`). All seven routes live on
+       `/staff/assessments/:assessmentId/*` or `/staff/results/:resultId/*`.
+       Source: `manage/work-analytics.controller.ts`.
+       -------------------------------------------------------------------- */
+
+    /** Completion, averages, and the unmatched count for one assessment. */
+    workAnalytics: (token: string, assessmentId: string) =>
+      request<WorkAnalytics>(
+        `/staff/assessments/${assessmentId}/analytics`,
+        { token },
+      ),
+
+    /** Every expected student and where they stand, including non-starters. */
+    workResults: (token: string, assessmentId: string) =>
+      request<StudentWorkRow[]>(
+        `/staff/assessments/${assessmentId}/results`,
+        { token },
+      ),
+
+    /** Responses that matched no student — the reconciliation queue. */
+    workUnmatched: (token: string, assessmentId: string) =>
+      request<ExternalResult[]>(
+        `/staff/assessments/${assessmentId}/unmatched`,
+        { token },
+      ),
+
+    /** Pulls the latest responses from Google. POST because it rewrites the mirror. */
+    workSync: (token: string, assessmentId: string) =>
+      request<SyncOutcome>(`/staff/assessments/${assessmentId}/sync`, {
+        method: 'POST',
+        token,
+      }),
+
+    /** One response in full, including per-question answers. */
+    result: (token: string, resultId: string) =>
+      request<ExternalResult>(`/staff/results/${resultId}`, { token }),
+
+    /**
+     * Attributes an unmatched response to a student.
+     * Body: `{ studentId }` — mirrors `AttachResultDto`.
+     */
+    attachResult: (token: string, resultId: string, studentId: string) =>
+      request<ExternalResult>(`/staff/results/${resultId}/attach`, {
+        method: 'POST',
+        token,
+        body: { studentId },
+      }),
   },
 
   /* ----------------------------------------------------------------------
@@ -955,6 +1154,15 @@ export const api = {
      courtesy (CLAUDE.md §8).
      ---------------------------------------------------------------------- */
   admin: {
+    googleIntegration: {
+      status: (token: string) =>
+        request<{ isConfigured: boolean; isConnected: boolean; googleEmail?: string; connectedAt?: string; lastError?: string }>('/admin/integrations/google', { token }),
+      connect: (token: string) =>
+        request<{ authUrl: string }>('/admin/integrations/google/connect', { method: 'POST', token }),
+      disconnect: (token: string) =>
+        request<void>('/admin/integrations/google', { method: 'DELETE', token }),
+    },
+
     /* Group CRUD is teacher-only; *placement* is not (staff.addGroupMember
        above). The client's instruction covered placement explicitly and said
        nothing about who creates a group, so the narrow reading ships - the
@@ -1060,6 +1268,10 @@ export const api = {
         body,
       }),
 
+    /** Course detail for editing (`DOM-5`). */
+    course: (token: string, courseId: string) =>
+      request<AdminCourse>(`/admin/courses/${courseId}`, { token }),
+
     // `courseStaff`/`assignStaff`/`unassignStaff` are gone with
     // `/admin/courses/:courseId/staff` (`AUTH-2`): an assistant's reach is held
     // at the group grain now, and the route that edits it is unit 5's
@@ -1143,9 +1355,70 @@ export const api = {
         method: 'POST',
         token,
       }),
+
+    announcements: (
+      token: string,
+      query?: { limit?: number; offset?: number; status?: 'draft' | 'published' },
+    ) =>
+      request<Announcement[]>(
+        `/admin/announcements${qs({
+          limit: query?.limit?.toString(),
+          offset: query?.offset?.toString(),
+          status: query?.status,
+        })}`,
+        { token },
+      ),
+
+    createAnnouncement: (
+      token: string,
+      body: {
+        audience: string;
+        title: string;
+        body: string;
+        mediaKind?: 'image' | 'video' | 'youtube' | 'file' | null;
+        mediaUrl?: string | null;
+      },
+    ) =>
+      request<Announcement>('/admin/announcements', {
+        method: 'POST',
+        token,
+        body,
+      }),
+
+    updateAnnouncement: (
+      token: string,
+      id: string,
+      body: {
+        audience?: string;
+        title?: string;
+        body?: string;
+        mediaKind?: 'image' | 'video' | 'youtube' | 'file' | null;
+        mediaUrl?: string | null;
+      },
+    ) =>
+      request<Announcement>(`/admin/announcements/${id}`, {
+        method: 'PATCH',
+        token,
+        body,
+      }),
+
+    deleteAnnouncement: (token: string, id: string) =>
+      request<void>(`/admin/announcements/${id}`, {
+        method: 'DELETE',
+        token,
+      }),
+
+    publishAnnouncement: (token: string, id: string) =>
+      request<Announcement>(`/admin/announcements/${id}/publish`, {
+        method: 'POST',
+        token,
+      }),
   },
 
   students: {
+    uploadAvatar: (token: string, file: File, signal?: AbortSignal) =>
+      uploadFile(token, file, '/students/me/avatar', signal),
+
     profile: (token: string) =>
       request<StudentProfile>('/students/me/profile', { token }),
 

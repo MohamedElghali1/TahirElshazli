@@ -3817,6 +3817,76 @@ unit stays `[~]`.
 - **Status.** Unit 6 is `[x]`. Unit 7 (marking and the mark book) is next, and inherits `MARK-6` and
   `TASK-F3`.
 
+## Unit 11 — Google Forms surface (2026-09-23)
+
+Frontend-only unit over a complete backend (seven routes on `WorkAnalyticsController`). Built:
+`manage/tasks/[id]/results/page.tsx` (task analytics with the `Score`/`Meter` split, `SyncStatus`,
+the required understated-figure banner) and its unmatched-response queue with inline match-to-
+student. Found and fixed pre-existing frontend mirror drift along the way — `lib/types.ts` was
+missing `workType`/`WorkExpectation` even though the backend already returned them.
+
+Implementation ran on `agy` across three dispatches as three different models exhausted a shared
+account-wide quota in turn: `claude-sonnet-4-6` did most of the mirror + started the results screen
+before quota-exhausting mid-file; `gemini-3.1-pro-high` finished the screen, then a second pass fixed
+a real `react-hooks/set-state-in-effect` lint failure its first pass had shipped (and whose own
+self-report falsely claimed lint "hung" — the reviewer caught this by running the gate directly
+rather than trusting the report). By the time the fourth slice (student Quizzes, `WORK-4`) was ready
+to dispatch, every model on the account — including `claude-opus-4-6-thinking` and
+`gemini-3.8-flash-high` — was returning the same 429. Unit 11 stops here as `[~]`: `WORK-1`/`WORK-2`/
+`WORK-3` reviewer-`APPROVED`, `WORK-4` blocked on implementer capacity with a ready-to-execute build
+checklist left in `docs/phases/unit-11/REVIEW.md` for whoever picks it up next.
+
+## Units 10, 11 and 12 — merged to `redesign` (2026-09-23, later)
+
+The quota that stopped unit 11 recovered the same day, well ahead of the ~166h reset the CLI had
+reported. Antigravity (`gemini-3.8-flash-high`) implemented everything below; this session
+orchestrated, re-ran every gate itself, and committed. **No gate number in this entry comes from an
+implementer's self-report** — that discipline paid for itself repeatedly.
+
+**Unit 11 finished.** Slice C, the student Quizzes surface (`WORK-4`), built against the checklist
+the previous session had left. One file, four states, driven entirely by `work_type: 'google_form'`;
+no first-party quiz engine, no embed. An independent reviewer traced the backend's `computeStatus`
+and found a branch that was dead for external results — deleted, with a comment so it is not
+re-added. `APPROVED`. Still never driven in a real browser, which is stated rather than implied.
+
+**Unit 10's §3 hole closed.** Round 1's own fix had put `audience` on a DTO shared with the staff
+PATCH routes, and `updateDraft()` only scope-checked a *named* course or group — so for
+`all_students`/`all_tas` no check ran at all and an assistant could silently retarget their draft
+platform-wide for a teacher to publish unaware. Fixed structurally (split the DTO so the field is
+unreachable from `/staff/*` and the global whitelist pipe strips it) *and* in the service, because
+§7 wants the rule true regardless of DTO shape. `APPROVED`.
+
+**Unit 12's eight-item checklist cleared**, with two findings that turned out to be more interesting
+than the items themselves:
+
+- The reviewer's finding 3 — "an oversized upload destabilises the single API process" — was a
+  phantom. The three avatar e2e cases attached filesystem paths that did not exist, so no real body
+  was ever sent; that is what reset the connection and cascaded into the next test's timeout. With
+  real buffers, multer's `fileSize` limit already surfaces as a clean 413 through Nest and the
+  process stays healthy. No production change was needed, and the hypothesis is disproved by a test
+  that now genuinely sends 5MB.
+- Moving the notification-preference integration tests into scope where `db` actually exists — they
+  had never executed — immediately caught a live defect: the Postgres repository read
+  `result.rows`, but `DatabaseService.query` already unwraps to `T[]`. Nothing else would have
+  found it. This is the second time in this project that a test which never ran was hiding a real
+  bug.
+
+Also added `GET /admin/courses/:courseId` (`D-SET-1`, user-approved): the course edit form had been
+reading the student-only `GET /courses/:id` and returned 403 to every teacher, admin and assistant
+who opened it.
+
+**The merge caught what three reviewers missed.** Merging in the handoff's order (11 → 12 → 10), the
+backend unit count fell from 698 to 693. Unit 10's round-1 commit had *replaced*
+`announcements.controller.spec.ts` rather than extending it, deleting all 19 pre-existing tests —
+including the anti-enumeration assertion §7 says must survive every refactor, the "no recipient list
+is stored" PII assertion, and the `actorRoleOf` attribution assertion. Three independent reviewers
+had each been handed the round-2 diff and so could not have seen it. Recorded as `B-ANN-3`, and the
+coverage was restored against the current module rather than pasted back. **A green suite says
+nothing about what a rewrite took away with it: compare test counts across a merge.**
+
+State on `redesign`: unit 11 `[x]`, unit 12 `[x]`, unit 10 `[~]` — slice 10a (backend) merged and
+`APPROVED`, slice 10b (the announcements frontend, `ANN-1`/`ANN-2`/`ANN-3`/`ANN-5`/`ANN-6`) is the
+whole of what remains on that unit.
 **Unit 8 — sessions and attendance, closed 2026-09-24.** Migration `019` re-parents sessions to the
 group and moves `attendance` from a boolean to `present | absent | late`, with `marked_by`/
 `marked_at`. Eight staff routes landed in a new `backend/src/manage/sessions.controller.ts` (week

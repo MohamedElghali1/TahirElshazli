@@ -1322,7 +1322,7 @@ edit, unconfigured-assistant and mismatched-role cases.
 `B-6`), each with a recommended reading marked as an *assumption*. On 2026-09-22 the coordinator and
 the user approved slices 6a–6e and ruled on all six, each as the planner's recommendation. The rulings
 below are therefore **decisions**, not assumptions, and slices 6f–6k are built on them. Because `B-1`
-and `B-4` add or narrow columns, both were folded into migration `018` before it first ran — no `019`.
+and `B-4` add or narrow columns, both were folded into migration `018` before it first ran — no `020`.
 
 ### `D-28` — `B-1`: `visibility` stores `published | hidden`; `scheduled` is derived, not stored (reading C + iii)
 
@@ -1517,6 +1517,364 @@ work/credential integration coverage, `tallyResults` first).
 
 ---
 
+## 2026-09-23 — Unit 7 opens: the user rules on `MARK-6`'s three undecided questions (`D-38` … `D-40`)
+
+`IMPLEMENTATION_PLAN.md:293` left `MARK-6` explicitly undecided — "Unit 7 decides what each mode
+admits". All three answers change migration `020`'s columns, so they were put to the user before it
+was authored rather than assumed.
+
+### `D-38` — multi-file is a `submission_files` table, not an array on the submission
+- One row per file, with a stable 0-based `position`. `submission_annotations.file_id` is a real
+  foreign key to it.
+- **Rejected:** `file_urls TEXT[]` with the annotation pointing at an array index. Deleting or
+  reordering one photo silently re-aims every stroke that followed it, and the corruption is
+  invisible — the overlay still renders, just over the wrong page. A row id does not move.
+- **Rejected:** stitching photos into one PDF client-side. Loses the originals.
+- `assessment_submissions.file_url` is **not** dropped. Every existing row and every existing read
+  still uses it, and collapsing the two is a destructive step `020` deliberately does not take. An
+  annotation with `file_id IS NULL` belongs to that pre-`020` single file.
+
+### `D-39` — `doc_link` admits **either** a file or a link
+- Not link-only, and not file-only: `link_url` is nullable and sits beside the files. The student
+  picks. The marker sees whichever arrived.
+- Scheme is validated in the service (https only, so a `javascript:` URL cannot be stored and handed
+  to a marker to click). Not a CHECK constraint — the whitelist lives in one place (`CLAUDE.md` §8)
+  and a second copy in SQL is a second copy to keep in step.
+- The link is never fetched server-side, so this is an XSS/phishing control, not an SSRF one.
+
+### `D-40` — `pdf_upload` admits pdf, docx and zip
+- `photo_upload` admits image types, **five files at most**.
+- Enforced at submit time in the service, not in SQL, for the same one-place reason as `D-39`.
+- Unit 6's `018` comment ("the task's `allowed_file_types` govern the upload exactly as before") is
+  superseded: from `020` the mode narrows the whitelist rather than only describing it.
+
+### `TASK-F3` closed in the same pass
+Deleting a task that has submissions now answers **409**, not 400 — the code `CLAUDE.md` §6 names
+for a state conflict, and what `D-36`'s sibling external-result refusal already used. The
+inconsistency `D-36` recorded rather than silently fixed is now fixed deliberately. The e2e
+`refuses to delete a task that has submissions` asserts 409 and passes.
+
+### `D-ANN-1` — unit 10 (Announcements): `/admin/announcements/reach` moves to `/staff/announcements/reach`
+Two documents disagreed. `API_SPEC.yaml` stubbed `GET /admin/announcements/reach` with
+`x-roles: [assistant, teacher, admin]`; `CLAUDE.md` §6's route-split rule is explicit that `/admin/*`
+is teacher-and-admin-only, unscoped — an `/admin/*` route cannot legitimately name `assistant`. That
+is a finding, not a typo to quietly correct: the two documents said different things about who may
+see reach. **Resolution:** the route's *placement* was wrong, not its permissions — `assistant`
+belongs in the roles list, so the route moves to `/staff/announcements/reach` (all three roles,
+`StaffScopeService`-checked like every other `/staff/*` route). `API_SPEC.yaml` corrected in the same
+change (unit 10, slice 10a). Nothing implemented this route before the correction, so there is no
+back-compat cost.
+
+### `D-ANN-2` — unit 10: a published announcement IS editable (reverses the planner's initial assumption)
+The unit-10 phase plan originally assumed a published announcement is immutable — no `PATCH` once
+`published_at` is set — reasoning from the pre-existing `PostgresAnnouncementRepository`'s own
+docstring ("insert-and-read only... a retraction is a second announcement"). **The user ruled
+otherwise, via the coordinator: a typo in a published announcement must be correctable.** `PATCH`
+now works on a published row, editing title/body/media. The **audience** stays refused (`409`) once
+published — widening it after send would mean recipients who never received the original mail, and
+building a delta fan-out for that is a feature nobody asked for; refusing it is both the lazy and
+the honest answer. `DELETE` was not part of this ruling and stays refused on a published row,
+flagged as its own open follow-up rather than assumed either way. The `published_at` column, already
+the guard behind idempotent publish, now also guarantees an edit can never re-trigger the send: only
+`publish()`'s own guarded `UPDATE` ever sets it, and `updateDraft()` never touches it.
+
+### One thing the migration does that was not asked for, and why
+`020` **backfills** `returned_at = corrected_at` on every already-corrected row. `MARK-2` moves
+student visibility from `corrected_at` to `returned_at`; leaving the new column NULL would have
+taken away, on deploy, every mark every student can currently see. Those marks were returned under
+the old rule, which had no way to hold one back.
+
+## 2026-09-23 — `D-41`: `D-40` narrowed to pdf + docx; zip refused
+
+`D-40` said `pdf_upload` admits **pdf, docx, zip**. Implementing it surfaced that the global upload
+whitelist (`common/storage/upload-types.ts`) admits neither docx nor zip, so honouring it meant
+widening the whitelist — a `SECURITY.md` §4 decision, not a detail.
+
+**Ruled (user, 2026-09-23): pdf and docx. Zip is refused.** A zip is a container that can hold
+anything, and §8's rule is that uploads admit nothing executable; a PDF and a docx are
+non-executable containers served with `nosniff` from a server that executes nothing, which is the
+same argument that already admits PDF. Legacy `application/msword` was not asked for and is not
+added.
+
+**A pre-existing gap found in the same pass, and fixed rather than filed (user's call):** a task's
+`allowedFileTypes` was **enforced nowhere**. The upload route validates only the *global* whitelist
+and does not know which task a file is for, so a task stating "PDF only" accepted a `.png`. Open
+since unit 1.
+
+The fix is cheap because of a property already in the code: `UploadsService` mints the stored
+filename's extension from the **already-validated** MIME type and never reads the client's filename,
+so **the extension on a stored URL is server-controlled**. Submit-time enforcement can read it
+without trusting the client.
+
+**Caught in review — do not derive a submission mode from `UploadType.kind`.** The first
+implementation built `pdf_upload`'s permitted set from the whitelist entries with `kind: 'file'`.
+That bucket is `{pdf, txt, docx}`, so a task set to `pdf_upload` silently accepted a **`.txt`** —
+contradicting this very decision, with no test failing, because the tests asserted only the types
+the decision names. `kind` answers *"what is this file"* for the storage layer; it does not answer
+*"what does this mode admit"*, which is a product question. The two nearly coincide, which is what
+makes the coupling easy to write and invisible once written: the next document type added to the
+whitelist would have widened every existing `pdf_upload` task with nothing to catch it.
+
+`pdf_upload` now names its two MIME types outright and derives only the **extensions** from
+`ALLOWED_UPLOAD_TYPES`, keeping one MIME-to-extension mapping. `photo_upload` still derives from
+`kind: 'image'` and should — "is this an image" genuinely is a property of the file, so a new image
+type ought to widen it automatically. The `.txt`-refused test was added and **proved able to fail**
+against the old derivation before the fix landed (`CLAUDE.md` §10).
+
+## 2026-09-23 — migration `020` passes the empty-schema gate
+
+Run by the unit 8 session on **PostgreSQL 15.19**, `psql -v ON_ERROR_STOP=1`, 001→020 in
+lexicographic order against a database created empty moments before. `020` extracted from `8eb6ad9`
+via `git show`; no merge, no checkout touched. It applied on top of a schema that already carried
+019's session/attendance reshaping, which is the harder case.
+
+Verified against the live catalog, not the file: `submission_files` with its `(submission_id,
+position)` unique constraint and both CHECKs; `submission_annotations` with all five CHECKs including
+the `kind <> 'stroke' OR path IS NOT NULL` pair; `returned_at` as `timestamptz`, **datetime_precision
+3**, nullable; `link_url` text, nullable.
+
+**What this does and does not prove.** `CLAUDE.md` §9's gate — the migration applies from nothing —
+is **met**. The **backfill's behaviour is not yet proven**: that run was bare `psql`, so the three
+vitest integration tests (`describe('migration 020')`) did not execute, and on an empty schema the
+`UPDATE` touches zero rows regardless. Those still need a seeded run.
+
+## 2026-09-23 — `D-42` and `D-43`: multi-file submission and its two open questions
+
+Slice 7b-ii wires `submission_files` (built by 7a and until now written by nothing) and `link_url`
+(stored since `020` and until now unsettable) into the submit path. Two things the documents did not
+answer had to be decided before it could be built, rather than guessed (`CLAUDE.md` §13).
+
+**`D-42`: `display_name` is client-supplied and length-capped.** The browser sends `File.name`; it is
+stored as text and shown back to whoever marks the work. This does **not** weaken §8's "the client
+filename is never read" rule, which is about the *stored path*: the path is still a server-minted
+UUID whose extension comes from the validated MIME, and `display_name` never reaches the filesystem
+or a URL. `020`'s own column comment already anticipated this. The column is `TEXT`, so the DTO's
+255 is the only bound on it — which is the right place for one.
+
+**`D-43`: the five-file cap applies to every multi-file submission, not only `photo_upload`.**
+`D-40` wrote five as a property of that one mode, which left a task stating no mode accepting an
+unbounded count. Generalised, stated once as `MAX_SUBMISSION_FILES`, and enforced in **both** the
+DTO and the service — the DTO stops a malformed request, the service is where the invariant lives
+(§5).
+
+**Validation runs before the transaction opens, and that is load-bearing.** Every file is checked
+before any write, so a bad file among five good ones is refused with nothing written at all, rather
+than written and rolled back. That is what makes the "writes nothing" case provable on the memory
+driver, where `runInTransaction` is a passthrough with no rollback (§9). True mid-transaction
+rollback remains provable only against real PostgreSQL and is **not** claimed by these tests.
+
+**On how this slice was built, recorded because the record should not imply more review than
+happened.** Antigravity was the implementer for 7b-i and was quota-blocked mid-way through 7b-ii —
+both Claude labels and then the Gemini fallback, all returning `Resets in ~167h`. The orchestrator
+finished 7b-ii directly on the user's instruction, so for this slice **the implementer and the
+reviewer are the same agent**. That is weaker than every slice before it, and it is the property
+that caught the `pdf_upload` defect one slice earlier.
+
+What the truncated delegation left behind, found and fixed rather than inherited: a `linkUrl`
+referenced in SQL but missing from the Postgres method signature; `updateSubmission` never
+implementing it at all; **the in-memory driver hardcoding `linkUrl: null`, which `tsc` cannot see** —
+TypeScript accepts a method with fewer parameters than its interface, so a driver silently
+discarding a field compiles clean; the wrong DI token (`'PG_POOL'` for `Symbol(DATABASE_POOL)`);
+the slice's tests stranded in an untracked scratch file rather than the spec; a `§` corrupted to a
+replacement character; and several deleted comments, including the one explaining why
+`GradingService.grade` resolves the course from the submission rather than the URL — the §5.11 IDOR
+defence. The comments were restored from git rather than rewritten.
+
+## 2026-09-23 — `D-44` and `D-45`: annotation audit grain, and who may erase a mark
+
+Slice 7c builds `MARK-1` — the four annotation routes over the `submission_annotations` table `020`
+created. Two questions the documents did not answer had to be decided first (`CLAUDE.md` §13).
+
+**`D-44`: annotations are audited per *save*, not per mutation. Slice 7c writes no audit entry at
+all.** §7 says to audit every mutating staff action, and a literal reading would log every brush
+stroke: a freehand marking pass writes 50–200 of them per paper, so across ~300 students the audit
+log becomes mostly strokes and the real events — a mark recorded, a report sent — become unfindable
+in it. The audit log is also the one table §6 names as genuinely growing, so flooding it has a cost
+beyond readability. The entry therefore belongs to the Save action in slice 7d, and the annotation
+routes deliberately call `AuditService` not at all.
+
+**`D-45`: an annotation may be edited or deleted only by its author. No teacher or admin override.**
+`authorId` already existed for this — the interface's own comment says "the eraser clears its
+author's own strokes only, so this is load-bearing." The marking is evidence of who said what, and an
+override would let a teacher silently erase an assistant's work with nothing recording it (which,
+under `D-44`, nothing would). **This is the one place in the codebase where a teacher is refused
+something an assistant may do**, so it is stated here rather than left to be inferred.
+
+Its refusal is a **403, not the usual 404** — §7's own exception: the annotation is on the caller's
+own list, it came back from `GET .../annotations`, and a 404 would make the marking screen lie about
+a row it is currently showing.
+
+**Found in review, not by the implementer's tests: `fileId` was unchecked against its submission.**
+An annotation carries a nullable `fileId` naming which of up-to-five files it is drawn on. The
+foreign key proves only that the file exists *somewhere*, so a marker legitimately holding one
+submission could pin an annotation to a **different** submission's photo — drawn on one student's
+work and stored against another's. Scope does not catch it, because the caller does hold the
+submission they named. Now checked in the service against that submission's own files; `null` stays
+allowed as the pre-`020` single-file case. The test was proved able to fail with the guard disabled
+before it was kept (§10).
+
+Pipeline note: 7c restored the implementer/reviewer split that 7b-ii lost — a Sonnet subagent
+implemented, this session reviewed and re-ran every gate independently. The `fileId` gap is what
+that split bought this time; the implementer flagged it as a concern in its own report rather than
+fixing it, which is the correct behaviour for an implementer working to a fixed scope.
+
+---
+
+## 2026-09-23 — Unit 11 (Google Forms surface): frontend mirror drift fixed, no `Modal` built, `WORK-4` blocked on implementer capacity
+
+**Frontend mirror drift, found and fixed.** `frontend/lib/types.ts`'s `AssessmentListItem` was
+missing `workType`, and `AssessmentDetail` had no `work: WorkExpectation` field at all — both
+already returned by the backend (`backend/src/assessments/assessments.service.ts`) on routes this
+unit's own screens call. This is exactly the class of bug §6 already warns about (the `AuditAction`
+union carrying 6 of 27 members). Fixed as a mirror correction in the same change that consumes the
+fields — not a backend change, not scope creep.
+
+**No `Modal`/`SlideOver` primitive built.** `docs/redesign-mapping.md` decision 4 proposed promoting
+one into `components/feedback/`, but it was never executed and no such component exists anywhere in
+`frontend/components/`. Building one is a cross-cutting decision other units will also want, not
+this unit's job. The "view raw response" and "match to student" interactions on the new task results
+screen use inline expansion / inline form controls instead — the same pattern
+`manage/students/[id]/page.tsx` already uses for its editor. If a shared `Modal` lands later, these
+can move to it without any data-layer rework.
+
+**`WORK-4` (student Quizzes surface) is blocked on implementer capacity, not a requirements
+question.** Every `agy` model available to this pipeline —`claude-sonnet-4-6`,
+`gemini-3.1-pro-high`, `claude-opus-4-6-thinking`, `gemini-3.8-flash-high` — returned
+`RESOURCE_EXHAUSTED (429)` on what turned out to be one shared account-wide quota, the same day.
+Recorded rather than worked around: a precise, self-contained build checklist is in
+`docs/phases/unit-11/REVIEW.md` §"Slice C checklist" so the next implementer (any model, once
+capacity returns, or a human) can act without re-deriving anything. Unit 11 stays `[~]` until it
+lands.
+
+**Blocker recorded, not built around:** `GET /staff/courses/:courseId/students/:studentId/work`
+(`StudentWorkResult[]`) has no consuming screen named in `WORK-1`..`WORK-4` or in
+`docs/redesign-mapping.md`'s screen lists. Not built this unit — left for whichever later unit
+(13/14, student or staff profile work) decides it wants a per-student cross-task work table.
+
+**Correction (2026-09-23, later the same day): `WORK-4` is no longer blocked and is no longer
+outstanding.** Antigravity's shared account quota recovered ahead of the reported ~166h reset, and
+slice C was built against the checklist above, independently reviewed and APPROVED. The entry above
+is kept as written because the capacity failure it records is real and worth remembering — but do
+not read it as describing the current state of unit 11.
+
+### `B-ANN-1` — unit 10: TAs cannot publish announcements
+Fixed a bug introduced earlier in unit 10 where a TA assigned to a course or group could publish an announcement targeted at it through `/staff/.../publish` routes, bypassing teacher/admin review. The staff publish routes were removed, and the `publish()` service method now unconditionally enforces the `teacher` or `admin` role for all announcements, closing the loophole.
+
+### `B-ANN-2` — unit 10: TAs cannot retarget announcements to platform-wide audiences
+Fixed an authorization hole introduced by round 1's fix where `PatchAnnouncementDraftDto` gained an `audience` field for admin retargeting, but remained shared with the staff patch routes. Because `updateDraft()` only scoped course and group audiences, assistants could retarget their drafts to `all_students` or `all_tas`. Split the DTO into `PatchAnnouncementDraftDto` (staff, no audience) and `PatchAdminAnnouncementDraftDto` (admin only, carries audience), and added a belt-and-braces role check in `AnnouncementsService.updateDraft()`.
+
+## 2026-09-23 — `D-SET-1`: `GET /admin/courses/:courseId` added; the course edit form read a student-only route
+
+Unit 12's course edit form fetched detail through `api.courses.get` → `GET /courses/:id`, which is
+`@Roles(Role.Student)`. **Every teacher, admin and assistant who opened "Edit" got a 403** — the
+feature worked for nobody who could reach it. The unit had compensated by adding `slug` to
+`toListItem`, which builds `CourseListItem`, the *student* enrolled-courses response; that addition
+existed only to feed the wrong endpoint and has been reverted.
+
+Three options were weighed. Serving the form from the row data the list already holds was preferred
+and is not available: `ManageCourseCard` carries none of `slug`, `description`, `thumbnailUrl`,
+`sequentialLockEnabled` or `isPublished`. Widening the staff overview response to carry them would
+push admin-only edit fields into a payload an assistant also receives. So:
+
+**Ruled (user, 2026-09-23): add `GET /admin/courses/:courseId`.** It mirrors the `PATCH` that
+already lives on that path exactly — same controller, same class-level `@Roles(...STAFF_ADMIN)`
+(which never contains `Role.Assistant`), same `Course` response, reusing `courseRepo.findById` and
+the existing `COURSE_NOT_FOUND`. It is a read, so no `x-audit`. Both directions are proven over
+HTTP: teacher and admin 200, assistant 403, unknown id 404.
+
+Recorded as a decision because **adding a route is a scope change**, not a detail — the alternative
+readings above are what make it one.
+
+## 2026-09-23 — `B-ANN-3`: a spec rewrite silently deleted 19 tests, including three named invariants
+
+Unit 10's round-1 commit **replaced** `announcements.controller.spec.ts` instead of extending it.
+Its 14 new tests correctly cover the new draft/publish/reach lifecycle, but all 19 pre-existing
+tests went with the old file — and about fifteen behaviours were left with no test anywhere in the
+repository. Among them: *"takes the audience from the URL, so a TA cannot widen it from the body"*
+(the structural invariant `B-ANN-2` is about), *"does not store a recipient list, only how many
+there were"* (§5.14's PII rule), and *"records the teacher as teacher, not as an assistant"* (the
+`actorRoleOf` attribution rule that fourteen hand-written ternaries once got wrong).
+
+**Three independent reviewers passed over this unit and none caught it**, because each was given
+the round-2 diff to review and the deletion happened in round 1. It surfaced only at merge, when the
+backend unit count fell from 698 to 693 — a merge that removes tests is the signal.
+
+The coverage was restored against the current module rather than pasted back from the old file, the
+module having changed underneath it (`posted_at` → `published_at`, publish split out as its own
+step, the staff publish routes deleted).
+
+**The durable lesson, worth more than the fix:** a green suite says nothing about what a rewrite
+took away with it. Compare test counts across a merge, and treat a shrinking spec file as a finding.
+
+## 2026-09-23 — Unit 10 complete: slice 10b, and what the UI is allowed to decide
+
+Slice 10b (the announcements compose and drafts surface) landed, completing unit 10. One rule
+governed every gating choice on the screen and is worth stating once, because it recurs on every
+console surface: **the UI offers nothing the server refuses, and the server refuses regardless of
+what the UI offers.** Publish is rendered only for an admin on a draft; delete only while
+unpublished; a published announcement shows its audience read-only with the reason. Each of those
+mirrors a server rule that is independently enforced and independently tested. Hiding a control is
+courtesy (§11.1.5) — the screen is easier to trust when it never dangles an action that will 403.
+
+Media handling took the same line. A YouTube URL is not interpolated into an `iframe src`; the video
+id is extracted behind a hostname allowlist and a `youtube-nocookie` URL is reconstructed from it, so
+author-supplied text never becomes markup. Announcement bodies render as paragraphs — no
+`dangerouslySetInnerHTML` anywhere on the surface.
+
+Removed before commit: an unrequested debounced search box over the announcement list. §1's scale
+numbers are the test — a list this size does not get search furniture.
+
+## 2026-09-23 — `MARK-2`: a mark existing and a student seeing it become two things
+
+Slice 7d separates **Save** from **Save and return**. `correctedAt` says a mark exists; `returnedAt`
+says the student may see it. Until now they were the same instant, so a marker could not put a paper
+down half-marked without the student reading it.
+
+`POST /staff/submissions/:submissionId/return` is the release, beside `.../grade`. It shares
+`grade`'s authorization shape through an extracted `resolveScoped` — the course comes from the
+submission's own assessment, never a URL parameter (§5.11) — and refuses a submission with no mark
+with **409**, a state conflict rather than a bad request: the id is fine, the state is not.
+
+**The risky half was the visibility flip, and the distinction that mattered is that not every
+`correctedAt` read is a visibility decision.** Two of them guard *mutation*, not sight —
+`canSubmit` and `submitAssessment`'s own refusal both stop a student overwriting work the marker is
+mid-way through, which must hold whether or not the mark has been handed back. Those keep
+`correctedAt`; the rest move to `returnedAt`, and both now carry a comment saying which they are so
+the next reader does not "fix" one into the other.
+
+**Gated beyond the brief, correctly.** The brief enumerated the score sites. The implementer also
+gated `feedback`, `annotatedFileUrl` and the exposed `correctedAt` itself, on the grounds that
+hiding the number while showing the marker's written feedback and the annotated copy leaks the
+substance of the mark and leaves `MARK-2` half-done. Adopted — a marked-but-unreturned submission
+must read to a student exactly as it did before it was marked, and a visible "corrected on"
+timestamp for a mark they cannot see is its own tell.
+
+**`getPerformanceEntries` was the one with teeth.** It feeds the weekly report, which under `RPT-*`
+emails a child's marks to a parent and cannot be unsent (§8). Had it kept reading `correctedAt`, a
+half-finished marking pass could have reached a parent's inbox. It reads `returnedAt`.
+
+**`submission.returned` is a new `AuditAction`** — union, the query DTO's exhaustive `Record`, and a
+spec asserting the entry. It earns its own action rather than riding on `submission.graded` because
+releasing is a separate decision with a student-visible consequence. This does **not** reopen
+`D-44`: annotations are still audited per save, not per mutation.
+
+**A correction to the brief, found by the implementer:** it claimed the in-memory fixtures already
+contained a marked-but-unreturned submission. They do not — all six have `returnedAt === correctedAt`
+or both null. The tests build that state themselves. Recorded because the wrong version of that
+claim would have produced tests that pass while asserting nothing about the case the slice exists
+for.
+
+### Unrelated, found while reviewing 7d: the backend typecheck is broken on `redesign`
+
+`npx tsc --noEmit` reports **29 errors** on HEAD (`635f62b`), none from unit 7 — measured both with
+and without 7d's diff by stashing, 29 either way. They sit in `settings/`, `announcements/` and
+`students/`, and they are signature drift: `id` no longer exists on the user/course/group creation
+types and `StaffActor` gained a required `id`, without the three calling modules being updated.
+
+`CLAUDE.md` §4.1 makes zero the thing to gate on, so this is a regression in the shared branch
+rather than a cosmetic issue. Recorded here, not fixed: it is outside unit 7's scope (§12 — record
+what you find and move on), and the modules belong to units that landed while unit 7 was in
+progress.
 ## 2026-09-24 — Unit 8: sessions and attendance (`SESS-1`…`SESS-7`)
 
 **Context.** `SESS-1`…`SESS-7` build the group-grained session and attendance model. Recorded here:

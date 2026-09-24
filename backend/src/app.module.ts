@@ -12,6 +12,7 @@ import { JwtAuthGuard } from './auth/jwt-auth.guard.js';
 import { RolesGuard } from './auth/roles.guard.js';
 import { EnrollmentsModule } from './enrollments/enrollments.module.js';
 import { StudentsModule } from './students/students.module.js';
+import { SettingsModule } from './settings/settings.module.js';
 import { CoursesModule } from './courses/courses.module.js';
 import { RecordingsModule } from './recordings/recordings.module.js';
 import { MaterialsModule } from './materials/materials.module.js';
@@ -52,6 +53,7 @@ import { StorageModule } from './common/storage/storage.module.js';
     StorageModule,
     EnrollmentsModule,
     StudentsModule,
+    SettingsModule,
     CoursesModule,
     RecordingsModule,
     MaterialsModule,

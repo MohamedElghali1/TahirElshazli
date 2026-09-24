@@ -25,6 +25,8 @@ import {
   type GradingQueueItem,
   type GradingQueueResponse,
 } from './grading.service.js';
+import { AnnotationsService } from './annotations.service.js';
+import type { SubmissionAnnotation } from '../assessments/interfaces/assessment-repository.interface.js';
 import { ManageRecordingsService } from './manage-recordings.service.js';
 import type { Recording } from '../recordings/interfaces/recording-repository.interface.js';
 import {
@@ -34,6 +36,7 @@ import {
 } from './assessment-authoring.service.js';
 import { StaffTasksQueryDto } from './dto/staff-tasks-query.dto.js';
 import { GradeSubmissionDto } from './dto/grade-submission.dto.js';
+import { CreateAnnotationDto, UpdateAnnotationDto } from './dto/annotation.dto.js';
 import { ListGradingQueueQueryDto } from './dto/queries.dto.js';
 import {
   CreateAssessmentDto,
@@ -61,6 +64,7 @@ export class StaffManageController {
     private readonly grading: GradingService,
     private readonly recordings: ManageRecordingsService,
     private readonly authoring: AssessmentAuthoringService,
+    private readonly annotations: AnnotationsService,
   ) {}
 
   private actor(req: { user: JwtPayload }) {
@@ -118,6 +122,80 @@ export class StaffManageController {
       feedback: body.feedback,
       annotatedFileUrl: body.annotatedFileUrl,
     });
+  }
+
+  /**
+   * `MARK-2`: release a saved mark to the student. Same no-course-id-in-path
+   * reasoning as `grade` above.
+   */
+  @Post('submissions/:submissionId/return')
+  @HttpCode(HttpStatus.OK)
+  async returnSubmission(
+    @Param('submissionId') submissionId: string,
+    @Request() req: { user: JwtPayload },
+  ): Promise<GradingQueueItem> {
+    return this.grading.returnToStudent(submissionId, this.actor(req));
+  }
+
+  /**
+   * The overlay's data (`MARK-1`, `D-2`): every mark drawn on a submission, in
+   * one page-percentage coordinate space. No course id in the path, same
+   * reasoning as `grade` above - resolved from the submission's own
+   * assessment so a submission id for a course the caller does not hold
+   * cannot be smuggled in.
+   */
+  @Get('submissions/:submissionId/annotations')
+  async listAnnotations(
+    @Param('submissionId') submissionId: string,
+    @Request() req: { user: JwtPayload },
+  ): Promise<SubmissionAnnotation[]> {
+    return this.annotations.list(submissionId, this.actor(req));
+  }
+
+  @Post('submissions/:submissionId/annotations')
+  @HttpCode(HttpStatus.CREATED)
+  async createAnnotation(
+    @Param('submissionId') submissionId: string,
+    @Body() body: CreateAnnotationDto,
+    @Request() req: { user: JwtPayload },
+  ): Promise<SubmissionAnnotation> {
+    return this.annotations.create(submissionId, this.actor(req), {
+      fileId: body.fileId ?? null,
+      page: body.page,
+      kind: body.kind,
+      x: body.x,
+      y: body.y,
+      path: body.path,
+      colour: body.colour,
+      width: body.width,
+      body: body.body,
+    });
+  }
+
+  /**
+   * No submission id in the path: resolved from the annotation itself, same
+   * shape as `grade` and `createAnnotation` above.
+   *
+   * `D-45`: refused for anyone but the annotation's own author - no teacher
+   * or admin override. The service enforces it; nothing here decides access.
+   */
+  @Patch('annotations/:annotationId')
+  async updateAnnotation(
+    @Param('annotationId') annotationId: string,
+    @Body() body: UpdateAnnotationDto,
+    @Request() req: { user: JwtPayload },
+  ): Promise<SubmissionAnnotation> {
+    return this.annotations.update(annotationId, this.actor(req), body);
+  }
+
+  /** `D-45`: same author-only rule as `updateAnnotation`. */
+  @Delete('annotations/:annotationId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteAnnotation(
+    @Param('annotationId') annotationId: string,
+    @Request() req: { user: JwtPayload },
+  ): Promise<void> {
+    await this.annotations.remove(annotationId, this.actor(req));
   }
 
   /** Read-only for a TA. The write routes live on the admin controller. */

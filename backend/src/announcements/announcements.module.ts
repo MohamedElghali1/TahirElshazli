@@ -13,6 +13,8 @@ import { StaffModule } from '../staff/staff.module.js';
 import { CoursesModule } from '../courses/courses.module.js';
 import { EnrollmentsModule } from '../enrollments/enrollments.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
+import { GroupsModule } from '../groups/groups.module.js';
+import { MailModule } from '../mail/mail.module.js';
 
 /**
  * Announcements: the "make announcements" half of the client's ask.
@@ -24,7 +26,7 @@ import { NotificationsModule } from '../notifications/notifications.module.js';
  * would then write into an array no student's `/notifications` read looks at.
  *
  * `StaffModule` supplies `StaffScopeService`, which every course-scoped read
- * and write here goes through first (CLAUDE.md §5.11). `AuditService` arrives
+ * and write here goes through first (CLAUDE.md A 5.11). `AuditService` arrives
  * via the global `AuditModule`.
  */
 @Module({
@@ -34,6 +36,8 @@ import { NotificationsModule } from '../notifications/notifications.module.js';
     CoursesModule,
     EnrollmentsModule,
     NotificationsModule,
+    GroupsModule,
+    MailModule,
   ],
   controllers: [
     StaffAnnouncementsController,

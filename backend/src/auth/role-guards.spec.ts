@@ -123,6 +123,7 @@ const EXPECTED: Record<string, readonly Role[]> = {
   SessionsController: STAFF_ALL,
   UploadsController: STAFF_ALL,
   WorkAnalyticsController: STAFF_ALL,
+  SettingsController: STAFF_ALL,
 
   // ---- the student surface: a student never becomes an admin ----
   AssessmentsController: [Role.Student],
@@ -149,24 +150,34 @@ const PER_METHOD_CONTROLLERS = ['AppController', 'AuthController'];
 
 describe('the authorization boundary', () => {
   it('discovers every controller in the build', () => {
-    // 31 controller files, 31 classes. If this number moves, a controller was
+    // 32 controller files, 32 classes. If this number moves, a controller was
     // added or removed and its row below has to be decided rather than
     // defaulted - which is the entire point of asserting a count.
     // `AdminCoursesController` (`DOM-5`) was the thirtieth; `AdminStaffController`
     // left with `course_staff_assignments` (`AUTH-2`), which is a net -1.
     // `TaskDraftsController` (`TASK-2`, unit 6) was the thirtieth again.
-    // `SessionsController` (`D-6`, unit 8 S3) is the thirty-first.
-    expect(CONTROLLERS).toHaveLength(31);
+    // Then unit 8 added `SessionsController` (`D-6`) and unit 10 its
+    // announcement controllers, in parallel branches that each independently
+    // updated this number - so the count below was recomputed at the merge
+    // rather than taken from either side. Two branches both writing "31" is
+    // exactly the merge that compiles and asserts the wrong thing.
+    expect(CONTROLLERS).toHaveLength(32);
     const named = CONTROLLERS.map((c) => c.name);
     expect(new Set(named).size).toBe(named.length);
-    for (const name of [
+    const accounted = [
       ...Object.keys(EXPECTED),
       ...PUBLIC_CONTROLLERS,
       ...PER_METHOD_CONTROLLERS,
-    ]) {
+    ];
+    for (const name of accounted) {
       expect(named).toContain(name);
     }
-    expect(Object.keys(EXPECTED)).toHaveLength(27);
+    // The other direction, added by unit 10: a controller in the build that
+    // nobody listed above fails here rather than passing silently.
+    for (const name of named) {
+      expect(accounted).toContain(name);
+    }
+    expect(Object.keys(EXPECTED)).toHaveLength(28);
   });
 
   describe('@Roles, read back off the decorator', () => {
@@ -350,12 +361,18 @@ describe('the authorization boundary', () => {
       // AUTH-3's narrowing, and `StaffGroupsController.removeMember` was in
       // this list before it. They may delete any draft in the library on a
       // course they reach - `AUTHORIZATION_MODEL.md` §3 grants "Manage the
-      // draft library" with no own-only rule (unit 6, `TASK-2`).
-      // They may cancel a live session on groups they hold (`D-6`, unit 8 S3).
+      // draft library" with no own-only rule (unit 6, `TASK-2`). They may
+      // delete an annotation they drew - `D-45` narrows that to authorship the
+      // same way the blog post is narrowed, in `AnnotationsService`, with no
+      // teacher or admin override (`MARK-1`, unit 7 slice 7c). They may cancel
+      // a live session on groups they hold (`D-6`, unit 8 S3).
       expect(assistantDeletes.sort()).toEqual(
         [
           'SessionsController.remove',
+          'StaffAnnouncementsController.deleteCourseDraft',
+          'StaffAnnouncementsController.deleteGroupDraft',
           'StaffBlogController.remove',
+          'StaffManageController.deleteAnnotation',
           'StaffManageController.deleteAssessment',
           'TaskDraftsController.remove',
         ].sort(),

@@ -24,6 +24,7 @@ import { PostgresBlogRepository } from '../src/blog/repositories/postgres-blog.r
 import { PostgresMailDeliveryRepository } from '../src/mail/postgres-mail-delivery.repository.js';
 import { PostgresAssistantInvitationRepository } from '../src/manage/repositories/postgres-assistant-invitation.repository.js';
 import { PostgresTaskDraftRepository } from '../src/manage/repositories/postgres-task-draft.repository.js';
+import { PostgresNotificationPreferencesRepository } from '../src/settings/repositories/postgres-notification-preferences.repository.js';
 import type { NewAssessment } from '../src/assessments/interfaces/assessment-repository.interface.js';
 import { Role } from '../src/auth/roles.enum.js';
 
@@ -161,6 +162,127 @@ describeIfDb('Postgres repositories', () => {
             AND column_name = 'mode'`,
       );
       expect(rows).toEqual([]);
+    });
+  });
+
+  /**
+   * Migration 020's post-conditions.
+   *
+   * The backfill gets its own test because **the ordinary empty-schema gate is
+   * silent about it**: `UPDATE ... WHERE corrected_at IS NOT NULL` touches zero
+   * rows when there are no rows, so a clean migration run is not evidence that
+   * it works. It is the one non-additive statement in 020 and the one whose
+   * failure is silent and destructive - every mark every student can currently
+   * see would simply stop being visible once `MARK-2` moves the gate from
+   * `corrected_at` to `returned_at`.
+   *
+   * The statement is **read out of the migration file** rather than retyped, so
+   * this cannot pass against a copy that has drifted from what actually ships.
+   */
+  describe('migration 020', () => {
+    const migrations020Dir = fileURLToPath(
+      new URL('../src/database/migrations', import.meta.url),
+    );
+
+    /** The migration's own backfill, extracted rather than reproduced. */
+    const backfillSql = async (): Promise<string> => {
+      const sql = await readFile(
+        join(migrations020Dir, '020_marking.sql'),
+        'utf8',
+      );
+      const match = sql.match(
+        /UPDATE assessment_submissions[\s\S]*?WHERE corrected_at IS NOT NULL;/,
+      );
+      if (!match) {
+        throw new Error('020 no longer contains the returned_at backfill');
+      }
+      return match[0];
+    };
+
+    it('restores returned_at for a corrected row, so no student loses a visible mark', async () => {
+      // Put a seeded submission back into its pre-020 shape: corrected, and
+      // with no returned_at, which is exactly what every existing row looked
+      // like the instant before the migration ran.
+      const target = await db.queryOne<{ id: string; corrected_at: Date }>(
+        `SELECT id, corrected_at FROM assessment_submissions
+          WHERE corrected_at IS NOT NULL LIMIT 1`,
+      );
+      expect(target).not.toBeNull();
+      await db.query(
+        `UPDATE assessment_submissions SET returned_at = NULL WHERE id = $1`,
+        [target!.id],
+      );
+
+      await db.query(await backfillSql());
+
+      const after = await db.queryOne<{ returned_at: Date | null }>(
+        `SELECT returned_at FROM assessment_submissions WHERE id = $1`,
+        [target!.id],
+      );
+      expect(after?.returned_at).not.toBeNull();
+      expect(after?.returned_at?.getTime()).toBe(target!.corrected_at.getTime());
+    });
+
+    it('leaves an uncorrected row alone, so nothing unmarked is shown as returned', async () => {
+      // The other direction, and the one that matters for trust: a backfill
+      // that over-reached would publish unmarked work to students.
+      const uncorrected = await db.queryOne<{ id: string }>(
+        `SELECT id FROM assessment_submissions
+          WHERE corrected_at IS NULL LIMIT 1`,
+      );
+      expect(uncorrected).not.toBeNull();
+
+      await db.query(await backfillSql());
+
+      const after = await db.queryOne<{ returned_at: Date | null }>(
+        `SELECT returned_at FROM assessment_submissions WHERE id = $1`,
+        [uncorrected!.id],
+      );
+      expect(after?.returned_at).toBeNull();
+    });
+
+    it('orders annotations deterministically when several share a millisecond', async () => {
+      // `TIMESTAMPTZ(3)` leaves ties, and a batched stroke post writes several
+      // inside one millisecond. Stroke order is visible - a later one paints
+      // over an earlier one - so the driver tiebreaks on id. What that buys is
+      // *repeatability across reads*, not parity with the in-memory driver,
+      // whose ids are sequential where these are UUIDs. Forced here with an
+      // identical `created_at` rather than hoping for a natural collision.
+      const submission = await db.queryOne<{ id: string }>(
+        `SELECT id FROM assessment_submissions LIMIT 1`,
+      );
+      const author = await db.queryOne<{ id: string }>(
+        `SELECT id FROM users WHERE role IN ('teacher', 'admin') LIMIT 1`,
+      );
+      expect(submission).not.toBeNull();
+      expect(author).not.toBeNull();
+
+      const ids = ['zz-annot', 'mm-annot', 'aa-annot'];
+      for (const id of ids) {
+        await db.query(
+          `INSERT INTO submission_annotations
+             (id, submission_id, page, kind, path, author_id, created_at)
+           VALUES ($1, $2, 0, 'stroke', '[{"x":1,"y":2}]'::jsonb, $3,
+                   '2026-09-23T12:00:00.000Z')`,
+          [id, submission!.id, author!.id],
+        );
+      }
+
+      const found = await new PostgresAssessmentRepository(db).findAnnotations(
+        submission!.id,
+      );
+      const written = found.filter((a) => ids.includes(a.id)).map((a) => a.id);
+      // Insertion order was zz, mm, aa; with the timestamps tied the id
+      // tiebreak is the only thing that can make this repeatable at all.
+      expect(written).toEqual(['aa-annot', 'mm-annot', 'zz-annot']);
+
+      // And the JSONB round-trips as a real array, not a string.
+      const stroke = found.find((a) => a.id === 'aa-annot');
+      expect(stroke?.path).toEqual([{ x: 1, y: 2 }]);
+
+      await db.query(`DELETE FROM submission_annotations WHERE id = ANY($1)`, [
+        ids,
+      ]);
     });
   });
 
@@ -901,6 +1023,7 @@ describeIfDb('Postgres repositories', () => {
         'student-1',
         'https://storage.example.com/first.pdf',
         null,
+        null,
       );
 
       const updated = await repo.updateSubmission(
@@ -908,6 +1031,7 @@ describeIfDb('Postgres repositories', () => {
         'student-1',
         undefined,
         'typed answer',
+        undefined,
       );
       // fileUrl was not supplied, so the uploaded file must survive.
       expect(updated?.fileUrl).toBe('https://storage.example.com/first.pdf');
@@ -931,6 +1055,7 @@ describeIfDb('Postgres repositories', () => {
           'student-1',
           'x',
           'y',
+          undefined,
         ),
       ).toBeNull();
     });
@@ -939,7 +1064,13 @@ describeIfDb('Postgres repositories', () => {
       const repo = new PostgresAssessmentRepository(db);
       // sub-1 belongs to student-1. Holding its id must not be enough.
       expect(
-        await repo.updateSubmission('sub-1', 'student-2', 'evil.pdf', undefined),
+        await repo.updateSubmission(
+          'sub-1',
+          'student-2',
+          'evil.pdf',
+          undefined,
+          undefined,
+        ),
       ).toBeNull();
       expect(await repo.findRevisions('sub-1', 'student-2')).toEqual([]);
       // And the real owner's content is untouched.
@@ -1034,6 +1165,9 @@ describeIfDb('Postgres repositories', () => {
       const course = await repo().create({
         audienceType: 'course',
         courseId: 'course-1',
+        groupId: null,
+        mediaKind: null,
+        mediaUrl: null,
         title: 'Course only',
         body: 'Body.',
         postedBy: 'assistant-1',
@@ -1044,6 +1178,9 @@ describeIfDb('Postgres repositories', () => {
       const platform = await repo().create({
         audienceType: 'all_tas',
         courseId: null,
+        groupId: null,
+        mediaKind: null,
+        mediaUrl: null,
         title: 'Every assistant',
         body: 'Body.',
         postedBy: 'teacher-1',
@@ -1051,7 +1188,7 @@ describeIfDb('Postgres repositories', () => {
       });
       expect(platform.audience).toBe('all_tas');
       expect(platform.courseId).toBeNull();
-      expect(platform.postedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      expect(platform.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     });
 
     it('refuses an audience_type and course_id that disagree', async () => {
@@ -1072,19 +1209,33 @@ describeIfDb('Postgres repositories', () => {
       ).rejects.toThrow();
     });
 
-    it('stores posted_at at the precision a JS Date can represent', async () => {
+    it('stores published_at at the precision a JS Date can represent', async () => {
       // TIMESTAMPTZ(3), not the default microsecond TIMESTAMPTZ. Migration 002
       // records what a microsecond column costs the moment a keyset cursor is
       // added over it: the audit feed silently ended after page one.
-      const [row] = await db.query<{ id: string; posted_at: Date }>(
-        'SELECT id, posted_at FROM announcements ORDER BY posted_at DESC, id DESC LIMIT 1',
+      const draft = await repo().create({
+        audienceType: 'all_tas',
+        courseId: null,
+        groupId: null,
+        mediaKind: null,
+        mediaUrl: null,
+        title: 'For precision check',
+        body: 'Body.',
+        postedBy: 'teacher-1',
+        recipientCount: 0,
+      });
+      await repo().publish(draft.id, 2);
+
+      const [row] = await db.query<{ id: string; published_at: Date }>(
+        'SELECT id, published_at FROM announcements WHERE id = $1',
+        [draft.id]
       );
       // The exact round trip a keyset cursor would make: read the timestamp
       // out through a JS Date, hand it straight back, and require it to match
       // the row it came from. On a microsecond column this is false.
       const [same] = await db.query<{ equal: boolean }>(
-        'SELECT posted_at = $2::timestamptz AS equal FROM announcements WHERE id = $1',
-        [row!.id, row!.posted_at.toISOString()],
+        'SELECT published_at = $2::timestamptz AS equal FROM announcements WHERE id = $1',
+        [row!.id, row!.published_at.toISOString()],
       );
       expect(same?.equal).toBe(true);
     });
@@ -1094,6 +1245,9 @@ describeIfDb('Postgres repositories', () => {
         await repo().create({
           audienceType: 'course',
           courseId: 'course-2',
+          groupId: null,
+          mediaKind: null,
+          mediaUrl: null,
           title,
           body: 'Body.',
           postedBy: 'teacher-1',
@@ -1125,6 +1279,9 @@ describeIfDb('Postgres repositories', () => {
       const posted = await repo().create({
         audienceType: 'course',
         courseId: 'course-ann',
+        groupId: null,
+        mediaKind: null,
+        mediaUrl: null,
         title: 'Goes away',
         body: 'Body.',
         postedBy: 'teacher-1',
@@ -2718,6 +2875,44 @@ describeIfDb('Postgres repositories', () => {
       const byName = Object.fromEntries(rows.map((r) => [r.indexname, r.indexdef]));
       expect(byName.assistant_invitations_email_idx).toMatch(/WHERE \(accepted_at IS NULL\)/);
       expect(byName.assistant_invitations_token_idx).toContain('token');
+    });
+  });
+
+  describe('notification preferences', () => {
+    it('returns the opt-out defaults when no row exists', async () => {
+      const repo = new PostgresNotificationPreferencesRepository(db);
+      const prefs = await repo.get('student-1'); // Student exists, but no prefs row
+      expect(prefs).toEqual({
+        submissions: true,
+        registrations: true,
+        unmatched: true,
+        weeklySummary: true,
+      });
+    });
+
+    it('upserts a row and updates it on conflict', async () => {
+      const repo = new PostgresNotificationPreferencesRepository(db);
+
+      await repo.upsert('student-1', {
+        submissions: false,
+        registrations: true,
+        unmatched: false,
+        weeklySummary: false,
+      });
+      let prefs = await repo.get('student-1');
+      expect(prefs.submissions).toBe(false);
+      expect(prefs.registrations).toBe(true);
+
+      // Now conflict update
+      await repo.upsert('student-1', {
+        submissions: true,
+        registrations: false,
+        unmatched: true,
+        weeklySummary: false,
+      });
+      prefs = await repo.get('student-1');
+      expect(prefs.submissions).toBe(true);
+      expect(prefs.registrations).toBe(false);
     });
   });
 });

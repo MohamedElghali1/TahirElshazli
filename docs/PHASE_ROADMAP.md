@@ -529,7 +529,7 @@ send-to-all-groups action.** An assistant may review and annotate; never send.
 
 ---
 
-### Chat unit 10 — Announcements `[ ]`
+### Chat unit 10 — Announcements `[x]`
 
 **Scope** `ANN-1` … `ANN-6`.
 **Depends on** units 3, 5.
@@ -537,9 +537,23 @@ send-to-all-groups action.** An assistant may review and annotate; never send.
 Keep the `all_tas` audience: the design drops it, it costs nothing, and staff broadcast has no other
 route.
 
+**State, 2026-09-23.** Slice 10a (migration `021`, both repository drivers, service, DTOs, both
+controllers, audit, mail fan-out, `API_SPEC.yaml`) is merged and `APPROVED` after two review rounds
+that each found an authorization hole (`B-ANN-1`, `B-ANN-2` in `docs/CHANGELOG.md`). **Slice 10b, the frontend, landed the same day**, completing the unit: compose with a
+student-view preview, drafts/sent, audience and media pickers, live reach counter. Not yet driven
+in a browser, and not checked in `dir="rtl"` or dark.
+
+One regression this unit caused is worth remembering: its round-1 commit **replaced** the
+pre-existing `announcements.controller.spec.ts` rather than extending it, silently deleting all 19
+of its tests — including the anti-enumeration assertion §7 says must survive every refactor, the
+"no recipient list is stored" PII assertion, and the `actorRoleOf` attribution assertion. None of
+three independent reviewers caught it, because each reviewed only the round-2 diff. It was caught
+at merge by comparing test counts across the merge, and the coverage was restored. **Compare test
+counts across a merge, and read a shrinking spec file as a finding, not a tidy-up.**
+
 ---
 
-### Chat unit 11 — Google Forms surface `[ ]`  *(frontend only — the backend is complete)*
+### Chat unit 11 — Google Forms surface `[x]`  *(frontend only — the backend is complete)*
 
 **Scope** `WORK-1` … `WORK-4`. Seven routes already exist on `WorkAnalyticsController`.
 **Depends on** unit 4.
@@ -548,15 +562,44 @@ figure banner is **required**, not decorative: an unmatched response means the c
 understated, and the screen must say so. Student quizzes are driven by `work_type: 'google_form'` —
 **no first-party quiz engine.**
 
+**State, 2026-09-23: COMPLETE.** Slices A/B (mirror types, task results screen, unmatched queue)
+and slice C (student Quizzes surface, `WORK-4`) are all `APPROVED` and merged. Slice C was blocked
+on implementer capacity for part of a day and is recorded as such in `docs/CHANGELOG.md`; the
+quota recovered ahead of its reported reset. Not verified in a real browser.
+
+**2026-09-23: `WORK-1`/`WORK-2`/`WORK-3` `[x]`, reviewer-`APPROVED`** (`docs/phases/unit-11/REVIEW.md`)
+— the task results screen, the unmatched-response queue with inline match-to-student, and
+`SyncStatus`, all built and independently verified (`tsc` 0, `npm run lint` clean, `npm test
+--workspace=backend` 660/660 unchanged). **`WORK-4` `[!]` blocked**, not by a requirements question
+but by implementer capacity: every `agy` model available to this pipeline
+(`claude-sonnet-4-6`, `gemini-3.1-pro-high`, `claude-opus-4-6-thinking`, `gemini-3.8-flash-high`)
+returned `RESOURCE_EXHAUSTED (429)` on a shared account-wide quota the same day. A ready-to-execute
+build checklist is recorded in `docs/phases/unit-11/REVIEW.md` §"Slice C checklist". Unit stays
+`[~]` until `WORK-4` lands — `PHASE_ROADMAP.md`'s own completion protocol (§2, condition 9: zero
+unresolved blockers) is not met yet.
+
 ---
 
-### Chat unit 12 — Settings and account `[ ]`
+### Chat unit 12 — Settings and account `[x]`
 
 **Scope** `SET-1` … `SET-6`.
 **Depends on** units 1, 2, 4.
 **Care** `SET-6` makes the upload route **student-reachable** for the first time — it is staff-only
 today. Re-check the upload contract (`SECURITY.md` §4): server-minted filename, MIME whitelist, size
 cap, no SVG.
+
+**State, 2026-09-23: COMPLETE**, verdict `APPROVED WITH FOLLOW-UP` with the follow-up (this
+documentation) now closed. Scope finding worth keeping: `SET-3`, `SET-4`'s backend and `SET-5` were
+**already built** server-side and were verified rather than rebuilt — `SET-5` had no remaining gap
+at all. The real work was `SET-1`, `SET-2` and `SET-6`.
+
+Two findings here reach past this unit. The upload contract re-check found that a disallowed MIME
+type returned 400 where the spec, the frontend and the tests all said 415 — and that the "oversized
+file destabilises the API process" symptom was an artifact of three e2e cases attaching filesystem
+paths that did not exist, not a missing exception filter. And `role-guards.spec.ts` was asserting
+only that every *named* controller was discovered, never that every *discovered* controller was
+named, so a new controller could ship with the wrong `@Roles` and the spec would stay green. Both
+directions are asserted now; **that guard covers the whole authorization boundary.**
 
 ---
 

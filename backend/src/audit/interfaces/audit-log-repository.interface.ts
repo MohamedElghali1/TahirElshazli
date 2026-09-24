@@ -25,6 +25,10 @@ export type AuditAction =
   // The first TA mutation the log covers. §5.4 names grading explicitly, and
   // it is the action a student is most likely to dispute.
   | 'submission.graded'
+  // `MARK-2`: handing marked work back is a separate decision from marking it,
+  // and a student-visible one the moment it happens - so it earns its own
+  // entry rather than riding along with `submission.graded`.
+  | 'submission.returned'
   // Teacher-only writes (§2.2 grants a TA materials, not recordings), but
   // logged on the same terms: an admin action that changes what students can
   // see is history worth keeping.
@@ -37,11 +41,16 @@ export type AuditAction =
   // it and when is exactly the history §5.4 exists for.
   | 'live_session.scheduled'
   | 'live_session.updated'
+  // live_session.cancelled
   | 'live_session.cancelled'
   // Sessions and attendance (unit 8, `SESS-1`..`SESS-4`).
   | 'session.planned'
   | 'session.published'
   | 'attendance.marked'
+  // Announcements (unit 10). Draft/publish lifecycle.
+  | 'announcement.created'
+  | 'announcement.updated'
+  | 'announcement.deleted'
   // The first TA mutation outside grading. Announcements fan out to real
   // people's notification feeds and cannot be recalled, so the entry is the
   // only record of who sent what to whom.

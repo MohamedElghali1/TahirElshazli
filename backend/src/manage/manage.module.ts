@@ -3,6 +3,7 @@ import { StaffManageController } from './staff-manage.controller.js';
 import { AdminManageController } from './admin-manage.controller.js';
 import { ManageService } from './manage.service.js';
 import { GradingService } from './grading.service.js';
+import { AnnotationsService } from './annotations.service.js';
 import { ManageRecordingsService } from './manage-recordings.service.js';
 import { ManageLiveSessionsService } from './manage-live-sessions.service.js';
 import { DirectoryService } from './directory.service.js';
@@ -74,6 +75,10 @@ import { repositoryProvider } from '../database/repository.provider.js';
   providers: [
     ManageService,
     GradingService,
+    // The marking overlay's data layer (`MARK-1`). Needs no new import edge:
+    // ASSESSMENT_REPOSITORY comes from AssessmentsModule above, StaffModule
+    // supplies StaffScopeService.
+    AnnotationsService,
     ManageRecordingsService,
     ManageLiveSessionsService,
     DirectoryService,

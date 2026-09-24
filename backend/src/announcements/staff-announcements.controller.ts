@@ -1,10 +1,12 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   Post,
   Query,
   Request,
@@ -20,20 +22,9 @@ import type { Announcement } from './interfaces/announcement-repository.interfac
 import {
   ListAnnouncementsQueryDto,
   PostCourseAnnouncementDto,
+  PatchAnnouncementDraftDto,
 } from './dto/post-announcement.dto.js';
 
-/**
- * `/staff/*` - shared by TA and admin, TA-scoped through `StaffScopeService`
- * (CLAUDE.md §5.11), matching `StaffManageController` exactly.
- *
- * This is the one write on the whole `/staff` surface a TA may make besides
- * grading: §2.2's preset grants "post course announcements" in as many words.
- * The scope is the course in the path and there is no audience field on the
- * body, so the widest thing reachable here is one course the caller holds.
- *
- * No `@UseGuards`: `JwtAuthGuard` and `RolesGuard` are global in
- * `app.module.ts`, and `RolesGuard` refuses any route with no `@Roles`.
- */
 @Controller('staff')
 @Roles(...STAFF_ALL)
 export class StaffAnnouncementsController {
@@ -43,8 +34,16 @@ export class StaffAnnouncementsController {
     return { id: req.user.sub, role: req.user.role };
   }
 
+  @Get('announcements/reach')
+  async previewReach(
+    @Query('audience') audience: string,
+    @Request() req: { user: JwtPayload },
+  ): Promise<{ reach: number }> {
+    return this.announcements.previewReach(audience, this.actor(req));
+  }
+
   @Get('courses/:courseId/announcements')
-  async list(
+  async listForCourse(
     @Param('courseId') courseId: string,
     @Query() query: ListAnnouncementsQueryDto,
     @Request() req: { user: JwtPayload },
@@ -54,12 +53,13 @@ export class StaffAnnouncementsController {
       this.actor(req),
       query.limit ?? DEFAULT_ANNOUNCEMENT_PAGE_SIZE,
       query.offset ?? 0,
+      query.status,
     );
   }
 
   @Post('courses/:courseId/announcements')
   @HttpCode(HttpStatus.CREATED)
-  async post(
+  async createCourseDraft(
     @Param('courseId') courseId: string,
     @Body() body: PostCourseAnnouncementDto,
     @Request() req: { user: JwtPayload },
@@ -67,6 +67,77 @@ export class StaffAnnouncementsController {
     return this.announcements.postToCourse(courseId, this.actor(req), {
       title: body.title,
       body: body.body,
+      mediaKind: body.mediaKind,
+      mediaUrl: body.mediaUrl,
     });
   }
+
+  @Patch('courses/:courseId/announcements/:id')
+  async updateCourseDraft(
+    @Param('id') id: string,
+    @Body() body: PatchAnnouncementDraftDto,
+    @Request() req: { user: JwtPayload },
+  ): Promise<Announcement> {
+    return this.announcements.updateDraft(id, this.actor(req), body);
+  }
+
+  @Delete('courses/:courseId/announcements/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteCourseDraft(
+    @Param('id') id: string,
+    @Request() req: { user: JwtPayload },
+  ): Promise<void> {
+    await this.announcements.deleteDraft(id, this.actor(req));
+  }
+
+
+
+  @Get('groups/:groupId/announcements')
+  async listForGroup(
+    @Param('groupId') groupId: string,
+    @Query() query: ListAnnouncementsQueryDto,
+    @Request() req: { user: JwtPayload },
+  ): Promise<Announcement[]> {
+    return this.announcements.listForGroup(
+      groupId,
+      this.actor(req),
+      query.limit ?? DEFAULT_ANNOUNCEMENT_PAGE_SIZE,
+      query.offset ?? 0,
+      query.status,
+    );
+  }
+
+  @Post('groups/:groupId/announcements')
+  @HttpCode(HttpStatus.CREATED)
+  async createGroupDraft(
+    @Param('groupId') groupId: string,
+    @Body() body: PostCourseAnnouncementDto,
+    @Request() req: { user: JwtPayload },
+  ): Promise<Announcement> {
+    return this.announcements.postToGroup(groupId, this.actor(req), {
+      title: body.title,
+      body: body.body,
+      mediaKind: body.mediaKind,
+      mediaUrl: body.mediaUrl,
+    });
+  }
+
+  @Patch('groups/:groupId/announcements/:id')
+  async updateGroupDraft(
+    @Param('id') id: string,
+    @Body() body: PatchAnnouncementDraftDto,
+    @Request() req: { user: JwtPayload },
+  ): Promise<Announcement> {
+    return this.announcements.updateDraft(id, this.actor(req), body);
+  }
+
+  @Delete('groups/:groupId/announcements/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteGroupDraft(
+    @Param('id') id: string,
+    @Request() req: { user: JwtPayload },
+  ): Promise<void> {
+    await this.announcements.deleteDraft(id, this.actor(req));
+  }
+
 }

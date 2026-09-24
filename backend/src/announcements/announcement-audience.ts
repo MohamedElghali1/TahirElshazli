@@ -20,15 +20,18 @@
  * is read fresh on every send.
  */
 
-export type AnnouncementAudienceType = 'all_students' | 'course' | 'all_tas';
+export type AnnouncementAudienceType = 'all_students' | 'course' | 'all_tas' | 'group';
 
 export interface AnnouncementAudience {
   type: AnnouncementAudienceType;
   /** The course, and only for `type: 'course'`. */
   courseId: string | null;
+  /** The group, and only for `type: 'group'`. */
+  groupId: string | null;
 }
 
 const COURSE_PREFIX = 'course:';
+const GROUP_PREFIX = 'group:';
 
 /** The id alphabet this schema uses, matching `AssignStaffDto.userId`. */
 const COURSE_ID = /^[A-Za-z0-9_-]{1,64}$/;
@@ -39,24 +42,32 @@ const COURSE_ID = /^[A-Za-z0-9_-]{1,64}$/;
  * different strings.
  */
 export const AUDIENCE_PATTERN = new RegExp(
-  `^(all_students|all_tas|${COURSE_PREFIX}[A-Za-z0-9_-]{1,64})$`,
+  `^(all_students|all_tas|${COURSE_PREFIX}[A-Za-z0-9_-]{1,64}|${GROUP_PREFIX}[A-Za-z0-9_-]{1,64})$`,
 );
 
 /** The §6.1 wire form. Total: every valid pair has exactly one spelling. */
 export function encodeAudience(audience: AnnouncementAudience): string {
-  return audience.type === 'course'
-    ? `${COURSE_PREFIX}${audience.courseId}`
-    : audience.type;
+  if (audience.type === 'course') {
+    return `${COURSE_PREFIX}${audience.courseId}`;
+  }
+  if (audience.type === 'group') {
+    return `${GROUP_PREFIX}${audience.groupId}`;
+  }
+  return audience.type;
 }
 
 /** Null for anything that is not a well-formed audience. */
 export function parseAudience(raw: string): AnnouncementAudience | null {
   if (raw === 'all_students' || raw === 'all_tas') {
-    return { type: raw, courseId: null };
+    return { type: raw, courseId: null, groupId: null };
   }
-  if (!raw.startsWith(COURSE_PREFIX)) {
-    return null;
+  if (raw.startsWith(COURSE_PREFIX)) {
+    const courseId = raw.slice(COURSE_PREFIX.length);
+    return COURSE_ID.test(courseId) ? { type: 'course', courseId, groupId: null } : null;
   }
-  const courseId = raw.slice(COURSE_PREFIX.length);
-  return COURSE_ID.test(courseId) ? { type: 'course', courseId } : null;
+  if (raw.startsWith(GROUP_PREFIX)) {
+    const groupId = raw.slice(GROUP_PREFIX.length);
+    return COURSE_ID.test(groupId) ? { type: 'group', courseId: null, groupId } : null;
+  }
+  return null;
 }

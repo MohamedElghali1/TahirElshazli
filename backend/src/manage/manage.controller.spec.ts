@@ -1,12 +1,18 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { TASK_DRAFT_REPOSITORY } from './interfaces/task-draft-repository.interface.js';
 import { InMemoryTaskDraftRepository } from './repositories/in-memory-task-draft.repository.js';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { StaffManageController } from './staff-manage.controller.js';
 import { AdminManageController } from './admin-manage.controller.js';
 import { SessionsController } from './sessions.controller.js';
 import { ManageService } from './manage.service.js';
 import { GradingService } from './grading.service.js';
+import { AnnotationsService } from './annotations.service.js';
 import { ManageRecordingsService } from './manage-recordings.service.js';
 import { ManageLiveSessionsService } from './manage-live-sessions.service.js';
 import { DirectoryService } from './directory.service.js';
@@ -88,6 +94,7 @@ describe('Manage surface', () => {
       providers: [
         ManageService,
         GradingService,
+        AnnotationsService,
         ManageRecordingsService,
         ManageLiveSessionsService,
         DirectoryService,
@@ -352,6 +359,201 @@ describe('Manage surface', () => {
       const page = await audit.find({ limit: 10 });
       const entry = page.entries.find((e) => e.action === 'submission.graded');
       expect(entry).toMatchObject({ actorId: 'admin-1', actorRole: 'admin' });
+    });
+  });
+
+  describe('POST /staff/submissions/:id/return (MARK-2)', () => {
+    it('refuses to return a submission that has not been marked', async () => {
+      await expect(
+        staff.returnSubmission('sub-2', ASSIGNED_TA),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('stamps returnedAt once a mark exists', async () => {
+      await staff.grade('sub-2', { score: 14 }, ASSIGNED_TA);
+      const before = await assessments.findSubmissionById('sub-2');
+      expect(before?.returnedAt).toBeNull();
+
+      const result = await staff.returnSubmission('sub-2', ASSIGNED_TA);
+      expect(result.correctedAt).not.toBeNull();
+      const after = await assessments.findSubmissionById('sub-2');
+      expect(after?.returnedAt).not.toBeNull();
+    });
+
+    it('re-stamps returnedAt on a re-return after a re-mark', async () => {
+      await staff.grade('sub-2', { score: 14 }, ASSIGNED_TA);
+      await staff.returnSubmission('sub-2', ASSIGNED_TA);
+      const first = await assessments.findSubmissionById('sub-2');
+
+      await staff.grade('sub-2', { score: 16 }, ASSIGNED_TA);
+      await staff.returnSubmission('sub-2', ASSIGNED_TA);
+      const second = await assessments.findSubmissionById('sub-2');
+
+      expect(second?.returnedAt).not.toBeNull();
+      expect(
+        new Date(second!.returnedAt!).getTime(),
+      ).toBeGreaterThanOrEqual(new Date(first!.returnedAt!).getTime());
+    });
+
+    it('refuses a submission belonging to a course the assistant does not hold', async () => {
+      await staff.grade('sub-2', { score: 14 }, ASSIGNED_TA);
+      await expect(
+        staff.returnSubmission('sub-2', UNASSIGNED_TA),
+      ).rejects.toThrow(NotFoundException);
+      const after = await assessments.findSubmissionById('sub-2');
+      expect(after?.returnedAt).toBeNull();
+    });
+
+    it('gives a held-but-wrong submission and a nonexistent one the same body', async () => {
+      await staff.grade('sub-2', { score: 14 }, ASSIGNED_TA);
+      const outOfScope = await staff
+        .returnSubmission('sub-2', UNASSIGNED_TA)
+        .catch((error: Error) => error.message);
+      const nonexistent = await staff
+        .returnSubmission('sub-nope', UNASSIGNED_TA)
+        .catch((error: Error) => error.message);
+      expect(outOfScope).toBe(nonexistent);
+    });
+
+    it('writes an audit entry naming the actor', async () => {
+      await staff.grade('sub-2', { score: 14 }, ASSIGNED_TA);
+      await staff.returnSubmission('sub-2', ASSIGNED_TA);
+      const page = await audit.find({ limit: 10 });
+      const entry = page.entries.find((e) => e.action === 'submission.returned');
+      expect(entry).toMatchObject({
+        actorId: 'assistant-1',
+        actorRole: 'assistant',
+        targetType: 'assessment_submission',
+        targetId: 'sub-2',
+        courseId: 'course-1',
+      });
+      expect(entry?.before).toMatchObject({ returnedAt: null });
+      expect(entry?.after?.returnedAt).not.toBeNull();
+    });
+  });
+
+  describe('marking annotations (MARK-1)', () => {
+    // sub-1 (assess-3, course-1) rather than sub-2, which the grading tests
+    // above already mutate - annotations sit in their own table, but a
+    // separate submission keeps this block legible on its own.
+    const stroke = {
+      kind: 'stroke' as const,
+      path: [{ x: 10, y: 20 }, { x: 12, y: 22 }],
+    };
+    const pin = { kind: 'pin' as const, x: 30, y: 40 };
+
+    it('creates, lists, updates and deletes for an assigned assistant', async () => {
+      const created = await staff.createAnnotation('sub-1', stroke, ASSIGNED_TA);
+      expect(created).toMatchObject({
+        submissionId: 'sub-1',
+        kind: 'stroke',
+        authorId: 'assistant-1',
+      });
+      expect(created.path).toEqual(stroke.path);
+
+      const listed = await staff.listAnnotations('sub-1', ASSIGNED_TA);
+      expect(listed.map((a) => a.id)).toContain(created.id);
+
+      const updated = await staff.updateAnnotation(
+        created.id,
+        { colour: '#00FF00' },
+        ASSIGNED_TA,
+      );
+      expect(updated.colour).toBe('#00FF00');
+
+      await staff.deleteAnnotation(created.id, ASSIGNED_TA);
+      const afterDelete = await staff.listAnnotations('sub-1', ASSIGNED_TA);
+      expect(afterDelete.map((a) => a.id)).not.toContain(created.id);
+    });
+
+    it('404s a submission outside the assistant scope, identically to a nonexistent one', async () => {
+      const outOfScope = await staff
+        .listAnnotations('sub-1', UNASSIGNED_TA)
+        .catch((e: Error) => e.message);
+      const nonexistent = await staff
+        .listAnnotations('sub-does-not-exist', UNASSIGNED_TA)
+        .catch((e: Error) => e.message);
+      expect(outOfScope).toBe(nonexistent);
+
+      await expect(
+        staff.createAnnotation('sub-1', pin, UNASSIGNED_TA),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('refuses a fileId belonging to a different submission', async () => {
+      // The foreign key proves only that the file exists *somewhere*. Without
+      // the service check, a marker holding sub-1 legitimately could pin an
+      // annotation to a photo on sub-2 - drawn on one student's work, stored
+      // against another's, and scope would not catch it because the caller
+      // does hold the submission they named.
+      const [ownFile] = await assessments.replaceSubmissionFiles('sub-1', [
+        { fileUrl: 'https://s.example.com/a.jpg', displayName: 'a.jpg', position: 0 },
+      ]);
+      const [otherFile] = await assessments.replaceSubmissionFiles('sub-2', [
+        { fileUrl: 'https://s.example.com/b.jpg', displayName: 'b.jpg', position: 0 },
+      ]);
+
+      // Its own file is accepted...
+      const ok = await staff.createAnnotation(
+        'sub-1',
+        { ...pin, fileId: ownFile!.id },
+        ASSIGNED_TA,
+      );
+      expect(ok.fileId).toBe(ownFile!.id);
+
+      // ...the other submission's file is not.
+      await expect(
+        staff.createAnnotation(
+          'sub-1',
+          { ...pin, fileId: otherFile!.id },
+          ASSIGNED_TA,
+        ),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('D-45: refuses a second staff member editing or deleting someone else\'s annotation', async () => {
+      const created = await staff.createAnnotation('sub-1', pin, ASSIGNED_TA);
+
+      // admin (teacher) holds course-1 unscoped, so this is the author rule
+      // itself and not a scope failure - the ruling has no teacher override.
+      await expect(
+        staff.updateAnnotation(created.id, { body: 'nope' }, ADMIN),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        staff.deleteAnnotation(created.id, ADMIN),
+      ).rejects.toThrow(ForbiddenException);
+
+      const still = await staff.listAnnotations('sub-1', ASSIGNED_TA);
+      expect(still.find((a) => a.id === created.id)?.body).toBe('');
+    });
+
+    it('refuses a stroke without a path, and a pin without x/y', async () => {
+      await expect(
+        staff.createAnnotation(
+          'sub-1',
+          { kind: 'stroke' as const },
+          ASSIGNED_TA,
+        ),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        staff.createAnnotation('sub-1', { kind: 'pin' as const }, ASSIGNED_TA),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('refuses an update that would strip a stroke of its path', async () => {
+      const created = await staff.createAnnotation('sub-1', stroke, ASSIGNED_TA);
+      await expect(
+        staff.updateAnnotation(created.id, { path: null }, ASSIGNED_TA),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('writes no audit entry for any annotation mutation (D-44)', async () => {
+      const before = (await audit.find({ limit: 200 })).entries.length;
+      const created = await staff.createAnnotation('sub-1', pin, ASSIGNED_TA);
+      await staff.updateAnnotation(created.id, { body: 'noted' }, ASSIGNED_TA);
+      await staff.deleteAnnotation(created.id, ASSIGNED_TA);
+      const after = (await audit.find({ limit: 200 })).entries.length;
+      expect(after).toBe(before);
     });
   });
 

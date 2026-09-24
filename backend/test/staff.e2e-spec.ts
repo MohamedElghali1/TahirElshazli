@@ -79,6 +79,8 @@ describe('Staff and admin API (e2e)', () => {
   describe('authentication and role gates', () => {
     it.each([
       '/staff/courses',
+        '/me/profile',
+        '/me/notification-preferences',
       '/staff/overview',
       '/staff/courses/course-1/roster',
       '/staff/courses/course-1/submissions',
@@ -95,6 +97,8 @@ describe('Staff and admin API (e2e)', () => {
 
     it.each([
       '/staff/courses',
+        '/me/profile',
+        '/me/notification-preferences',
       '/staff/overview',
       '/staff/courses/course-1/roster',
       '/staff/courses/course-1/submissions',
@@ -146,6 +150,36 @@ describe('Staff and admin API (e2e)', () => {
         .set(bearer(assignedTaToken))
         .send({ title: 'TA should not be able to rename this' })
         .expect(403);
+    });
+
+    it('refuses a TA GET /admin/courses/:courseId', async () => {
+      await request(app.getHttpServer())
+        .get('/admin/courses/course-1')
+        .set(bearer(assignedTaToken))
+        .expect(403);
+    });
+
+    it('allows teacher and admin GET /admin/courses/:courseId', async () => {
+      const teacherRes = await request(app.getHttpServer())
+        .get('/admin/courses/course-1')
+        .set(bearer(adminToken))
+        .expect(200);
+      expect(teacherRes.body).toMatchObject({
+        id: 'course-1',
+        slug: 'as-chemistry',
+        title: 'AS Chemistry',
+      });
+
+      const fullAdminRes = await request(app.getHttpServer())
+        .get('/admin/courses/course-1')
+        .set(bearer(fullAdminToken))
+        .expect(200);
+      expect(fullAdminRes.body.id).toBe('course-1');
+
+      await request(app.getHttpServer())
+        .get('/admin/courses/course-does-not-exist')
+        .set(bearer(adminToken))
+        .expect(404);
     });
 
     it('refuses a TA the recording writes, even on a course they hold', async () => {
@@ -271,6 +305,66 @@ describe('Staff and admin API (e2e)', () => {
       });
     });
 
+    it('keeps a mark hidden from the student until it is returned, then reveals it (MARK-2)', async () => {
+      // sub-2 was graded (score 16) by the test above and never returned - the
+      // exact state this route exists for.
+      const beforeReturn = await request(app.getHttpServer())
+        .get('/assessments/assess-4')
+        .set(bearer(studentToken))
+        .expect(200);
+      expect(beforeReturn.body.status).toBe('submitted');
+      expect(beforeReturn.body.score).toBeNull();
+
+      await request(app.getHttpServer())
+        .post('/staff/submissions/sub-2/return')
+        .set(bearer(assignedTaToken))
+        .expect(200);
+
+      const afterReturn = await request(app.getHttpServer())
+        .get('/assessments/assess-4')
+        .set(bearer(studentToken))
+        .expect(200);
+      expect(afterReturn.body.status).toBe('corrected');
+      expect(afterReturn.body.score).toBe(16);
+
+      const log = await request(app.getHttpServer())
+        .get('/admin/audit-log?action=submission.returned')
+        .set(bearer(adminToken))
+        .expect(200);
+      expect(log.body.entries[0]).toMatchObject({
+        actorId: 'assistant-1',
+        actorRole: 'assistant',
+        targetId: 'sub-2',
+      });
+    });
+
+    it('refuses to return a submission with no mark yet, with 409', async () => {
+      // Every seeded fixture but sub-2 (now marked, above) already carries a
+      // mark, so a fresh submission is the only ungraded one available here.
+      const submitted = await request(app.getHttpServer())
+        .post('/assessments/assess-1/submissions')
+        .set(bearer(studentToken))
+        .send({ fileUrl: 'https://storage.example.com/submissions/e2e-return-409.pdf' })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post(`/staff/submissions/${submitted.body.id}/return`)
+        .set(bearer(adminToken))
+        .expect(409);
+    });
+
+    it('refuses a return outside the TA scope, byte-identical to a nonexistent submission', async () => {
+      const outOfScope = await request(app.getHttpServer())
+        .post('/staff/submissions/sub-2/return')
+        .set(bearer(unassignedTaToken))
+        .expect(404);
+      const nonexistent = await request(app.getHttpServer())
+        .post('/staff/submissions/sub-nope/return')
+        .set(bearer(unassignedTaToken))
+        .expect(404);
+      expect(outOfScope.body.message).toBe(nonexistent.body.message);
+    });
+
     it('lets the teacher publish a recording that students then see', async () => {
       const created = await request(app.getHttpServer())
         .post('/admin/courses/course-1/recordings')
@@ -313,6 +407,101 @@ describe('Staff and admin API (e2e)', () => {
     });
   });
 
+  describe('marking annotations over HTTP (MARK-1)', () => {
+    const stroke = { kind: 'stroke', path: [{ x: 10, y: 20 }, { x: 15, y: 25 }] };
+
+    it('creates, lists, updates and deletes for an assigned TA', async () => {
+      const created = await request(app.getHttpServer())
+        .post('/staff/submissions/sub-1/annotations')
+        .set(bearer(assignedTaToken))
+        .send(stroke)
+        .expect(201);
+      expect(created.body).toMatchObject({
+        submissionId: 'sub-1',
+        kind: 'stroke',
+        authorId: 'assistant-1',
+      });
+
+      const listed = await request(app.getHttpServer())
+        .get('/staff/submissions/sub-1/annotations')
+        .set(bearer(assignedTaToken))
+        .expect(200);
+      expect(listed.body.map((a: { id: string }) => a.id)).toContain(created.body.id);
+
+      const updated = await request(app.getHttpServer())
+        .patch(`/staff/annotations/${created.body.id}`)
+        .set(bearer(assignedTaToken))
+        .send({ colour: '#00FF00' })
+        .expect(200);
+      expect(updated.body.colour).toBe('#00FF00');
+
+      await request(app.getHttpServer())
+        .delete(`/staff/annotations/${created.body.id}`)
+        .set(bearer(assignedTaToken))
+        .expect(204);
+    });
+
+    it('404s an out-of-scope submission with the same body as a nonexistent one', async () => {
+      const outOfScope = await request(app.getHttpServer())
+        .get('/staff/submissions/sub-1/annotations')
+        .set(bearer(unassignedTaToken))
+        .expect(404);
+      const nonexistent = await request(app.getHttpServer())
+        .get('/staff/submissions/sub-does-not-exist/annotations')
+        .set(bearer(unassignedTaToken))
+        .expect(404);
+      expect(outOfScope.body.message).toBe(nonexistent.body.message);
+    });
+
+    it('D-45: a second staff member cannot edit or delete someone else\'s annotation', async () => {
+      const created = await request(app.getHttpServer())
+        .post('/staff/submissions/sub-1/annotations')
+        .set(bearer(assignedTaToken))
+        .send({ kind: 'pin', x: 50, y: 50 })
+        .expect(201);
+
+      // The teacher holds course-1 unscoped - this proves D-45 has no
+      // teacher/admin override, not merely that scope was denied.
+      await request(app.getHttpServer())
+        .patch(`/staff/annotations/${created.body.id}`)
+        .set(bearer(adminToken))
+        .send({ body: 'not mine to change' })
+        .expect(403);
+      await request(app.getHttpServer())
+        .delete(`/staff/annotations/${created.body.id}`)
+        .set(bearer(adminToken))
+        .expect(403);
+    });
+
+    it('rejects a stroke without a path and a pin without x/y at the boundary', async () => {
+      await request(app.getHttpServer())
+        .post('/staff/submissions/sub-1/annotations')
+        .set(bearer(assignedTaToken))
+        .send({ kind: 'stroke' })
+        .expect(400);
+      await request(app.getHttpServer())
+        .post('/staff/submissions/sub-1/annotations')
+        .set(bearer(assignedTaToken))
+        .send({ kind: 'pin' })
+        .expect(400);
+    });
+
+    it('rejects an out-of-range coordinate at the DTO boundary', async () => {
+      await request(app.getHttpServer())
+        .post('/staff/submissions/sub-1/annotations')
+        .set(bearer(assignedTaToken))
+        .send({ kind: 'pin', x: 150, y: 50 })
+        .expect(400);
+      await request(app.getHttpServer())
+        .post('/staff/submissions/sub-1/annotations')
+        .set(bearer(assignedTaToken))
+        .send({ kind: 'pin', x: 10, y: -5 })
+        .expect(400);
+    });
+  });
+
+  // Renamed by unit 8: `D-6` closed the "teacher-only" question the other way,
+  // and the block now covers attendance as well as scheduling.
   describe('staff live sessions and attendance (unit 8 S3)', () => {
     /** A week out, so it lands in the student's "upcoming" list whenever this runs. */
     const soon = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -632,18 +821,24 @@ describe('Staff and admin API (e2e)', () => {
     const message = { title: 'Sunday session moved', body: 'It now starts at 19:00.' };
 
     it('lets an assigned TA post to their own course (CLAUDE.md 2.2)', async () => {
-      const posted = await request(app.getHttpServer())
+      const draft = await request(app.getHttpServer())
         .post('/staff/courses/course-1/announcements')
         .set(bearer(assignedTaToken))
         .send(message)
         .expect(201);
-      expect(posted.body).toMatchObject({
+      expect(draft.body).toMatchObject({
         audience: 'course:course-1',
         courseId: 'course-1',
         postedBy: 'assistant-1',
-        // course-1 holds student-1 and student-2.
-        recipientCount: 2,
+        recipientCount: 0,
+        publishedAt: null,
       });
+
+      // An admin/teacher must publish what the TA drafted.
+      await request(app.getHttpServer())
+        .post(`/admin/announcements/${draft.body.id}/publish`)
+        .set(bearer(adminToken))
+        .expect(200);
     });
 
     it('404s a course the TA does not hold, and writes nothing', async () => {
@@ -679,9 +874,23 @@ describe('Staff and admin API (e2e)', () => {
         .set(bearer(assignedTaToken))
         .send({ ...message, audience: 'all_students' })
         .expect(201);
+      
       // Whitelisted away by the global pipe, and the audience comes from the
       // URL regardless.
       expect(posted.body.audience).toBe('course:course-1');
+    });
+
+    it('refuses an assistant token calling the admin publish route', async () => {
+      const draft = await request(app.getHttpServer())
+        .post('/staff/courses/course-1/announcements')
+        .set(bearer(assignedTaToken))
+        .send(message)
+        .expect(201);
+      
+      await request(app.getHttpServer())
+        .post(`/admin/announcements/${draft.body.id}/publish`)
+        .set(bearer(assignedTaToken))
+        .expect(403);
     });
 
     it('delivers to the enrolled students, who read it in their own feed', async () => {
@@ -702,11 +911,15 @@ describe('Staff and admin API (e2e)', () => {
     });
 
     it('lets the teacher address every assistant, who can now read it', async () => {
-      const posted = await request(app.getHttpServer())
+      const draft = await request(app.getHttpServer())
         .post('/admin/announcements')
         .set(bearer(adminToken))
         .send({ audience: 'all_tas', title: 'Marking deadline', body: 'Friday, please.' })
         .expect(201);
+      const posted = await request(app.getHttpServer())
+        .post(`/admin/announcements/${draft.body.id}/publish`)
+        .set(bearer(adminToken))
+        .expect(200);
       // Resolved from the role at send time (CLAUDE.md 5.14): assistant-1,
       // assistant-2 - and admin-1. Was 2 before `Role.Admin` existed. `all_tas`
       // is the staff broadcast channel and there is no other route to staff, so
@@ -778,7 +991,7 @@ describe('Staff and admin API (e2e)', () => {
 
     it('records who posted what, and to how many (CLAUDE.md 5.4)', async () => {
       const log = await request(app.getHttpServer())
-        .get('/admin/audit-log?action=announcement.posted&actorId=assistant-1')
+        .get('/admin/audit-log?action=announcement.created&actorId=assistant-1')
         .set(bearer(adminToken))
         .expect(200);
       expect(log.body.entries.length).toBeGreaterThan(0);
@@ -790,8 +1003,39 @@ describe('Staff and admin API (e2e)', () => {
       });
       expect(log.body.entries[0].after).toMatchObject({
         audience: 'course:course-1',
-        recipientCount: 2,
       });
+    });
+
+    it('allows an admin to patch the audience of a draft over HTTP', async () => {
+      const draft = await request(app.getHttpServer())
+        .post('/admin/announcements')
+        .set(bearer(adminToken))
+        .send({ audience: 'all_tas', title: 'To patch', body: 'Draft.' })
+        .expect(201);
+      expect(draft.body.audience).toBe('all_tas');
+
+      const patched = await request(app.getHttpServer())
+        .patch(`/admin/announcements/${draft.body.id}`)
+        .set(bearer(adminToken))
+        .send({ audience: 'all_students' })
+        .expect(200);
+      expect(patched.body.audience).toBe('all_students');
+    });
+
+    it('strips audience when an assistant patches a draft, leaving audience unchanged', async () => {
+      const draft = await request(app.getHttpServer())
+        .post('/staff/courses/course-1/announcements')
+        .set(bearer(assignedTaToken))
+        .send({ title: 'TA title', body: 'TA body' })
+        .expect(201);
+      expect(draft.body.audience).toBe('course:course-1');
+
+      const patched = await request(app.getHttpServer())
+        .patch(`/staff/courses/course-1/announcements/${draft.body.id}`)
+        .set(bearer(assignedTaToken))
+        .send({ audience: 'all_students' })
+        .expect(200);
+      expect(patched.body.audience).toBe('course:course-1');
     });
 
     it('shows the admin every audience and the TA only their own course', async () => {
@@ -1243,7 +1487,7 @@ describe('Staff and admin API (e2e)', () => {
       await request(app.getHttpServer())
         .delete('/staff/assessments/assess-3')
         .set(bearer(adminToken))
-        .expect(400);
+        .expect(409);
     });
 
     it('records the authoring in the audit log with the TA as actor', async () => {
@@ -2944,6 +3188,65 @@ describe('Staff and admin API (e2e)', () => {
         .send({ markerId: 'teacher-1' })
         .expect(403);
       await request(app.getHttpServer()).delete(`/staff/assessments/${task.body.id}`).set(bearer(adminToken)).expect(204);
+    });
+  });
+
+  describe('settings and account (/me)', () => {
+    describe.each([
+      { role: 'teacher', getToken: () => adminToken, email: 'teacher@example.com' },
+      { role: 'assistant', getToken: () => assignedTaToken, email: 'assistant@example.com' },
+    ])('for a $role', ({ getToken, email }) => {
+      it('reads and updates staff profile', async () => {
+        const token = getToken();
+        const profile = await request(app.getHttpServer())
+          .get('/me/profile')
+          .set(bearer(token))
+          .expect(200);
+        expect(profile.body.email).toBe(email);
+
+        const updated = await request(app.getHttpServer())
+          .patch('/me/profile')
+          .set(bearer(token))
+          .send({ name: 'Updated Name' })
+          .expect(200);
+        expect(updated.body.name).toBe('Updated Name');
+      });
+
+      it('reads and updates notification preferences', async () => {
+        const token = getToken();
+        const prefs = await request(app.getHttpServer())
+          .get('/me/notification-preferences')
+          .set(bearer(token))
+          .expect(200);
+        expect(prefs.body).toEqual({
+          submissions: true,
+          registrations: true,
+          unmatched: true,
+          weeklySummary: true,
+        });
+
+        await request(app.getHttpServer())
+          .put('/me/notification-preferences')
+          .set(bearer(token))
+          .send({
+            submissions: false,
+            registrations: true,
+            unmatched: false,
+            weeklySummary: false,
+          })
+          .expect(200);
+
+        const updated = await request(app.getHttpServer())
+          .get('/me/notification-preferences')
+          .set(bearer(token))
+          .expect(200);
+        expect(updated.body).toEqual({
+          submissions: false,
+          registrations: true,
+          unmatched: false,
+          weeklySummary: false,
+        });
+      });
     });
   });
 });

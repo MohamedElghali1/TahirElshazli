@@ -123,7 +123,83 @@ export interface StoredSubmission {
   feedback: string | null;
   /** Teacher's annotated copy; the original submission stays immutable. */
   annotatedFileUrl: string | null;
+  /** `doc_link`: a link handed in instead of, or beside, the files. */
+  linkUrl: string | null;
+  /**
+   * `MARK-2`: `correctedAt` says a mark exists, `returnedAt` says the student
+   * may see it. Marking can be saved and picked up again without returning.
+   */
+  returnedAt: string | null;
 }
+
+/**
+ * One file on a submission. A submission predating `020` has none and uses
+ * `StoredSubmission.fileUrl`; the two are not merged.
+ */
+export interface SubmissionFile {
+  id: string;
+  submissionId: string;
+  fileUrl: string;
+  displayName: string;
+  /** 0-based and stable - what "photo 3 of 5" means. */
+  position: number;
+  createdAt: string;
+}
+
+export type AnnotationKind = 'stroke' | 'pin' | 'text';
+
+/** A point in page-percentage space, so the overlay survives any zoom. */
+export interface AnnotationPoint {
+  x: number;
+  y: number;
+}
+
+/**
+ * The teacher's overlay (`D-2`). Drawn over the file, never into it - the
+ * original stays byte-identical and the eraser clears strokes, not pages.
+ */
+export interface SubmissionAnnotation {
+  id: string;
+  submissionId: string;
+  /** `null` means the submission's pre-`020` single `fileUrl`. */
+  fileId: string | null;
+  page: number;
+  kind: AnnotationKind;
+  /** Set for `pin` and `text`; `null` for a `stroke`, which uses `path`. */
+  x: number | null;
+  y: number | null;
+  /** Set for a `stroke`; `null` otherwise. */
+  path: AnnotationPoint[] | null;
+  colour: string;
+  width: number | null;
+  body: string;
+  /** The eraser clears its author's own strokes only, so this is load-bearing. */
+  authorId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type NewSubmissionAnnotation = Omit<
+  SubmissionAnnotation,
+  'id' | 'createdAt' | 'updatedAt'
+>;
+
+/** A partial edit; `undefined` leaves a field alone. */
+export interface SubmissionAnnotationUpdate {
+  page?: number;
+  x?: number | null;
+  y?: number | null;
+  path?: AnnotationPoint[] | null;
+  colour?: string;
+  width?: number | null;
+  body?: string;
+}
+
+/** One file as handed in, before the repository assigns it an id. */
+export type NewSubmissionFile = Omit<
+  SubmissionFile,
+  'id' | 'submissionId' | 'createdAt'
+>;
 
 /**
  * A superseded version of a submission's content, kept so the correction
@@ -384,6 +460,7 @@ export interface AssessmentRepository {
     studentId: string,
     fileUrl: string | null,
     answerText: string | null,
+    linkUrl: string | null,
   ): Promise<StoredSubmission>;
   /**
    * Replaces the student's answer, archiving the previous content as a revision.
@@ -404,6 +481,7 @@ export interface AssessmentRepository {
     studentId: string,
     fileUrl: string | undefined,
     answerText: string | undefined,
+    linkUrl: string | undefined,
   ): Promise<StoredSubmission | null>;
   findRevisions(
     submissionId: string,
@@ -477,6 +555,49 @@ export interface AssessmentRepository {
       annotatedFileUrl: string | undefined;
     },
   ): Promise<StoredSubmission | null>;
+
+  /**
+   * `MARK-2`: hand the marked work back. Separate from `gradeSubmission` so
+   * that saving a mark and releasing it to the student are two decisions - a
+   * marker can put a task down half-marked without the student seeing it.
+   *
+   * Stamped by the repository for the same reason `correctedAt` is.
+   */
+  returnSubmission(submissionId: string): Promise<StoredSubmission | null>;
+
+  /**
+   * Files for many submissions at once. Batched because the marking queue
+   * shows a whole task's submissions and a per-row read is a round trip each.
+   */
+  findFilesForSubmissions(
+    submissionIds: readonly string[],
+  ): Promise<SubmissionFile[]>;
+
+  /**
+   * The files a submission currently holds, replacing whatever was there.
+   *
+   * Replace rather than append because resubmission swaps the content
+   * wholesale, and `position` is a `UNIQUE` column - appending would collide.
+   * The superseded content is already preserved in `submission_revisions`.
+   */
+  replaceSubmissionFiles(
+    submissionId: string,
+    files: readonly NewSubmissionFile[],
+  ): Promise<SubmissionFile[]>;
+
+  findAnnotations(submissionId: string): Promise<SubmissionAnnotation[]>;
+  findAnnotationById(
+    annotationId: string,
+  ): Promise<SubmissionAnnotation | null>;
+  createAnnotation(
+    annotation: NewSubmissionAnnotation,
+  ): Promise<SubmissionAnnotation>;
+  updateAnnotation(
+    annotationId: string,
+    update: SubmissionAnnotationUpdate,
+  ): Promise<SubmissionAnnotation | null>;
+  /** True when a row was removed; false when it was already gone. */
+  deleteAnnotation(annotationId: string): Promise<boolean>;
 }
 
 export const ASSESSMENT_REPOSITORY = Symbol('ASSESSMENT_REPOSITORY');

@@ -321,9 +321,11 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
     it('refuses to delete one that has a submission', async () => {
       // assess-3 carries sub-1. A submission is a student's work and §6 keeps
       // history where history matters, so this refuses rather than cascading.
+      // 409, not 400, since `TASK-F3`: a state conflict, and the same code the
+      // sibling external-result refusal (`D-36`) already used.
       await expect(
         authoring.remove('assess-3', ADMIN),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      ).rejects.toBeInstanceOf(ConflictException);
     });
   });
 

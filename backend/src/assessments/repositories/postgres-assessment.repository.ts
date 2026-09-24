@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { DatabaseService } from '../../database/database.service.js';
 import { iso, isoOrNull, num } from '../../database/database.types.js';
 import type {
+  AnnotationKind,
+  AnnotationPoint,
   AssessmentFilter,
   AssessmentRepository,
   AssessmentTarget,
@@ -11,10 +13,15 @@ import type {
   Attachment,
   NewAssessment,
   NewAssessmentTarget,
+  NewSubmissionAnnotation,
+  NewSubmissionFile,
   StaffTaskFilter,
   StoredAssessment,
   SubmissionMode,
   StoredSubmission,
+  SubmissionAnnotation,
+  SubmissionAnnotationUpdate,
+  SubmissionFile,
   SubmissionRevision,
   TargetedAssessment,
 } from '../interfaces/assessment-repository.interface.js';
@@ -80,6 +87,35 @@ interface SubmissionRow {
   corrected_at: Date | null;
   feedback: string | null;
   annotated_file_url: string | null;
+  link_url: string | null;
+  returned_at: Date | null;
+}
+
+interface SubmissionFileRow {
+  id: string;
+  submission_id: string;
+  file_url: string;
+  display_name: string;
+  position: number;
+  created_at: Date;
+}
+
+interface SubmissionAnnotationRow {
+  id: string;
+  submission_id: string;
+  file_id: string | null;
+  page: number;
+  kind: AnnotationKind;
+  x: number | null;
+  y: number | null;
+  /** JSONB arrives parsed, same as `attachments` on `AssessmentRow`. */
+  path: AnnotationPoint[] | null;
+  colour: string;
+  width: number | null;
+  body: string;
+  author_id: string;
+  created_at: Date;
+  updated_at: Date;
 }
 
 interface RevisionRow {
@@ -124,7 +160,8 @@ function likeContains(term: string): string {
 
 const SUBMISSION_COLUMNS = `
   id, assessment_id, student_id, file_url, answer_text, submitted_at,
-  last_submitted_at, updated_at, score, corrected_at, feedback, annotated_file_url
+  last_submitted_at, updated_at, score, corrected_at, feedback, annotated_file_url,
+  link_url, returned_at
 `;
 
 function toAssessment(row: AssessmentRow): StoredAssessment {
@@ -192,6 +229,38 @@ function toSubmission(row: SubmissionRow): StoredSubmission {
     correctedAt: isoOrNull(row.corrected_at),
     feedback: row.feedback,
     annotatedFileUrl: row.annotated_file_url,
+    linkUrl: row.link_url,
+    returnedAt: isoOrNull(row.returned_at),
+  };
+}
+
+function toSubmissionFile(row: SubmissionFileRow): SubmissionFile {
+  return {
+    id: row.id,
+    submissionId: row.submission_id,
+    fileUrl: row.file_url,
+    displayName: row.display_name,
+    position: row.position,
+    createdAt: iso(row.created_at),
+  };
+}
+
+function toAnnotation(row: SubmissionAnnotationRow): SubmissionAnnotation {
+  return {
+    id: row.id,
+    submissionId: row.submission_id,
+    fileId: row.file_id,
+    page: row.page,
+    kind: row.kind,
+    x: row.x,
+    y: row.y,
+    path: row.path,
+    colour: row.colour,
+    width: row.width,
+    body: row.body,
+    authorId: row.author_id,
+    createdAt: iso(row.created_at),
+    updatedAt: iso(row.updated_at),
   };
 }
 
@@ -683,13 +752,14 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
     studentId: string,
     fileUrl: string | null,
     answerText: string | null,
+    linkUrl: string | null,
   ): Promise<StoredSubmission> {
     const row = await this.db.queryOne<SubmissionRow>(
       `INSERT INTO assessment_submissions
-         (id, assessment_id, student_id, file_url, answer_text)
-       VALUES ($1, $2, $3, $4, $5)
+         (id, assessment_id, student_id, file_url, answer_text, link_url)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING ${SUBMISSION_COLUMNS}`,
-      [randomUUID(), assessmentId, studentId, fileUrl, answerText],
+      [randomUUID(), assessmentId, studentId, fileUrl, answerText, linkUrl],
     );
     return toSubmission(row!);
   }
@@ -699,6 +769,7 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
     studentId: string,
     fileUrl: string | undefined,
     answerText: string | undefined,
+    linkUrl: string | undefined,
   ): Promise<StoredSubmission | null> {
     // Archiving the old content and overwriting it must be one unit. Half of
     // this is a submission whose previous version was lost, which is exactly
@@ -739,9 +810,10 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
         `UPDATE assessment_submissions
          SET file_url          = CASE WHEN $2::boolean THEN $3::text ELSE file_url END,
              answer_text       = CASE WHEN $4::boolean THEN $5::text ELSE answer_text END,
+             link_url          = CASE WHEN $6::boolean THEN $7::text ELSE link_url END,
              last_submitted_at = now(),
              updated_at        = now()
-         WHERE id = $1 AND student_id = $6
+         WHERE id = $1 AND student_id = $8
          RETURNING ${SUBMISSION_COLUMNS}`,
         [
           submissionId,
@@ -749,6 +821,8 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
           fileUrl ?? null,
           answerText !== undefined,
           answerText ?? null,
+          linkUrl !== undefined,
+          linkUrl ?? null,
           studentId,
         ],
       );
@@ -772,5 +846,185 @@ export class PostgresAssessmentRepository implements AssessmentRepository {
       [submissionId, studentId],
     );
     return rows.map(toRevision);
+  }
+
+  /**
+   * `MARK-2`: hand the marked work back. Stamped here, not passed in, for the
+   * same reason `gradeSubmission` stamps `corrected_at` itself.
+   */
+  async returnSubmission(submissionId: string): Promise<StoredSubmission | null> {
+    const row = await this.db.queryOne<SubmissionRow>(
+      `UPDATE assessment_submissions
+         SET returned_at = now(),
+             updated_at  = now()
+       WHERE id = $1
+       RETURNING ${SUBMISSION_COLUMNS}`,
+      [submissionId],
+    );
+    return row ? toSubmission(row) : null;
+  }
+
+  async findFilesForSubmissions(
+    submissionIds: readonly string[],
+  ): Promise<SubmissionFile[]> {
+    if (submissionIds.length === 0) {
+      return [];
+    }
+    const rows = await this.db.query<SubmissionFileRow>(
+      `SELECT id, submission_id, file_url, display_name, position, created_at
+         FROM submission_files
+        WHERE submission_id = ANY($1::text[])
+        ORDER BY submission_id, position`,
+      [[...submissionIds]],
+    );
+    return rows.map(toSubmissionFile);
+  }
+
+  /**
+   * Delete-then-insert in one transaction, matching `setTargets`: the file set
+   * is chosen as a whole, and a half-applied replace would leave a submission
+   * showing the wrong photos. `position` is renumbered from the caller's array
+   * order here, not read off `files` - it is a `UNIQUE` column and the caller's
+   * value is not trusted, same as the in-memory driver.
+   */
+  async replaceSubmissionFiles(
+    submissionId: string,
+    files: readonly NewSubmissionFile[],
+  ): Promise<SubmissionFile[]> {
+    return this.db.transaction(async (client) => {
+      await client.query('DELETE FROM submission_files WHERE submission_id = $1', [
+        submissionId,
+      ]);
+      const written: SubmissionFile[] = [];
+      for (const [position, file] of files.entries()) {
+        const result = await client.query<SubmissionFileRow>(
+          `INSERT INTO submission_files
+             (id, submission_id, file_url, display_name, position)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING id, submission_id, file_url, display_name, position, created_at`,
+          [randomUUID(), submissionId, file.fileUrl, file.displayName, position],
+        );
+        written.push(toSubmissionFile(result.rows[0]!));
+      }
+      return written;
+    });
+  }
+
+  /**
+   * Ordered by `(created_at, id)`, not `created_at` alone. The column is
+   * `TIMESTAMPTZ(3)`, and a client that posts a batch of strokes writes
+   * several inside one millisecond - so the timestamp alone leaves ties, and
+   * stroke order is visible because a later stroke paints over an earlier one.
+   *
+   * The tiebreak buys **determinism, not agreement with the in-memory driver**:
+   * ids are random UUIDs here and sequential there, so a tied pair can come
+   * back in a different order in each. That is accepted rather than fixed with
+   * a sequence column - two strokes sharing a millisecond are simultaneous by
+   * any standard a marker cares about, and the repeatability across reads is
+   * the property that was actually missing (CLAUDE.md §9).
+   */
+  async findAnnotations(submissionId: string): Promise<SubmissionAnnotation[]> {
+    const rows = await this.db.query<SubmissionAnnotationRow>(
+      `SELECT id, submission_id, file_id, page, kind, x, y, path, colour,
+              width, body, author_id, created_at, updated_at
+         FROM submission_annotations
+        WHERE submission_id = $1
+        ORDER BY created_at, id`,
+      [submissionId],
+    );
+    return rows.map(toAnnotation);
+  }
+
+  async findAnnotationById(
+    annotationId: string,
+  ): Promise<SubmissionAnnotation | null> {
+    const row = await this.db.queryOne<SubmissionAnnotationRow>(
+      `SELECT id, submission_id, file_id, page, kind, x, y, path, colour,
+              width, body, author_id, created_at, updated_at
+         FROM submission_annotations
+        WHERE id = $1`,
+      [annotationId],
+    );
+    return row ? toAnnotation(row) : null;
+  }
+
+  async createAnnotation(
+    annotation: NewSubmissionAnnotation,
+  ): Promise<SubmissionAnnotation> {
+    const row = await this.db.queryOne<SubmissionAnnotationRow>(
+      `INSERT INTO submission_annotations
+         (id, submission_id, file_id, page, kind, x, y, path, colour, width,
+          body, author_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12)
+       RETURNING id, submission_id, file_id, page, kind, x, y, path, colour,
+                 width, body, author_id, created_at, updated_at`,
+      [
+        randomUUID(),
+        annotation.submissionId,
+        annotation.fileId,
+        annotation.page,
+        annotation.kind,
+        annotation.x,
+        annotation.y,
+        annotation.path === null ? null : JSON.stringify(annotation.path),
+        annotation.colour,
+        annotation.width,
+        annotation.body,
+        annotation.authorId,
+      ],
+    );
+    return toAnnotation(row!);
+  }
+
+  /**
+   * A partial edit. `page`, `colour` and `body` can never legitimately be
+   * cleared, so `undefined` alone (via COALESCE) means "not supplied". `x`,
+   * `y`, `path` and `width` are nullable and a caller-supplied `null` is a
+   * real value (an erased point, an erased stroke) - conflating it with "not
+   * supplied" would make them impossible to clear, so each takes the same
+   * touched-flag sentinel `updateSubmission` uses for `fileUrl`/`answerText`.
+   */
+  async updateAnnotation(
+    annotationId: string,
+    update: SubmissionAnnotationUpdate,
+  ): Promise<SubmissionAnnotation | null> {
+    const row = await this.db.queryOne<SubmissionAnnotationRow>(
+      `UPDATE submission_annotations SET
+         page       = COALESCE($2, page),
+         x          = CASE WHEN $3::boolean THEN $4 ELSE x END,
+         y          = CASE WHEN $5::boolean THEN $6 ELSE y END,
+         path       = CASE WHEN $7::boolean THEN $8::jsonb ELSE path END,
+         colour     = COALESCE($9, colour),
+         width      = CASE WHEN $10::boolean THEN $11 ELSE width END,
+         body       = COALESCE($12, body),
+         updated_at = now()
+       WHERE id = $1
+       RETURNING id, submission_id, file_id, page, kind, x, y, path, colour,
+                 width, body, author_id, created_at, updated_at`,
+      [
+        annotationId,
+        update.page ?? null,
+        update.x !== undefined,
+        update.x ?? null,
+        update.y !== undefined,
+        update.y ?? null,
+        update.path !== undefined,
+        update.path == null ? null : JSON.stringify(update.path),
+        update.colour ?? null,
+        update.width !== undefined,
+        update.width ?? null,
+        update.body ?? null,
+      ],
+    );
+    return row ? toAnnotation(row) : null;
+  }
+
+  /** True when a row was removed; false when it was already gone. */
+  async deleteAnnotation(annotationId: string): Promise<boolean> {
+    const row = await this.db.queryOne<{ id: string }>(
+      'DELETE FROM submission_annotations WHERE id = $1 RETURNING id',
+      [annotationId],
+    );
+    return row !== null;
   }
 }

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Param,
@@ -43,6 +44,13 @@ export class AdminCoursesController {
     @Request() req: { user: JwtPayload },
   ): Promise<StoredCourse> {
     return this.courseAdmin.create(body, this.actor(req));
+  }
+
+  @Get(':courseId')
+  async getCourse(
+    @Param('courseId') courseId: string,
+  ): Promise<StoredCourse> {
+    return this.courseAdmin.findById(courseId);
   }
 
   @Patch(':courseId')

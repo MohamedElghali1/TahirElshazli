@@ -56,7 +56,7 @@ export function TabList({
   /** Names the tab list for assistive tech — "Course sections". */
   label: string;
   className?: string;
-} & React.HTMLAttributes<HTMLDivElement>) {
+} & Omit<React.HTMLAttributes<HTMLDivElement>, 'onChange'>) {
   return (
     <div
       {...rest}

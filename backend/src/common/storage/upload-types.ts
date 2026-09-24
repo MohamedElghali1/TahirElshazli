@@ -61,6 +61,16 @@ export const ALLOWED_UPLOAD_TYPES: Readonly<Record<string, UploadType>> = {
   'audio/mp4': { extension: 'm4a', kind: 'audio' },
   'application/pdf': { extension: 'pdf', kind: 'file' },
   'text/plain': { extension: 'txt', kind: 'file' },
+  // `D-41`: a student handing in a Word document is the real case behind
+  // `pdf_upload`. **Zip was asked for and refused** - it is a container that
+  // can hold anything, and §8 admits nothing executable. A docx is an
+  // non-executable container served with nosniff from a server that executes
+  // nothing, which is the argument that already admits PDF. Legacy
+  // `application/msword` is deliberately absent: not asked for.
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': {
+    extension: 'docx',
+    kind: 'file',
+  },
 };
 
 /**
@@ -76,6 +86,12 @@ export const MAX_UPLOAD_BYTES = 64 * 1024 * 1024;
 
 /** The MIME types the whitelist admits, for an error message worth reading. */
 export const ALLOWED_UPLOAD_MIME_TYPES = Object.keys(ALLOWED_UPLOAD_TYPES);
+
+export const ALLOWED_AVATAR_MIME_TYPES = Object.entries(ALLOWED_UPLOAD_TYPES)
+  .filter(([_, type]) => type.kind === 'image')
+  .map(([mime]) => mime);
+
+export const AVATAR_MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
 /**
  * The single path prefix the local driver serves from, and the only relative

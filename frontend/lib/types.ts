@@ -90,7 +90,7 @@ export interface AttendanceEntry {
  * halves are always present; a course with no sessions reports `0 of 0` rather
  * than serving a different shape.
  *
- * **Render them as two `Meter`s and never average them** (CLAUDE.md §11.1
+ * **Render them as two `Meter`s and never average them** (CLAUDE.md Ã‚Â§11.1
  * non-negotiable 2). `completionPercentage` and `attendancePercentage` measure
  * different things - watching the material and turning up - and one blended
  * figure would say neither. Grades never appear here at all: performance is
@@ -341,7 +341,7 @@ export interface RecordingProgress {
 }
 
 /* --- assessments (assessments/assessments.service.ts) ---------------------
-   CLAUDE.md §5.10 - `status` is derived server-side from timestamps and
+   CLAUDE.md Ã‚Â§5.10 - `status` is derived server-side from timestamps and
    submission state. The client renders it and never recomputes it. */
 
 export type AssessmentType = 'homework' | 'assignment' | 'quiz';
@@ -381,6 +381,8 @@ export interface AssessmentListItem {
   title: string;
   description: string;
   type: AssessmentType;
+  /** How this task is delivered. Mirror of `workType` on the backend (`assessments.service.ts:51`). */
+  workType: WorkType;
   topics: string[];
   status: AssessmentStatus;
   availableFrom: string;
@@ -412,10 +414,27 @@ export interface SubmissionView {
   score: number | null;
   correctedAt: string | null;
   feedback: string | null;
-  /** CLAUDE.md §5.5 - the annotated PDF is a new artifact beside the original. */
+  /** CLAUDE.md Ã‚Â§5.5 - the annotated PDF is a new artifact beside the original. */
   annotatedFileUrl: string | null;
   revisions: SubmissionRevision[];
 }
+
+/**
+ * How this task is delivered, and where the student stands on it.
+ * Mirrors `assessments.service.ts` `WorkExpectation` (lines 110-137).
+ * Discriminated on `kind` so a client cannot render an upload box for a form task.
+ */
+export type WorkExpectation =
+  | { kind: 'file_upload'; allowedFileTypes: string[]; maxFileSizeBytes: number }
+  | { kind: 'link'; url: string }
+  | {
+      kind: 'google_form';
+      formUrl: string;
+      completed: boolean;
+      score: number | null;
+      maxScore: number | null;
+      lastSyncedAt: string | null;
+    };
 
 export interface AssessmentDetail extends AssessmentListItem {
   instructions: string;
@@ -426,6 +445,8 @@ export interface AssessmentDetail extends AssessmentListItem {
   maxFileSizeBytes: number;
   canSubmit: boolean;
   submission: SubmissionView | null;
+  /** What the student is actually expected to do (mirror drift fix — backend already returns it). */
+  work: WorkExpectation;
 }
 
 /* --- dashboard (dashboard/dashboard.service.ts) --------------------------- */
@@ -517,7 +538,7 @@ export type NotificationType =
   | 'live_session_soon'
   | 'assessment_available'
   /**
-   * Announcement fan-out (CLAUDE.md §5.14). Added by migration 005 on the
+   * Announcement fan-out (CLAUDE.md Ã‚Â§5.14). Added by migration 005 on the
    * backend and missing here until 2026-09-08 - which was not a cosmetic gap:
    * both notification screens index an icon map by this union, so the first
    * announcement a student received rendered `<undefined />` and took the page
@@ -798,7 +819,7 @@ export interface AssistantWrite {
  *
  * There is no compile-time link between the two files, so **adding an action
  * on the backend means adding it here too** - the same hand-mirroring hazard
- * CLAUDE.md §5.4 describes for the DTO's runtime arrays, one process boundary
+ * CLAUDE.md Ã‚Â§5.4 describes for the DTO's runtime arrays, one process boundary
  * further out.
  */
 export type AuditAction =
@@ -906,7 +927,7 @@ export interface PublicCourseDetail extends PublicCourseSummary {
 }
 
 /* ------------------------------------------------------------------------
-   Groups (CLAUDE.md §5.16) - the cohort a course is taught to.
+   Groups (CLAUDE.md Ã‚Â§5.16) - the cohort a course is taught to.
 
    A group is a class of students studying **one** course. It used to carry no
    courseId, with a `GroupCourse` join row saying what it studied; migration 013
@@ -969,7 +990,7 @@ export interface GroupPatch {
 
 /**
  * `GET /staff/groups/:id/report` (`GROUP-4`). Performance only - no
- * progress/completion figure sits beside it (CLAUDE.md §11.1). No PDF field:
+ * progress/completion figure sits beside it (CLAUDE.md Ã‚Â§11.1). No PDF field:
  * the browser's own print-to-PDF renders this data, there is no server-side
  * PDF file to link to.
  */
@@ -995,7 +1016,7 @@ export interface GroupReport {
 }
 
 /**
- * The *staff* roster row. Carries an email; §5.17's student-facing classmate
+ * The *staff* roster row. Carries an email; Ã‚Â§5.17's student-facing classmate
  * list deliberately does not, and the two come from different endpoints so
  * widening one cannot widen the other.
  */
@@ -1008,7 +1029,7 @@ export interface GroupMemberView {
 }
 
 /**
- * What a student may see of another student (§5.17): a name, and nothing else.
+ * What a student may see of another student (Ã‚Â§5.17): a name, and nothing else.
  * Never an email, a mark, progress or attendance - a classmate list that
  * carries a grade is a leaderboard, which is a different product decision.
  */
@@ -1031,11 +1052,11 @@ export interface ClassmateGroup {
 }
 
 /* ------------------------------------------------------------------------
-   Authoring (CLAUDE.md §5.18) and targeting (§5.16).
+   Authoring (CLAUDE.md Ã‚Â§5.18) and targeting (Ã‚Â§5.16).
 
    A task is written **once** and aimed at one or more groups - the audience is
    per group, the task is not duplicated per group. So there is one assessment
-   row, one target row per group, and §5.6's "average across all students"
+   row, one target row per group, and Ã‚Â§5.6's "average across all students"
    stays one average over one task.
    ------------------------------------------------------------------------ */
 
@@ -1125,7 +1146,7 @@ export interface Attachment {
   /**
    * Who it is for (`D-29`). The student read returns only `students` ones; a
    * mark scheme is `staff`. This decides what the API returns, not who can
-   * fetch the file - see `SECURITY.md` §4 on `/uploads/*`.
+   * fetch the file - see `SECURITY.md` Ã‚Â§4 on `/uploads/*`.
    */
   audience: AttachmentAudience;
 }
@@ -1179,24 +1200,28 @@ export type TaskDraftUpdate = Partial<Omit<TaskDraftWrite, 'courseId'>>;
 
 /**
  * An announcement, as both the staff console and the student course page read
- * it. `audience` is the §6.1 wire form: `all_students`, `all_tas` or
+ * it. `audience` is the Ã‚Â§6.1 wire form: `all_students`, `all_tas` or
  * `course:<id>`.
  */
 export interface Announcement {
   id: string;
   audience: string;
-  audienceType: 'all_students' | 'course' | 'all_tas';
+  audienceType: 'all_students' | 'course' | 'all_tas' | 'group';
   courseId: string | null;
+  groupId: string | null;
   title: string;
   body: string;
+  mediaKind: 'image' | 'video' | 'youtube' | 'file' | null;
+  mediaUrl: string | null;
   postedBy: string;
-  postedAt: string;
+  createdAt: string;
+  publishedAt: string | null;
   /** How many people it reached, counted at send time - never a stored list. */
   recipientCount: number;
 }
 
 /* ------------------------------------------------------------------------
-   The blog (CLAUDE.md §5.19) - Dr. Tahir's achievements, authored by the
+   The blog (CLAUDE.md Ã‚Â§5.19) - Dr. Tahir's achievements, authored by the
    teacher or an assistant and read by students and visitors alike.
 
    Two shapes, and the difference is what each reader is trusted with.
@@ -1287,4 +1312,111 @@ export interface UploadConfig {
   enabled: boolean;
   maxBytes: number;
   allowedMimeTypes: string[];
+}
+
+/* --- Work analytics (manage/work-analytics.controller.ts) -----------------
+   Mirrors work-analytics.service.ts and work-repository.interface.ts.
+   Field names copied verbatim from those files. */
+
+/**
+ * Where one student stands on one piece of work.
+ * Source: `work-analytics.service.ts` lines 31-35.
+ */
+export type WorkStatus = 'not_started' | 'submitted' | 'graded' | 'not_available';
+
+/**
+ * The teacher's per-assessment analytics.
+ * Source: `work-analytics.service.ts` `WorkAnalytics` interface (lines 57-84).
+ */
+export interface WorkAnalytics {
+  assessmentId: string;
+  title: string;
+  workType: WorkType;
+  expected: number;
+  completed: number;
+  notCompleted: number;
+  /** 0-100, rounded. Null when nothing was set for anybody. */
+  completionRate: number | null;
+  averageScore: number | null;
+  averageMaxScore: number | null;
+  /** 0-100, rounded. Null unless scores exist. */
+  averagePercentage: number | null;
+  /** >0 means figures above are UNDERSTATED. */
+  unmatched: number;
+  lastSyncedAt: string | null;
+  lastSyncError: string | null;
+  collectsEmail: boolean | null;
+}
+
+/**
+ * One row of the per-student roster.
+ * Source: `work-analytics.service.ts` `StudentWorkRow` (lines 86-93).
+ */
+export interface StudentWorkRow {
+  studentId: string;
+  studentName: string;
+  status: WorkStatus;
+  score: number | null;
+  maxScore: number | null;
+  submittedAt: string | null;
+}
+
+/**
+ * One response mirrored from an external system.
+ * Source: `work-repository.interface.ts` `ExternalResult` (lines 77-92).
+ */
+export interface ExternalResult {
+  id: string;
+  assessmentId: string;
+  provider: 'google_form';
+  externalId: string;
+  studentId: string | null;
+  respondentId: string | null;
+  score: number | null;
+  maxScore: number | null;
+  submittedAt: string;
+  raw: unknown;
+  syncedAt: string;
+}
+
+/**
+ * Outcome of a manual sync trigger.
+ * Source: `google-form-sync.service.ts` `SyncOutcome` (lines 19-33).
+ */
+export interface SyncOutcome {
+  fetched: number;
+  matched: number;
+  unmatched: number;
+  syncedAt: string;
+}
+
+/**
+ * One student's results across a course's work.
+ * Source: `work-analytics.service.ts` `StudentWorkResult` (lines 38-54).
+ */
+export interface StudentWorkResult {
+  assessmentId: string;
+  title: string;
+  workType: WorkType;
+  status: WorkStatus;
+  score: number | null;
+  maxScore: number | null;
+  scorePercentage: number | null;
+  submittedAt: string | null;
+  hasDetail: boolean;
+}
+
+export interface StaffProfile {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  googleEmail: string | null;
+}
+
+export interface NotificationPreferences {
+  submissions: boolean;
+  registrations: boolean;
+  unmatched: boolean;
+  weeklySummary: boolean;
 }
