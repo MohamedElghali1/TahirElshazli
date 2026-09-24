@@ -26,16 +26,16 @@ function ResetPasswordForm() {
   if (!token) {
     return (
       <>
-        <h1 className="text-[var(--fs-h2)] font-semibold tracking-[-0.02em] text-fg">
+        <h1 className="text-m-h2 font-semibold tracking-[-0.02em] text-fg">
           That link is incomplete
         </h1>
-        <p className="mt-[var(--sp-4)] text-[var(--fs-body)] leading-[var(--lh-loose)] text-fg-2">
+        <p className="mt-4 text-m-body leading-[1.65] text-fg-2">
           Reset links expire after an hour and work once. Request a fresh one
           and use it straight away.
         </p>
         <Link
           href="/forgot-password"
-          className="mt-[var(--sp-8)] inline-block text-[var(--fs-base)] text-fg-2 underline underline-offset-4 hover:text-fg"
+          className="mt-8 inline-block text-m-body text-fg-2 underline underline-offset-4 hover:text-fg"
         >
           Request a new link
         </Link>
@@ -71,14 +71,14 @@ function ResetPasswordForm() {
 
   return (
     <>
-      <h1 className="text-[var(--fs-h2)] font-semibold tracking-[-0.02em] text-fg">
+      <h1 className="text-m-h2 font-semibold tracking-[-0.02em] text-fg">
         Set a new password
       </h1>
-      <p className="mt-[var(--sp-2)] text-[var(--fs-body)] text-fg-3">
+      <p className="mt-2 text-m-body text-fg-3">
         You will be signed out everywhere else once this is saved.
       </p>
 
-      <form onSubmit={submit} noValidate className="mt-[var(--sp-8)] flex flex-col gap-[var(--sp-6)]">
+      <form onSubmit={submit} noValidate className="mt-8 flex flex-col gap-6">
         <TextInput
           label="New password"
           id="newPassword"

@@ -121,10 +121,10 @@ export function ThemeToggle({
       aria-label={theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}
       className={
         (size === 'sm'
-          ? 'inline-flex h-[var(--h-sm)] w-[var(--h-sm)] items-center justify-center rounded-[var(--r-sm)] '
-          : 'inline-flex h-[var(--h-md)] w-[var(--h-md)] items-center justify-center rounded-[var(--r-md)] ') +
+          ? 'inline-flex h-6 w-6 items-center justify-center rounded-sm '
+          : 'inline-flex h-8 w-8 items-center justify-center rounded-md ') +
         'text-fg-3 transition-colors ' +
-        'duration-[var(--dur-fast)] hover:bg-[var(--bg-wash)] hover:text-fg ' +
+        'duration-[var(--dur-fast)] hover:bg-wash-hover hover:text-fg ' +
         (className ?? '')
       }
     >

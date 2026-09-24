@@ -41,9 +41,9 @@ export function JoinSessionAction({
     return (
       <span
         className={cx(
-          'inline-flex h-[var(--h-sm)] items-center gap-[var(--sp-1)] rounded-[var(--r-lg)]',
-          'border border-[var(--border-medium)] bg-[var(--bg-secondary)] px-[var(--sp-2)]',
-          'text-[var(--fs-base)] font-medium text-fg-4 select-none',
+          'inline-flex h-6 items-center gap-1 rounded-md',
+          'border border-[var(--border-medium)] bg-surface-2 px-2',
+          'text-base font-medium text-fg-4 select-none',
         )}
       >
         <VideoCameraIcon size={14} weight="regular" aria-hidden />
@@ -58,11 +58,11 @@ export function JoinSessionAction({
       target="_blank"
       rel="noreferrer noopener"
       className={cx(
-        'inline-flex h-[var(--h-sm)] items-center gap-[var(--sp-1)] rounded-[var(--r-lg)]',
-        'border border-[var(--accent-edge)] bg-[var(--accent)] px-[var(--sp-2)]',
-        'text-[var(--fs-base)] font-medium text-accent-fg',
+        'inline-flex h-6 items-center gap-1 rounded-md',
+        'border border-accent-border bg-[var(--accent)] px-2',
+        'text-base font-medium text-accent-fg',
         'transition-colors duration-[var(--dur-fast)] ease-[var(--ease)]',
-        'hover:bg-[var(--accent-hover)] active:bg-[var(--accent-press)]',
+        'hover:bg-[var(--accent-hover)] active:bg-accent-active',
       )}
     >
       {/* The reference's own glyph is a plus. It is replaced while the session
@@ -72,7 +72,7 @@ export function JoinSessionAction({
       {phase === 'live' ? (
         <span
           aria-hidden
-          className="h-[6px] w-[6px] shrink-0 animate-pulse rounded-[var(--r-full)] bg-current motion-reduce:animate-none"
+          className="h-[6px] w-[6px] shrink-0 animate-pulse rounded-full bg-current motion-reduce:animate-none"
         />
       ) : (
         <PlusIcon size={14} weight="bold" aria-hidden />
@@ -91,7 +91,7 @@ export function JoinSessionAction({
 export function SessionStamp({ session }: { session: LiveSession | null }) {
   if (!session) return null;
   return (
-    <span className="num hidden text-[var(--fs-xs)] text-fg-3 sm:inline">
+    <span className="num hidden text-xs text-fg-3 sm:inline">
       {stamp(session.scheduledAt)}
     </span>
   );
