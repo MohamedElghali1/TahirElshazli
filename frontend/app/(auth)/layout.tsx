@@ -15,22 +15,22 @@ export default function AuthLayout({
 }) {
   return (
     <div data-surface="site" className="grid min-h-[100dvh] lg:grid-cols-[1fr_1fr]">
-      <aside className="relative hidden flex-col justify-between border-e border-[var(--border-light)] bg-[var(--bg-secondary)] p-[var(--sp-12)] lg:flex">
+      <aside className="relative hidden flex-col justify-between border-e border-[var(--border-light)] bg-surface-2 p-12 lg:flex">
         <Link href="/" aria-label="Dr. Tahir Elshazli, home">
           <Wordmark />
         </Link>
 
         <div>
-          <p className="max-w-[24ch] text-[clamp(1.75rem,3vw,var(--fs-h1))] font-semibold leading-[1.15] tracking-[-0.02em] text-fg">
+          <p className="max-w-[24ch] text-[clamp(1.75rem,3vw,var(--fs-marketing-h1))] font-semibold leading-[1.15] tracking-[-0.02em] text-fg">
             Your classes, your marked work, and every recording in one place.
           </p>
-          <p className="mt-[var(--sp-6)] max-w-[42ch] text-[var(--fs-body)] leading-[var(--lh-loose)] text-fg-3">
+          <p className="mt-6 max-w-[42ch] text-m-body leading-[1.65] text-fg-3">
             Sign in to see what is due, join the next live session and read the
             corrections on your last submission.
           </p>
         </div>
 
-        <p className="text-[var(--fs-base)] text-fg-4">
+        <p className="text-m-body text-fg-4">
           Not enrolled yet?{' '}
           <Link
             href="/courses"
@@ -43,9 +43,9 @@ export default function AuthLayout({
 
       <main
         id="main"
-        className="flex flex-col justify-center px-[var(--sp-6)] py-[var(--sp-12)]"
+        className="flex flex-col justify-center px-6 py-12"
       >
-        <div className="mb-[var(--sp-8)] flex items-center justify-between lg:hidden">
+        <div className="mb-8 flex items-center justify-between lg:hidden">
           <Link href="/" aria-label="Dr. Tahir Elshazli, home">
             <Wordmark />
           </Link>
@@ -63,7 +63,7 @@ export default function AuthLayout({
             {children}
           </Suspense>
         </div>
-        <div className="mt-[var(--sp-8)] hidden justify-center lg:flex">
+        <div className="mt-8 hidden justify-center lg:flex">
           <ThemeToggle />
         </div>
       </main>

@@ -60,11 +60,11 @@ export function CourseFilters({
   const filtered = Boolean(query);
 
   return (
-    <div className="flex items-center justify-end gap-[var(--sp-6)] border-y border-[var(--border-light)] py-[var(--sp-6)]">
-      <div className="flex items-center gap-[var(--sp-4)]">
+    <div className="flex items-center justify-end gap-6 border-y border-[var(--border-light)] py-6">
+      <div className="flex items-center gap-4">
         <p
           aria-live="polite"
-          className="hidden whitespace-nowrap text-[var(--fs-base)] text-fg-3 sm:block"
+          className="hidden whitespace-nowrap text-m-body text-fg-3 sm:block"
         >
           {filtered ? (
             <>
@@ -92,7 +92,7 @@ export function CourseFilters({
             name="Search"
             size={16}
             aria-hidden
-            className="pointer-events-none absolute start-[var(--sp-3)] text-fg-3"
+            className="pointer-events-none absolute start-3 text-fg-3"
           />
           {/* A plain input styled to match the system — the surrounding wrapper
               already provides the search icon and clear button, so using
@@ -104,7 +104,7 @@ export function CourseFilters({
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setValue(e.target.value)}
             placeholder="Search courses"
             aria-label="Search courses"
-            className="min-w-[220px] rounded-md border-0 bg-wash-field py-1.5 ps-[var(--sp-8)] pe-[var(--sp-8)] font-sans text-base leading-body text-fg shadow-[inset_0_0_0_1px_var(--border-light)] outline-none placeholder:text-fg-4 focus:shadow-[inset_0_0_0_2px_var(--accent)]"
+            className="min-w-[220px] rounded-md border-0 bg-wash-field py-1.5 ps-8 pe-8 font-sans text-base leading-body text-fg shadow-[inset_0_0_0_1px_var(--border-light)] outline-none placeholder:text-fg-4 focus:shadow-[inset_0_0_0_2px_var(--accent)]"
           />
           {value && (
             <IconButton
@@ -112,7 +112,7 @@ export function CourseFilters({
               label="Clear search"
               size={24}
               onClick={() => setValue('')}
-              className="absolute end-[var(--sp-2)]"
+              className="absolute end-2"
             />
           )}
         </form>

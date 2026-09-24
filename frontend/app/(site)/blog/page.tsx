@@ -14,7 +14,7 @@ export const metadata: Metadata = {
     'from Dr. Tahir Elshazli.',
 };
 
-const shell = 'mx-auto w-full max-w-[var(--maxw-site)] px-[var(--sp-6)]';
+const shell = 'mx-auto w-full max-w-[1200px] px-6';
 
 /**
  * The blog index (CLAUDE.md §5.19).
@@ -53,17 +53,17 @@ export default async function BlogPage() {
   const posts = await loadPosts();
 
   return (
-    <section className={`${shell} py-[var(--sp-16)] lg:py-[var(--sp-24)]`}>
-      <h1 className="max-w-[18ch] text-[clamp(2.25rem,5vw,var(--fs-display))] font-semibold leading-[1.05] tracking-[-0.03em] text-fg">
+    <section className={`${shell} py-16 lg:py-24`}>
+      <h1 className="max-w-[18ch] text-[clamp(2.25rem,5vw,var(--fs-marketing-display))] font-semibold leading-[1.05] tracking-[-0.03em] text-fg">
         Results, and how they happened.
       </h1>
-      <p className="mt-[var(--sp-6)] max-w-[54ch] text-[var(--fs-lead)] leading-[var(--lh-loose)] text-fg-2">
+      <p className="mt-6 max-w-[54ch] text-m-lead leading-[1.65] text-fg-2">
         What the cohorts have achieved, worked examples from the papers, and
         what examiners are actually looking for.
       </p>
 
       {posts === null && (
-        <div className="mt-[var(--sp-16)]">
+        <div className="mt-16">
           <Callout tone="danger" title="The blog could not be loaded just now">
             Please try again shortly.
           </Callout>
@@ -71,7 +71,7 @@ export default async function BlogPage() {
       )}
 
       {posts?.length === 0 && (
-        <div className="mt-[var(--sp-16)] rounded-[var(--r-lg)] border border-[var(--border-medium)] bg-[var(--bg-secondary)]">
+        <div className="mt-16 rounded-md border border-[var(--border-medium)] bg-surface-2">
           <EmptyState
             title="Nothing published yet"
             description="The first posts go up before the next intake. Until then, the course pages cover what each paper involves."
@@ -85,7 +85,7 @@ export default async function BlogPage() {
       )}
 
       {posts && posts.length > 0 && (
-        <div className="mt-[var(--sp-16)] grid gap-[var(--sp-8)] sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-16 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
           {posts.map((post, i) => (
             <Reveal key={post.id} delay={i * 0.06}>
               <PostCard post={post} />
@@ -109,7 +109,7 @@ function PostCard({ post }: { post: PublicBlogPost }) {
   return (
     <Link
       href={`/blog/${post.slug}`}
-      className="group flex h-full flex-col overflow-hidden rounded-[var(--r-lg)] border border-[var(--border-medium)] bg-[var(--bg-secondary)] transition-colors duration-[var(--dur-fast)] hover:border-[var(--border-strong)]"
+      className="group flex h-full flex-col overflow-hidden rounded-md border border-[var(--border-medium)] bg-surface-2 transition-colors duration-[var(--dur-fast)] hover:border-[var(--border-strong)]"
     >
       {/* A plain <img>, not next/image, and that is a considered choice: media
           URLs are author-supplied and can point at any host, while
@@ -119,44 +119,44 @@ function PostCard({ post }: { post: PublicBlogPost }) {
           is no automatic resizing, which is why sizes are constrained by CSS
           and loading is lazy. */}
       {cover ? (
-        <div className="relative aspect-[16/10] overflow-hidden bg-[var(--bg-tertiary)]">
+        <div className="relative aspect-[16/10] overflow-hidden bg-surface-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={cover.url}
             alt={cover.caption ?? ''}
             loading="lazy"
             decoding="async"
-            className="h-full w-full object-cover transition-transform duration-[var(--dur-slow)] ease-[var(--ease)] group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+            className="h-full w-full object-cover transition-transform duration-[1500ms] ease-[var(--ease)] group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
           />
         </div>
       ) : (
         <div
           aria-hidden
-          className="aspect-[16/10] border-b border-[var(--border-light)] bg-[var(--bg-tertiary)]"
+          className="aspect-[16/10] border-b border-[var(--border-light)] bg-surface-3"
         />
       )}
 
-      <div className="flex flex-1 flex-col p-[var(--sp-6)]">
-        <div className="flex items-center gap-[var(--sp-3)]">
+      <div className="flex flex-1 flex-col p-6">
+        <div className="flex items-center gap-3">
           <Tag tone={post.category === 'achievement' ? 'amber' : 'gray'}>
             {CATEGORY_LABEL[post.category]}
           </Tag>
           <time
             dateTime={post.publishAt}
-            className="text-[var(--fs-base)] text-fg-3"
+            className="text-m-body text-fg-3"
           >
             {formatDate(post.publishAt)}
           </time>
         </div>
 
-        <h2 className="mt-[var(--sp-4)] text-[var(--fs-h3)] font-semibold leading-[1.2] tracking-[-0.01em] text-fg">
+        <h2 className="mt-4 text-m-lead font-semibold leading-[1.2] tracking-[-0.01em] text-fg">
           {post.title}
         </h2>
-        <p className="mt-[var(--sp-3)] flex-1 text-[var(--fs-body)] leading-[var(--lh-loose)] text-fg-2">
+        <p className="mt-3 flex-1 text-m-body leading-[1.65] text-fg-2">
           {post.summary}
         </p>
 
-        <div className="mt-[var(--sp-6)] flex items-center gap-[var(--sp-4)] text-[var(--fs-base)] text-fg-3">
+        <div className="mt-6 flex items-center gap-4 text-m-body text-fg-3">
           <span className="text-fg-2">{post.authorName}</span>
           {/* Counted, not just implied by the cover: "and a video" is the
               reason to open a post, and a single cover image hides it. */}
@@ -179,7 +179,7 @@ function MediaCount({
   label: string;
 }) {
   return (
-    <span className="inline-flex items-center gap-[var(--sp-1)]">
+    <span className="inline-flex items-center gap-1">
       <Icon size={14} aria-hidden />
       <span className="font-[family-name:var(--font-mono)] tabular-nums">{n}</span>
       <span className="sr-only">{label}</span>

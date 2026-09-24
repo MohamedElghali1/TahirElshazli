@@ -8,7 +8,7 @@ import { ApiError, api } from '@/lib/api';
 import { formatDate } from '@/lib/format';
 import type { PublicBlogPost } from '@/lib/types';
 
-const shell = 'mx-auto w-full max-w-[var(--maxw-site)] px-[var(--sp-6)]';
+const shell = 'mx-auto w-full max-w-[1200px] px-6';
 
 const CATEGORY_LABEL = {
   achievement: 'Achievement',
@@ -73,29 +73,29 @@ export default async function BlogPostPage({
   if (!post) notFound();
 
   return (
-    <article className={`${shell} py-[var(--sp-16)] lg:py-[var(--sp-24)]`}>
+    <article className={`${shell} py-16 lg:py-24`}>
       <Link
         href="/blog"
-        className="inline-flex items-center gap-[var(--sp-2)] text-[var(--fs-body)] text-fg-3 transition-colors duration-[var(--dur-fast)] hover:text-fg"
+        className="inline-flex items-center gap-2 text-m-body text-fg-3 transition-colors duration-[var(--dur-fast)] hover:text-fg"
       >
         <ArrowLeftIcon size={16} aria-hidden />
         All posts
       </Link>
 
-      <header className="mt-[var(--sp-8)] max-w-[var(--maxw-prose)]">
-        <div className="flex items-center gap-[var(--sp-3)]">
+      <header className="mt-8 max-w-[65ch]">
+        <div className="flex items-center gap-3">
           <Tag tone={post.category === 'achievement' ? 'amber' : 'gray'}>
             {CATEGORY_LABEL[post.category]}
           </Tag>
           <time
             dateTime={post.publishAt}
-            className="text-[var(--fs-base)] text-fg-3"
+            className="text-m-body text-fg-3"
           >
             {formatDate(post.publishAt)}
           </time>
         </div>
 
-        <h1 className="mt-[var(--sp-4)] text-[clamp(2rem,4.5vw,var(--fs-h1))] font-semibold leading-[1.08] tracking-[-0.03em] text-fg">
+        <h1 className="mt-4 text-[clamp(2rem,4.5vw,var(--fs-marketing-h1))] font-semibold leading-[1.08] tracking-[-0.03em] text-fg">
           {post.title}
         </h1>
 
@@ -104,12 +104,12 @@ export default async function BlogPostPage({
             reads as a duplication bug. `summary` still backs the card and the
             meta description, where there is nothing to repeat it against. */}
         {post.excerpt && (
-          <p className="mt-[var(--sp-6)] text-[var(--fs-lead)] leading-[var(--lh-loose)] text-fg-2">
+          <p className="mt-6 text-m-lead leading-[1.65] text-fg-2">
             {post.excerpt}
           </p>
         )}
 
-        <p className="mt-[var(--sp-6)] border-t border-[var(--border-light)] pt-[var(--sp-4)] text-[var(--fs-body)] text-fg-3">
+        <p className="mt-6 border-t border-[var(--border-light)] pt-4 text-m-body text-fg-3">
           Posted by{' '}
           <span className="text-fg">{post.authorName}</span>
         </p>
@@ -117,7 +117,7 @@ export default async function BlogPostPage({
 
       <PostBody
         body={post.body}
-        className="mt-[var(--sp-12)] flex max-w-[var(--maxw-prose)] flex-col gap-[var(--sp-6)] text-[var(--fs-lead)] leading-[var(--lh-loose)] text-fg-2"
+        className="mt-12 flex max-w-[65ch] flex-col gap-6 text-m-lead leading-[1.65] text-fg-2"
       />
 
       {/* Wider than the prose column: a certificate or a results board is worth
@@ -125,11 +125,11 @@ export default async function BlogPostPage({
           nobody looks at. */}
       <MediaGallery
         media={post.media}
-        className="mt-[var(--sp-16)] grid gap-[var(--sp-8)] sm:grid-cols-2"
+        className="mt-16 grid gap-8 sm:grid-cols-2"
       />
 
       {post.tags.length > 0 && (
-        <ul className="mt-[var(--sp-16)] flex flex-wrap gap-[var(--sp-2)] border-t border-[var(--border-light)] pt-[var(--sp-8)]">
+        <ul className="mt-16 flex flex-wrap gap-2 border-t border-[var(--border-light)] pt-8">
           {post.tags.map((tag) => (
             <li key={tag}>
               {/* Not links. There is no tag archive route, and a chip that
@@ -141,11 +141,11 @@ export default async function BlogPostPage({
         </ul>
       )}
 
-      <div className="mt-[var(--sp-16)] rounded-[var(--r-lg)] border border-[var(--accent-line)] bg-[var(--accent-wash)] p-[var(--sp-8)]">
-        <h2 className="text-[var(--fs-h3)] font-semibold tracking-[-0.01em] text-fg">
+      <div className="mt-16 rounded-md border border-accent bg-[var(--accent-wash)] p-8">
+        <h2 className="text-m-h2 font-semibold tracking-[-0.01em] text-fg">
           Want results like these?
         </h2>
-        <p className="mt-[var(--sp-3)] max-w-[var(--maxw-prose)] text-[var(--fs-body)] leading-[var(--lh-loose)] text-fg-2">
+        <p className="mt-3 max-w-[65ch] text-m-body leading-[1.65] text-fg-2">
           The IGCSE and IELTS courses run in small groups with marked work
           returned inside a week.
         </p>
@@ -153,7 +153,7 @@ export default async function BlogPostPage({
           href="/courses"
           variant="primary"
           size="medium"
-          className="mt-[var(--sp-6)]"
+          className="mt-6"
         >
           Browse courses
         </ButtonLink>

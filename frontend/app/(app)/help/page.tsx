@@ -1,7 +1,5 @@
-'use client';
-
 import { CONTACT } from '@/lib/site-content';
-import { Panel, Button, Icon } from '@/components/ui';
+import { Panel, ButtonLink, Icon } from '@/components/ui';
 import { PageTitle } from '@/components/shell/page-chrome';
 
 /**
@@ -11,6 +9,13 @@ import { PageTitle } from '@/components/shell/page-chrome';
  * pointing at the same `CONTACT.whatsappUrl` the marketing contact page and
  * footer already use, so there is exactly one place a real number ever gets
  * set.
+ *
+ * The call to action is an anchor, not a button running `window.open`. A
+ * button could not be middle-clicked, copied or opened in a new tab, and a
+ * scripted `window.open` is the exact shape a popup blocker suppresses —
+ * which would have left the one support route on the platform silently doing
+ * nothing. Being an anchor also drops the `'use client'` boundary: nothing on
+ * this page is interactive any more.
  */
 export default function HelpPage() {
   return (
@@ -25,15 +30,15 @@ export default function HelpPage() {
               this console cannot answer — a missed class, a billing question,
               a technical problem.
             </p>
-            <Button
+            <ButtonLink
+              href={CONTACT.whatsappUrl}
               variant="primary"
-              onClick={() =>
-                window.open(CONTACT.whatsappUrl, '_blank', 'noopener,noreferrer')
-              }
+              icon="MessageCircle"
+              target="_blank"
+              rel="noopener noreferrer"
             >
-              <Icon name="MessageCircle" size={14} />
               Open WhatsApp
-            </Button>
+            </ButtonLink>
           </div>
         </Panel>
       </div>

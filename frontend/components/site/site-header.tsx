@@ -37,13 +37,13 @@ export function SiteHeader() {
   }, [open]);
 
   return (
-    <header className="sticky top-0 z-40 border-b border-[var(--border-light)] bg-[var(--bg-scrim)] backdrop-blur-xl">
-      <div className="mx-auto flex h-[72px] max-w-[var(--maxw-site)] items-center gap-[var(--sp-8)] px-[var(--sp-6)]">
+    <header className="sticky top-0 z-40 border-b border-[var(--border-light)] bg-surface/72 backdrop-blur-xl">
+      <div className="mx-auto flex h-[72px] max-w-[1200px] items-center gap-8 px-6">
         <Link href="/" className="shrink-0" aria-label="Dr. Tahir Elshazli, home">
           <Wordmark />
         </Link>
 
-        <nav className="hidden flex-1 items-center gap-[var(--sp-6)] lg:flex">
+        <nav className="hidden flex-1 items-center gap-6 lg:flex">
           {NAV.map((item) => {
             const active = pathname.startsWith(item.href);
             return (
@@ -52,7 +52,7 @@ export function SiteHeader() {
                 href={item.href}
                 aria-current={active ? 'page' : undefined}
                 className={cx(
-                  'text-[var(--fs-md)] transition-colors duration-[var(--dur-fast)]',
+                  'text-m-lead transition-colors duration-[var(--dur-fast)]',
                   active
                     ? 'text-fg'
                     : 'text-fg-3 hover:text-fg',
@@ -64,11 +64,11 @@ export function SiteHeader() {
           })}
         </nav>
 
-        <div className="ms-auto flex items-center gap-[var(--sp-2)] lg:ms-0">
+        <div className="ms-auto flex items-center gap-2 lg:ms-0">
           <ThemeToggle />
           <Link
             href="/login"
-            className="hidden text-[var(--fs-md)] text-fg-2 transition-colors duration-[var(--dur-fast)] hover:text-fg sm:block"
+            className="hidden text-m-lead text-fg-2 transition-colors duration-[var(--dur-fast)] hover:text-fg sm:block"
           >
             Sign in
           </Link>
@@ -80,7 +80,7 @@ export function SiteHeader() {
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
             aria-label={open ? 'Close menu' : 'Open menu'}
-            className="inline-flex h-[var(--h-md)] w-[var(--h-md)] items-center justify-center rounded-[var(--r-md)] text-fg-2 hover:bg-[var(--bg-wash)] lg:hidden"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-fg-2 hover:bg-wash-hover lg:hidden"
           >
             {open ? <XIcon size={20} /> : <ListIcon size={20} />}
           </button>
@@ -88,24 +88,24 @@ export function SiteHeader() {
       </div>
 
       {open && (
-        <div className="border-t border-[var(--border-light)] bg-[var(--bg-primary)] lg:hidden">
-          <nav className="mx-auto flex max-w-[var(--maxw-site)] flex-col px-[var(--sp-6)] py-[var(--sp-4)]">
+        <div className="border-t border-[var(--border-light)] bg-surface lg:hidden">
+          <nav className="mx-auto flex max-w-[1200px] flex-col px-6 py-4">
             {NAV.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
-                className="py-[var(--sp-3)] text-[var(--fs-lead)] text-fg"
+                className="py-3 text-m-lead text-fg"
               >
                 {item.label}
               </Link>
             ))}
             <Link
               href="/login"
-              className="py-[var(--sp-3)] text-[var(--fs-lead)] text-fg-2"
+              className="py-3 text-m-lead text-fg-2"
             >
               Sign in
             </Link>
-            <ButtonLink href="/courses" variant="primary" size="medium" className="mt-[var(--sp-3)]">
+            <ButtonLink href="/courses" variant="primary" size="medium" className="mt-3">
               Browse courses
             </ButtonLink>
           </nav>

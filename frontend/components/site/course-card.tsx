@@ -47,7 +47,7 @@ function Fallback({ title }: { title: string }) {
 
 export function CourseCard({ course }: { course: PublicCourseSummary }) {
   return (
-    <article className="group relative flex h-full flex-col overflow-hidden rounded-[var(--r-lg)] border border-[var(--border-medium)] bg-[var(--bg-primary)] transition-colors duration-[var(--dur-fast)] hover:border-[var(--border-strong)]">
+    <article className="group relative flex h-full flex-col overflow-hidden rounded-md border border-[var(--border-medium)] bg-surface transition-colors duration-[var(--dur-fast)] hover:border-[var(--border-strong)]">
       <div className="relative aspect-[16/10] overflow-hidden border-b border-[var(--border-light)]">
         {course.thumbnailUrl ? (
           <Image
@@ -55,15 +55,15 @@ export function CourseCard({ course }: { course: PublicCourseSummary }) {
             alt=""
             fill
             sizes="(max-width: 768px) 100vw, 400px"
-            className="object-cover transition-transform duration-[var(--dur-slow)] ease-[var(--ease-out)] group-hover:scale-[1.03]"
+            className="object-cover transition-transform duration-[1500ms] ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-[1.03]"
           />
         ) : (
           <Fallback title={course.title} />
         )}
       </div>
 
-      <div className="flex flex-1 flex-col p-[var(--sp-6)]">
-        <h3 className="text-[var(--fs-h3)] font-semibold leading-[1.2] tracking-[-0.01em] text-fg">
+      <div className="flex flex-1 flex-col p-6">
+        <h3 className="text-m-lead font-semibold leading-[1.2] tracking-[-0.01em] text-fg">
           {/* The whole card is one target, but only the title carries the href -
               a nested-link card is unreadable to a screen reader. */}
           <Link
@@ -79,16 +79,16 @@ export function CourseCard({ course }: { course: PublicCourseSummary }) {
           </Link>
         </h3>
 
-        <p className="mt-[var(--sp-3)] line-clamp-2 text-[var(--fs-base)] leading-[var(--lh-loose)] text-fg-2">
+        <p className="mt-3 line-clamp-2 text-m-body leading-[1.65] text-fg-2">
           {course.description}
         </p>
 
-        <p className="mt-[var(--sp-4)] text-[var(--fs-base)] text-fg-3">
+        <p className="mt-4 text-m-body text-fg-3">
           {course.teacherName}
         </p>
 
-        <dl className="mt-[var(--sp-6)] flex flex-wrap items-center gap-x-[var(--sp-3)] gap-y-[var(--sp-2)] border-t border-[var(--border-light)] pt-[var(--sp-4)] text-[var(--fs-base)] text-fg-2">
-          <div className="flex gap-[var(--sp-1)]">
+        <dl className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-[var(--border-light)] pt-4 text-m-body text-fg-2">
+          <div className="flex gap-1">
             <dt className="sr-only">Lessons</dt>
             <dd className="font-[family-name:var(--font-mono)] tabular-nums text-fg">
               {course.lessonCount}
@@ -96,7 +96,7 @@ export function CourseCard({ course }: { course: PublicCourseSummary }) {
             <dd>{course.lessonCount === 1 ? 'lesson' : 'lessons'}</dd>
           </div>
           <span aria-hidden className="text-fg-4">·</span>
-          <div className="flex gap-[var(--sp-1)]">
+          <div className="flex gap-1">
             <dt className="sr-only">Chapters</dt>
             <dd className="font-[family-name:var(--font-mono)] tabular-nums text-fg">
               {course.moduleCount}
@@ -105,11 +105,11 @@ export function CourseCard({ course }: { course: PublicCourseSummary }) {
           </div>
         </dl>
 
-        <p className="mt-[var(--sp-2)] text-[var(--fs-base)] text-fg-3">
+        <p className="mt-2 text-m-body text-fg-3">
           {courseLength(course.totalDurationSeconds)}
         </p>
 
-        <span className="mt-[var(--sp-6)] inline-flex items-center gap-[var(--sp-2)] text-[var(--fs-base)] font-medium text-fg transition-colors duration-[var(--dur-fast)] group-hover:text-accent">
+        <span className="mt-6 inline-flex items-center gap-2 text-m-body font-medium text-fg transition-colors duration-[var(--dur-fast)] group-hover:text-accent">
           View course
           <ArrowRightIcon size={16} className="transition-transform duration-[var(--dur-fast)] group-hover:translate-x-[2px]" />
         </span>

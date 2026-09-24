@@ -46,13 +46,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   if (loading || !user || misplaced) {
     return (
       <div
-        className="flex min-h-[100dvh] items-center justify-center bg-[var(--bg-primary)]"
+        className="flex min-h-[100dvh] items-center justify-center bg-surface"
         aria-busy
       >
         <span className="sr-only">Loading</span>
         <span
           aria-hidden
-          className="h-[var(--sp-4)] w-[var(--sp-4)] animate-spin rounded-[var(--r-full)] border-2 border-[var(--border-strong)] border-r-transparent"
+          className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--border-strong)] border-r-transparent"
         />
       </div>
     );

@@ -50,16 +50,16 @@ export function ContactForm() {
     return (
       <div
         role="status"
-        className="flex flex-col items-start justify-center rounded-[var(--r-lg)] border border-[var(--accent-line)] bg-[var(--accent-wash)] p-[var(--sp-12)]"
+        className="flex flex-col items-start justify-center rounded-md border border-accent bg-[var(--accent-wash)] p-12"
       >
-        <h2 className="text-[var(--fs-h3)] font-semibold text-fg">
+        <h2 className="text-m-lead font-semibold text-fg">
           Thank you, that is with us.
         </h2>
-        <p className="mt-[var(--sp-3)] max-w-[44ch] text-[var(--fs-body)] leading-[var(--lh-loose)] text-fg-2">
+        <p className="mt-3 max-w-[44ch] text-m-body leading-[1.65] text-fg-2">
           We reply within one working day. If it is urgent, WhatsApp is faster.
         </p>
         <Button
-          className="mt-[var(--sp-6)]"
+          className="mt-6"
           size="medium"
           onClick={() => setStatus('idle')}
         >
@@ -73,9 +73,9 @@ export function ContactForm() {
     <form
       onSubmit={submit}
       noValidate
-      className="flex flex-col gap-[var(--sp-6)] rounded-[var(--r-lg)] border border-[var(--border-medium)] bg-[var(--bg-secondary)] p-[var(--sp-8)]"
+      className="flex flex-col gap-6 rounded-md border border-[var(--border-medium)] bg-surface-2 p-8"
     >
-      <div className="grid gap-[var(--sp-6)] sm:grid-cols-2">
+      <div className="grid gap-6 sm:grid-cols-2">
         <TextInput
           label="Your name"
           id="name"
@@ -95,7 +95,7 @@ export function ContactForm() {
         />
       </div>
 
-      <div className="grid gap-[var(--sp-6)] sm:grid-cols-2">
+      <div className="grid gap-6 sm:grid-cols-2">
         <Select
           label="Course of interest"
           id="track"
@@ -131,8 +131,8 @@ export function ContactForm() {
         </InlineBanner>
       )}
 
-      <div className="flex items-center justify-between gap-[var(--sp-4)]">
-        <p className="text-[var(--fs-xs)] text-fg-3">
+      <div className="flex items-center justify-between gap-4">
+        <p className="text-m-body text-fg-3">
           We use your details to reply to this enquiry and nothing else.
         </p>
         <Button
