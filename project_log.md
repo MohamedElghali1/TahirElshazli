@@ -3973,3 +3973,58 @@ Counts: 790 unit, 386 e2e, 182 integration (001–023 from empty). The unit stay
 has looked at the two account panels in a browser and added two variables to `.env.example`. No live
 Google round trip has been made; that needs the client's Google Cloud client.
 
+---
+
+## 2026-09-24 — Unit 13, part one: the public site was never actually ported
+
+Unit 13 opened expecting `SITE-1`…`SITE-5` to be a styling pass. `CLAUDE.md` §4.1 says
+`components/site/*` "was ported onto the current `components/ui` API *in place* during unit 4 rather
+than replaced", and the pages do import the current primitives, so the assumption looked safe.
+
+It was half true, and the wrong half. The components were ported; **the token vocabulary was not.**
+
+Resolving every `var(--…)` written in `frontend/app` and `frontend/components` against every custom
+property actually defined in `app/tokens/*.css` and `app/globals.css` returned **38 distinct
+undefined properties in 491 references across 24 files** — `--sp-*`, `--fs-h1/h2/h3/lead/body/
+display`, `--bg-*`, `--fg-primary`, `--r-*`, `--maxw-*`, `--h-sm/md`, `--lh-loose`,
+`--accent-line/press/edge`. All of them belong to the Twenty-derived system that `ad238a7` deleted
+along with `frontend/app/tokens.css`.
+
+A `var()` naming an undefined property with no fallback is invalid at computed-value time and gets
+dropped. Every padding, gap, font size, radius and max-width the marketing site and the auth screens
+named **was not being applied at all**. The site rendered as unstyled-ish flow content with correct
+colours, because the colour tokens happened to be the ones that survived.
+
+**This is the third time the same failure class has shipped here.** §11 rule 1 records 478 colour
+instances; `F5-1` records 113 size instances; this is 491. The cause is identical every time:
+Tailwind's arbitrary-value syntax accepts any string, so `p-[var(--nope)]` typechecks, lints and
+builds, and only the rendered stylesheet is wrong. Three independent reviewers have read this code
+since the tokens were deleted.
+
+So the fix was verified the only way that can see it: **against the compiled stylesheet, not the
+source.** `next build`, then grep the emitted CSS. All five marketing steps emitted and defined,
+zero dead custom properties reaching the output. A new task `OPS-2` makes that a build failure
+rather than a habit — the same argument `OPS-1` already makes about the `lib/api.ts` mirror. **A
+reviewer is the wrong instrument for this class; a resolver is the right one.**
+
+Two judgment calls inside the repair worth keeping. `--r-lg` (16px) collapses to `rounded-md`
+(8px) — the live system names no 16 step, and restoring one would re-introduce the "16px buttons
+reading as pills" error that `frontend-design-system.md` §4 says this rebuild existed to correct.
+And marketing small print became body size at a lower tint rather than a smaller size, because the
+marketing scale has no step below 17px and 46 of the references had been reaching for a **console**
+token on a `data-surface="site"` page — the scale mixing §11 forbids, shipped and invisible.
+
+One thing the first attempt got wrong and the compiled-CSS check caught: every marketing heading is
+a responsive `clamp()`, and the literal pixel values that first went inside them would have drifted
+from the scale forever. They hold `var(--fs-marketing-*)` again.
+
+`STU-5` and `STU-6` were verified rather than rebuilt — the posture unit 12 took with `SET-3`/
+`SET-5`. `STU-7`'s card was right but its call to action was a `Button` running `window.open`:
+un-middle-clickable, un-copyable, and exactly the shape a popup blocker suppresses. It would have
+left the single support route on the platform silently doing nothing.
+
+`STU-6` is `[~]` on a documentation conflict, not a technical one: `PRODUCT_SPEC.md` §6 says
+Classmates is "Names **and avatars** only. Already correct." while `redesign-mapping.md` says
+"**names only** — an exact match", and the service returns name and id deliberately. Adding avatars
+publishes a child's photograph to other children — a privacy ruling, not a judgment call. Raised as
+`F13-2` rather than decided.
