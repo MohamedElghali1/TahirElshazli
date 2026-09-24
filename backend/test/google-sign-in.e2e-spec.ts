@@ -249,7 +249,7 @@ describe('Google sign-in (e2e)', () => {
 
     it('refuses a link started in one account and completed in another', async () => {
       const flow = await begin('student2', { sub: 'g-cross' });
-      expect((await link('assistant', flow).expect(401)).body.message).toBe(MESSAGES.rejected);
+      expect((await link('assistant', flow).expect(401)).body.message).toBe(MESSAGES.linkRejected);
       expect(await identities.findBySub('g-cross')).toBeNull();
     });
 
@@ -317,7 +317,8 @@ describe('Google sign-in (e2e)', () => {
     it('refuses a missing or wrong browser key - a flow finished in another browser (login CSRF)', async () => {
       const flow = await begin(null, { sub: 'g-student-1', email: 'student.personal@gmail.com' });
       expect((await signIn({ ...flow, browserKey: 'x'.repeat(43) }).expect(401)).body.message).toBe(MESSAGES.rejected);
-      await signIn({ code: flow.code, state: flow.state } as never).expect(400);
+      // No key at all is refused at the DTO, before the service runs.
+      await request(server()).post('/auth/google/sign-in').send({ code: flow.code, state: flow.state }).expect(400);
     });
 
     it('refuses a state of the other purpose, a session presented as state, and a forged state', async () => {

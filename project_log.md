@@ -3946,3 +3946,30 @@ deleting an announcement draft crashed on Postgres because the repository called
 
 Baseline on the reconciled tree: 771 unit / 45 files, 354 e2e, 179 integration (0 skipped, 001–022
 from an empty schema on PostgreSQL 15.19), frontend `tsc` 0, lint clean. Unit 14 is next.
+
+## 2026-09-23 — Unit 14: Google sign-in, and the mirror held to the backend
+
+Taken out of order, in the same conversation as the reconciliation. The documents said "Google is the
+primary sign-in" and "never auto-link by email", and not much else. So before anything was planned, the
+user ruled: an existing account connects Google only from inside its own signed-in settings; nobody
+gets an account through Google; staff may use Google only from a named Workspace domain, and with no
+domain named, staff keep passwords.
+
+Following the instruction to reuse the existing `state` pattern turned up the unit's most important
+finding. That pattern had a hole: the Forms integration's `state` token, which sits in a URL, worked
+as ten minutes of the teacher's session, because nothing checked the claim that said it was not a
+session. That was fixed first, with a test seen failing before the fix.
+
+Everyone can now connect Google from their account screen and then use "Continue with Google". The
+`id_token` is verified by hand against Google's keys (no new dependency), and every refusal is tested
+from the unauthorized side, including one Google account trying to attach to two people.
+
+`OPS-1` became a type check rather than code generation, because the API spec deliberately leaves out
+half the API. On its first run it found the activity log again showing unlabelled entries for four
+actions: the same bug the rule was written about. The review also finally explained the integration
+test that had failed once without a name during the reconciliation: two rows in the same millisecond.
+
+Counts: 790 unit, 386 e2e, 182 integration (001–023 from empty). The unit stays `[~]` until the user
+has looked at the two account panels in a browser and added two variables to `.env.example`. No live
+Google round trip has been made; that needs the client's Google Cloud client.
+

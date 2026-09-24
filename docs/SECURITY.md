@@ -17,13 +17,13 @@ changes and what is genuinely weak — because that is where the risk is.
 | **Login timing** | Always runs one bcrypt comparison — against a hardcoded dummy hash when the email is unknown — so response time cannot enumerate accounts |
 | **Reset enumeration** | `POST /auth/password-reset/request` returns an identical body for known and unknown emails; asserted byte-for-byte in a spec |
 | **Reset token** | UUID, 1-hour TTL, single-use enforced in SQL (`WHERE token = $1 AND used_at IS NULL`), and redemption revokes every existing session |
-| **Token handling** | JWT with `jti` and a millisecond `iatMs`; `JwtStrategy` checks the denylist, a per-user password-change cutoff, and that the account still exists — then **re-reads `role` from the database**, so a tampered claim dies at signature verification and a demoted account loses access immediately |
+| **Token handling** | JWT with `jti` and a millisecond `iatMs`; `JwtStrategy` checks the denylist, a per-user password-change cutoff, and that the account still exists — then **re-reads `role` from the database**, so a tampered claim dies at signature verification and a demoted account loses access immediately. **It refuses any token carrying a `purpose` claim** (unit 14, F-1): OAuth `state` tokens share the signing secret, and before this a Forms connect `state` worked as a 10-minute bearer session for the teacher |
 | **Guards** | Three global, in order: rate limit → authenticate → authorize. `RolesGuard` is **fail-closed**: a route with no `@Roles`/`@Public`/`@AnyRole` throws 403 with an explanatory message rather than admitting any signed-in account |
 | **Scope leaks** | Out-of-scope resources answer **404 with a message byte-identical to a genuine miss**, so an assistant cannot enumerate courses one id at a time. Tested at unit and e2e level |
 | **Injection** | Parameterised queries throughout; `DatabaseService` is the only thing that talks to Postgres |
 | **SSRF** | `IsPublicHttpUrl` rejects non-http(s) schemes, loopback, RFC1918, CGNAT, link-local and cloud metadata (`169.254.169.254`), IPv6 equivalents, and bare internal hostnames |
 | **Uploads** | MIME whitelist, **server-minted UUID filenames** (the client's filename is never read, so traversal is structurally impossible), 64 MB cap enforced twice, `wx` write flag, no SVG/HTML/zip. Unit 6 (`D-29`) added `audio/mpeg` and `audio/mp4` for task attachments — both non-executable, served with `nosniff`. A task attachment's `audience: staff` hides it from the **API's** student response only; the file under `/uploads/*` is still reachable by anyone holding its URL until signed URLs land (§4) |
-| **Rate limiting** | Global 120/min default; 5/min on login and password change; 3/5min on register and reset-request; 30/min on upload; 10/min on the OAuth callback |
+| **Rate limiting** | Global 120/min default; 5/min on login and password change; 3/5min on register and reset-request; 30/min on upload; 10/min on the OAuth callback and on both Google sign-in starts; 5/min on Google sign-in and link completion |
 | **Secrets** | `JWT_SECRET` refused in production if unset, < 32 chars, or matching a known placeholder; Google refresh tokens AES-256-GCM encrypted; connection-string passwords redacted before reaching a log |
 | **Fail-fast config** | `PERSISTENCE_DRIVER=memory`, `STORAGE_DRIVER=local` and `DB_AUTO_SEED=1` all **throw at boot** in production |
 | **Audit** | Append-only by interface (no update, no delete method exists to call), no foreign keys so it outlives what it describes, and `AuditService.record` **throws outside a transaction** so an action and its log entry commit together |
@@ -138,7 +138,21 @@ prefixed with `'` (formula-injection neutralisation), then RFC 4180-quoted. Name
 `Content-Disposition` filename is minted from the stored group id — never the group's name, never the
 raw path parameter. Scoped like every group read (`GROUP_NOT_FOUND` 404). A read, so not audited.
 
-### 2.6 Google OAuth sign-in (decision 9)
+### 2.6 Google OAuth sign-in (decision 9) — **BUILT 2026-09-23 (unit 14, `GAUTH-1`)**
+As built, against each non-negotiable below. `state` reuses the signed, 10-minute, purpose-claimed JWT,
+plus an OIDC nonce and `sha256(browserKey)`. The key is held only by the starting page, which closes
+login CSRF. The `id_token` is verified in `auth/google/google-id-token.verifier.ts`: RS256 pinned, the
+JWKS `kid`, signature, `iss`, `aud`, `exp`, `iat`, `nonce`, `email_verified`. Staff need a verified `hd`
+on `STAFF_GOOGLE_DOMAINS` at link time and at every sign-in; an empty list turns staff Google off
+(`D-51`). **No auto-link:** a Google identity reaches an account only through `user_google_identities`,
+which is written only inside a signed-in session (`D-49`). A matching email only chooses the refusal
+message, which reveals an account exists only to someone who has just proven control of that address
+at Google. No account is created through Google (`D-50`). The unverified `users.google_email` is never
+read. The link collision is refused by `UNIQUE (google_sub)` as well as by the service. Both directions
+of every path are tested in `test/google-sign-in.e2e-spec.ts` through the real verifier. **Reusing the
+pattern exposed F-1:** the strategy never checked `purpose`, fixed above. **Not performed:** a live
+round trip with Google (it needs the client's Google Cloud client).
+
 The largest auth change, sequenced last. Non-negotiables when it lands: validate `state` (the
 existing signed, expiring, purpose-claimed JWT pattern is correct — reuse it), verify `id_token`
 signature and `aud`, pin `hd`/allowed domains for staff, and **never auto-link a Google account to

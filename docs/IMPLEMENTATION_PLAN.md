@@ -367,7 +367,7 @@ assistant retarget their draft platform-wide for a teacher to publish unaware).
 - `RC-F1` `[ ]` `announcements.controller.spec.ts` does not typecheck (11 errors): fixtures pass `id` to repository `create` calls that ignore it. The scope refusals hold only because the seed already has an unheld `group-2`. Rewrite against the seed; add backend `tsc --noEmit` (specs included) to CI — the remote line shipped a backend `nest build` could not compile.
 - `RC-F2` `[ ]` `SettingsService.getProfile` throws a bare `Error` on a missing user: a 500, not a 404.
 - `RC-F3` `[ ]` No e2e for the five `/staff/groups/:groupId/announcements*` routes or `/staff/announcements/reach`.
-- `RC-F4` `[ ]` One unreproduced integration failure during the reconciliation (1 of 4 runs; name not captured).
+- `RC-F4` `[x]` One unreproduced integration failure during the reconciliation. **Closed in unit 14:** the announcements "newest first" test tied at millisecond `created_at` and broke the tie on a random UUID; the fixture now makes the older row older (`REVIEW_14.md` R-5).
 
 ## Phases 15–17 — Remaining surfaces
 
@@ -381,11 +381,16 @@ assistant retarget their draft platform-wide for a teacher to publish unaware).
 `SITE-1` `[ ]` Homepage · `SITE-2` `[ ]` Course pages · `SITE-3` `[ ]` Blog ·
 `SITE-4` `[ ]` Contact · `SITE-5` `[ ]` Auth screens (sign-in card shape ×4)
 
-`GAUTH-1` `[ ]` Google OAuth sign-in. **Last.** Nothing depends on it and it replaces a working,
-well-tested mechanism. Non-negotiables in `SECURITY.md` §2.6 — especially: never auto-link a Google
-account to a password account by email alone.
+`GAUTH-1` `[~]` Google OAuth sign-in. **Built, unit 14 (2026-09-23), review `APPROVED WITH FOLLOW-UP`.**
+Rulings `D-49` (no auto-link; link only from a signed-in account), `D-50` (no account created through
+Google; passwords stay), `D-51` (`STAFF_GOOGLE_DOMAINS` pin, empty = staff off). Migration `023`, both
+drivers, six routes, 32 e2e through the real `id_token` verifier. Found and fixed F-1 (an OAuth `state`
+worked as a session). **Open, the two closing conditions** (`docs/phases/unit-14/REVIEW_14.md`):
+- `GAUTH-C1` `[ ]` The user checks the staff Account and student Settings Google panels in a browser (LTR and `dir="rtl"`).
+- `GAUTH-C2` `[ ]` Add `GOOGLE_SIGN_IN_REDIRECT_URI=` and `STAFF_GOOGLE_DOMAINS=` to `.env.example` (the session could not read `.env*`).
+Not performed, and not a condition: a live Google round trip (needs the client's Google Cloud client, `google-forms-setup.md` §A5a).
 
-`OPS-1` `[ ]` Regenerate `lib/api.ts` + `lib/types.ts` from `API_SPEC.yaml`, or add a CI drift check.
+`OPS-1` `[x]` **Redefined by `D-52`:** `frontend/lib/types.ts` typechecked against the backend's own types, both directions, as a CI step (`npm run typecheck:drift`, `backend/test/drift/`). 119 of 139 mirror types checked; the rest listed in the check's header. Four drifts found and fixed on its first run. `lib/api.ts` (route paths) is **not** covered; a path check would need the backend's routes as types, and was not built.
 
 ---
 

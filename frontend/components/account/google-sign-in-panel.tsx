@@ -88,9 +88,9 @@ export function GoogleSignInPanel({ returnTo }: { returnTo: '/manage/account' | 
 
         {data && !data.linked && !data.available && (
           <p className="text-sm text-fg-3">
-            {isStaffRole(user?.role)
-              ? 'Google sign-in is not enabled for staff accounts on this server. Sign in with your password.'
-              : 'Google sign-in is not set up on this server. Sign in with your password.'}
+            {/* The status does not say why - an unconfigured server, or for
+                staff an empty domain list - so the copy claims neither. */}
+            Google sign-in is not available for your account on this server. Sign in with your password.
           </p>
         )}
 

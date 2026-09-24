@@ -521,7 +521,7 @@ built as slice 7i (migration `020`).
 > **2026-09-23 — one line again.** Units 10–12 were built on `origin/redesign` beside a separate,
 > partial unit 7; they were ported onto this line and that unit 7 was dropped (user ruling).
 > Baseline after: 771 unit, 354 e2e, 179 integration (001–022 from empty). Sessions take migration
-> `023`. `docs/phases/RECONCILE_UNITS_10_12.md`.
+> `024` (unit 14 took `023`). `docs/phases/RECONCILE_UNITS_10_12.md`.
 
 ### Chat unit 8 — Sessions and attendance `[ ]`
 
@@ -634,7 +634,17 @@ mixes with the console's 13px. `/catalog` and the student `/achievements` rail e
 
 ---
 
-### Chat unit 14 — Google sign-in and contract hygiene `[ ]`  *(last, deliberately)*
+### Chat unit 14 — Google sign-in and contract hygiene `[~]` **`APPROVED WITH FOLLOW-UP` 2026-09-23**
+
+**Status 2026-09-23: `[~]`.** Taken out of order by the user, in the same conversation as the units
+10–12 reconciliation, without the agent harness (coordinator: plan → execute → review, each its own
+artifact in `docs/phases/unit-14/`). `GAUTH-1` built under rulings `D-49`…`D-51`; `OPS-1` built as
+`D-52` redefined it and is `[x]`. Found and fixed F-1: an OAuth `state` worked as a bearer session.
+Tests: 790 unit / 47 files, 386 e2e, 182 integration (0 skipped, 001–023 from empty). **Stays `[~]`
+until `GAUTH-C1` (the user's browser check of the two account panels) and `GAUTH-C2` (`.env.example`)
+close** — then `APPROVED`, as unit 7 closed.
+
+*(Original entry, last, deliberately:)*
 
 **Scope** `GAUTH-1`, `OPS-1`.
 **Depends on** everything. Sequenced last because nothing depends on it and it **replaces a working,

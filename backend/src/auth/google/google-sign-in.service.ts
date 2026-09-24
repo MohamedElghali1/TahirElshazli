@@ -65,6 +65,7 @@ const STATE_TTL_SECONDS = 600;
 export const MESSAGES = {
   notConfigured: 'Google sign-in is not set up on this server. Sign in with your password.',
   rejected: 'Google sign-in could not be completed. Start again from the sign-in page.',
+  linkRejected: 'Connecting Google could not be completed. Start again from your account settings.',
   // `D-49`. Reveals that an account exists only for an address the caller has
   // just proven they control at Google.
   emailTaken:
@@ -148,21 +149,22 @@ export class GoogleSignInService {
     browserKey: string,
   ): Promise<{ claims: GoogleIdClaims; payload: StatePayload }> {
     const { client, verifier } = this.require();
+    const refusal = purpose === 'google_link' ? MESSAGES.linkRejected : MESSAGES.rejected;
     let payload: StatePayload;
     try {
       payload = await this.jwt.verifyAsync<StatePayload>(state);
     } catch {
-      throw new UnauthorizedException(MESSAGES.rejected);
+      throw new UnauthorizedException(refusal);
     }
     // A session token is signed with the same secret and carries no purpose;
     // a state of the other purpose is equally not this one.
     if (payload.purpose !== purpose || typeof payload.nonce !== 'string' || typeof payload.keyHash !== 'string') {
-      throw new UnauthorizedException(MESSAGES.rejected);
+      throw new UnauthorizedException(refusal);
     }
     const presented = Buffer.from(sha256(browserKey));
     const expected = Buffer.from(payload.keyHash);
     if (presented.length !== expected.length || !timingSafeEqual(presented, expected)) {
-      throw new UnauthorizedException(MESSAGES.rejected);
+      throw new UnauthorizedException(refusal);
     }
     try {
       const { idToken } = await client.exchangeCode(code);
@@ -171,7 +173,7 @@ export class GoogleSignInService {
     } catch (error) {
       // The reason goes to the log, never to the caller.
       this.logger.warn(`Google ${purpose} refused: ${error instanceof Error ? error.message : String(error)}`);
-      throw new UnauthorizedException(MESSAGES.rejected);
+      throw new UnauthorizedException(refusal);
     }
   }
 
@@ -216,7 +218,7 @@ export class GoogleSignInService {
     // account finishing it. Both must be the same person - otherwise a link
     // started in one account could be completed into another.
     if (payload.sub !== actor.id) {
-      throw new UnauthorizedException(MESSAGES.rejected);
+      throw new UnauthorizedException(MESSAGES.linkRejected);
     }
     const refusal = this.staffRefusal(actor.role, claims.hd);
     if (refusal) {
@@ -224,7 +226,7 @@ export class GoogleSignInService {
     }
     const user = await this.users.findById(actor.id);
     if (!user) {
-      throw new UnauthorizedException(MESSAGES.rejected);
+      throw new UnauthorizedException(MESSAGES.linkRejected);
     }
 
     return this.db.runInTransaction(async () => {

@@ -152,10 +152,11 @@ Backend TypeScript is `strict: true`, `module: nodenext`, `target: ES2023`, with
 
 ```
 npm run dev                  # both services, no database needed
-npm test                     # backend unit — 771 tests, 45 files
+npm test                     # backend unit — 790 tests, 47 files
 npm run test:e2e             # backend e2e
 npm run test:integration     # backend integration; SKIPS ITSELF without TEST_DATABASE_URL
 npm run lint                 # frontend eslint + backend oxlint
+npm run typecheck:drift      # OPS-1: frontend/lib/types.ts against the backend's types (CI)
 npm run db:migrate           # or DB_AUTO_MIGRATE=1 at boot
 npm run docker:up            # full stack: postgres + api + web
 cd frontend && npx tsc --noEmit
@@ -230,9 +231,9 @@ destroyed live code (`docs/phases/unit-4/REVIEW_4D.md`). Do not read `SHELL-4`'s
 ("delete `components/app/*`, `components/site/*`") as still describing the directory's contents —
 verify against the actual consumer graph before treating either directory as legacy again.
 
-The backend **is** green and must stay green: **771 unit / 45 files, 354 e2e, 179 integration**
-(against real PostgreSQL 15.19, 001–022 from an empty schema) as of the units 10–12 reconciliation,
-2026-09-23 (`docs/phases/RECONCILE_UNITS_10_12.md`; units 1–7 and 10–12 are `[x]`). **Backend `tsc
+The backend **is** green and must stay green: **790 unit / 47 files, 386 e2e, 182 integration**
+(against real PostgreSQL 15.19, 001–023 from an empty schema) as of unit 14, 2026-09-23
+(`docs/phases/unit-14/`; units 1–7 and 10–12 are `[x]`, unit 14 `[~]`). **Backend `tsc
 --noEmit` is not a CI gate yet** and specs are excluded from `nest build`; the remote line shipped a
 backend that did not compile because of it (`RC-F1`).
 
@@ -314,8 +315,12 @@ PostgreSQL
 - **Authentication:** bearer JWT on every route but the `@Public()` few. **Authorization:** §7.
 - **The frontend mirror is a liability at this scale.** `frontend/lib/api.ts` and `lib/types.ts`
   mirror the backend by hand and have drifted before (the `AuditAction` union carried 6 of 27
-  members, so the activity log rendered blank labels). Generate them from `API_SPEC.yaml`, or add a
-  CI drift check. Make drift a compile error, not a code review.
+  members, so the activity log rendered blank labels; it had drifted again by unit 14). **`lib/types.ts`
+  is now a compile error away from drift:** `backend/test/drift/mirror-drift.check.ts` asserts each
+  mirror type against its backend counterpart, both directions, in CI (`OPS-1`, `D-52`). A new mirror
+  type with a backend counterpart gets a `Check_` line there. It is checked against the backend and
+  **not** `API_SPEC.yaml`, which omits the `[KEEP]` routes by design. `lib/api.ts`'s paths are not
+  covered.
 
 ---
 
@@ -325,8 +330,16 @@ PostgreSQL
 withheld verbs. The durable rules:
 
 - **`JwtAuthGuard` + `RolesGuard` are global.** A new controller is protected by default. `@Public()`
-  (health, register, login, password reset) and `@AnyRole()` (logout) are the only exits, and adding
-  one is a security decision.
+  (health, register, login, password reset, invitation accept, the Google Forms OAuth callback, and
+  Google sign-in's start and completion) and `@AnyRole()` (logout) are the only exits; `auth/role-guards.spec.ts` pins the exact
+  list, and adding one is a security decision.
+- **A token carrying a `purpose` claim is never a session.** OAuth `state` tokens are signed with the
+  session secret; `JwtStrategy` refuses any token with `purpose` (unit 14, F-1: before that, a Forms
+  `state` in a URL was ten minutes of the teacher's access). Any new single-purpose JWT must carry
+  `purpose`.
+- **Google sign-in reaches an account only through a link** (`user_google_identities`, by OIDC `sub`),
+  written only inside a signed-in session. Never match a Google identity to an account by email, and
+  never read `users.google_email` (unverified, Forms matching only) for identity (`D-49`).
 - **Roles** are `visitor | student | parent | assistant | admin | teacher`. `admin` is a full admin
   with the teacher's access under their own identity, because sharing one role destroys attribution and
   attribution is the whole point of the audit log. Added by `AUTH-1`, 2026-09-19. The pair is defined
@@ -425,8 +438,8 @@ A security claim needs a test that proves the unauthorized case fails (§10).
   a gate, not a nicety: migrations 001–008 were each verified this way and **every single first run
   found something** — including the audit log silently ending after page one, because
   `created_at` was microsecond `TIMESTAMPTZ` while the JavaScript cursor carried only milliseconds.
-  **As of 2026-09-23, 001–022 have all run from an empty schema**, on `postgres:15-alpine` (15.19)
-  for `019`–`022` (`docs/phases/unit-7/EXECUTION_NOTES.md`, `docs/phases/RECONCILE_UNITS_10_12.md`), including a one-off check of `019`'s backfill on a
+  **As of 2026-09-23, 001–023 have all run from an empty schema**, on `postgres:15-alpine` (15.19)
+  for `019`–`023` (`docs/phases/unit-7/EXECUTION_NOTES.md`, `docs/phases/RECONCILE_UNITS_10_12.md`), including a one-off check of `019`'s backfill on a
   database populated before it ran. Keep it that way: authoring a migration on top of an unverified one buries whatever it gets wrong. Without
   Docker, a local `postgres` cluster pointed at by `TEST_DATABASE_URL` is enough.
 - **Destructive migrations validate existing data first and raise rather than guess.** The

@@ -1787,3 +1787,53 @@ line. **The user ruled:** keep the local unit 7, port units 10–12, drop the re
   failed), and `PostgresAnnouncementRepository.remove` called a `db.execute` that does not exist, so
   deleting a draft threw on Postgres. Test added, verified failing first.
 - Follow-ups `RC-F1`…`RC-F4`. Full record: `docs/phases/RECONCILE_UNITS_10_12.md`.
+
+---
+
+## 2026-09-23 — Unit 14 (Google sign-in and contract hygiene): rulings `D-49`…`D-52`, finding F-1
+
+Taken out of order by the user (units 8, 9 and 13 not built). The documents did not answer four
+questions; they were put to the user before planning and ruled on the recommendations.
+
+### `D-49` — a Google email that matches an unlinked account: refused, link from the account
+Sign-in resolves a Google identity only through a link (`user_google_identities`, keyed by the OIDC
+`sub`). A matching verified email is refused with "sign in with your password, then connect Google
+from your account settings", and **nothing is linked**. Linking happens only inside a signed-in
+session, whose `sub` must equal the one in the signed `state`. This is `SECURITY.md` §2.6's "never
+auto-link by email" as a mechanism, not a habit.
+
+### `D-50` — no account is created through Google
+An unknown Google account is refused. Sign-up stays on the register form and the waiting queue. **This
+narrows the design** ("Google is the primary sign-in method… a password is optional"): every account
+keeps its password in this unit, so password-less accounts, removing a password, and Google on the
+register and invitation screens are deferred.
+
+### `D-51` — the staff domain pin is an env allow-list; empty means off
+`STAFF_GOOGLE_DOMAINS`, checked against the verified `id_token`'s `hd` at link time **and at every
+sign-in**, for teacher, admin and assistant. Empty (the default) turns staff Google sign-in off; staff
+keep passwords. Students are not pinned. Malformed entries stop the boot.
+
+### `D-52` — `OPS-1` is a backend↔mirror type check, not generation from `API_SPEC.yaml`
+**Document conflict, recorded per `CLAUDE.md` §2.3.** `CLAUDE.md` §6 and `IMPLEMENTATION_PLAN.md` said
+to generate the mirror from `API_SPEC.yaml` or add a drift check. The spec's own header excludes the
+~57 `[KEEP]` routes ("duplicating them would create a second source of truth"), and about 65 of the
+~110 paths the frontend calls are not in it. So generating from the spec would drop half the API, and
+a spec-based check would fail on day one. **Ruled:** check `frontend/lib/types.ts` against the
+backend's own exported types, both directions, in CI (`npm run typecheck:drift`). Units 8 and 9 are
+therefore held to the backend, not blocked on the spec. On its first run it found four drifts, all
+fixed. One was the `AuditAction` mirror missing four actions, so the activity log again rendered
+unlabelled entries: the exact defect §6 cites.
+
+### F-1 — an OAuth `state` token was a working session (security, fixed)
+`JwtStrategy` never read a `purpose` claim. The Google Forms connect `state`, signed with the session
+secret and carrying `sub` = the teacher, was accepted as a bearer token. It travels in a URL, so
+anyone who saw one had **ten minutes of the teacher's access**. This was present since the Forms
+integration landed; an e2e got 200 on `/admin/students` with it. The strategy now refuses any token
+carrying `purpose`. It was found because §2.6 said to reuse this pattern: a link state names any user,
+so reusing it unfixed would have widened the hole to every account.
+
+### `RC-F4` closed — the flaky integration test was the fixture, not the query
+Two announcement inserts in the same millisecond of `TIMESTAMPTZ(3)` tie, and `id DESC` over random
+UUIDs broke the tie either way. The query's order is stable and complete; the test assumed insertion
+order. It reproduced once during the unit 14 review; the fixture now makes the older row older.
+

@@ -150,6 +150,7 @@ backfills everyone to `assigned_groups` including an assistant who held every co
 | Read the audit log | — | — | ✓ | ✓ |
 | Course CRUD | — | — | ✓ | ✓ |
 | Google connection | — | — | ✓ | ✓ |
+| Connect own Google sign-in (`GAUTH-1`) | own | own, if `STAFF_GOOGLE_DOMAINS` is set and the Google account is on it | own, same pin | own, same pin |
 | Notification preferences | own | own | own | own |
 
 **Recordings stay teacher-only — confirmed 2026-09-20.** Briefly recorded as widening to assistants
@@ -243,10 +244,14 @@ must stay so.
   "remembered `@UseGuards`, forgot `@Roles`" half-mistake and must not be relaxed.
 - **`JwtStrategy` re-reads the user on every request** — denylisted `jti`, password-change cutoff,
   account still exists — and **overwrites `role` from the database**. A tampered role claim dies at
-  signature verification; a demoted account loses access immediately, not at token expiry.
-- **Exactly 7 `@Public()` routes** today: health, register, login, the two password-reset routes, the
-  Google OAuth callback, and the two public controllers. Any addition to this list is a security
-  review, not a routine change.
+  signature verification; a demoted account loses access immediately, not at token expiry. **A token
+  carrying a `purpose` claim (an OAuth `state`) is refused outright** (unit 14, F-1).
+- **The `@Public()` surface is pinned by `auth/role-guards.spec.ts`**, which is the authority on the
+  exact list. It contains health, register, login, the two password-reset routes, the invitation
+  accept, the Google Forms OAuth callback, **the two Google sign-in routes (`POST /auth/google/start`,
+  `POST /auth/google/sign-in`, unit 14)**, and the two public controllers. (This line said "exactly 7"
+  and had gone stale long before unit 14.) Any addition to this list is a security review, not a
+  routine change.
 
 ---
 

@@ -124,6 +124,29 @@ components:
         description: Opaque keyset cursor. Never an offset for append-only feeds. }
 
   schemas:
+    GoogleStart:
+      type: object
+      required: [authUrl, browserKey]
+      properties:
+        authUrl: { type: string, format: uri }
+        browserKey:
+          type: string
+          description: Kept by the starting page (sessionStorage), never put in a URL.
+    GoogleCompletion:
+      type: object
+      required: [code, state, browserKey]
+      properties:
+        code: { type: string, minLength: 1, maxLength: 2048 }
+        state: { type: string, minLength: 1, maxLength: 4096 }
+        browserKey: { type: string, minLength: 16, maxLength: 256 }
+    GoogleLinkStatus:
+      type: object
+      required: [available, linked, email, linkedAt]
+      properties:
+        available: { type: boolean }
+        linked: { type: boolean }
+        email: { type: [string, 'null'], description: The verified address at link time }
+        linkedAt: { type: [string, 'null'], format: date-time }
 
     Announcement:
       type: object
@@ -1325,6 +1348,120 @@ paths:
             Token unknown, already used, or expired — one message for all three,
             matching the password-reset flow's anti-enumeration behaviour.
         '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  # --- Google sign-in (`GAUTH-1`, unit 14; `SECURITY.md` §2.6) -------------
+  #
+  # A Google identity reaches an account only through a LINK, and a link is
+  # written only inside a signed-in session (`D-49`). No route here creates an
+  # account (`D-50`). Staff need a verified `hd` on `STAFF_GOOGLE_DOMAINS`, at
+  # link time and at every sign-in; an empty list turns staff Google off
+  # (`D-51`). Unconfigured server: both starts answer 503.
+  #
+  # Google redirects the browser to the WEB APP (`GOOGLE_SIGN_IN_REDIRECT_URI`),
+  # which posts `code`, `state` and the `browserKey` its start call returned.
+  # `state` is the signed, 10-minute, purpose-claimed JWT; it carries the OIDC
+  # nonce and sha256(browserKey), so only the starting browser can finish.
+  /auth/google/start:
+    post:
+      tags: [auth]
+      summary: Begin a Google sign-in
+      security: []
+      x-public: true
+      x-rate-limit: OAUTH_CALLBACK_LIMIT
+      responses:
+        '200':
+          description: Where to send the browser, and the key the page must keep
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GoogleStart' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /auth/google/sign-in:
+    post:
+      tags: [auth]
+      summary: Complete a Google sign-in
+      security: []
+      x-public: true
+      x-rate-limit: AUTH_ATTEMPT_LIMIT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GoogleCompletion' }
+      responses:
+        '200': { description: The same session password login returns (`AuthResult`) }
+        '400': { description: A field missing or out of bounds }
+        '401':
+          description: >
+            One message for any failed proof (state, browser key, code,
+            id_token). Otherwise, for a verified Google account with no link:
+            "an account with this email already exists…" when the verified
+            address matches an account (`D-49`, linking nothing), or "no
+            account uses this Google account" (`D-50`). Also a linked account
+            that is not active, and staff outside the domain pin.
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/google/link:
+    get:
+      tags: [auth]
+      summary: The caller's own Google sign-in status
+      x-roles: [student, assistant, teacher, admin]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GoogleLinkStatus' }
+          description: >
+            `available` is false on an unconfigured server, and for staff when
+            `STAFF_GOOGLE_DOMAINS` is empty.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [auth]
+      summary: Complete connecting a Google account to the caller's own account
+      x-roles: [student, assistant, teacher, admin]
+      x-rate-limit: AUTH_ATTEMPT_LIMIT
+      x-audit: account.google_linked
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GoogleCompletion' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GoogleLinkStatus' }
+          description: Linked; audited in the same transaction
+        '401': { description: A failed proof, or a link started in a different account }
+        '403': { description: Staff whose verified Google account is not on an allowed domain }
+        '409':
+          description: >
+            The Google account is already linked to another user (link
+            collision; neither account changes), or the caller already has one.
+    delete:
+      tags: [auth]
+      summary: Disconnect the caller's Google sign-in
+      x-roles: [student, assistant, teacher, admin]
+      x-audit: account.google_unlinked
+      responses:
+        '204': { description: Removed; the password still works }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: No Google account is connected }
+
+  /auth/google/link/start:
+    post:
+      tags: [auth]
+      summary: Begin connecting a Google account to the caller's own account
+      x-roles: [student, assistant, teacher, admin]
+      x-rate-limit: OAUTH_CALLBACK_LIMIT
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GoogleStart' }
+          description: Where to send the browser, and the key the page must keep
+        '403': { description: Staff, when staff Google sign-in is off on this server }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
   # --- Groups -------------------------------------------------------------
   #

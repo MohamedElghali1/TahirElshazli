@@ -1023,7 +1023,7 @@ describeIfDb('Postgres repositories', () => {
 
     it('lists a course’s own announcements, newest first, and pages them', async () => {
       for (const title of ['older', 'newer'] as const) {
-        await repo().create({
+        const created = await repo().create({
           audienceType: 'course',
           courseId: 'course-2',
           groupId: null,
@@ -1034,6 +1034,16 @@ describeIfDb('Postgres repositories', () => {
           postedBy: 'teacher-1',
           recipientCount: 1,
         });
+        // Two inserts can land in the same millisecond of `created_at`, and the
+        // tie then falls to `id DESC` over random UUIDs - so without this the
+        // test passed about half the time a tie happened (RC-F4). The order is
+        // correct either way; the fixture has to actually be older.
+        if (title === 'older') {
+          await db.query(
+            `UPDATE announcements SET created_at = created_at - interval '1 minute' WHERE id = $1`,
+            [created.id],
+          );
+        }
       }
 
       const courseTwo = await repo().findByCourse('course-2', 10, 0);

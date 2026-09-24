@@ -294,8 +294,12 @@ this scale round trips and row volume matter and query counts mostly do not.
 submission columns (**applied and verified**, unit 7) · `020` **submission file sets** (`files JSONB` ≤ 5 on
 submissions and revisions, `D-48`; **applied and verified**, unit 7 slice 7i) · `021` announcements
 (group audience, media, draft; **applied and verified**, unit 10) · `022` notification preferences
-(**applied and verified**, unit 12) · `023` sessions rework · `024` attendance enum · `025` weekly
-reports
+(**applied and verified**, unit 12) · `023` Google sign-in identities (`user_google_identities`,
+`GAUTH-1`; **applied and verified**, unit 14) · `024` sessions rework · `025` attendance enum · `026`
+weekly reports
+
+**Renumbered a fourth time 2026-09-23, unit 14.** Taken out of order, it claimed `023`; the three
+unbuilt entries shift by one.
 
 **Renumbered a third time 2026-09-23, the units 10–12 reconciliation.** Units 10 and 12 were built on
 a parallel line of `redesign` and shipped announcements as `021` and notification preferences as
