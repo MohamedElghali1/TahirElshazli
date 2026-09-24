@@ -235,6 +235,7 @@ export interface Recording {
   durationSeconds: number;
   lessonDate: string;
   order: number;
+  thumbnailUrl: string | null;
 }
 
 export interface RecordingWithProgress extends Recording {
@@ -797,6 +798,7 @@ export interface StaffRecording {
   durationSeconds: number;
   lessonDate: string;
   order: number;
+  thumbnailUrl: string | null;
 }
 
 export interface DirectoryEntry {

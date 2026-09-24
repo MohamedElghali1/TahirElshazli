@@ -3,6 +3,7 @@ import {
   IsArray,
   IsInt,
   IsISO8601,
+  IsOptional,
   IsString,
   IsUrl,
   Matches,
@@ -70,4 +71,22 @@ export class CreateRecordingDto {
   @IsOptionalNotNull()
   @IsISO8601()
   lessonDate?: string;
+
+  /**
+   * URL-validated for the same reason `videoUrl` is: without it the value can
+   * become a `javascript:` string that an `<img src>` or an anchor would
+   * happily accept.
+   *
+   * `@IsOptional()`, not `@IsOptionalNotNull()`, matching the PATCH DTO and the
+   * rule in `common/validators/is-optional-not-null.ts`: the decorator tracks
+   * whether the *column* is nullable, and `thumbnail_url` is. Rejecting an
+   * explicit `null` here would have made the two verbs disagree about one
+   * field — a client that read a recording back (`thumbnailUrl: null`) and
+   * posted it as a new one would have got a 400 for sending the value the API
+   * had just handed it.
+   */
+  @IsOptional()
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
+  @MaxLength(2048)
+  thumbnailUrl?: string | null;
 }

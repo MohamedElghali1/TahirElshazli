@@ -658,6 +658,58 @@ describeIfDb('Postgres repositories', () => {
       const progress = await repo.upsertProgress('rec-10', 'student-2', 999_999);
       expect(progress.watchedSeconds).toBe(2640);
     });
+
+    it('round-trips thumbnailUrl through create and reads null when omitted', async () => {
+      const repo = new PostgresRecordingRepository(db);
+      const withThumbnail = await repo.create({
+        courseId: 'course-1',
+        moduleId: 'mod-1',
+        lessonId: 'lesson-1',
+        title: 'Has a thumbnail',
+        chapter: 'Chapter 1',
+        topics: [],
+        videoUrl: 'https://video.example.com/thumb-int',
+        durationSeconds: 300,
+        lessonDate: '2026-05-01T00:00:00Z',
+        thumbnailUrl: 'https://cdn.example.com/thumb-int.jpg',
+      });
+      expect(withThumbnail.thumbnailUrl).toBe('https://cdn.example.com/thumb-int.jpg');
+
+      const withoutThumbnail = await repo.create({
+        courseId: 'course-1',
+        moduleId: 'mod-1',
+        lessonId: 'lesson-1',
+        title: 'No thumbnail',
+        chapter: 'Chapter 1',
+        topics: [],
+        videoUrl: 'https://video.example.com/nothumb-int',
+        durationSeconds: 300,
+        lessonDate: '2026-05-01T00:00:00Z',
+      });
+      expect(withoutThumbnail.thumbnailUrl).toBeNull();
+    });
+
+    it('leaves thumbnailUrl alone on an update that omits it, and clears it on an explicit null', async () => {
+      const repo = new PostgresRecordingRepository(db);
+      const created = await repo.create({
+        courseId: 'course-1',
+        moduleId: 'mod-1',
+        lessonId: 'lesson-1',
+        title: 'Thumbnail update target',
+        chapter: 'Chapter 1',
+        topics: [],
+        videoUrl: 'https://video.example.com/update-int',
+        durationSeconds: 300,
+        lessonDate: '2026-05-01T00:00:00Z',
+        thumbnailUrl: 'https://cdn.example.com/update-int.jpg',
+      });
+
+      const leftAlone = await repo.update(created.id, { title: 'Renamed' });
+      expect(leftAlone?.thumbnailUrl).toBe('https://cdn.example.com/update-int.jpg');
+
+      const cleared = await repo.update(created.id, { thumbnailUrl: null });
+      expect(cleared?.thumbnailUrl).toBeNull();
+    });
   });
 
   describe('live sessions', () => {
