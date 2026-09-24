@@ -1988,3 +1988,61 @@ nowhere else to go. Narrowing on the label axis instead would have hidden workin
 **Affected.** `frontend/lib/format.ts`, `app/(app)/homework/page.tsx`, `app/(app)/quizzes/page.tsx`.
 Frontend only — no backend, API or schema change. The server already computes and enforces
 everything this touches.
+
+---
+
+## 2026-09-24 — `F13-5`: the dead-token class recurred within days, so it stopped being a review item
+
+**Context.** Unit 13 removed 491 references to a retired token vocabulary (`F13-1`) and filed
+`OPS-2` — fail the build on a `var(--x)` naming an undefined custom property — as a follow-up.
+Before that follow-up was built, **unit 14 reintroduced the same bug**: `--sp-3`, `--sp-6` and
+`--sp-8` in the Google sign-in and callback screens, so their spacing rendered as nothing on the
+remote. A parallel session caught and fixed the two live instances.
+
+That is the fourth shipment of one defect: 478 colour instances, 113 size instances (`F5-1`), 491
+references across the public site (`F13-1`), then 3 more days later. Every one passed `tsc`,
+`eslint` and `next build`, because Tailwind's arbitrary-value syntax accepts any string —
+`p-[var(--nope)]` compiles to `padding: var(--nope)` and is dropped at computed-value time.
+Independent reviewers read the code between each recurrence.
+
+**Chosen.** Stop treating it as something reviewers should catch. `OPS-2` was built the same day
+(`frontend/scripts/check-tokens.mjs`, wired into `npm run lint`), and **verified by reintroducing the
+exact regression** rather than merely running clean against a tree that was already fixed.
+
+**Why a script and not a lint rule or a PostCSS plugin.** A custom ESLint rule cannot see the CSS
+that defines the tokens, and a PostCSS plugin runs too late to name the `.tsx` line that wrote it.
+The check needs both halves — every `--x:` in three CSS files, every `var(--x)` in the source — and
+that is a 110-line dependency-free script. An abstraction with one implementation and no second in
+sight would be the speculative architecture `CLAUDE.md` §13 forbids.
+
+**Affected.** `frontend/scripts/check-tokens.mjs`, `frontend/package.json`. `OPS-2` `[x]`.
+
+---
+
+## 2026-09-24 — `F13-6`: the e2e suite could exit without any reading at all
+
+**Context.** Each e2e file boots the whole `AppModule`. `vitest.config.e2e.ts` already records two
+rounds of this failing: file parallelism was disabled when a third concurrent boot killed a worker,
+then the pool moved from forked processes to threads when a fourth file brought it back. Unit 14
+added a fifth (`google-sign-in.e2e-spec.ts`) and the combined run began dying with `0xC0000409`
+**having printed no summary at all** — reproduced directly, not taken on report.
+
+**Why this is worse than a loud failure.** The config's own comment states it: *"A worker that dies
+silently is the worst shape a flake can take here, because a reader sees '0 failed' and the total
+quietly drops."* It is the same hazard `CLAUDE.md` §10 names for the integration suite — **a suite
+that skips itself is indistinguishable from one that passes** — and the reason CI has a guard step
+that fails when the integration suite reports zero executed tests. The e2e suite had no such guard.
+
+**Chosen.** `backend/scripts/run-e2e.mjs` behind `npm run test:e2e`; the raw invocation stays
+available as `test:e2e:combined`. One file per process, so five booted apps never share one V8 — the
+same trajectory the config was already on, continued rather than reversed. And, the part that
+matters: it **parses the summary out of every file and fails when one is missing**, so a file that
+prints no `Tests N passed` line is an error rather than a silent zero, even on exit 0.
+
+**Alternatives rejected.** Raising timeouts or reducing workers addresses the crash and leaves the
+reporting hazard. Splitting the fifth file's cases into an existing one treats the symptom and the
+config's comment already warned the next file would hit this. Neither makes a missing summary
+impossible to mistake for success, which is the actual defect.
+
+**Affected.** `backend/scripts/run-e2e.mjs`, `backend/package.json`. New task `OPS-3` `[x]`.
+Reading restored: **388 passed across 5 files**, where the combined run gave nothing.

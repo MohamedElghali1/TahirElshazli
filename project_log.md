@@ -4077,3 +4077,48 @@ refused. §13: never invent business behaviour. It is recorded as the open half 
 
 `STU-1` remains the one item genuinely waiting on another unit: migration `019` is still absent from
 `redesign`, so unit 8's attendance figures do not exist to compose.
+
+---
+
+## 2026-09-24 — Unit 13, part three: two defects stopped being review items
+
+A parallel session reconciled unit 13 onto the remote line while this one was working: my four
+unit-13 commits are on `origin/redesign`, the migration collision with unit 14 was resolved by
+renumbering mine to `024_recording_thumbnails.sql`, and my local unit-7 commits turned out to be
+duplicates of work another session had already finished and had reviewed `APPROVED`. I verified all
+of that against the remote rather than taking the report on trust, kept the superseded line at
+`backup/unit13-local-20260924`, and reset local to `origin/redesign`.
+
+Two problems came out of that session's report, and both were the same kind of problem: **a defect
+that every gate passes.**
+
+**The dead-token class recurred before its own follow-up was built.** Unit 13 removed 491
+references to a retired vocabulary and filed `OPS-2` to prevent a recurrence. Days later unit 14's
+Google screens shipped `--sp-3/6/8` — undefined, so the login and callback spacing rendered as
+nothing. That is the fourth time: 478, then 113, then 491, then 3. Every one passed `tsc`, `eslint`
+and `next build`, because Tailwind's arbitrary-value syntax accepts any string. Independent
+reviewers read the code between each recurrence.
+
+So `OPS-2` got built the same day rather than staying a good intention:
+`frontend/scripts/check-tokens.mjs`, in `npm run lint`, resolving every `var(--…)` against the
+properties that actually exist and flagging `text-[var(--…)]` besides. **I verified it by
+reintroducing the exact regression** — `p-[var(--sp-6)]` and `text-[var(--fs-lead)]` back into
+`login/page.tsx` — and watching it fail with file and line, because a checker that has only ever
+been run against an already-clean tree has not been tested at all. Writing it turned up two
+false-positive classes worth knowing: the rule is *documented* by quoting the bad pattern, so
+comments must be blanked before scanning; and `next/font` injects two variables at runtime that no
+stylesheet contains.
+
+**The e2e suite could exit with no reading at all.** Five booted `AppModule`s in one process die
+with `0xC0000409` on this box, printing no summary. The crash is not the problem — its shape is.
+`vitest.config.e2e.ts` had already fought this twice and its own comment names the hazard exactly:
+*"a reader sees '0 failed' and the total quietly drops."* That is `CLAUDE.md` §10's rule about the
+integration suite, arriving at e2e without the guard step that protects the integration one.
+
+`backend/scripts/run-e2e.mjs` now runs one file per process and — the part that matters — **fails
+when any file produces no summary line, even on exit 0.** A missing count is an error, never a
+silent zero. Reading restored: 388 across 5 files, where the combined run gave nothing.
+
+Both are recorded in `CLAUDE.md` rather than only in the changelog, because both are durable rules
+about how this repository is checked, not decisions about a feature. The through-line is worth
+keeping: **a reviewer is the wrong instrument for a defect that passes every gate.**

@@ -433,14 +433,51 @@ Not performed, and not a condition: a live Google round trip (needs the client's
 
 `OPS-1` `[x]` **Redefined by `D-52`:** `frontend/lib/types.ts` typechecked against the backend's own types, both directions, as a CI step (`npm run typecheck:drift`, `backend/test/drift/`). 119 of 139 mirror types checked; the rest listed in the check's header. Four drifts found and fixed on its first run. `lib/api.ts` (route paths) is **not** covered; a path check would need the backend's routes as types, and was not built.
 
-`OPS-2` `[ ]` **Fail the build on a `var(--x)` that names an undefined custom property.** Added
-2026-09-24 out of `F13-1`. Resolve every custom property written inside a Tailwind arbitrary value
-against the set defined in `app/tokens/*.css` + `app/globals.css`, and fail on a miss. The same
-shape as `OPS-1` and for the same stated reason — **make drift a compile error, not a code review.**
-This defect class has now shipped three times (478, 113, 491 instances) and was invisible to `tsc`,
-`eslint` and `next build` every time, because Tailwind's arbitrary-value syntax accepts any string.
-Three independent reviewers have looked at this code since the tokens were deleted and none caught
-it. A reviewer is the wrong instrument; a resolver is the right one.
+`OPS-2` `[x]` **Fail the build on a `var(--x)` that names an undefined custom property.** Filed
+2026-09-24 out of `F13-1`; **built the same day, after the class recurred a fourth time before the
+ink was dry** — unit 14's Google screens reintroduced `--sp-3/6/8` into the login and callback pages
+days after unit 13 spent a whole slice removing 491 of them.
+
+`frontend/scripts/check-tokens.mjs`, wired into `npm run lint`. Resolves every `var(--…)` written in
+`app/`, `components/` and `lib/` against the set actually defined in `app/tokens/*.css` +
+`app/globals.css`, and fails on a miss. It also flags the `F5-1` shape — `text-[var(--…)]` — which is
+wrong *even when the token exists*, because Tailwind v4 compiles a bare `var()` after `text-` to
+`color:` and the size never applies. Dependency-free, ~110 lines.
+
+Two false-positive classes it has to handle, both found by running it: **comments**, because the rule
+is documented in `globals.css` and `components/ui/index.ts` by quoting the bad pattern (blanked, not
+deleted, so line numbers stay honest); and **`next/font`** variables, injected at runtime and
+therefore never written in a stylesheet — a two-entry allowlist, kept short because every entry is a
+hole in the check. Template-literal names (`var(--status-${tone}-wash)`) cannot be resolved
+statically and are skipped rather than reported.
+
+**Proved against the real regressions**, not just run clean: reintroducing `p-[var(--sp-6)]` and
+`text-[var(--fs-lead)]` into `login/page.tsx` — the exact shapes unit 14 shipped and unit 13
+removed — is caught with file and line, and exits 1.
+
+The same stated reason as `OPS-1`: **make drift a compile error, not a code review.** Four shipments
+(478, 113, 491, then 3), invisible to `tsc`, `eslint` and `next build` every time, with independent
+reviewers reading the code in between. A reviewer is the wrong instrument; a resolver is the right one.
+
+`OPS-3` `[x]` **The e2e suite must never exit without a reading.** Filed and built 2026-09-24.
+
+`backend/scripts/run-e2e.mjs`, now behind `npm run test:e2e` (the raw command stays as
+`test:e2e:combined`). Each e2e file boots the whole `AppModule`, and `vitest.config.e2e.ts` records
+two previous rounds of this: file parallelism off when a third concurrent boot killed a worker, then
+forked processes → threads when a fourth brought it back. A fifth file
+(`google-sign-in.e2e-spec.ts`, unit 14) broke it again — the combined run dies with `0xC0000409`
+having printed **no summary at all**.
+
+The crash is not the danger; its *shape* is. That config's own comment names it — *"a reader sees
+'0 failed' and the total quietly drops"* — and `CLAUDE.md` §10 says the same of the integration
+suite: **a suite that skips itself is indistinguishable from one that passes.**
+
+So the runner does two things the combined run cannot: one file per process, so five booted apps
+never share one V8; and it **parses the summary out of every file and fails if one is missing**. A
+file that prints no `Tests N passed` line is an error, never a silent zero — even on exit 0. That is
+the whole point of it.
+
+Reading restored: **388 passed across 5 files**, where the combined run gave nothing.
 
 ---
 

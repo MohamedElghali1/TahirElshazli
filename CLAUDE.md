@@ -152,10 +152,11 @@ Backend TypeScript is `strict: true`, `module: nodenext`, `target: ES2023`, with
 
 ```
 npm run dev                  # both services, no database needed
-npm test                     # backend unit — 790 tests, 47 files
-npm run test:e2e             # backend e2e
+npm test                     # backend unit — 793 tests, 47 files
+npm run test:e2e             # backend e2e — 388 in 5 files, ONE FILE PER PROCESS (OPS-3)
+npm run test:e2e:combined    # the raw single-process run; dies with no summary on Windows
 npm run test:integration     # backend integration; SKIPS ITSELF without TEST_DATABASE_URL
-npm run lint                 # frontend eslint + backend oxlint
+npm run lint                 # frontend eslint + token check (OPS-2) + backend oxlint
 npm run typecheck:drift      # OPS-1: frontend/lib/types.ts against the backend's types (CI)
 npm run db:migrate           # or DB_AUTO_MIGRATE=1 at boot
 npm run docker:up            # full stack: postgres + api + web
@@ -496,6 +497,19 @@ expired or reused token · missing required relation.
 without `TEST_DATABASE_URL`; CI has a guard step that fails the job if the suite reports no executed
 tests. Keep it.
 
+**The same rule now covers e2e, and for a sharper reason (`OPS-3`, `F13-6`).** Every e2e file boots
+the whole `AppModule`. Running five of them in one process dies on Windows with `0xC0000409`
+**having printed no summary at all** — a run you cannot tell apart from a pass. `npm run test:e2e`
+therefore goes through `backend/scripts/run-e2e.mjs`, which runs **one file per process** and
+**fails when any file produces no `Tests N passed` line**, even on exit 0. `test:e2e:combined` is
+the raw command, kept for diagnosis. Do not "fix" a flaky e2e run by raising a timeout and reporting
+a green exit code: read the counts, and treat a missing count as a failure. The config's own comment
+put it best — *a reader sees "0 failed" and the total quietly drops.*
+
+**Adding a sixth e2e file is a decision, not a detail.** Three separate rounds of worker death have
+already been traced to the number of concurrently booted apps. Ask whether the cases belong in an
+existing file first.
+
 **When a list-shaped mirror of a union exists, derive it from an exhaustive `Record<Union, true>`.** A
 spec that iterates an array can only prove that what is listed works, never that nothing is missing.
 That distinction let six audit actions log correctly and then be rejected by the log's own filter.
@@ -527,6 +541,14 @@ historical only.
      named utilities: `text-fg`, `text-fg-2`, `text-accent`, `text-status-amber-text`. **The same
      holds for sizes:** Tailwind v4 compiles `text-[var(--fs-*)]` to `color:`, so it never sets a
      size at all (113 shipped, `F5-1`). A size from a variable is `text-(length:--x)`.
+     **This is now enforced, not remembered.** `npm run lint` runs
+     `frontend/scripts/check-tokens.mjs` (`OPS-2`), which resolves every `var(--…)` in `app/`,
+     `components/` and `lib/` against the properties actually defined in `app/tokens/*.css` +
+     `app/globals.css` and fails on a miss, and flags every `text-[var(--…)]` besides. It exists
+     because the class shipped **four** times — 478, then 113, then 491 across the whole public site
+     (`F13-1`), then 3 more in unit 14's Google screens *days after* unit 13 removed the other 491.
+     Independent reviewers read the code between each recurrence. **A reviewer is the wrong
+     instrument for a defect that passes every gate; a resolver is the right one.**
   2. **One utility per property.** Two `rounded-*` or two `text-*` in one class string are resolved
      by stylesheet source order, not the order you wrote them.
   3. **No card inside a card.** `Panel` is the application's one container.
