@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useState } from 'react';
+import { use, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
@@ -19,6 +19,7 @@ import {
   Loader,
   Tag,
   Button,
+  ButtonLink,
   Breadcrumb,
   PageHeader,
   Icon,
@@ -32,12 +33,18 @@ import { RecordingPlayer } from '@/components/student/recording-player';
 
 /**
  * Lesson detail (`docs/PRODUCT_SPEC.md` §6: `[NEW]`, "Player, chapters, the
- * work set from it, its material, and a 'Next recording' card"). Course-scoped
- * via the rail's switcher, same as `/lessons` itself.
+ * work set from it, its material, and a 'Next recording' card").
+ *
+ * Course-scoped via the rail's switcher like `/lessons` itself — but unlike it,
+ * this page is reached by a LINK, and a link carries no course selection. So a
+ * recording missing from the selected course is not a refusal until the
+ * student's own other courses have been checked; see `FindInOtherCourses`.
  *
  * "Its material" is NOT built here: `materials` has no relation to a lesson or
  * a recording (`courseId` and `category` only), so there is nothing to filter
- * by without inventing a join. See the report for what closing that gap needs.
+ * by without inventing a join (`CLAUDE.md` §13). Closing it needs a
+ * `materials.lesson_id` column, both repository drivers, and a staff control to
+ * set it. Recorded as the open half of `STU-3`, which stays `[~]`.
  */
 
 // `ASSESSMENT_STATUS_CHIP` still speaks the legacy tone name `'neutral'` — the
@@ -59,19 +66,43 @@ export default function LessonDetailPage({
   params: Promise<{ recordingId: string }>;
 }) {
   const { recordingId } = use(params);
-  const { courses, selectedId, loading } = useSelectedCourse();
+  const { courses, selectedId, selectCourse, loading } = useSelectedCourse();
+
+  // Memoised because it is a `useEffect` dependency downstream: rebuilding the
+  // array every render would re-run the lookup effect forever.
+  const otherCourseIds = useMemo(
+    () => (courses ?? []).map((course) => course.id).filter((id) => id !== selectedId),
+    [courses, selectedId],
+  );
 
   return (
     <>
       <PageTitle title="My lessons" backHref="/lessons" />
       <CourseGate loading={loading} hasCourses={Boolean(courses && courses.length > 0)}>
-        {selectedId && <LessonDetail courseId={selectedId} recordingId={recordingId} />}
+        {selectedId && (
+          <LessonDetail
+            courseId={selectedId}
+            recordingId={recordingId}
+            otherCourseIds={otherCourseIds}
+            onFoundElsewhere={selectCourse}
+          />
+        )}
       </CourseGate>
     </>
   );
 }
 
-function LessonDetail({ courseId, recordingId }: { courseId: string; recordingId: string }) {
+function LessonDetail({
+  courseId,
+  recordingId,
+  otherCourseIds,
+  onFoundElsewhere,
+}: {
+  courseId: string;
+  recordingId: string;
+  otherCourseIds: string[];
+  onFoundElsewhere: (courseId: string) => void;
+}) {
   const { token } = useSession();
   const [override, setOverride] = useState<ProgressOverride | null>(null);
 
@@ -109,13 +140,25 @@ function LessonDetail({ courseId, recordingId }: { courseId: string; recordingId
   const recordings = data.recordings;
   const index = recordings.findIndex((r) => r.id === recordingId);
 
-  // A recordingId from another course, or one that never existed, reads the
-  // same as any other miss rather than crashing or leaking the list.
+  // Not in the selected course. Before saying no, look at the student's OWN
+  // other courses: this page is reached by a link, and a link does not carry
+  // the rail's course selection with it. A student in two courses who follows
+  // a bookmarked lesson while the switcher sits on the other one was being
+  // told "not available to you" about a lesson they are fully entitled to —
+  // the UI lying about the reader's own access, which is the mirror of the
+  // 403-not-404 rule in CLAUDE.md §7.
+  //
+  // Bounded by §1: a student holds one to three courses, so this is at most
+  // two extra reads and only on the miss path. It searches nothing the caller
+  // is not already enrolled in, so it widens no access — the server still
+  // refuses anything else.
   if (index === -1) {
     return (
-      <div className="p-6">
-        <EmptyState icon="AlertTriangle" title="This lesson is not available to you." />
-      </div>
+      <FindInOtherCourses
+        recordingId={recordingId}
+        courseIds={otherCourseIds}
+        onFound={onFoundElsewhere}
+      />
     );
   }
 
@@ -203,6 +246,72 @@ function LessonDetail({ courseId, recordingId }: { courseId: string; recordingId
           <NextRecordingCard next={next} />
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The miss path: is this recording on one of the student's *other* courses?
+ *
+ * If it is, switch the rail to that course — the page then re-renders through
+ * the normal path and shows the lesson. If it is not, the recording is
+ * genuinely not the caller's and the refusal stands. Either way this reads
+ * only courses the student is already enrolled in; the server's own checks are
+ * untouched and nothing here can widen access.
+ */
+function FindInOtherCourses({
+  recordingId,
+  courseIds,
+  onFound,
+}: {
+  recordingId: string;
+  courseIds: string[];
+  onFound: (courseId: string) => void;
+}) {
+  const { token } = useSession();
+  const [settled, setSettled] = useState(courseIds.length === 0);
+
+  useEffect(() => {
+    if (!token || courseIds.length === 0) return;
+    let cancelled = false;
+
+    void (async () => {
+      for (const courseId of courseIds) {
+        try {
+          const list = await api.recordings.list(token, courseId);
+          if (cancelled) return;
+          if (list.recordings.some((r) => r.id === recordingId)) {
+            onFound(courseId);
+            return;
+          }
+        } catch {
+          // A course we cannot read is simply not where this lesson is.
+        }
+      }
+      if (!cancelled) setSettled(true);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token, courseIds, recordingId, onFound]);
+
+  if (!settled) {
+    return (
+      <div className="flex justify-center p-12">
+        <Loader label="Finding this lesson" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6">
+      <EmptyState
+        icon="AlertTriangle"
+        title="This lesson is not available to you."
+        description="It may have been removed, or it belongs to a course you are not enrolled in."
+        action={<ButtonLink href="/lessons">Back to my lessons</ButtonLink>}
+      />
     </div>
   );
 }
