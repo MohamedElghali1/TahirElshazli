@@ -28,6 +28,7 @@ export interface CreateRecordingInput {
   videoUrl: string;
   durationSeconds: number;
   lessonDate?: string;
+  thumbnailUrl?: string | null;
 }
 
 /**
@@ -121,6 +122,7 @@ export class ManageRecordingsService {
         videoUrl: input.videoUrl,
         durationSeconds: input.durationSeconds,
         lessonDate: input.lessonDate ?? new Date().toISOString(),
+        thumbnailUrl: input.thumbnailUrl,
       };
 
       const recording = await this.recordingRepo.create(payload);

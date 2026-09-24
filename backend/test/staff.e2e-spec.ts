@@ -405,6 +405,37 @@ describe('Staff and admin API (e2e)', () => {
         })
         .expect(400);
     });
+
+    it('rejects a recording whose thumbnail URL is not a URL', async () => {
+      await request(app.getHttpServer())
+        .post('/admin/courses/course-1/recordings')
+        .set(bearer(adminToken))
+        .send({
+          moduleId: 'mod-1',
+          lessonId: 'lesson-1',
+          title: 'Bad thumbnail',
+          videoUrl: 'https://video.example.com/ok',
+          durationSeconds: 600,
+          thumbnailUrl: 'javascript:alert(1)',
+        })
+        .expect(400);
+    });
+
+    it('round-trips a thumbnail URL over HTTP', async () => {
+      const created = await request(app.getHttpServer())
+        .post('/admin/courses/course-1/recordings')
+        .set(bearer(adminToken))
+        .send({
+          moduleId: 'mod-1',
+          lessonId: 'lesson-1',
+          title: 'Thumbnailed over HTTP',
+          videoUrl: 'https://video.example.com/thumb-http',
+          durationSeconds: 600,
+          thumbnailUrl: 'https://cdn.example.com/thumb-http.jpg',
+        })
+        .expect(201);
+      expect(created.body.thumbnailUrl).toBe('https://cdn.example.com/thumb-http.jpg');
+    });
   });
 
   describe('marking annotations over HTTP (MARK-1)', () => {

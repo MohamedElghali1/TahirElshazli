@@ -40,6 +40,7 @@ const STUB_RECORDINGS: Recording[] = [
     durationSeconds: 2400,
     lessonDate: '2026-02-03T17:00:00Z',
     order: 1,
+    thumbnailUrl: null,
   },
   {
     id: 'rec-2',
@@ -53,6 +54,7 @@ const STUB_RECORDINGS: Recording[] = [
     durationSeconds: 2100,
     lessonDate: '2026-02-10T17:00:00Z',
     order: 2,
+    thumbnailUrl: null,
   },
   {
     id: 'rec-3',
@@ -66,6 +68,7 @@ const STUB_RECORDINGS: Recording[] = [
     durationSeconds: 1980,
     lessonDate: '2026-02-17T17:00:00Z',
     order: 3,
+    thumbnailUrl: null,
   },
   {
     id: 'rec-4',
@@ -79,6 +82,7 @@ const STUB_RECORDINGS: Recording[] = [
     durationSeconds: 1800,
     lessonDate: '2026-02-24T17:00:00Z',
     order: 4,
+    thumbnailUrl: null,
   },
   // Chapter 2 - Moles & Stoichiometry
   {
@@ -93,6 +97,7 @@ const STUB_RECORDINGS: Recording[] = [
     durationSeconds: 2700,
     lessonDate: '2026-03-03T17:00:00Z',
     order: 5,
+    thumbnailUrl: null,
   },
   {
     id: 'rec-6',
@@ -106,6 +111,7 @@ const STUB_RECORDINGS: Recording[] = [
     durationSeconds: 2280,
     lessonDate: '2026-03-10T17:00:00Z',
     order: 6,
+    thumbnailUrl: null,
   },
   {
     id: 'rec-7',
@@ -119,6 +125,7 @@ const STUB_RECORDINGS: Recording[] = [
     durationSeconds: 3000,
     lessonDate: '2026-03-17T17:00:00Z',
     order: 7,
+    thumbnailUrl: null,
   },
   {
     id: 'rec-8',
@@ -132,6 +139,7 @@ const STUB_RECORDINGS: Recording[] = [
     durationSeconds: 1920,
     lessonDate: '2026-03-24T17:00:00Z',
     order: 8,
+    thumbnailUrl: null,
   },
   // Chapter 3 - Organic Chemistry
   {
@@ -146,6 +154,7 @@ const STUB_RECORDINGS: Recording[] = [
     durationSeconds: 2520,
     lessonDate: '2026-04-07T17:00:00Z',
     order: 9,
+    thumbnailUrl: null,
   },
   {
     id: 'rec-10',
@@ -159,6 +168,7 @@ const STUB_RECORDINGS: Recording[] = [
     durationSeconds: 2640,
     lessonDate: '2026-04-14T17:00:00Z',
     order: 10,
+    thumbnailUrl: null,
   },
   {
     id: 'rec-11',
@@ -172,6 +182,7 @@ const STUB_RECORDINGS: Recording[] = [
     durationSeconds: 2400,
     lessonDate: '2026-04-21T17:00:00Z',
     order: 11,
+    thumbnailUrl: null,
   },
   {
     id: 'rec-12',
@@ -185,6 +196,7 @@ const STUB_RECORDINGS: Recording[] = [
     durationSeconds: 2160,
     lessonDate: '2026-04-28T17:00:00Z',
     order: 12,
+    thumbnailUrl: null,
   },
 ];
 
@@ -369,6 +381,7 @@ export class InMemoryRecordingRepository implements RecordingRepository {
       durationSeconds: input.durationSeconds,
       lessonDate: input.lessonDate,
       order: highestOrder + 1,
+      thumbnailUrl: input.thumbnailUrl ?? null,
     };
     this.recordings.push(recording);
     return recording;
@@ -392,6 +405,7 @@ export class InMemoryRecordingRepository implements RecordingRepository {
       existing.durationSeconds = patch.durationSeconds;
     }
     if (patch.lessonDate !== undefined) existing.lessonDate = patch.lessonDate;
+    if (patch.thumbnailUrl !== undefined) existing.thumbnailUrl = patch.thumbnailUrl;
     return existing;
   }
 

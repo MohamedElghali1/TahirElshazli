@@ -2330,3 +2330,119 @@ paths:
         '413': { description: Too large }
         '415': { description: Unsupported media type }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  # ---------------------------------------------------------------------------
+  # Recordings. `API_GAP_ANALYSIS.md` classifies these three `[MODIFY]` — "Add
+  # `thumbnailUrl`, `isVisible`" — so they belong in this file, unlike
+  # `GET /staff/courses/{courseId}/recordings` and `POST /recordings/{id}/progress`,
+  # which are `[KEEP]` and stay specified by their DTOs.
+  #
+  # Unit 13 delivered `thumbnailUrl` only. `isVisible` is NOT built: nothing in
+  # `PRODUCT_SPEC.md` §6 asks for it and no screen exposes it, so it is recorded
+  # as an open gap rather than invented here.
+  # ---------------------------------------------------------------------------
+
+  /courses/{courseId}/recordings:
+    get:
+      tags: [student]
+      summary: The student's recording library for one course
+      description: >
+        `[MODIFY]` — gains `thumbnailUrl` (`STU-2`). Null on every recording
+        published before migration `023`, which is the normal case and not an
+        error: the library renders an icon block rather than a broken image.
+        Each row carries the caller's own watch progress; `watchedSeconds` and
+        `completed` are progress, never a mark, and the library shows no mark
+        anywhere. `isVisible` is not implemented — see the note above.
+      x-roles: [student]
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+        - { name: chapter, in: query, required: false, schema: { type: string } }
+        - { name: topic, in: query, required: false, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/courses/{courseId}/recordings:
+    post:
+      tags: [recordings]
+      summary: Publish a recording
+      description: >
+        `[MODIFY]` — gains `thumbnailUrl` (`STU-2`). `id` and `position` are the
+        repository's to assign: a client that could pick either could collide
+        with an existing row or reorder the course by submitting a number.
+        `thumbnailUrl` is URL-validated exactly as `videoUrl` is, so it cannot
+        become a `javascript:` string that an `<img src>` or an anchor would
+        accept.
+      x-roles: [teacher, admin]
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [moduleId, lessonId, title, videoUrl, durationSeconds]
+              properties:
+                moduleId:         { type: string, maxLength: 64 }
+                lessonId:         { type: string, maxLength: 64 }
+                title:            { type: string, maxLength: 200 }
+                chapter:          { type: string, maxLength: 120 }
+                topics:           { type: array, maxItems: 20, items: { type: string, maxLength: 80 } }
+                videoUrl:         { type: string, format: uri }
+                thumbnailUrl:     { type: string, format: uri, maxLength: 2048, nullable: true }
+                durationSeconds:  { type: integer, minimum: 1 }
+                lessonDate:       { type: string, format: date-time }
+      responses:
+        '201': { description: Created — the created recording }
+        '400': { description: Validation failed }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/recordings/{recordingId}:
+    patch:
+      tags: [recordings]
+      summary: Edit a recording
+      description: >
+        `[MODIFY]` — gains `thumbnailUrl` (`STU-2`). An omitted field is left
+        alone. `thumbnailUrl` is the one nullable column here, so an explicit
+        `null` means "clear it" and is accepted — which is why it carries
+        `@IsOptional()` rather than `@IsOptionalNotNull()`: the repo's
+        convention is that `null` is a real value on a nullable column and a
+        400 on a `NOT NULL` one. `courseId`, `moduleId` and `lessonId` are
+        absent on purpose — moving a recording between courses would move it
+        out from under the enrollment check that gates every read of it, so a
+        move is a delete and a re-create, not a PATCH.
+      x-roles: [teacher, admin]
+      parameters:
+        - { name: recordingId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:            { type: string, maxLength: 200 }
+                chapter:          { type: string, maxLength: 120 }
+                topics:           { type: array, maxItems: 20, items: { type: string, maxLength: 80 } }
+                videoUrl:         { type: string, format: uri }
+                thumbnailUrl:     { type: string, format: uri, maxLength: 2048, nullable: true }
+                durationSeconds:  { type: integer, minimum: 1 }
+                lessonDate:       { type: string, format: date-time }
+      responses:
+        '200': { description: OK — the updated recording }
+        '400': { description: Validation failed }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [recordings]
+      summary: Remove a recording
+      description: >
+        `[MODIFY]` in `API_GAP_ANALYSIS.md` only for the fields its siblings
+        gain; the verb itself is unchanged. False from the repository becomes a
+        404, so a double-delete is not a lie.
+      x-roles: [teacher, admin]
+      parameters:
+        - { name: recordingId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200': { description: Removed }
+        '404': { $ref: '#/components/responses/NotFound' }
