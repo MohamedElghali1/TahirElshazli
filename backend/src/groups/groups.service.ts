@@ -1,3 +1,4 @@
+import type { WorkType } from '../assessments/interfaces/work-repository.interface.js';
 import {
   BadRequestException,
   ConflictException,
@@ -161,7 +162,7 @@ export interface Markbook {
   courseTitle: string;
   tasks: MarkbookTask[];
   /** Visible tasks with no mark anywhere (link work), named so the screen can say what it leaves out. */
-  omittedTasks: { assessmentId: string; title: string; workType: string }[];
+  omittedTasks: { assessmentId: string; title: string; workType: WorkType }[];
   students: MarkbookStudent[];
 }
 

@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "incremental": false,
+    "types": [
+      "node"
+    ],
+    "rootDir": ".."
+  },
+  "include": [
+    "test/drift/mirror-drift.check.ts"
+  ],
+  "exclude": []
+}

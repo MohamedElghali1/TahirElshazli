@@ -867,7 +867,8 @@ export type AssistantScope = 'all_groups' | 'assigned_groups';
  * `manage/admin-assistants.service.ts`'s `Assistant`.
  */
 export interface Assistant extends DirectoryEntry {
-  role: Role;
+  /** Only the two roles an invitation can carry, as the backend types it. */
+  role: 'assistant' | 'admin';
   scope: AssistantScope;
   groupIds: string[];
   status: 'invited' | 'active';
@@ -922,8 +923,12 @@ export type AuditAction =
   | 'live_session.scheduled'
   | 'live_session.updated'
   | 'live_session.cancelled'
+  | 'announcement.created'
+  | 'announcement.updated'
+  | 'announcement.deleted'
   | 'announcement.posted'
   | 'group.created'
+  | 'group.updated'
   | 'group.renamed'
   | 'group.course_added'
   | 'group.course_removed'
@@ -957,13 +962,33 @@ export type AuditAction =
   | 'account.google_linked'
   | 'account.google_unlinked';
 
+/** Mirrors the backend's `AuditTargetType`; `OPS-1`'s drift check holds the two together. */
+export type AuditTargetType =
+  | 'course_staff_assignment'
+  | 'assessment_submission'
+  | 'recording'
+  | 'live_session'
+  | 'announcement'
+  | 'group'
+  | 'group_course'
+  | 'group_membership'
+  | 'assessment'
+  | 'blog_post'
+  | 'google_credential'
+  | 'external_result'
+  | 'student'
+  | 'assistant'
+  | 'course'
+  | 'task_draft'
+  | 'user_google_identity';
+
 export interface AuditLogEntry {
   id: string;
   actorId: string;
   /** The actor's role at the time of the action, not their role now. */
   actorRole: Role;
   action: AuditAction;
-  targetType: string;
+  targetType: AuditTargetType;
   targetId: string;
   courseId: string | null;
   before: Record<string, string | number | boolean | null> | null;
