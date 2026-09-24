@@ -64,6 +64,8 @@ const ACTION_LABEL: Record<AuditAction, string> = {
   'task_draft.created': 'created a draft task',
   'task_draft.updated': 'edited a draft task',
   'task_draft.deleted': 'deleted a draft task',
+  'account.google_linked': 'connected Google sign-in',
+  'account.google_unlinked': 'disconnected Google sign-in',
 };
 
 /**
@@ -122,6 +124,9 @@ const ACTION_TONE: Record<AuditAction, TagTone> = {
   'task_draft.created': 'green',
   'task_draft.updated': 'amber',
   'task_draft.deleted': 'red',
+  // Who can sign in as the account: granting it is green, removing it red.
+  'account.google_linked': 'green',
+  'account.google_unlinked': 'red',
 };
 
 export default function ActivityLogPage() {

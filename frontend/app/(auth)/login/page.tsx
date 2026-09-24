@@ -3,9 +3,10 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ApiError } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import { useSession } from '@/lib/session';
 import { resolvePostAuthPath } from '@/lib/roles';
+import { goToGoogle } from '@/lib/google-flow';
 import { Button, TextInput, InlineBanner } from '@/components/ui';
 
 export default function LoginPage() {
@@ -16,6 +17,25 @@ export default function LoginPage() {
   const next = useSearchParams().get('next');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [googleError, setGoogleError] = useState<string | null>(null);
+  const [googleBusy, setGoogleBusy] = useState(false);
+
+  // `GAUTH-1`. Google is offered beside the password, never instead of it: an
+  // account must already be connected to Google from its settings (`D-49`),
+  // and a server without a Google client answers 503 with a message saying to
+  // use the password, which is shown here as it is.
+  async function continueWithGoogle() {
+    setGoogleError(null);
+    setGoogleBusy(true);
+    try {
+      goToGoogle('sign-in', await api.auth.googleStart(), next);
+    } catch (cause) {
+      setGoogleError(
+        cause instanceof ApiError ? cause.message : 'Could not reach Google sign-in. Use your password.',
+      );
+      setGoogleBusy(false);
+    }
+  }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -79,6 +99,22 @@ export default function LoginPage() {
           {busy ? 'Signing in…' : 'Sign in'}
         </Button>
       </form>
+
+      <div className="mt-[var(--sp-6)] flex flex-col gap-[var(--sp-3)] border-t border-border-light pt-[var(--sp-6)]">
+        <Button
+          type="button"
+          variant="secondary"
+          size="medium"
+          onClick={continueWithGoogle}
+          disabled={googleBusy}
+        >
+          {googleBusy ? 'Opening Google…' : 'Continue with Google'}
+        </Button>
+        <p className="text-(length:--fs-base) text-fg-3">
+          For accounts already connected to Google in their settings.
+        </p>
+        {googleError && <InlineBanner tone="amber">{googleError}</InlineBanner>}
+      </div>
 
       <div className="mt-[var(--sp-6)] flex flex-col gap-[var(--sp-3)] text-[var(--fs-base)]">
         <Link

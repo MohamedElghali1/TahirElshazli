@@ -6,6 +6,9 @@ import type {
   AuthoredAssessment,
   AuditLogPage,
   AuthResult,
+  GoogleCompletion,
+  GoogleLinkStatus,
+  GoogleStart,
   RegistrationResult,
   UserStatus,
   AdminCourse,
@@ -469,6 +472,25 @@ export const api = {
         method: 'POST',
         body: { password },
       }),
+
+    /* Google sign-in (`GAUTH-1`). A 503 from either start means the server
+       has no Google client; its message says to use the password. */
+    googleStart: () => request<GoogleStart>('/auth/google/start', { method: 'POST' }),
+
+    googleSignIn: (body: GoogleCompletion) =>
+      request<AuthResult>('/auth/google/sign-in', { method: 'POST', body }),
+
+    googleLinkStatus: (token: string) =>
+      request<GoogleLinkStatus>('/auth/google/link', { token }),
+
+    googleLinkStart: (token: string) =>
+      request<GoogleStart>('/auth/google/link/start', { method: 'POST', token }),
+
+    googleLink: (token: string, body: GoogleCompletion) =>
+      request<GoogleLinkStatus>('/auth/google/link', { method: 'POST', token, body }),
+
+    googleUnlink: (token: string) =>
+      request<void>('/auth/google/link', { method: 'DELETE', token }),
   },
 
   courses: {

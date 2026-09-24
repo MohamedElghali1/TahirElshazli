@@ -953,7 +953,9 @@ export type AuditAction =
   | 'blog_post.deleted'
   | 'task_draft.created'
   | 'task_draft.updated'
-  | 'task_draft.deleted';
+  | 'task_draft.deleted'
+  | 'account.google_linked'
+  | 'account.google_unlinked';
 
 export interface AuditLogEntry {
   id: string;
@@ -1509,4 +1511,31 @@ export interface NotificationPreferences {
   registrations: boolean;
   unmatched: boolean;
   weeklySummary: boolean;
+}
+
+/* --- Google sign-in (auth/google/google-sign-in.service.ts, `GAUTH-1`) ----- */
+
+/**
+ * What either start route returns. `browserKey` is kept in `sessionStorage` by
+ * the page that started the flow and presented on completion; it never goes in
+ * a URL. Mirrors `GoogleStart`.
+ */
+export interface GoogleStart {
+  authUrl: string;
+  browserKey: string;
+}
+
+/** Mirrors `GoogleLinkStatus`. `available` is false when the server or, for staff, the domain list says no. */
+export interface GoogleLinkStatus {
+  available: boolean;
+  linked: boolean;
+  email: string | null;
+  linkedAt: string | null;
+}
+
+/** What the callback page posts back to either completion route. Mirrors `CompleteGoogleDto`. */
+export interface GoogleCompletion {
+  code: string;
+  state: string;
+  browserKey: string;
 }
