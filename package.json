@@ -17,6 +17,7 @@
     "lint": "npm run lint:frontend && npm run lint:backend",
     "lint:frontend": "npm run lint --workspace=frontend",
     "lint:backend": "npm run lint --workspace=backend",
+    "typecheck:drift": "npm run typecheck:drift --workspace=backend",
     "db:migrate": "npm run db:migrate --workspace=backend",
     "db:seed": "npm run db:seed --workspace=backend",
     "docker:up": "docker compose up -d --build",

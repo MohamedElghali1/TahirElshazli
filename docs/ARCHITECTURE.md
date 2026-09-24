@@ -99,11 +99,13 @@ The redesign adds ~17 actions. Each needs the union entry, the `Record` entry, a
 the entry it writes.
 
 ### 2.4 One scoping chokepoint
-`StaffScopeService` is the only place that answers "may this staff member reach this?". **Ten**
-services call it, across **34** call sites (recounted 2026-09-24, unit 8, at `a7ac05f`: lines calling
-`assertAssigned`, `scopeFor`, `mayReachGroup` or `reachableGroupIds` outside specs; the same count was
-29 at unit 6's 2026-09-22 recount, and 22 on `6dabdb8`). The tenth is `manage/task-drafts` (`TASK-2`);
-`reachableGroupIds` is a fifth,
+`StaffScopeService` is the only place that answers "may this staff member reach this?". **Twelve**
+services call it, across **48** call sites (recounted 2026-09-24 at unit 8's landing: lines
+*invoking* `assertAssigned`, `scopeFor`, `mayReachGroup` or `reachableGroupIds` on the injected
+service, outside specs — unit 8's `manage-live-sessions.service.ts` alone holds 8 of them; the same count on
+`6657c7a` gives 29, and on `6dabdb8` 22). Unit 7 added `manage/submission-access` — the group-grain
+gate for every submission-named route, composing `reachableGroupIds` with two reads and adding **no**
+method to the chokepoint — and `manage/marking`. The tenth was `manage/task-drafts` (`TASK-2`); `reachableGroupIds` is a fifth,
 additive method for list reads that restrict in the query. It 404s rather than 403s, with a message
 identical to a genuine miss.
 
@@ -214,7 +216,7 @@ the outage that taught this.
 |---|---|
 | Weekly reports | `backend/src/reports/` (beside the existing student-facing reports) |
 | Task drafts | `backend/src/manage/` (beside `AssessmentAuthoringService`) |
-| Annotations | `backend/src/manage/` (beside `GradingService`) |
+| Annotations | **Service** in `backend/src/manage/` (`MarkingService`, beside `GradingService`); **repository** in `backend/src/assessments/` beside the submission aggregate, token exported — `AssessmentsModule` reads annotations for the student route, and `manage/` provides no repositories of its own (unit 7, A-13) |
 | Sessions rework | `backend/src/live-sessions/` (rename to `sessions/` only if it stays cheap) |
 | Attendance | `backend/src/live-sessions/` — it hangs off a session |
 | Assistant scope | `backend/src/staff/` — `StaffScopeService` already lives there |

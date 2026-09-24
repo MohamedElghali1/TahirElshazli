@@ -3817,6 +3817,50 @@ unit stays `[~]`.
 - **Status.** Unit 6 is `[x]`. Unit 7 (marking and the mark book) is next, and inherits `MARK-6` and
   `TASK-F3`.
 
+## 2026-09-23 — Unit 7: marking and the mark book (built; awaiting review)
+
+**How it ran.** The planner agent drafted the plan; its first two runs died (a rate limit, then a
+revoked token) and the third finished. The user accepted all nine of its blockers' recommendations,
+then asked for the pipeline to run **without the agent harness** and for the `MARK-6` design question
+to be **escalated rather than decided**. The coordinator stopped the executor agent mid-run (it had
+committed 7a–7f), kept its work, re-did the planning pass itself, verified each commit, took `MARK-6`
+back out, finished the unit, and ran the review as a separate pass.
+
+**What exists now.**
+- Teachers and assistants draw on a student's paper — ticks, crosses, numbered comments, pen and
+  highlighter strokes, an eraser for their own marks — and every mark is data over the untouched
+  original, saved as it is drawn. PDFs render in the browser with pdf.js.
+- Saving a mark and returning it are two actions. The student sees nothing until the work is
+  returned; then they see the mark, the feedback and the marked-up paper.
+- A per-task list shows every student the task was set for, including those who never handed it in.
+- The mark book: each group's students against its tasks, Google Form quiz scores copied in and
+  labelled as such, an "average of marked work", a missing mark as an em-dash, and a CSV export that
+  is safe to open in Excel with Arabic names.
+- Grading and the course submission queue are now scoped to the assistant's own groups.
+
+**What is honestly not there.** No real student submission can be marked up yet: students cannot
+upload files (`MARK-6`, open), and production has no file storage until an R2 driver exists. The
+marking screens were proven against a file placed by hand.
+
+**Counts.** 735 unit / 43 files, 330 e2e, 173 integration (0 skipped, PostgreSQL 15.19, 001–019 from
+an empty schema). Frontend `tsc` 0, lint 0. Node v26.8.1.
+
+**Later the same day — `MARK-6`.** The user ruled the submission-mode questions on the
+recommendations and reported the browser pass complete. Slice 7i followed: students now hand in by
+the task's mode — a PDF, up to five photos, or a Google Doc link — uploading straight into the
+platform on a route of their own, and staff mark up every file of a hand-in. On a server without file
+storage, a teacher cannot create a task that promises uploads. Counts: 748 unit / 44 files, 336 e2e,
+176 integration (0 skipped; 001–020 from an empty schema).
+
+**Closed the same day, `APPROVED`.** The user confirmed the three new `MARK-6` screens in a browser: the
+student upload form, the file switcher in the marking view, and the authoring gate. The coordinator did
+not observe it; it is recorded as the user's verification. Unit 7 is `[x]`. Unit 8 (sessions and
+attendance) is next. Carried forward:
+- `MARK-F1`…`MARK-F5`, including the R2 storage driver without which production stores no files;
+- one open question: whether quiz scores belong in the mark book's average.
+
+---
+
 ## Unit 11 — Google Forms surface (2026-09-23)
 
 Frontend-only unit over a complete backend (seven routes on `WorkAnalyticsController`). Built:
@@ -3887,6 +3931,47 @@ nothing about what a rewrite took away with it: compare test counts across a mer
 State on `redesign`: unit 11 `[x]`, unit 12 `[x]`, unit 10 `[~]` — slice 10a (backend) merged and
 `APPROVED`, slice 10b (the announcements frontend, `ANN-1`/`ANN-2`/`ANN-3`/`ANN-5`/`ANN-6`) is the
 whole of what remains on that unit.
+
+## 2026-09-23 — Two `redesign`s made one
+
+Unit 7 finished locally while units 10–12 finished on `origin/redesign` — and the remote line had also
+started its own unit 7, so the two could not simply be merged: two different migration `020`s, and
+the same decision codes naming different rulings. The user kept the local, reviewed unit 7; units
+10–12 were ported across unit by unit and the remote's half-built marking work was left behind.
+
+Porting surfaced two things the remote's reviews had not: its backend did not compile (nothing had
+run `tsc` on it — `vitest` does not typecheck, and `nest build` would have failed the image), and
+deleting an announcement draft crashed on Postgres because the repository called a method
+`DatabaseService` does not have. Both fixed; the second has a test that was seen failing first.
+
+Baseline on the reconciled tree: 771 unit / 45 files, 354 e2e, 179 integration (0 skipped, 001–022
+from an empty schema on PostgreSQL 15.19), frontend `tsc` 0, lint clean. Unit 14 is next.
+
+## 2026-09-23 — Unit 14: Google sign-in, and the mirror held to the backend
+
+Taken out of order, in the same conversation as the reconciliation. The documents said "Google is the
+primary sign-in" and "never auto-link by email", and not much else. So before anything was planned, the
+user ruled: an existing account connects Google only from inside its own signed-in settings; nobody
+gets an account through Google; staff may use Google only from a named Workspace domain, and with no
+domain named, staff keep passwords.
+
+Following the instruction to reuse the existing `state` pattern turned up the unit's most important
+finding. That pattern had a hole: the Forms integration's `state` token, which sits in a URL, worked
+as ten minutes of the teacher's session, because nothing checked the claim that said it was not a
+session. That was fixed first, with a test seen failing before the fix.
+
+Everyone can now connect Google from their account screen and then use "Continue with Google". The
+`id_token` is verified by hand against Google's keys (no new dependency), and every refusal is tested
+from the unauthorized side, including one Google account trying to attach to two people.
+
+`OPS-1` became a type check rather than code generation, because the API spec deliberately leaves out
+half the API. On its first run it found the activity log again showing unlabelled entries for four
+actions: the same bug the rule was written about. The review also finally explained the integration
+test that had failed once without a name during the reconciliation: two rows in the same millisecond.
+
+Counts: 790 unit, 386 e2e, 182 integration (001–023 from empty). The unit stays `[~]` until the user
+has looked at the two account panels in a browser and added two variables to `.env.example`. No live
+Google round trip has been made; that needs the client's Google Cloud client.
 
 ---
 
@@ -3992,7 +4077,91 @@ refused. §13: never invent business behaviour. It is recorded as the open half 
 
 `STU-1` remains the one item genuinely waiting on another unit: migration `019` is still absent from
 `redesign`, so unit 8's attendance figures do not exist to compose.
-**Unit 8 — sessions and attendance, closed 2026-09-24.** Migration `019` re-parents sessions to the
+
+---
+
+## 2026-09-24 — Unit 13, part three: two defects stopped being review items
+
+A parallel session reconciled unit 13 onto the remote line while this one was working: my four
+unit-13 commits are on `origin/redesign`, the migration collision with unit 14 was resolved by
+renumbering mine to `024_recording_thumbnails.sql`, and my local unit-7 commits turned out to be
+duplicates of work another session had already finished and had reviewed `APPROVED`. I verified all
+of that against the remote rather than taking the report on trust, kept the superseded line at
+`backup/unit13-local-20260924`, and reset local to `origin/redesign`.
+
+Two problems came out of that session's report, and both were the same kind of problem: **a defect
+that every gate passes.**
+
+**The dead-token class recurred before its own follow-up was built.** Unit 13 removed 491
+references to a retired vocabulary and filed `OPS-2` to prevent a recurrence. Days later unit 14's
+Google screens shipped `--sp-3/6/8` — undefined, so the login and callback spacing rendered as
+nothing. That is the fourth time: 478, then 113, then 491, then 3. Every one passed `tsc`, `eslint`
+and `next build`, because Tailwind's arbitrary-value syntax accepts any string. Independent
+reviewers read the code between each recurrence.
+
+So `OPS-2` got built the same day rather than staying a good intention:
+`frontend/scripts/check-tokens.mjs`, in `npm run lint`, resolving every `var(--…)` against the
+properties that actually exist and flagging `text-[var(--…)]` besides. **I verified it by
+reintroducing the exact regression** — `p-[var(--sp-6)]` and `text-[var(--fs-lead)]` back into
+`login/page.tsx` — and watching it fail with file and line, because a checker that has only ever
+been run against an already-clean tree has not been tested at all. Writing it turned up two
+false-positive classes worth knowing: the rule is *documented* by quoting the bad pattern, so
+comments must be blanked before scanning; and `next/font` injects two variables at runtime that no
+stylesheet contains.
+
+**The e2e suite could exit with no reading at all.** Five booted `AppModule`s in one process die
+with `0xC0000409` on this box, printing no summary. The crash is not the problem — its shape is.
+`vitest.config.e2e.ts` had already fought this twice and its own comment names the hazard exactly:
+*"a reader sees '0 failed' and the total quietly drops."* That is `CLAUDE.md` §10's rule about the
+integration suite, arriving at e2e without the guard step that protects the integration one.
+
+`backend/scripts/run-e2e.mjs` now runs one file per process and — the part that matters — **fails
+when any file produces no summary line, even on exit 0.** A missing count is an error, never a
+silent zero. Reading restored: 388 across 5 files, where the combined run gave nothing.
+
+Both are recorded in `CLAUDE.md` rather than only in the changelog, because both are durable rules
+about how this repository is checked, not decisions about a feature. The through-line is worth
+keeping: **a reviewer is the wrong instrument for a defect that passes every gate.**
+
+---
+
+## 2026-09-24 — Unit 13, part four: the material relation, and what it did not license
+
+The client ruled on the one requirement unit 13 had declined to invent: **follow the design.**
+`PRODUCT_SPEC.md` §6 asks lesson detail for "its material", and `materials` had no relation to a
+lesson, so migration `025` adds `materials.lesson_id`.
+
+The interesting part was scoping it. My own blocker note had said closing this needed "a
+`materials.lesson_id` column, both repository drivers, **and a staff control to set it**". Checking
+before building showed why that last clause was wrong: **materials have no authoring surface at
+all.** The module exposes exactly one route, `GET /courses/:id/materials`. There is no create, no
+update, no delete, for any field. Every material in the system arrives by seed.
+
+So "a staff control to set the lesson" was never a detail of this change — it is material CRUD, a
+feature in its own right, that nothing in §6 asks for. Building it because my earlier note mentioned
+it would have been scope creep sourced from my own stale sentence. The column shipped; the authoring
+surface did not; the absence is written down in three places so nobody reads it as an oversight.
+
+Three shape decisions worth keeping. Nullable, because **null is the normal case** — a syllabus and
+a past-paper pack belong to a course, not a lesson, and `NOT NULL` would have forced every existing
+row to claim one. `ON DELETE SET NULL` matching `assessments.lesson_id`, because deleting a lesson
+must not delete the course's files. And a partial index, since the rows carrying a lesson are the
+minority and every read is course-scoped before it filters.
+
+No new route: the existing endpoint carries the field, so the page filters what it already fetches —
+the same posture the work set took, and correct at §1's scale. The route moved `[KEEP]` → `[MODIFY]`
+in the gap analysis, because its response shape changed, which is the kind of bookkeeping that goes
+stale silently if it is not done in the same commit.
+
+The tests are aimed at the failure mode rather than the happy path. A mapper that drops a column
+returns `undefined`, the filter matches nothing, and the page renders "nothing attached to this
+lesson" — **a wrong answer wearing a legitimate empty state's clothes.** So both drivers assert the
+attached rows by id *and* that course-wide rows are `null` rather than `undefined`. Migration and
+seed ran from an empty schema against real PostgreSQL before any of it counted.
+
+Unit 13 is now one item from complete: `STU-1`, which composes unit 8's attendance figures. Unit 8
+has still not landed, and its migration slot has moved again — `025` is taken, so it is `026` now.
+**Unit 8 — sessions and attendance, closed 2026-09-24.** Migration `026` re-parents sessions to the
 group and moves `attendance` from a boolean to `present | absent | late`, with `marked_by`/
 `marked_at`. Eight staff routes landed in a new `backend/src/manage/sessions.controller.ts` (week
 grid, create/update/cancel, draft timetable, publish, the attendance sheet and its bulk write), two
@@ -4039,3 +4208,24 @@ backfill tests did not execute in that run (bare `psql`, empty schema, nothing t
 owes unit 7 a combined integration run at merge time. Two S4 judgment calls are flagged for the
 reviewer: the attendance projection's `expected` filters on `state: published` only, not `isVisible`;
 and the `history[]` field shape was not specified anywhere and mirrors the staff sheet.
+
+**Unit 8 landed on `redesign`, 2026-09-24.** The branch had split into two histories carrying units
+7 and 13 twice; the user ruled that those units are finished, so origin won every conflict that was
+not unit 8's own work. Three local duplicates were deleted rather than merged, including a second
+copy of the mark-book CSV writer — origin's was both the wired one and the more careful one.
+
+Unit 8's migration renumbered `019` → `026`, which is safe because only `001`, `005`, `012` and it
+touch the tables it reshapes; `001–026` were run from an empty database to prove it rather than
+argue it.
+
+Two defects surfaced during the merge, both by machinery rather than by reading. The mirror drift
+check caught unit 8's new audit actions never reaching the frontend — the same drift CLAUDE.md §6
+was written about — and fixing it made the activity page's exhaustive map fail, which is the rest of
+that mechanism doing its job. Separately, the merge left `getSessionsForCourse` unreachable but
+intact, still building its response by spreading the session row: the exact leak unit 8 had spent a
+slice closing, one caller away from returning. It was deleted.
+
+Merged tree: 803 unit / 48 files, 402 e2e, 191 integration (0 skipped, `001–026` from empty on
+PostgreSQL 15.19), both typechecks 0, lint clean. The open items carried forward are unchanged and
+listed in `docs/phases/unit-8/HANDOFF.md` §10 — chief among them that **no unit 8 screen has been
+opened in a browser**, so the RTL and dark-theme checks CLAUDE.md §11 asks for are still owed.

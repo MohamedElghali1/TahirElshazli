@@ -7,13 +7,9 @@ import type {
   AssessmentUpdate,
   NewAssessment,
   NewAssessmentTarget,
-  NewSubmissionAnnotation,
-  NewSubmissionFile,
   StaffTaskFilter,
   StoredAssessment,
   StoredSubmission,
-  SubmissionAnnotation,
-  SubmissionAnnotationUpdate,
   SubmissionFile,
   SubmissionRevision,
   TargetedAssessment,
@@ -61,9 +57,13 @@ function copyAssessment<T extends StoredAssessment>(a: T): T {
   };
 }
 
-/** Same aliasing rule as `copyAssessment`: `path` holds objects. */
-function copyAnnotation(a: SubmissionAnnotation): SubmissionAnnotation {
-  return { ...a, path: a.path ? a.path.map((p) => ({ ...p })) : null };
+/**
+ * A submission that shares no array or object with its source - the file set
+ * holds objects. Same reason as `copyAssessment`: a read that feeds an audit
+ * `before` must never alias its `after`.
+ */
+function copySubmission(s: StoredSubmission): StoredSubmission {
+  return { ...s, files: s.files.map((f) => ({ ...f })) };
 }
 
 const SEED_ASSESSMENTS: SeedAssessment[] = [
@@ -245,6 +245,7 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       assessmentId: 'assess-3',
       studentId: 'student-1',
       fileUrl: 'https://storage.example.com/submissions/midterm.pdf',
+      files: [],
       answerText: null,
       submittedAt: '2026-08-20T15:30:00Z',
       lastSubmittedAt: '2026-08-20T15:30:00Z',
@@ -253,7 +254,7 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       correctedAt: '2026-08-22T10:00:00Z',
       feedback: 'Strong titration work. Watch significant figures in part 3.',
       annotatedFileUrl: 'https://storage.example.com/annotated/midterm-corrected.pdf',
-      linkUrl: null,
+      // `019`'s backfill: every mark that predates the save/return split is returned.
       returnedAt: '2026-08-22T10:00:00Z',
     },
     {
@@ -261,6 +262,7 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       assessmentId: 'assess-4',
       studentId: 'student-1',
       fileUrl: 'https://storage.example.com/submissions/moles-hw.pdf',
+      files: [],
       answerText: null,
       submittedAt: '2026-08-24T19:10:00Z',
       lastSubmittedAt: '2026-08-24T19:10:00Z',
@@ -269,7 +271,6 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       correctedAt: null,
       feedback: null,
       annotatedFileUrl: null,
-      linkUrl: null,
       returnedAt: null,
     },
     {
@@ -277,6 +278,7 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       assessmentId: 'assess-5',
       studentId: 'student-1',
       fileUrl: 'https://storage.example.com/submissions/nomenclature.pdf',
+      files: [],
       answerText: null,
       submittedAt: '2026-07-12T14:00:00Z',
       lastSubmittedAt: '2026-07-12T14:00:00Z',
@@ -285,7 +287,6 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       correctedAt: '2026-07-15T09:00:00Z',
       feedback: 'Excellent. Only slipped on the halogenoalkane ordering.',
       annotatedFileUrl: null,
-      linkUrl: null,
       returnedAt: '2026-07-15T09:00:00Z',
     },
     {
@@ -293,6 +294,7 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       assessmentId: 'assess-6',
       studentId: 'student-1',
       fileUrl: 'https://storage.example.com/submissions/energetics.pdf',
+      files: [],
       answerText: null,
       submittedAt: '2026-06-22T20:00:00Z',
       lastSubmittedAt: '2026-06-22T20:00:00Z',
@@ -301,7 +303,6 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       correctedAt: '2026-06-25T11:00:00Z',
       feedback: 'Revise Hess cycles and the effect of temperature on rate.',
       annotatedFileUrl: null,
-      linkUrl: null,
       returnedAt: '2026-06-25T11:00:00Z',
     },
     {
@@ -309,6 +310,7 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       assessmentId: 'assess-7',
       studentId: 'student-1',
       fileUrl: 'https://storage.example.com/submissions/synthesis.pdf',
+      files: [],
       answerText: null,
       submittedAt: '2026-08-08T17:45:00Z',
       lastSubmittedAt: '2026-08-08T17:45:00Z',
@@ -317,7 +319,6 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       correctedAt: '2026-08-12T13:00:00Z',
       feedback: 'Good routes. Justify reagent choice more explicitly next time.',
       annotatedFileUrl: null,
-      linkUrl: null,
       returnedAt: '2026-08-12T13:00:00Z',
     },
     {
@@ -325,6 +326,7 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       assessmentId: 'assess-8',
       studentId: 'student-1',
       fileUrl: 'https://storage.example.com/submissions/atomic-hw.pdf',
+      files: [],
       answerText: null,
       submittedAt: '2026-05-18T16:20:00Z',
       lastSubmittedAt: '2026-05-18T16:20:00Z',
@@ -333,19 +335,11 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       correctedAt: '2026-05-21T10:30:00Z',
       feedback: 'Solid, but check your mass spectrometry interpretation.',
       annotatedFileUrl: null,
-      linkUrl: null,
       returnedAt: '2026-05-21T10:30:00Z',
     },
   ];
 
   private revisions: SubmissionRevision[] = [];
-
-  /** Empty seed: no stub submission predates `020`'s multi-file model. */
-  private submissionFiles: SubmissionFile[] = [];
-  private submissionFileSeq = 0;
-
-  private annotations: SubmissionAnnotation[] = [];
-  private annotationSeq = 0;
 
   /**
    * A per-instance copy of the seed, not the module-level array.
@@ -606,6 +600,22 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
     return this.submissions.filter((s) => wanted.has(s.assessmentId));
   }
 
+  async findSubmissionsForStudents(
+    assessmentIds: readonly string[],
+    studentIds: readonly string[],
+  ): Promise<StoredSubmission[]> {
+    const tasks = new Set(assessmentIds);
+    const students = new Set(studentIds);
+    return this.submissions
+      .filter((s) => tasks.has(s.assessmentId) && students.has(s.studentId))
+      // Postgres's order: newest content first, then id.
+      .sort(
+        (a, b) =>
+          b.lastSubmittedAt.localeCompare(a.lastSubmittedAt) || a.id.localeCompare(b.id),
+      )
+      .map(copySubmission);
+  }
+
   async countUngradedSubmissionsByCourses(
     courseIds: readonly string[],
   ): Promise<Record<string, number>> {
@@ -651,7 +661,7 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
     // behave differently in a way that is invisible until something holds the
     // result across a write and finds it has changed underneath - which is
     // exactly how the grading audit entry first recorded before === after.
-    return found ? { ...found } : null;
+    return found ? copySubmission(found) : null;
   }
 
   async gradeSubmission(
@@ -678,110 +688,32 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
     submission.correctedAt = now;
     submission.updatedAt = now;
     // `fileUrl`, `answerText`, `submittedAt` and `lastSubmittedAt` are
-    // untouched - the student's own work is immutable here (§5.5).
+    // untouched - the student's own work is immutable here (§5.5). So is
+    // `returnedAt`: a re-grade after return shows immediately (A-4).
     return submission;
   }
 
-  async returnSubmission(
-    submissionId: string,
-  ): Promise<StoredSubmission | null> {
+  async returnSubmission(submissionId: string): Promise<StoredSubmission | null> {
     const submission = this.submissions.find((s) => s.id === submissionId);
-    if (!submission) {
+    // Absent or unmarked are both null, as the Postgres predicate makes them.
+    if (!submission || submission.correctedAt === null) {
       return null;
     }
-    const now = new Date().toISOString();
-    // Re-returning after a re-mark re-stamps, for the same reason
-    // `correctedAt` does: it is when what the student sees was released.
-    submission.returnedAt = now;
-    submission.updatedAt = now;
-    return { ...submission };
-  }
-
-  async findFilesForSubmissions(
-    submissionIds: readonly string[],
-  ): Promise<SubmissionFile[]> {
-    const wanted = new Set(submissionIds);
-    return this.submissionFiles
-      .filter((f) => wanted.has(f.submissionId))
-      .map((f) => ({ ...f }));
-  }
-
-  async replaceSubmissionFiles(
-    submissionId: string,
-    files: readonly NewSubmissionFile[],
-  ): Promise<SubmissionFile[]> {
-    this.submissionFiles = this.submissionFiles.filter(
-      (f) => f.submissionId !== submissionId,
-    );
-    const now = new Date().toISOString();
-    const created = files.map((f, i) => ({
-      ...f,
-      id: `subfile-${++this.submissionFileSeq}`,
-      submissionId,
-      // The caller's order is the truth; its `position` is not trusted, so a
-      // gap or a duplicate cannot reach the `UNIQUE` column in Postgres.
-      position: i,
-      createdAt: now,
-    }));
-    this.submissionFiles.push(...created);
-    return created.map((f) => ({ ...f }));
-  }
-
-  async findAnnotations(
-    submissionId: string,
-  ): Promise<SubmissionAnnotation[]> {
-    return this.annotations
-      .filter((a) => a.submissionId === submissionId)
-      .map(copyAnnotation);
-  }
-
-  async findAnnotationById(
-    annotationId: string,
-  ): Promise<SubmissionAnnotation | null> {
-    const found = this.annotations.find((a) => a.id === annotationId);
-    return found ? copyAnnotation(found) : null;
-  }
-
-  async createAnnotation(
-    annotation: NewSubmissionAnnotation,
-  ): Promise<SubmissionAnnotation> {
-    const now = new Date().toISOString();
-    const created: SubmissionAnnotation = {
-      ...annotation,
-      path: annotation.path ? annotation.path.map((p) => ({ ...p })) : null,
-      id: `annot-${++this.annotationSeq}`,
-      createdAt: now,
-      updatedAt: now,
-    };
-    this.annotations.push(created);
-    return copyAnnotation(created);
-  }
-
-  async updateAnnotation(
-    annotationId: string,
-    update: SubmissionAnnotationUpdate,
-  ): Promise<SubmissionAnnotation | null> {
-    const found = this.annotations.find((a) => a.id === annotationId);
-    if (!found) {
-      return null;
+    if (submission.returnedAt === null) {
+      const now = new Date().toISOString();
+      submission.returnedAt = now;
+      submission.updatedAt = now;
     }
-    if (update.page !== undefined) found.page = update.page;
-    if (update.x !== undefined) found.x = update.x;
-    if (update.y !== undefined) found.y = update.y;
-    if (update.path !== undefined) {
-      found.path = update.path ? update.path.map((p) => ({ ...p })) : null;
-    }
-    if (update.colour !== undefined) found.colour = update.colour;
-    if (update.width !== undefined) found.width = update.width;
-    if (update.body !== undefined) found.body = update.body;
-    found.updatedAt = new Date().toISOString();
-    return copyAnnotation(found);
+    return copySubmission(submission);
   }
 
-  async deleteAnnotation(annotationId: string): Promise<boolean> {
-    const before = this.annotations.length;
-    this.annotations = this.annotations.filter((a) => a.id !== annotationId);
-    return this.annotations.length !== before;
+  async claimMarker(assessmentId: string, userId: string): Promise<boolean> {
+    const assessment = this.assessments.find((a) => a.id === assessmentId);
+    if (!assessment || assessment.markerId !== null) {
+      return false;
+    }
+    assessment.markerId = userId;
+    return true;
   }
 
   async createSubmission(
@@ -789,7 +721,7 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
     studentId: string,
     fileUrl: string | null,
     answerText: string | null,
-    linkUrl: string | null,
+    files: readonly SubmissionFile[] = [],
   ): Promise<StoredSubmission> {
     const now = new Date().toISOString();
     const submission: StoredSubmission = {
@@ -797,6 +729,7 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       assessmentId,
       studentId,
       fileUrl,
+      files: files.map((f) => ({ ...f })),
       answerText,
       submittedAt: now,
       lastSubmittedAt: now,
@@ -805,7 +738,6 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       correctedAt: null,
       feedback: null,
       annotatedFileUrl: null,
-      linkUrl,
       returnedAt: null,
     };
     this.submissions.push(submission);
@@ -815,9 +747,9 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
   async updateSubmission(
     submissionId: string,
     studentId: string,
-    fileUrl: string | undefined,
-    answerText: string | undefined,
-    linkUrl: string | undefined,
+    fileUrl: string | null | undefined,
+    answerText: string | null | undefined,
+    files?: readonly SubmissionFile[],
   ): Promise<StoredSubmission | null> {
     const submission = this.submissions.find(
       (s) => s.id === submissionId && s.studentId === studentId,
@@ -833,6 +765,8 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
       id: randomUUID(),
       submissionId: submission.id,
       fileUrl: submission.fileUrl,
+      // The whole set, archived whole (`D-48` (c)).
+      files: submission.files.map((f) => ({ ...f })),
       answerText: submission.answerText,
       submittedAt: submission.lastSubmittedAt,
       replacedAt: now,
@@ -846,8 +780,8 @@ export class InMemoryAssessmentRepository implements AssessmentRepository {
     if (answerText !== undefined) {
       submission.answerText = answerText;
     }
-    if (linkUrl !== undefined) {
-      submission.linkUrl = linkUrl;
+    if (files !== undefined) {
+      submission.files = files.map((f) => ({ ...f }));
     }
     submission.lastSubmittedAt = now;
     submission.updatedAt = now;

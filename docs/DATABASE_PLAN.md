@@ -57,8 +57,8 @@ would be a one-way door for no benefit.
 | `assessments` | `submission_modes` | `TEXT[] NOT NULL DEFAULT '{}' CHECK (submission_modes <@ ARRAY['pdf_upload','doc_link','photo_upload'])` — `018`, **added by `D-31`** | Submission settings; multi-file is unit 7's |
 | `assessments` | `draft_id` | `TEXT REFERENCES task_drafts(id) ON DELETE SET NULL` — `018` | Provenance, not a live link |
 | `assessments` | `attachments` | `JSONB NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(attachments) = 'array')` — `018`, **added by unit 6** (it was missing here; `API_GAP_ANALYSIS.md` A4/B3 require attachments on the task itself). Each element carries `audience` (`D-29`). | Copied from a draft, a handful per task, so JSONB rather than a child table |
-| `assessment_submissions` | `returned_at` | `TIMESTAMPTZ(3)` | Save ≠ save-and-return |
-| `assessment_submissions` | `include_in_report` | `BOOLEAN NOT NULL DEFAULT true` | Marking view toggle |
+| `assessment_submissions` | `returned_at` | `TIMESTAMPTZ(3)` | Save ≠ save-and-return. **Applied in `019`** (unit 7): backfilled `:= corrected_at`; `CHECK (returned_at IS NULL OR corrected_at IS NOT NULL)` |
+| `assessment_submissions` | `include_in_report` | `BOOLEAN NOT NULL DEFAULT true` | Marking view toggle. **Deferred to the weekly-reports migration** (unit 7 assumption A-5): nothing reads it before then |
 
 **On `visibility`.** It must be a separate column, not inferred: status derived purely from
 timestamps cannot express "hidden". **`D-28` (2026-09-22) narrowed it to `published | hidden`.** The
@@ -78,7 +78,7 @@ has a submission is refused (409).
 | `assistant_group_assignments` | `id`, `user_id`, `group_id`, `assigned_by`, `assigned_at`, `UNIQUE(user_id, group_id)` | Rows exist only when scope is `assigned_groups`. Index on `user_id`. |
 | `assistant_invitations` | `id`, `email`, `role`, `scope`, `group_ids TEXT[]`, `token UNIQUE`, `expires_at`, `accepted_at`, `invited_by` | Single-use; accepting creates the user and its scope in one transaction. |
 | `task_drafts` | `id`, `course_id`, `type`, `work_type`, `title`, `description`, `instructions`, `attachments JSONB`, `used_count INT NOT NULL DEFAULT 0`, `created_by`, `created_at`, `updated_at` (both `TIMESTAMPTZ(3)`) | The reuse library. Migration `018`. `created_at` added by unit 6 (the §9 convention; this list was shorthand). |
-| `submission_annotations` | `id`, `submission_id CASCADE`, `page INT`, `x_percent NUMERIC(5,2)`, `y_percent NUMERIC(5,2)`, `kind CHECK IN ('comment','tick','cross')`, `text`, `created_by`, `created_at` | Stored as **data**, not a flattened file — which is what makes them editable and deletable. Index `(submission_id, page)`. |
+| `submission_annotations` | **As applied in `019` (unit 7), per `D-2`:** `id`, `submission_id CASCADE`, `file_url` (which file the mark is on; survives a resubmission), `page INT 1–500`, `kind CHECK IN ('comment','tick','cross','pen','highlight')`, `x_percent`/`y_percent NUMERIC(5,2) 0–100`, `text ≤ 2000` (non-blank for a comment), `path JSONB` (a stroke's `[[x%,y%],…]`, 2–2000 points, present exactly for `pen`/`highlight`), `created_by RESTRICT`, `created_at`, `updated_at` (`TIMESTAMPTZ(3)`) | Stored as **data**, not a flattened file — which is what makes them editable and deletable. Index `(submission_id, page)`. `NUMERIC` arrives as a string; the repository parses it. |
 | `weekly_reports` | `id`, `student_id`, `group_id`, `course_id`, `week_number INT`, `period_start DATE`, `period_end DATE`, `generated_at`, `status CHECK IN ('new','under_review','reviewed','sent')`, `assigned_assistant_id`, `assistant_note`, `teacher_note`, `reviewed_by`, `reviewed_at`, `sent_at`, `sent_to`, `file_url`, `UNIQUE(student_id, week_number)` | The flagship new entity. Index `(group_id, week_number, status)`. |
 | `notification_preferences` | `user_id PK`, four booleans | |
 | `mail_deliveries` | `id`, `to_email`, `template`, `related_type`, `related_id`, `sent_at TIMESTAMPTZ(3)`, `status`, `error` | Emailing a child's marks to a parent is PII egress; it must be reconstructable. |
@@ -204,7 +204,7 @@ before → `assistant_group_assignments` 1 row after (the one course had one gro
 migration. `StaffScopeService` fails closed on a missing row — an assistant without one reaches
 nothing — but **unit 5's `PEOPLE-4` must write the row** when it gains the ability to create one.
 
-### 4.3 `attendance.attended BOOLEAN` → `status` enum — **SHIPPED as `019`, unit 8 slice S1**
+### 4.3 `attendance.attended BOOLEAN` → `status` enum — **SHIPPED as `026`, unit 8 slice S1**
 
 ```
 ALTER TABLE attendance ADD COLUMN status TEXT CHECK (status IN ('present','absent','late'));
@@ -230,7 +230,7 @@ total by construction and this backfill has no abort path reachable from valid d
 stated as a placeholder rather than a fabricated moment, the same honesty the `marked_by` backfill
 states for itself.
 
-### 4.4 `live_sessions` re-parents to the group — **SHIPPED as `019`, unit 8 slice S1**
+### 4.4 `live_sessions` re-parents to the group — **SHIPPED as `026`, unit 8 slice S1**
 
 No `mode`, no `location` — `D-9` (`CHANGELOG.md`) had already struck both in favour of one
 `meeting_link` before this migration was authored; the SQL below is what actually shipped, not the
@@ -316,19 +316,31 @@ this scale round trips and row volume matter and query counts mostly do not.
 `DOM-1`/`DOM-2`) · `014` `users.status` (registration approval, `DOM-4`) **+** student profile fields
 (`DOM-3`) · `015` **assistant scope tables + data move** (`AUTH-2`, destructive, **applied and verified**) ·
 `016` mail deliveries (**applied**, unit 3) · `017` assistant invitations (**applied**, unit 5) ·
-`018` **task drafts + assessment columns** (**applied and verified**, unit 6) · `019`
-**sessions and attendance** (`SESS-1`/`SESS-3`, destructive, two abort paths, §4.3/§4.4, unit 8
-slice S1) · `020` weekly reports (unit 9, claimed by a parallel checkout) · `021` announcements
-(group audience, media, draft) · `022` notification preferences
+`018` **task drafts + assessment columns** (**applied and verified**, unit 6) · `019` annotations +
+submission columns (**applied and verified**, unit 7) · `020` **submission file sets** (`files JSONB` ≤ 5 on
+submissions and revisions, `D-48`; **applied and verified**, unit 7 slice 7i) · `021` announcements
+(group audience, media, draft; **applied and verified**, unit 10) · `022` notification preferences
+(**applied and verified**, unit 12) · `023` Google sign-in identities (`user_google_identities`,
+`GAUTH-1`; **applied and verified**, unit 14) · `024` recording thumbnails (**applied and
+verified**, unit 13) · `025` `materials.lesson_id` (`STU-3`; **applied and verified**, unit 13) ·
+`026` **sessions and attendance** (`SESS-1`/`SESS-3`, destructive, two abort paths, §4.3/§4.4;
+**applied and verified**, unit 8 slice S1) · `027` weekly reports (unit 9, unbuilt)
 
-**Renumbered again, 2026-09-23, unit 8.** The list previously split the sessions/attendance rework
-into two files (`020` sessions, `021` attendance) with `019` reserved for annotations/submission
-columns that were never built as their own migration. Unit 8's `PHASE_PLAN.md` §2 claims `019` for
-both reshapes together — one file, since the attendance backfill's `marked_by` join depends on the
-session re-parent having already run, and splitting them would cost a second migration number to
-save nothing (the same reasoning `018` gave for folding `DOM-2`'s three columns into one file with
-`013`). Unit 7, running in a parallel checkout, takes `020` for its own migration
-(`PHASE_PLAN.md` §7.1) rather than the numbers this list previously reserved.
+**Renumbered a fifth time 2026-09-24, unit 8 landing.** Unit 8 authored its migration as `019`
+in a parallel checkout; by the time it merged, `019`-`025` were taken. It becomes `026` - one
+file, both reshapes, as planned. The move is behaviour-neutral: grepping the migrations for
+`live_sessions` or `attendance` returns only `001`, `005`, `012` and this file, so nothing
+between `019` and `025` reads or writes either table. Weekly reports shift to `027`.
+
+**Renumbered a fourth time 2026-09-23, unit 14.** Taken out of order, it claimed `023`; the three
+unbuilt entries shift by one.
+
+**Renumbered a third time 2026-09-23, the units 10–12 reconciliation.** Units 10 and 12 were built on
+a parallel line of `redesign` and shipped announcements as `021` and notification preferences as
+`022`. Ported onto the unit 7 line they keep those numbers; the three unbuilt entries follow them.
+001–022 ran in order from an empty schema on PostgreSQL 15.19 (integration 179 passed, 0 skipped).
+
+**Renumbered again 2026-09-23, unit 7.** `MARK-6`'s file set took `020`, so every later entry shifts by one.
 
 **Renumbered 2026-09-22, unit 6.** The list had assigned `016` to task drafts, but `016` shipped as
 `mail_deliveries` and `017` as `assistant_invitations`, so every planned entry shifts: task drafts

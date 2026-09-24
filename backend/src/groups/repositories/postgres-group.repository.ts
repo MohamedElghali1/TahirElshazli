@@ -195,6 +195,18 @@ export class PostgresGroupRepository implements GroupRepository {
     return rows.map(toMembership);
   }
 
+  async findMembersForGroups(groupIds: readonly string[]): Promise<GroupMembership[]> {
+    if (groupIds.length === 0) {
+      return [];
+    }
+    // One read for many rosters; `group_memberships (group_id, ...)` serves it.
+    const rows = await this.db.query<GroupMembershipRow>(
+      `${SELECT_MEMBERSHIP} WHERE group_id = ANY($1) ORDER BY assigned_at, id`,
+      [[...groupIds]],
+    );
+    return rows.map(toMembership);
+  }
+
   async findMembershipsForStudent(
     studentId: string,
   ): Promise<GroupMembership[]> {

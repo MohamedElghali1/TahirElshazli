@@ -28,6 +28,7 @@ const AUDIT_ACTION_VALUES: Record<AuditAction, true> = {
   'course_staff.unassigned': true,
   'submission.graded': true,
   'submission.returned': true,
+  'submission.annotated': true,
   'recording.created': true,
   'recording.updated': true,
   'recording.deleted': true,
@@ -73,6 +74,8 @@ const AUDIT_ACTION_VALUES: Record<AuditAction, true> = {
   'session.planned': true,
   'session.published': true,
   'attendance.marked': true,
+  'account.google_linked': true,
+  'account.google_unlinked': true,
 };
 
 const AUDIT_TARGET_TYPE_VALUES: Record<AuditTargetType, true> = {
@@ -93,6 +96,7 @@ const AUDIT_TARGET_TYPE_VALUES: Record<AuditTargetType, true> = {
   assistant: true,
   task_draft: true,
   attendance: true,
+  user_google_identity: true,
 };
 
 export const AUDIT_ACTIONS = Object.keys(

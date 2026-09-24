@@ -1,4 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { SUBMISSION_ANNOTATION_REPOSITORY } from '../assessments/interfaces/submission-annotation-repository.interface.js';
+import { InMemorySubmissionAnnotationRepository } from '../assessments/repositories/in-memory-submission-annotation.repository.js';
 import { DashboardController } from './dashboard.controller.js';
 import { DashboardService } from './dashboard.service.js';
 import { StudentsService } from '../students/students.service.js';
@@ -13,8 +15,6 @@ import { ReportsService } from '../reports/reports.service.js';
 import { REPORT_REPOSITORY } from '../reports/interfaces/report-repository.interface.js';
 import { InMemoryReportRepository } from '../reports/repositories/in-memory-report.repository.js';
 import { AssessmentsService } from '../assessments/assessments.service.js';
-import { DatabaseService } from '../database/database.service.js';
-import { DATABASE_POOL } from '../database/database.tokens.js';
 import { ASSESSMENT_REPOSITORY } from '../assessments/interfaces/assessment-repository.interface.js';
 import { WORK_REPOSITORY, EXTERNAL_WORK_BINDER } from '../assessments/interfaces/work-repository.interface.js';
 import { InMemoryWorkRepository } from '../assessments/repositories/in-memory-work.repository.js';
@@ -75,8 +75,6 @@ describe('DashboardController', () => {
         TokenDenylistService,
         ReportsService,
         AssessmentsService,
-        { provide: DATABASE_POOL, useValue: null },
-        DatabaseService,
         CoursesService,
         RecordingsService,
         MaterialsService,
@@ -88,6 +86,7 @@ describe('DashboardController', () => {
         { provide: REPORT_REPOSITORY, useClass: InMemoryReportRepository },
         { provide: ASSESSMENT_REPOSITORY, useClass: InMemoryAssessmentRepository },
         { provide: WORK_REPOSITORY, useClass: InMemoryWorkRepository },
+        { provide: SUBMISSION_ANNOTATION_REPOSITORY, useClass: InMemorySubmissionAnnotationRepository },
         { provide: COURSE_REPOSITORY, useClass: InMemoryCourseRepository },
         { provide: RECORDING_REPOSITORY, useClass: InMemoryRecordingRepository },
         { provide: MATERIAL_REPOSITORY, useClass: InMemoryMaterialRepository },

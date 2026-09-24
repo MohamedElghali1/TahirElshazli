@@ -1,18 +1,15 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { randomUUID } from 'node:crypto';
+import { UploadsService } from '../common/storage/uploads.service.js';
+import { FILE_STORAGE } from '../common/storage/file-storage.interface.js';
 import { TASK_DRAFT_REPOSITORY } from './interfaces/task-draft-repository.interface.js';
 import { InMemoryTaskDraftRepository } from './repositories/in-memory-task-draft.repository.js';
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { StaffManageController } from './staff-manage.controller.js';
 import { AdminManageController } from './admin-manage.controller.js';
-import { SessionsController } from './sessions.controller.js';
 import { ManageService } from './manage.service.js';
 import { GradingService } from './grading.service.js';
-import { AnnotationsService } from './annotations.service.js';
+import { SubmissionAccessService } from './submission-access.service.js';
 import { ManageRecordingsService } from './manage-recordings.service.js';
 import { ManageLiveSessionsService } from './manage-live-sessions.service.js';
 import { DirectoryService } from './directory.service.js';
@@ -83,19 +80,32 @@ const FULL_ADMIN = {
 describe('Manage surface', () => {
   let staff: StaffManageController;
   let admin: AdminManageController;
-  let sessions: SessionsController;
   let audit: AuditService;
   let assessments: InMemoryAssessmentRepository;
   let users: InMemoryUserRepository;
-  let groups: InMemoryGroupRepository;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      controllers: [StaffManageController, AdminManageController, SessionsController],
+      controllers: [StaffManageController, AdminManageController],
       providers: [
+        // Storage is ON here: `D-48` (b) refuses upload modes without it. A
+        // double of the port, so nothing touches disk.
+        UploadsService,
+        {
+          provide: FILE_STORAGE,
+          useValue: {
+            save: async (i: { bytes: Buffer; mimeType: string; extension: string }) => ({
+              url: `/uploads/${randomUUID()}.${i.extension}`,
+              sizeBytes: i.bytes.length,
+              mimeType: i.mimeType,
+            }),
+            remove: async () => true,
+          },
+        },
         ManageService,
         GradingService,
-        AnnotationsService,
+        // `/grade` is group-grain since `D-44` (unit 7).
+        SubmissionAccessService,
         ManageRecordingsService,
         ManageLiveSessionsService,
         DirectoryService,
@@ -165,11 +175,9 @@ describe('Manage surface', () => {
 
     staff = module.get(StaffManageController);
     admin = module.get(AdminManageController);
-    sessions = module.get(SessionsController);
     audit = module.get(AuditService);
     assessments = module.get(ASSESSMENT_REPOSITORY);
     users = module.get(USER_REPOSITORY);
-    groups = module.get(GROUP_REPOSITORY);
   });
 
   describe('GET /staff/overview', () => {
@@ -268,284 +276,6 @@ describe('Manage surface', () => {
     });
   });
 
-  describe('GET /staff/assessments/:id/submissions (MARK-3)', () => {
-    it('returns every targeted student, non-submitters included, and never fakes a zero score', async () => {
-      // assess-4 targets group-1 by default (student-1, student-2). student-1
-      // has an ungraded submission (sub-2); student-2 has none at all.
-      const roster = await staff.assessmentSubmissions('assess-4', ASSIGNED_TA);
-      expect(roster.items).toHaveLength(2);
-
-      const submitter = roster.items.find((i) => i.studentId === 'student-1');
-      expect(submitter).toMatchObject({ submitted: true, status: 'awaiting' });
-      expect(submitter?.score).toBeNull(); // genuinely ungraded, not a fake zero
-
-      const nonSubmitter = roster.items.find((i) => i.studentId === 'student-2');
-      expect(nonSubmitter).toMatchObject({
-        submitted: false,
-        submissionId: null,
-        status: 'missing',
-      });
-      // The em-dash rule's API half (CLAUDE.md §11.1): null, never 0.
-      expect(nonSubmitter?.score).toBeNull();
-    });
-
-    it('deduplicates a student targeted through two groups', async () => {
-      await assessments.setTargets('assess-2', [
-        { groupId: 'group-1' },
-        { groupId: 'group-2' },
-      ]);
-      // group-1: student-1, student-2. group-2: student-1. Teacher is
-      // unscoped, so this exercises the join, not the narrowing.
-      const roster = await staff.assessmentSubmissions('assess-2', ADMIN);
-      const ids = roster.items.map((i) => i.studentId);
-      expect(ids.filter((id) => id === 'student-1')).toHaveLength(1);
-      expect(new Set(ids).size).toBe(ids.length);
-    });
-
-    it('narrows an assistant to only the groups they hold, even when the task targets more', async () => {
-      const group3 = await groups.create({
-        name: 'IGCSE Chemistry — Monday 17:00',
-        teacherId: 'teacher-1',
-        courseId: 'course-1',
-        assistantId: null,
-        meets: 'Monday 17:00',
-        room: null,
-      });
-      await users.create({
-        email: 'student3@example.com',
-        passwordHash: 'x',
-        name: 'Student Three',
-        role: Role.Student,
-        status: 'active',
-      });
-      const created = await users.findByEmail('student3@example.com');
-      await groups.addMember({
-        groupId: group3.id,
-        studentId: created!.id,
-        assignedBy: 'teacher-1',
-      });
-      // A 3-group task (assistant-1 holds only group-1) - the case the brief
-      // names.
-      await assessments.setTargets('assess-2', [
-        { groupId: 'group-1' },
-        { groupId: 'group-2' },
-        { groupId: group3.id },
-      ]);
-
-      const asAssistant = await staff.assessmentSubmissions('assess-2', ASSIGNED_TA);
-      const assistantIds = asAssistant.items.map((i) => i.studentId);
-      // group-1's own roster only - genuinely absent, not merely unflagged.
-      expect(new Set(assistantIds)).toEqual(new Set(['student-1', 'student-2']));
-      expect(assistantIds).not.toContain(created!.id);
-
-      const asAdmin = await staff.assessmentSubmissions('assess-2', ADMIN);
-      expect(asAdmin.items.map((i) => i.studentId)).toContain(created!.id);
-    });
-
-    it('404s an assessment on a course the assistant does not hold', async () => {
-      const created = await assessments.create({
-        courseId: 'course-2',
-        lessonId: null,
-        title: 'Course-2 task',
-        description: '',
-        instructions: '',
-        type: 'homework',
-        workType: 'file_upload',
-        externalUrl: null,
-        topics: [],
-        availableFrom: '2026-01-01T00:00:00Z',
-        availableTo: '2026-12-31T00:00:00Z',
-        dueAt: '2026-06-01T00:00:00Z',
-        maxScore: 20,
-        allowedFileTypes: ['application/pdf'],
-        maxFileSizeBytes: 1024,
-        visibility: 'published',
-        markerId: null,
-        allowResubmission: true,
-        submissionModes: [],
-        draftId: null,
-        attachments: [],
-      });
-      await assessments.setTargets(created.id, [{ groupId: 'group-2' }]);
-
-      await expect(
-        staff.assessmentSubmissions(created.id, ASSIGNED_TA),
-      ).rejects.toThrow(NotFoundException);
-
-      const outOfScope = await staff
-        .assessmentSubmissions(created.id, ASSIGNED_TA)
-        .catch((error: Error) => error.message);
-      const nonexistent = await staff
-        .assessmentSubmissions('assess-does-not-exist', ASSIGNED_TA)
-        .catch((error: Error) => error.message);
-      expect(outOfScope).toBe(nonexistent);
-    });
-
-    it('returns an empty list rather than throwing for a task with no targets', async () => {
-      await assessments.setTargets('assess-1', []);
-      const roster = await staff.assessmentSubmissions('assess-1', ADMIN);
-      expect(roster.items).toEqual([]);
-    });
-  });
-
-  describe('GET /staff/groups/:groupId/markbook (BOOK-1)', () => {
-    it('returns every group member and every targeted task, missing marks as null', async () => {
-      // group-1: student-1, student-2. All eight stub assessments target it
-      // (in-memory-assessment.repository.ts). student-2 has never submitted
-      // anything, so their whole row must be gaps rather than absent.
-      const grid = await staff.markbook('group-1', ASSIGNED_TA);
-      expect(grid.groupId).toBe('group-1');
-      expect(grid.columns).toHaveLength(8);
-      expect(grid.rows.map((r) => r.studentId).sort()).toEqual([
-        'student-1',
-        'student-2',
-      ]);
-
-      const row2 = grid.rows.find((r) => r.studentId === 'student-2')!;
-      expect(row2.cells).toHaveLength(8);
-      // The em-dash rule's API half (CLAUDE.md §11.1): null, never 0, never absent.
-      expect(row2.cells.every((c) => c.score === null)).toBe(true);
-      expect(row2.totalScore).toBe(0);
-      expect(row2.totalMaxScore).toBe(0);
-      expect(row2.totalPercent).toBeNull();
-
-      // student-1 has a real, ungraded submission on assess-4 (sub-2) - a gap,
-      // not a fake zero.
-      const row1 = grid.rows.find((r) => r.studentId === 'student-1')!;
-      const assess4Cell = row1.cells.find((c) => c.assessmentId === 'assess-4')!;
-      expect(assess4Cell.score).toBeNull();
-      expect(assess4Cell.awaitingReturn).toBe(false);
-    });
-
-    it("D-47: the term total sums marked tasks only, excluding an unmarked one from both sides", async () => {
-      // A fresh group and student, isolated from the eight-task fixture, so
-      // the totals below are exactly the two tasks this test creates.
-      const group = await groups.create({
-        name: 'Isolated group',
-        teacherId: 'teacher-1',
-        courseId: 'course-1',
-        assistantId: null,
-        meets: null,
-        room: null,
-      });
-      await users.create({
-        email: 'isolated-student@example.com',
-        passwordHash: 'x',
-        name: 'Isolated Student',
-        role: Role.Student,
-        status: 'active',
-      });
-      const student = await users.findByEmail('isolated-student@example.com');
-      await groups.addMember({
-        groupId: group.id,
-        studentId: student!.id,
-        assignedBy: 'teacher-1',
-      });
-
-      const marked = await assessments.create({
-        courseId: 'course-1',
-        lessonId: null,
-        title: 'Marked task',
-        description: '',
-        instructions: '',
-        type: 'homework',
-        workType: 'file_upload',
-        externalUrl: null,
-        topics: [],
-        availableFrom: '2026-01-01T00:00:00Z',
-        availableTo: '2026-12-31T00:00:00Z',
-        dueAt: '2026-06-01T00:00:00Z',
-        maxScore: 10,
-        allowedFileTypes: ['application/pdf'],
-        maxFileSizeBytes: 1024,
-        visibility: 'published',
-        markerId: null,
-        allowResubmission: true,
-        submissionModes: [],
-        draftId: null,
-        attachments: [],
-      });
-      const unmarked = await assessments.create({
-        courseId: 'course-1',
-        lessonId: null,
-        title: 'Unmarked task',
-        description: '',
-        instructions: '',
-        type: 'homework',
-        workType: 'file_upload',
-        externalUrl: null,
-        topics: [],
-        availableFrom: '2026-01-01T00:00:00Z',
-        availableTo: '2026-12-31T00:00:00Z',
-        dueAt: '2026-06-02T00:00:00Z',
-        maxScore: 10,
-        allowedFileTypes: ['application/pdf'],
-        maxFileSizeBytes: 1024,
-        visibility: 'published',
-        markerId: null,
-        allowResubmission: true,
-        submissionModes: [],
-        draftId: null,
-        attachments: [],
-      });
-      await assessments.setTargets(marked.id, [{ groupId: group.id }]);
-      await assessments.setTargets(unmarked.id, [{ groupId: group.id }]);
-
-      const submission = await assessments.createSubmission(
-        marked.id,
-        student!.id,
-        'https://storage.example.com/submissions/marked.pdf',
-        null,
-        null,
-      );
-      await assessments.gradeSubmission(submission.id, {
-        score: 10,
-        feedback: null,
-        annotatedFileUrl: undefined,
-      });
-
-      const grid = await staff.markbook(group.id, ADMIN);
-      const row = grid.rows.find((r) => r.studentId === student!.id)!;
-      // 10/10, not 10/20 - the unmarked task counts on neither side (D-47).
-      expect(row.totalScore).toBe(10);
-      expect(row.totalMaxScore).toBe(10);
-      expect(row.totalPercent).toBe(100);
-    });
-
-    it('D-48: a corrected-but-unreturned mark is shown and flagged, and counts toward the total', async () => {
-      // sub-2 (assess-4, 20) is submitted and ungraded in the seed. Grading it
-      // without returning is exactly the state the ruling describes.
-      await staff.grade('sub-2', { score: 17 }, ASSIGNED_TA);
-
-      const grid = await staff.markbook('group-1', ASSIGNED_TA);
-      const row1 = grid.rows.find((r) => r.studentId === 'student-1')!;
-      const cell = row1.cells.find((c) => c.assessmentId === 'assess-4')!;
-      expect(cell.score).toBe(17);
-      expect(cell.awaitingReturn).toBe(true);
-      // It is a real mark, so it counts toward the total like any other.
-      expect(row1.totalMaxScore).toBeGreaterThanOrEqual(20);
-    });
-
-    it('404s a group the assistant does not hold, identically to a genuine miss', async () => {
-      const denied = await staff
-        .markbook('group-2', ASSIGNED_TA)
-        .catch((e: Error) => e.message);
-      const missing = await staff
-        .markbook('group-nope', ASSIGNED_TA)
-        .catch((e: Error) => e.message);
-      expect(denied).toBe(missing);
-      await expect(staff.markbook('group-2', ASSIGNED_TA)).rejects.toThrow(
-        NotFoundException,
-      );
-    });
-
-    it('lets the teacher read any group', async () => {
-      await expect(staff.markbook('group-2', ADMIN)).resolves.toMatchObject({
-        groupId: 'group-2',
-      });
-    });
-  });
-
   describe('POST /staff/submissions/:id/grade', () => {
     it('records a mark and returns it', async () => {
       const result = await staff.grade(
@@ -639,201 +369,6 @@ describe('Manage surface', () => {
       const page = await audit.find({ limit: 10 });
       const entry = page.entries.find((e) => e.action === 'submission.graded');
       expect(entry).toMatchObject({ actorId: 'admin-1', actorRole: 'admin' });
-    });
-  });
-
-  describe('POST /staff/submissions/:id/return (MARK-2)', () => {
-    it('refuses to return a submission that has not been marked', async () => {
-      await expect(
-        staff.returnSubmission('sub-2', ASSIGNED_TA),
-      ).rejects.toThrow(ConflictException);
-    });
-
-    it('stamps returnedAt once a mark exists', async () => {
-      await staff.grade('sub-2', { score: 14 }, ASSIGNED_TA);
-      const before = await assessments.findSubmissionById('sub-2');
-      expect(before?.returnedAt).toBeNull();
-
-      const result = await staff.returnSubmission('sub-2', ASSIGNED_TA);
-      expect(result.correctedAt).not.toBeNull();
-      const after = await assessments.findSubmissionById('sub-2');
-      expect(after?.returnedAt).not.toBeNull();
-    });
-
-    it('re-stamps returnedAt on a re-return after a re-mark', async () => {
-      await staff.grade('sub-2', { score: 14 }, ASSIGNED_TA);
-      await staff.returnSubmission('sub-2', ASSIGNED_TA);
-      const first = await assessments.findSubmissionById('sub-2');
-
-      await staff.grade('sub-2', { score: 16 }, ASSIGNED_TA);
-      await staff.returnSubmission('sub-2', ASSIGNED_TA);
-      const second = await assessments.findSubmissionById('sub-2');
-
-      expect(second?.returnedAt).not.toBeNull();
-      expect(
-        new Date(second!.returnedAt!).getTime(),
-      ).toBeGreaterThanOrEqual(new Date(first!.returnedAt!).getTime());
-    });
-
-    it('refuses a submission belonging to a course the assistant does not hold', async () => {
-      await staff.grade('sub-2', { score: 14 }, ASSIGNED_TA);
-      await expect(
-        staff.returnSubmission('sub-2', UNASSIGNED_TA),
-      ).rejects.toThrow(NotFoundException);
-      const after = await assessments.findSubmissionById('sub-2');
-      expect(after?.returnedAt).toBeNull();
-    });
-
-    it('gives a held-but-wrong submission and a nonexistent one the same body', async () => {
-      await staff.grade('sub-2', { score: 14 }, ASSIGNED_TA);
-      const outOfScope = await staff
-        .returnSubmission('sub-2', UNASSIGNED_TA)
-        .catch((error: Error) => error.message);
-      const nonexistent = await staff
-        .returnSubmission('sub-nope', UNASSIGNED_TA)
-        .catch((error: Error) => error.message);
-      expect(outOfScope).toBe(nonexistent);
-    });
-
-    it('writes an audit entry naming the actor', async () => {
-      await staff.grade('sub-2', { score: 14 }, ASSIGNED_TA);
-      await staff.returnSubmission('sub-2', ASSIGNED_TA);
-      const page = await audit.find({ limit: 10 });
-      const entry = page.entries.find((e) => e.action === 'submission.returned');
-      expect(entry).toMatchObject({
-        actorId: 'assistant-1',
-        actorRole: 'assistant',
-        targetType: 'assessment_submission',
-        targetId: 'sub-2',
-        courseId: 'course-1',
-      });
-      expect(entry?.before).toMatchObject({ returnedAt: null });
-      expect(entry?.after?.returnedAt).not.toBeNull();
-    });
-  });
-
-  describe('marking annotations (MARK-1)', () => {
-    // sub-1 (assess-3, course-1) rather than sub-2, which the grading tests
-    // above already mutate - annotations sit in their own table, but a
-    // separate submission keeps this block legible on its own.
-    const stroke = {
-      kind: 'stroke' as const,
-      path: [{ x: 10, y: 20 }, { x: 12, y: 22 }],
-    };
-    const pin = { kind: 'pin' as const, x: 30, y: 40 };
-
-    it('creates, lists, updates and deletes for an assigned assistant', async () => {
-      const created = await staff.createAnnotation('sub-1', stroke, ASSIGNED_TA);
-      expect(created).toMatchObject({
-        submissionId: 'sub-1',
-        kind: 'stroke',
-        authorId: 'assistant-1',
-      });
-      expect(created.path).toEqual(stroke.path);
-
-      const listed = await staff.listAnnotations('sub-1', ASSIGNED_TA);
-      expect(listed.map((a) => a.id)).toContain(created.id);
-
-      const updated = await staff.updateAnnotation(
-        created.id,
-        { colour: '#00FF00' },
-        ASSIGNED_TA,
-      );
-      expect(updated.colour).toBe('#00FF00');
-
-      await staff.deleteAnnotation(created.id, ASSIGNED_TA);
-      const afterDelete = await staff.listAnnotations('sub-1', ASSIGNED_TA);
-      expect(afterDelete.map((a) => a.id)).not.toContain(created.id);
-    });
-
-    it('404s a submission outside the assistant scope, identically to a nonexistent one', async () => {
-      const outOfScope = await staff
-        .listAnnotations('sub-1', UNASSIGNED_TA)
-        .catch((e: Error) => e.message);
-      const nonexistent = await staff
-        .listAnnotations('sub-does-not-exist', UNASSIGNED_TA)
-        .catch((e: Error) => e.message);
-      expect(outOfScope).toBe(nonexistent);
-
-      await expect(
-        staff.createAnnotation('sub-1', pin, UNASSIGNED_TA),
-      ).rejects.toThrow(NotFoundException);
-    });
-
-    it('refuses a fileId belonging to a different submission', async () => {
-      // The foreign key proves only that the file exists *somewhere*. Without
-      // the service check, a marker holding sub-1 legitimately could pin an
-      // annotation to a photo on sub-2 - drawn on one student's work, stored
-      // against another's, and scope would not catch it because the caller
-      // does hold the submission they named.
-      const [ownFile] = await assessments.replaceSubmissionFiles('sub-1', [
-        { fileUrl: 'https://s.example.com/a.jpg', displayName: 'a.jpg', position: 0 },
-      ]);
-      const [otherFile] = await assessments.replaceSubmissionFiles('sub-2', [
-        { fileUrl: 'https://s.example.com/b.jpg', displayName: 'b.jpg', position: 0 },
-      ]);
-
-      // Its own file is accepted...
-      const ok = await staff.createAnnotation(
-        'sub-1',
-        { ...pin, fileId: ownFile!.id },
-        ASSIGNED_TA,
-      );
-      expect(ok.fileId).toBe(ownFile!.id);
-
-      // ...the other submission's file is not.
-      await expect(
-        staff.createAnnotation(
-          'sub-1',
-          { ...pin, fileId: otherFile!.id },
-          ASSIGNED_TA,
-        ),
-      ).rejects.toThrow(NotFoundException);
-    });
-
-    it('D-45: refuses a second staff member editing or deleting someone else\'s annotation', async () => {
-      const created = await staff.createAnnotation('sub-1', pin, ASSIGNED_TA);
-
-      // admin (teacher) holds course-1 unscoped, so this is the author rule
-      // itself and not a scope failure - the ruling has no teacher override.
-      await expect(
-        staff.updateAnnotation(created.id, { body: 'nope' }, ADMIN),
-      ).rejects.toThrow(ForbiddenException);
-      await expect(
-        staff.deleteAnnotation(created.id, ADMIN),
-      ).rejects.toThrow(ForbiddenException);
-
-      const still = await staff.listAnnotations('sub-1', ASSIGNED_TA);
-      expect(still.find((a) => a.id === created.id)?.body).toBe('');
-    });
-
-    it('refuses a stroke without a path, and a pin without x/y', async () => {
-      await expect(
-        staff.createAnnotation(
-          'sub-1',
-          { kind: 'stroke' as const },
-          ASSIGNED_TA,
-        ),
-      ).rejects.toThrow(BadRequestException);
-      await expect(
-        staff.createAnnotation('sub-1', { kind: 'pin' as const }, ASSIGNED_TA),
-      ).rejects.toThrow(BadRequestException);
-    });
-
-    it('refuses an update that would strip a stroke of its path', async () => {
-      const created = await staff.createAnnotation('sub-1', stroke, ASSIGNED_TA);
-      await expect(
-        staff.updateAnnotation(created.id, { path: null }, ASSIGNED_TA),
-      ).rejects.toThrow(BadRequestException);
-    });
-
-    it('writes no audit entry for any annotation mutation (D-44)', async () => {
-      const before = (await audit.find({ limit: 200 })).entries.length;
-      const created = await staff.createAnnotation('sub-1', pin, ASSIGNED_TA);
-      await staff.updateAnnotation(created.id, { body: 'noted' }, ASSIGNED_TA);
-      await staff.deleteAnnotation(created.id, ASSIGNED_TA);
-      const after = (await audit.find({ limit: 200 })).entries.length;
-      expect(after).toBe(before);
     });
   });
 
@@ -1047,116 +582,6 @@ describe('Manage surface', () => {
       );
       const updated = await admin.updateRecording(created.id, { title: 'Renamed' }, ADMIN);
       expect(updated.thumbnailUrl).toBe('https://cdn.example.com/keep.jpg');
-    });
-  });
-
-  describe('live sessions', () => {
-    const SESSION = {
-      title: 'Paper 2 clinic',
-      meetingLink: 'https://zoom.us/j/55512345678',
-      scheduledAt: '2026-10-01T18:00:00Z',
-      endsAt: '2026-10-01T19:30:00Z',
-    };
-
-    it('lets an assigned assistant read the schedule', async () => {
-      const list = await sessions.list(
-        { from: '2026-08-01T00:00:00Z', to: '2026-10-31T23:59:59Z' },
-        ASSIGNED_TA,
-      );
-      expect(list.length).toBeGreaterThan(0);
-      expect(list[0]).toHaveProperty('meetingLink');
-    });
-
-    it('returns empty when filtering by an unheld group for assistant', async () => {
-      const list = await sessions.list(
-        { from: '2026-08-01T00:00:00Z', to: '2026-10-31T23:59:59Z', groupId: 'group-2' },
-        ASSIGNED_TA,
-      );
-      expect(list).toEqual([]);
-    });
-
-    it('schedules a session for a held group that the grid then lists', async () => {
-      const before = await sessions.list(
-        { from: '2026-10-01T00:00:00Z', to: '2026-10-02T00:00:00Z' },
-        ASSIGNED_TA,
-      );
-      const created = await sessions.create('group-1', SESSION, ASSIGNED_TA);
-      expect(created).toMatchObject({ groupId: 'group-1', title: 'Paper 2 clinic' });
-
-      const after = await sessions.list(
-        { from: '2026-10-01T00:00:00Z', to: '2026-10-02T00:00:00Z' },
-        ASSIGNED_TA,
-      );
-      expect(after).toHaveLength(before.length + 1);
-      expect(after.map((s) => s.id)).toContain(created.id);
-    });
-
-    it('404s scheduling into a group that does not exist or is out of scope', async () => {
-      await expect(
-        sessions.create('group-nope', SESSION, ADMIN),
-      ).rejects.toThrow(NotFoundException);
-      await expect(
-        sessions.create('group-2', SESSION, ASSIGNED_TA),
-      ).rejects.toThrow(NotFoundException);
-    });
-
-    it('edits a session and leaves the omitted fields alone', async () => {
-      const created = await sessions.create('group-1', SESSION, ADMIN);
-      const updated = await sessions.update(
-        created.id,
-        { scheduledAt: '2026-10-02T18:00:00Z', endsAt: '2026-10-02T19:30:00Z' },
-        ADMIN,
-      );
-      expect(updated.scheduledAt).toBe('2026-10-02T18:00:00Z');
-      expect(updated.title).toBe('Paper 2 clinic');
-      expect(updated.meetingLink).toBe(SESSION.meetingLink);
-    });
-
-    it('404s an edit or a cancel of a session that is not there', async () => {
-      await expect(
-        sessions.update('sess-nope', { title: 'x' }, ADMIN),
-      ).rejects.toThrow(NotFoundException);
-      await expect(sessions.remove('sess-nope', ADMIN)).rejects.toThrow(
-        NotFoundException,
-      );
-    });
-
-    it('cancels a session and removes it from the schedule', async () => {
-      const created = await sessions.create('group-1', SESSION, ADMIN);
-      await expect(
-        sessions.remove(created.id, ADMIN),
-      ).resolves.toEqual({ removed: true });
-      const list = await sessions.list(
-        { from: '2026-10-01T00:00:00Z', to: '2026-10-02T00:00:00Z' },
-        ADMIN,
-      );
-      expect(list.find((s) => s.id === created.id)).toBeUndefined();
-    });
-
-    it('audits scheduling, editing and cancelling', async () => {
-      const created = await sessions.create('group-1', SESSION, ADMIN);
-      await sessions.update(created.id, { title: 'Renamed' }, ADMIN);
-      await sessions.remove(created.id, ADMIN);
-
-      const page = await audit.find({ limit: 20 });
-      const actions = page.entries.map((e) => e.action);
-      expect(actions).toContain('live_session.scheduled');
-      expect(actions).toContain('live_session.updated');
-      expect(actions).toContain('live_session.cancelled');
-    });
-
-    it('records a before/after pair that actually differs', async () => {
-      // The bug this guards against: a repository handing back the stored
-      // object by reference makes before and after the same mutated object -
-      // an entry that looks like evidence and shows nothing having moved.
-      const created = await sessions.create('group-1', SESSION, ADMIN);
-      await sessions.update(created.id, { title: 'Renamed' }, ADMIN);
-
-      const page = await audit.find({ limit: 20, action: 'live_session.updated' });
-      const entry = page.entries[0];
-      expect(entry?.before).toMatchObject({ title: 'Paper 2 clinic' });
-      expect(entry?.after).toMatchObject({ title: 'Renamed' });
-      expect(entry?.courseId).toBe('course-1');
     });
   });
 

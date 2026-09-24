@@ -61,16 +61,6 @@ export const ALLOWED_UPLOAD_TYPES: Readonly<Record<string, UploadType>> = {
   'audio/mp4': { extension: 'm4a', kind: 'audio' },
   'application/pdf': { extension: 'pdf', kind: 'file' },
   'text/plain': { extension: 'txt', kind: 'file' },
-  // `D-41`: a student handing in a Word document is the real case behind
-  // `pdf_upload`. **Zip was asked for and refused** - it is a container that
-  // can hold anything, and §8 admits nothing executable. A docx is an
-  // non-executable container served with nosniff from a server that executes
-  // nothing, which is the argument that already admits PDF. Legacy
-  // `application/msword` is deliberately absent: not asked for.
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': {
-    extension: 'docx',
-    kind: 'file',
-  },
 };
 
 /**
@@ -100,3 +90,36 @@ export const AVATAR_MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
  * every file already stored.
  */
 export const UPLOAD_URL_PREFIX = '/uploads/';
+
+/**
+ * Whether a URL names a file **this platform stored** (unit 7, `D-41`).
+ *
+ * Server-derived, never client-declared: a submission's file can be drawn on
+ * only when the platform serves it, because a PDF needs its bytes and a
+ * pasted third-party URL cannot be fetched without an SSRF-shaped proxy, nor
+ * auto-loaded into a staff browser without leaking their address to a host the
+ * student chose (unit-7 plan, `B-4`). Today that is the local driver's
+ * `/uploads/` prefix; an R2 driver would add its own origin here.
+ */
+export function isPlatformStored(url: string | null | undefined): boolean {
+  return typeof url === 'string' && url.startsWith(UPLOAD_URL_PREFIX);
+}
+
+/**
+ * The type a platform-stored URL was stored as, read back from its
+ * **server-minted** extension. The extension came from `ALLOWED_UPLOAD_TYPES`
+ * when the bytes were written, so this is the server's own decision rather
+ * than the client's claim. Null for anything not platform-stored, or with an
+ * extension the whitelist does not mint.
+ */
+export function storedMimeTypeOf(url: string): string | null {
+  if (!isPlatformStored(url)) {
+    return null;
+  }
+  const dot = url.lastIndexOf('.');
+  const extension = dot === -1 ? '' : url.slice(dot + 1).toLowerCase();
+  const match = Object.entries(ALLOWED_UPLOAD_TYPES).find(
+    ([, type]) => type.extension === extension,
+  );
+  return match ? match[0] : null;
+}

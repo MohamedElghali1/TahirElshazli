@@ -1322,7 +1322,7 @@ edit, unconfigured-assistant and mismatched-role cases.
 `B-6`), each with a recommended reading marked as an *assumption*. On 2026-09-22 the coordinator and
 the user approved slices 6a–6e and ruled on all six, each as the planner's recommendation. The rulings
 below are therefore **decisions**, not assumptions, and slices 6f–6k are built on them. Because `B-1`
-and `B-4` add or narrow columns, both were folded into migration `018` before it first ran — no `020`.
+and `B-4` add or narrow columns, both were folded into migration `018` before it first ran — no `019`.
 
 ### `D-28` — `B-1`: `visibility` stores `published | hidden`; `scheduled` is derived, not stored (reading C + iii)
 
@@ -1517,206 +1517,126 @@ work/credential integration coverage, `tallyResults` first).
 
 ---
 
-## 2026-09-23 — Unit 7 opens: the user rules on `MARK-6`'s three undecided questions (`D-38` … `D-40`)
+## 2026-09-23 — Unit 7 (marking and the mark book): rulings `D-40`…`D-46`, `D-38`/`D-39` withdrawn
 
-`IMPLEMENTATION_PLAN.md:293` left `MARK-6` explicitly undecided — "Unit 7 decides what each mode
-admits". All three answers change migration `020`'s columns, so they were put to the user before it
-was authored rather than assumed.
+The unit-7 plan (`docs/phases/unit-7/PHASE_PLAN.md` §8) escalated nine blockers. The user accepted all
+nine recommendations, then — the same day, before anything of `MARK-6` shipped — **withdrew `B-1` and
+`B-2`** with the instruction to escalate the `MARK-6` design question rather than decide it.
 
-### `D-38` — multi-file is a `submission_files` table, not an array on the submission
-- One row per file, with a stable 0-based `position`. `submission_annotations.file_id` is a real
-  foreign key to it.
-- **Rejected:** `file_urls TEXT[]` with the annotation pointing at an array index. Deleting or
-  reordering one photo silently re-aims every stroke that followed it, and the corruption is
-  invisible — the overlay still renders, just over the wrong page. A row id does not move.
-- **Rejected:** stitching photos into one PDF client-side. Loses the originals.
-- `assessment_submissions.file_url` is **not** dropped. Every existing row and every existing read
-  still uses it, and collapsing the two is a destructive step `020` deliberately does not take. An
-  annotation with `file_id IS NULL` belongs to that pre-`020` single file.
+### `D-38`, `D-39` — `B-1`, `B-2` (`MARK-6`): **accepted, then withdrawn**
+Recorded so the ids are not reused and so the history of migration `019` is readable. Both remain
+**open blockers**, escalated to the user:
+- `B-1`: what each submission mode (`pdf_upload | doc_link | photo_upload`) admits at submit time, and
+  whether a typed answer survives on a task that states modes.
+- `B-2`: whether students may upload files directly, what happens while file storage is off in
+  production, and whether a resubmission replaces the whole photo set.
+A stopped executor had folded a `files JSONB` column into `019` under them; it was **removed** before
+`019` ran anywhere but disposable test databases, so `019` was edited in place. Whatever is decided
+becomes `020`.
 
-### `D-39` — `doc_link` admits **either** a file or a link
-- Not link-only, and not file-only: `link_url` is nullable and sits beside the files. The student
-  picks. The marker sees whichever arrived.
-- Scheme is validated in the service (https only, so a `javascript:` URL cannot be stored and handed
-  to a marker to click). Not a CHECK constraint — the whitelist lives in one place (`CLAUDE.md` §8)
-  and a second copy in SQL is a second copy to keep in step.
-- The link is never fetched server-side, so this is an XSS/phishing control, not an SSRF one.
+### `D-40` — `B-3`: the web app may use `pdfjs-dist` (reading A)
+Pinned exact at **6.3.289** (past 4.2.67, the CVE-2024-4367 floor), lazy-loaded on the marking routes
+only, worker bundled from the app's own origin. From v5 pdf.js has no `isEvalSupported` path, so the
+flag the plan named no longer exists. **Contradicts** `redesign-mapping.md`'s "none go in"; that line is
+narrowed, not the ruling. `@napi-rs/canvas` arrives as pdf.js's Node-only optional dependency; the
+browser never loads it.
 
-### `D-40` — `pdf_upload` admits pdf, docx and zip
-- `photo_upload` admits image types, **five files at most**.
-- Enforced at submit time in the service, not in SQL, for the same one-place reason as `D-39`.
-- Unit 6's `018` comment ("the task's `allowed_file_types` govern the upload exactly as before") is
-  superseded: from `020` the mode narrows the whitelist rather than only describing it.
+### `D-41` — `B-4`: only platform-stored files are annotatable (reading A)
+A pasted URL is graded with a mark and feedback and shown as "Open original": fetching it would be an
+SSRF-shaped proxy, auto-loading it would leak staff IPs. **Consequence, stated plainly:** with `B-2`
+open no student route can store a file, so no real submission is annotatable yet in any environment;
+in production it also needs an R2 driver (`MARK-F1`, not built).
 
-### `TASK-F3` closed in the same pass
-Deleting a task that has submissions now answers **409**, not 400 — the code `CLAUDE.md` §6 names
-for a state conflict, and what `D-36`'s sibling external-result refusal already used. The
-inconsistency `D-36` recorded rather than silently fixed is now fixed deliberately. The e2e
-`refuses to delete a task that has submissions` asserts 409 and passes.
+### `D-42` — `B-5`: annotation authorship and lifecycle
+(a) Only a mark's author may change or erase it — a 403, since the mark is on the caller's screen.
+(b) **Marking up a returned paper is allowed and audited**, like a re-grade; the student sees it at
+once. (c) Resubmission rules unchanged; marks on a replaced file are kept and counted as stale.
 
-### `D-ANN-1` — unit 10 (Announcements): `/admin/announcements/reach` moves to `/staff/announcements/reach`
-Two documents disagreed. `API_SPEC.yaml` stubbed `GET /admin/announcements/reach` with
-`x-roles: [assistant, teacher, admin]`; `CLAUDE.md` §6's route-split rule is explicit that `/admin/*`
-is teacher-and-admin-only, unscoped — an `/admin/*` route cannot legitimately name `assistant`. That
-is a finding, not a typo to quietly correct: the two documents said different things about who may
-see reach. **Resolution:** the route's *placement* was wrong, not its permissions — `assistant`
-belongs in the roles list, so the route moves to `/staff/announcements/reach` (all three roles,
-`StaffScopeService`-checked like every other `/staff/*` route). `API_SPEC.yaml` corrected in the same
-change (unit 10, slice 10a). Nothing implemented this route before the correction, so there is no
-back-compat cost.
+### `D-43` — `B-6`: the marker is advisory; the first mark claims (reading A)
+The first saved mark **or** first annotation on a task with no marker names the actor, when they
+qualify under `D-32`'s rule (teacher, admin, or an active assistant reaching every targeted group).
+Atomic, audited as `assessment.updated`. Never on a read (`GET` never mutates). An assistant reaching
+only some targeted groups saves the mark and the task stays unclaimed — the claim writes nothing
+`D-32` would refuse to name directly. The tasks list reads "First to mark", not "First to open".
 
-### `D-ANN-2` — unit 10: a published announcement IS editable (reverses the planner's initial assumption)
-The unit-10 phase plan originally assumed a published announcement is immutable — no `PATCH` once
-`published_at` is set — reasoning from the pre-existing `PostgresAnnouncementRepository`'s own
-docstring ("insert-and-read only... a retraction is a second announcement"). **The user ruled
-otherwise, via the coordinator: a typo in a published announcement must be correctable.** `PATCH`
-now works on a published row, editing title/body/media. The **audience** stays refused (`409`) once
-published — widening it after send would mean recipients who never received the original mail, and
-building a delta fan-out for that is a feature nobody asked for; refusing it is both the lazy and
-the honest answer. `DELETE` was not part of this ruling and stays refused on a published row,
-flagged as its own open follow-up rather than assumed either way. The `published_at` column, already
-the guard behind idempotent publish, now also guarantees an edit can never re-trigger the send: only
-`publish()`'s own guarded `UPDATE` ever sets it, and `updateDraft()` never touches it.
+### `D-44` — `B-7`: `/grade` and the course queue move to the group grain (reading A)
+`POST /staff/submissions/:id/grade` was course-grained and **missing from `AUTH-6`'s remainder list**;
+it now uses the same gate as `/return` and the annotation routes. `GET /staff/courses/:id/submissions`
+narrows its **items** to held groups in the query. Its per-task **averages stay course-wide** for every
+viewer — the recorded residue, as `D-35`'s was — because narrowing them makes a number change with who
+is looking (`D-23`). The course tab gains Return and Save and return.
 
-### One thing the migration does that was not asked for, and why
-`020` **backfills** `returned_at = corrected_at` on every already-corrected row. `MARK-2` moves
-student visibility from `corrected_at` to `returned_at`; leaving the new column NULL would have
-taken away, on deploy, every mark every student can currently see. Those marks were returned under
-the old rule, which had no way to hold one back.
+### `D-45` — `B-8`: the mark book's total is "Average of marked work" (reading (a))
+The mean of a student's per-task shares over work **marked in the platform** (saved or returned), with
+no term (none exists in the model) and never labelled "term". **Interaction with `D-46`, recorded:**
+`D-45` says "`GROUP-4`'s arithmetic", which counts only platform submissions, so mirrored Google Form
+scores are shown as columns but **not** averaged; the mark book and the group report agree. If the
+teacher expects quizzes inside the average, that is a new ruling, not a fix.
 
-## 2026-09-23 — `D-41`: `D-40` narrowed to pdf + docx; zip refused
+### `D-46` — `B-9`: Google Form scores appear in the mark book (reading (b))
+Labelled mirrored, with the form's last sync time and its unmatched-response count. Each cell is the
+student's **latest** matched response, chosen in the query (`findLatestScoresForStudents`, both drivers)
+— which surfaced `MARK-F2`: the older per-student analytics read picks the *oldest* on Postgres.
 
-`D-40` said `pdf_upload` admits **pdf, docx, zip**. Implementing it surfaced that the global upload
-whitelist (`common/storage/upload-types.ts`) admits neither docx nor zip, so honouring it meant
-widening the whitelist — a `SECURITY.md` §4 decision, not a detail.
+### Assumptions taken without a blocker (plan §8, A-1…A-14), kept
+A-1 the backfill `returned_at := corrected_at`; A-2 the resubmission freeze stays on `corrected_at`;
+A-3 return needs a mark (409), a re-return is a no-op with no second audit entry; A-4 a re-grade after
+return is visible at once; A-5 `includeInReport` deferred to unit 9 (removed from the `/return` body);
+A-6 the per-task queue is 409 for link and form work; A-7 one row per student at their earliest
+reachable placement, lateness by their own resolving group; A-8 staff see saved-not-returned marks in
+the mark book, hidden tasks excluded; A-9 CSV names only, not audited; A-10 kinds
+`comment | tick | cross | pen | highlight`, the eraser is a DELETE; A-11 storage bounds (page ≤ 500,
+text ≤ 2000, 2–2000 points, ≤ 500 marks per paper); A-12 one `submission.annotated` action; A-13 the
+annotation repository in `assessments/`, the service in `manage/`; A-14 no one-submission GET.
 
-**Ruled (user, 2026-09-23): pdf and docx. Zip is refused.** A zip is a container that can hold
-anything, and §8's rule is that uploads admit nothing executable; a PDF and a docx are
-non-executable containers served with `nosniff` from a server that executes nothing, which is the
-same argument that already admits PDF. Legacy `application/msword` was not asked for and is not
-added.
+### Closed
+`TASK-F3`: deleting a task with submissions is now **409**, agreeing with `D-36`'s own refusal.
 
-**A pre-existing gap found in the same pass, and fixed rather than filed (user's call):** a task's
-`allowedFileTypes` was **enforced nowhere**. The upload route validates only the *global* whitelist
-and does not know which task a file is for, so a task stating "PDF only" accepted a `.png`. Open
-since unit 1.
+### Document conflicts found while planning (plan, "Conflicts between documents")
+1. `PHASE_ROADMAP.md` unit 7 said `MARK-5` was blocked by `D-2`, which closed 2026-09-20 — fixed.
+2. `PRODUCT_SPEC.md` §2.2/§10 and `DOMAIN_MODEL.md` §4 still called the overlay question open — fixed.
+3. `DATABASE_PLAN.md` §3, `DOMAIN_MODEL.md` §4 and `API_SPEC.yaml` allowed only comment/tick/cross, no
+   stroke path; `D-2` includes freehand strokes — amended to `D-2`.
+4. `includeInReport` sat on `/return` in `API_SPEC` and on `/grade` in `API_GAP_ANALYSIS` A7, which also
+   modelled save-without-return as a flag — two operations kept, `includeInReport` deferred (A-5).
+5. Non-submitters: `API_GAP_ANALYSIS` A7 put them on the course queue, B4 and `API_SPEC` on the per-task
+   route — the per-task route only.
+6. `markbook.csv` was in `API_GAP_ANALYSIS` B5 but not `API_SPEC` — added.
+7. `MARK-1` "4 routes" vs `API_GAP_ANALYSIS`'s 6 — both right about different sets; no change.
+8. `AUTHORIZATION_MODEL.md` §4 and `CLAUDE.md` §7 left `/grade` off `AUTH-6`'s list — closed by `D-44`.
+9. Tool names: `PRODUCT_SPEC` "pen and highlight" vs `D-2` "marker and eraser" — both kept (A-10).
+10. `redesign-mapping.md` "none go in" vs `D-40` — narrowed.
+11. `PRODUCT_SPEC.md` §2.1 promises PDF and photo upload; no student upload exists — open as `B-2`.
+12. `ARCHITECTURE.md` §6 places annotations in `manage/` — refined by A-13.
 
-The fix is cheap because of a property already in the code: `UploadsService` mints the stored
-filename's extension from the **already-validated** MIME type and never reads the client's filename,
-so **the extension on a stored URL is server-controlled**. Submit-time enforcement can read it
-without trusting the client.
+---
 
-**Caught in review — do not derive a submission mode from `UploadType.kind`.** The first
-implementation built `pdf_upload`'s permitted set from the whitelist entries with `kind: 'file'`.
-That bucket is `{pdf, txt, docx}`, so a task set to `pdf_upload` silently accepted a **`.txt`** —
-contradicting this very decision, with no test failing, because the tests asserted only the types
-the decision names. `kind` answers *"what is this file"* for the storage layer; it does not answer
-*"what does this mode admit"*, which is a product question. The two nearly coincide, which is what
-makes the coupling easy to write and invisible once written: the next document type added to the
-whitelist would have widened every existing `pdf_upload` task with nothing to catch it.
+## 2026-09-23 — `MARK-6` ruled: `D-47`, `D-48` (unit 7, slice 7i)
 
-`pdf_upload` now names its two MIME types outright and derives only the **extensions** from
-`ALLOWED_UPLOAD_TYPES`, keeping one MIME-to-extension mapping. `photo_upload` still derives from
-`kind: 'image'` and should — "is this an image" genuinely is a property of the file, so a new image
-type ought to widen it automatically. The `.txt`-refused test was added and **proved able to fail**
-against the old derivation before the fix landed (`CLAUDE.md` §10).
+The user: *"Go with what you recommend for MARK-6."* `B-1` and `B-2` close on the plan's §8
+recommendations. They take **new ids** because `D-38`/`D-39` stay on record as accepted then withdrawn.
 
-## 2026-09-23 — migration `020` passes the empty-schema gate
+### `D-47` — `B-1` (reading A): submission modes are the rule
+A task stating no modes keeps the old rule (a public link and/or a typed answer). A task stating modes
+takes exactly one mode per submission: `pdf_upload` = one uploaded PDF; `photo_upload` = 1–5 uploaded
+JPEG/PNG/WebP photos; `doc_link` = one public link. A typed answer goes with any of them as a note, never
+alone. `allowedFileTypes` is **derived** from the modes whenever modes are stated.
 
-Run by the unit 8 session on **PostgreSQL 15.19**, `psql -v ON_ERROR_STOP=1`, 001→020 in
-lexicographic order against a database created empty moments before. `020` extracted from `8eb6ad9`
-via `git show`; no merge, no checkout touched. It applied on top of a schema that already carried
-019's session/attendance reshaping, which is the harder case.
+### `D-48` — `B-2`: students upload directly; file sets
+(a) A student upload route, `POST /assessments/:id/files`, with its own contract (types from the modes,
+`min(task cap, 20 MB)`, its own rate limit). (b) Authoring refuses an upload mode while the server stores
+no files — never a quiet link in place of a promised file. (c) A resubmission replaces and archives the
+whole set. (d) No HEIC. Storage reading A: a `files JSONB` list (≤ 5) on submissions and revisions,
+migration **`020`**. `DATABASE_PLAN.md` §7 renumbered again: sessions rework is now `021`.
 
-Verified against the live catalog, not the file: `submission_files` with its `(submission_id,
-position)` unique constraint and both CHECKs; `submission_annotations` with all five CHECKs including
-the `kind <> 'stroke' OR path IS NOT NULL` pair; `returned_at` as `timestamptz`, **datetime_precision
-3**, nullable; `link_url` text, nullable.
+### Assumption A-15, recorded for the reviewer
+The submit route accepts a file only if it is platform-stored and of the right type, but it does not
+prove the student uploaded it (`MARK-F5`). Equivalent to handing in someone else's file; no data exposed.
 
-**What this does and does not prove.** `CLAUDE.md` §9's gate — the migration applies from nothing —
-is **met**. The **backfill's behaviour is not yet proven**: that run was bare `psql`, so the three
-vitest integration tests (`describe('migration 020')`) did not execute, and on an empty schema the
-`UPDATE` touches zero rows regardless. Those still need a seeded run.
-
-## 2026-09-23 — `D-42` and `D-43`: multi-file submission and its two open questions
-
-Slice 7b-ii wires `submission_files` (built by 7a and until now written by nothing) and `link_url`
-(stored since `020` and until now unsettable) into the submit path. Two things the documents did not
-answer had to be decided before it could be built, rather than guessed (`CLAUDE.md` §13).
-
-**`D-42`: `display_name` is client-supplied and length-capped.** The browser sends `File.name`; it is
-stored as text and shown back to whoever marks the work. This does **not** weaken §8's "the client
-filename is never read" rule, which is about the *stored path*: the path is still a server-minted
-UUID whose extension comes from the validated MIME, and `display_name` never reaches the filesystem
-or a URL. `020`'s own column comment already anticipated this. The column is `TEXT`, so the DTO's
-255 is the only bound on it — which is the right place for one.
-
-**`D-43`: the five-file cap applies to every multi-file submission, not only `photo_upload`.**
-`D-40` wrote five as a property of that one mode, which left a task stating no mode accepting an
-unbounded count. Generalised, stated once as `MAX_SUBMISSION_FILES`, and enforced in **both** the
-DTO and the service — the DTO stops a malformed request, the service is where the invariant lives
-(§5).
-
-**Validation runs before the transaction opens, and that is load-bearing.** Every file is checked
-before any write, so a bad file among five good ones is refused with nothing written at all, rather
-than written and rolled back. That is what makes the "writes nothing" case provable on the memory
-driver, where `runInTransaction` is a passthrough with no rollback (§9). True mid-transaction
-rollback remains provable only against real PostgreSQL and is **not** claimed by these tests.
-
-**On how this slice was built, recorded because the record should not imply more review than
-happened.** Antigravity was the implementer for 7b-i and was quota-blocked mid-way through 7b-ii —
-both Claude labels and then the Gemini fallback, all returning `Resets in ~167h`. The orchestrator
-finished 7b-ii directly on the user's instruction, so for this slice **the implementer and the
-reviewer are the same agent**. That is weaker than every slice before it, and it is the property
-that caught the `pdf_upload` defect one slice earlier.
-
-What the truncated delegation left behind, found and fixed rather than inherited: a `linkUrl`
-referenced in SQL but missing from the Postgres method signature; `updateSubmission` never
-implementing it at all; **the in-memory driver hardcoding `linkUrl: null`, which `tsc` cannot see** —
-TypeScript accepts a method with fewer parameters than its interface, so a driver silently
-discarding a field compiles clean; the wrong DI token (`'PG_POOL'` for `Symbol(DATABASE_POOL)`);
-the slice's tests stranded in an untracked scratch file rather than the spec; a `§` corrupted to a
-replacement character; and several deleted comments, including the one explaining why
-`GradingService.grade` resolves the course from the submission rather than the URL — the §5.11 IDOR
-defence. The comments were restored from git rather than rewritten.
-
-## 2026-09-23 — `D-44` and `D-45`: annotation audit grain, and who may erase a mark
-
-Slice 7c builds `MARK-1` — the four annotation routes over the `submission_annotations` table `020`
-created. Two questions the documents did not answer had to be decided first (`CLAUDE.md` §13).
-
-**`D-44`: annotations are audited per *save*, not per mutation. Slice 7c writes no audit entry at
-all.** §7 says to audit every mutating staff action, and a literal reading would log every brush
-stroke: a freehand marking pass writes 50–200 of them per paper, so across ~300 students the audit
-log becomes mostly strokes and the real events — a mark recorded, a report sent — become unfindable
-in it. The audit log is also the one table §6 names as genuinely growing, so flooding it has a cost
-beyond readability. The entry therefore belongs to the Save action in slice 7d, and the annotation
-routes deliberately call `AuditService` not at all.
-
-**`D-45`: an annotation may be edited or deleted only by its author. No teacher or admin override.**
-`authorId` already existed for this — the interface's own comment says "the eraser clears its
-author's own strokes only, so this is load-bearing." The marking is evidence of who said what, and an
-override would let a teacher silently erase an assistant's work with nothing recording it (which,
-under `D-44`, nothing would). **This is the one place in the codebase where a teacher is refused
-something an assistant may do**, so it is stated here rather than left to be inferred.
-
-Its refusal is a **403, not the usual 404** — §7's own exception: the annotation is on the caller's
-own list, it came back from `GET .../annotations`, and a 404 would make the marking screen lie about
-a row it is currently showing.
-
-**Found in review, not by the implementer's tests: `fileId` was unchecked against its submission.**
-An annotation carries a nullable `fileId` naming which of up-to-five files it is drawn on. The
-foreign key proves only that the file exists *somewhere*, so a marker legitimately holding one
-submission could pin an annotation to a **different** submission's photo — drawn on one student's
-work and stored against another's. Scope does not catch it, because the caller does hold the
-submission they named. Now checked in the service against that submission's own files; `null` stays
-allowed as the pre-`020` single-file case. The test was proved able to fail with the guard disabled
-before it was kept (§10).
-
-Pipeline note: 7c restored the implementer/reviewer split that 7b-ii lost — a Sonnet subagent
-implemented, this session reviewed and re-ran every gate independently. The `fileId` gap is what
-that split bought this time; the implementer flagged it as a concern in its own report rather than
-fixing it, which is the correct behaviour for an implementer working to a fixed scope.
+### The browser pass for 7h
+Reported **complete by the user** on 2026-09-23. It was performed by the user, not observed by the
+coordinator. The 7i screens (the student upload form, the multi-file marking view, the authoring gate)
+came after it.
 
 ---
 
@@ -1751,11 +1671,36 @@ lands.
 `docs/redesign-mapping.md`'s screen lists. Not built this unit — left for whichever later unit
 (13/14, student or staff profile work) decides it wants a per-student cross-task work table.
 
-**Correction (2026-09-23, later the same day): `WORK-4` is no longer blocked and is no longer
-outstanding.** Antigravity's shared account quota recovered ahead of the reported ~166h reset, and
-slice C was built against the checklist above, independently reviewed and APPROVED. The entry above
-is kept as written because the capacity failure it records is real and worth remembering — but do
-not read it as describing the current state of unit 11.
+---
+
+## 2026-09-23 — Unit 10 (announcements, slice 10a): `D-ANN-1`, `D-ANN-2`, `B-ANN-1`, `B-ANN-2`
+
+On `origin/redesign` these entries sat inside that branch's own unit 7 entry, which this line does
+not carry (see the 2026-09-23 reconciliation entry). Moved here verbatim.
+
+### `D-ANN-1` — unit 10 (Announcements): `/admin/announcements/reach` moves to `/staff/announcements/reach`
+Two documents disagreed. `API_SPEC.yaml` stubbed `GET /admin/announcements/reach` with
+`x-roles: [assistant, teacher, admin]`; `CLAUDE.md` §6's route-split rule is explicit that `/admin/*`
+is teacher-and-admin-only, unscoped — an `/admin/*` route cannot legitimately name `assistant`. That
+is a finding, not a typo to quietly correct: the two documents said different things about who may
+see reach. **Resolution:** the route's *placement* was wrong, not its permissions — `assistant`
+belongs in the roles list, so the route moves to `/staff/announcements/reach` (all three roles,
+`StaffScopeService`-checked like every other `/staff/*` route). `API_SPEC.yaml` corrected in the same
+change (unit 10, slice 10a). Nothing implemented this route before the correction, so there is no
+back-compat cost.
+
+### `D-ANN-2` — unit 10: a published announcement IS editable (reverses the planner's initial assumption)
+The unit-10 phase plan originally assumed a published announcement is immutable — no `PATCH` once
+`published_at` is set — reasoning from the pre-existing `PostgresAnnouncementRepository`'s own
+docstring ("insert-and-read only... a retraction is a second announcement"). **The user ruled
+otherwise, via the coordinator: a typo in a published announcement must be correctable.** `PATCH`
+now works on a published row, editing title/body/media. The **audience** stays refused (`409`) once
+published — widening it after send would mean recipients who never received the original mail, and
+building a delta fan-out for that is a feature nobody asked for; refusing it is both the lazy and
+the honest answer. `DELETE` was not part of this ruling and stays refused on a published row,
+flagged as its own open follow-up rather than assumed either way. The `published_at` column, already
+the guard behind idempotent publish, now also guarantees an edit can never re-trigger the send: only
+`publish()`'s own guarded `UPDATE` ever sets it, and `updateDraft()` never touches it.
 
 ### `B-ANN-1` — unit 10: TAs cannot publish announcements
 Fixed a bug introduced earlier in unit 10 where a TA assigned to a course or group could publish an announcement targeted at it through `/staff/.../publish` routes, bypassing teacher/admin review. The staff publish routes were removed, and the `publish()` service method now unconditionally enforces the `teacher` or `admin` role for all announcements, closing the loophole.
@@ -1823,6 +1768,75 @@ author-supplied text never becomes markup. Announcement bodies render as paragra
 
 Removed before commit: an unrequested debounced search box over the announcement list. §1's scale
 numbers are the test — a list this size does not get search furniture.
+
+---
+
+## 2026-09-23 — Reconciliation: units 10–12 ported onto the unit 7 line; the remote's parallel unit 7 dropped
+
+`redesign` had split at `6657c7a` into two lines: local carried a reviewed, `APPROVED` unit 7;
+`origin/redesign` carried units 10–12 and a separate, partial unit 7 (7a–7c). The two unit 7s were
+incompatible — both numbered a migration `020`, and `D-39`…`D-45` named different rulings on each
+line. **The user ruled:** keep the local unit 7, port units 10–12, drop the remote's 7a–7c.
+
+- **Not carried:** the remote's `020_marking.sql` and its `D-38`…`D-45` entries. On this line those
+  codes mean only what the unit 7 entries above say.
+- **Migrations keep their numbers:** `021` announcements, `022` notification preferences — neither
+  depends on `020_marking`. `DATABASE_PLAN.md` §7 renumbered: sessions `023`, attendance `024`,
+  weekly reports `025`.
+- **Found and fixed while porting:** the remote backend did not typecheck (29 errors; `nest build`
+  failed), and `PostgresAnnouncementRepository.remove` called a `db.execute` that does not exist, so
+  deleting a draft threw on Postgres. Test added, verified failing first.
+- Follow-ups `RC-F1`…`RC-F4`. Full record: `docs/phases/RECONCILE_UNITS_10_12.md`.
+
+---
+
+## 2026-09-23 — Unit 14 (Google sign-in and contract hygiene): rulings `D-49`…`D-52`, finding F-1
+
+Taken out of order by the user (units 8, 9 and 13 not built). The documents did not answer four
+questions; they were put to the user before planning and ruled on the recommendations.
+
+### `D-49` — a Google email that matches an unlinked account: refused, link from the account
+Sign-in resolves a Google identity only through a link (`user_google_identities`, keyed by the OIDC
+`sub`). A matching verified email is refused with "sign in with your password, then connect Google
+from your account settings", and **nothing is linked**. Linking happens only inside a signed-in
+session, whose `sub` must equal the one in the signed `state`. This is `SECURITY.md` §2.6's "never
+auto-link by email" as a mechanism, not a habit.
+
+### `D-50` — no account is created through Google
+An unknown Google account is refused. Sign-up stays on the register form and the waiting queue. **This
+narrows the design** ("Google is the primary sign-in method… a password is optional"): every account
+keeps its password in this unit, so password-less accounts, removing a password, and Google on the
+register and invitation screens are deferred.
+
+### `D-51` — the staff domain pin is an env allow-list; empty means off
+`STAFF_GOOGLE_DOMAINS`, checked against the verified `id_token`'s `hd` at link time **and at every
+sign-in**, for teacher, admin and assistant. Empty (the default) turns staff Google sign-in off; staff
+keep passwords. Students are not pinned. Malformed entries stop the boot.
+
+### `D-52` — `OPS-1` is a backend↔mirror type check, not generation from `API_SPEC.yaml`
+**Document conflict, recorded per `CLAUDE.md` §2.3.** `CLAUDE.md` §6 and `IMPLEMENTATION_PLAN.md` said
+to generate the mirror from `API_SPEC.yaml` or add a drift check. The spec's own header excludes the
+~57 `[KEEP]` routes ("duplicating them would create a second source of truth"), and about 65 of the
+~110 paths the frontend calls are not in it. So generating from the spec would drop half the API, and
+a spec-based check would fail on day one. **Ruled:** check `frontend/lib/types.ts` against the
+backend's own exported types, both directions, in CI (`npm run typecheck:drift`). Units 8 and 9 are
+therefore held to the backend, not blocked on the spec. On its first run it found four drifts, all
+fixed. One was the `AuditAction` mirror missing four actions, so the activity log again rendered
+unlabelled entries: the exact defect §6 cites.
+
+### F-1 — an OAuth `state` token was a working session (security, fixed)
+`JwtStrategy` never read a `purpose` claim. The Google Forms connect `state`, signed with the session
+secret and carrying `sub` = the teacher, was accepted as a bearer token. It travels in a URL, so
+anyone who saw one had **ten minutes of the teacher's access**. This was present since the Forms
+integration landed; an e2e got 200 on `/admin/students` with it. The strategy now refuses any token
+carrying `purpose`. It was found because §2.6 said to reuse this pattern: a link state names any user,
+so reusing it unfixed would have widened the hole to every account.
+
+### `RC-F4` closed — the flaky integration test was the fixture, not the query
+Two announcement inserts in the same millisecond of `TIMESTAMPTZ(3)` tie, and `id DESC` over random
+UUIDs broke the tie either way. The query's order is stable and complete; the test assumed insertion
+order. It reproduced once during the unit 14 review; the fixture now makes the older row older.
+
 
 ## 2026-09-23 — `MARK-2`: a mark existing and a student seeing it become two things
 
@@ -2032,6 +2046,148 @@ nowhere else to go. Narrowing on the label axis instead would have hidden workin
 **Affected.** `frontend/lib/format.ts`, `app/(app)/homework/page.tsx`, `app/(app)/quizzes/page.tsx`.
 Frontend only — no backend, API or schema change. The server already computes and enforces
 everything this touches.
+
+---
+
+## 2026-09-24 — `F13-5`: the dead-token class recurred within days, so it stopped being a review item
+
+**Context.** Unit 13 removed 491 references to a retired token vocabulary (`F13-1`) and filed
+`OPS-2` — fail the build on a `var(--x)` naming an undefined custom property — as a follow-up.
+Before that follow-up was built, **unit 14 reintroduced the same bug**: `--sp-3`, `--sp-6` and
+`--sp-8` in the Google sign-in and callback screens, so their spacing rendered as nothing on the
+remote. A parallel session caught and fixed the two live instances.
+
+That is the fourth shipment of one defect: 478 colour instances, 113 size instances (`F5-1`), 491
+references across the public site (`F13-1`), then 3 more days later. Every one passed `tsc`,
+`eslint` and `next build`, because Tailwind's arbitrary-value syntax accepts any string —
+`p-[var(--nope)]` compiles to `padding: var(--nope)` and is dropped at computed-value time.
+Independent reviewers read the code between each recurrence.
+
+**Chosen.** Stop treating it as something reviewers should catch. `OPS-2` was built the same day
+(`frontend/scripts/check-tokens.mjs`, wired into `npm run lint`), and **verified by reintroducing the
+exact regression** rather than merely running clean against a tree that was already fixed.
+
+**Why a script and not a lint rule or a PostCSS plugin.** A custom ESLint rule cannot see the CSS
+that defines the tokens, and a PostCSS plugin runs too late to name the `.tsx` line that wrote it.
+The check needs both halves — every `--x:` in three CSS files, every `var(--x)` in the source — and
+that is a 110-line dependency-free script. An abstraction with one implementation and no second in
+sight would be the speculative architecture `CLAUDE.md` §13 forbids.
+
+**Affected.** `frontend/scripts/check-tokens.mjs`, `frontend/package.json`. `OPS-2` `[x]`.
+
+---
+
+## 2026-09-24 — `F13-6`: the e2e suite could exit without any reading at all
+
+**Context.** Each e2e file boots the whole `AppModule`. `vitest.config.e2e.ts` already records two
+rounds of this failing: file parallelism was disabled when a third concurrent boot killed a worker,
+then the pool moved from forked processes to threads when a fourth file brought it back. Unit 14
+added a fifth (`google-sign-in.e2e-spec.ts`) and the combined run began dying with `0xC0000409`
+**having printed no summary at all** — reproduced directly, not taken on report.
+
+**Why this is worse than a loud failure.** The config's own comment states it: *"A worker that dies
+silently is the worst shape a flake can take here, because a reader sees '0 failed' and the total
+quietly drops."* It is the same hazard `CLAUDE.md` §10 names for the integration suite — **a suite
+that skips itself is indistinguishable from one that passes** — and the reason CI has a guard step
+that fails when the integration suite reports zero executed tests. The e2e suite had no such guard.
+
+**Chosen.** `backend/scripts/run-e2e.mjs` behind `npm run test:e2e`; the raw invocation stays
+available as `test:e2e:combined`. One file per process, so five booted apps never share one V8 — the
+same trajectory the config was already on, continued rather than reversed. And, the part that
+matters: it **parses the summary out of every file and fails when one is missing**, so a file that
+prints no `Tests N passed` line is an error rather than a silent zero, even on exit 0.
+
+**Alternatives rejected.** Raising timeouts or reducing workers addresses the crash and leaves the
+reporting hazard. Splitting the fifth file's cases into an existing one treats the symptom and the
+config's comment already warned the next file would hit this. Neither makes a missing summary
+impossible to mistake for success, which is the actual defect.
+
+**Affected.** `backend/scripts/run-e2e.mjs`, `backend/package.json`. New task `OPS-3` `[x]`.
+Reading restored: **388 passed across 5 files**, where the combined run gave nothing.
+
+---
+
+## 2026-09-24 — `F13-2` CLOSED: classmates carry no avatar
+
+**Context.** Unit 13 raised `F13-2` because two documents at the same authority level disagreed and
+`CLAUDE.md` §2.3 forbids resolving that silently. `PRODUCT_SPEC.md` §6 said Classmates was "Names
+**and avatars** only. Already correct."; `redesign-mapping.md` said "classmates (**names only** — an
+exact match)". The implementation agreed with the second: `classmates.service.ts` returns *"Name and
+id, and nothing else"* — never email, phone, grades, progress or attendance.
+
+The conflict was not resolvable in engineering, because adding avatars would publish **a photograph
+of a child to other children**. That is a field-minimisation and privacy decision (`CLAUDE.md` §8),
+i.e. business behaviour, which §13 says is never invented.
+
+**Chosen — client ruling, 2026-09-24: no avatars.** Classmates stays names-only.
+
+**Consequences.** No code change: the service, the DTO and the screen were already correct, so this
+closes as *verified*, not *built* — the same posture unit 12 took with `SET-3`/`SET-5`.
+`PRODUCT_SPEC.md` §6 was the document in error and has been corrected at source rather than
+annotated, so the next reader does not re-derive the same conflict. `redesign-mapping.md` needed no
+change. `STU-6` moves `[~]` → `[x]`.
+
+**Worth keeping.** The finding cost nothing to raise and would have cost a privacy incident to guess
+wrong. A spec sentence asserting a field the API does not return is the cheap, visible symptom of a
+decision nobody actually made.
+
+**Addendum, same day — what the runner then measured.** Building the check immediately produced
+evidence the combined run had been hiding. `staff.e2e-spec.ts` dies with `0xC0000409` about one run
+in three **in its own process**, under both the `threads` and the `forks` pool — so it is the weight
+of that one file (244 cases, a booted `AppModule`, real bcrypt), not cross-file concurrency. The
+config's two earlier rounds had been narrowing toward that without reaching it, because a run that
+prints nothing tells you nothing.
+
+The runner allows three attempts per file, **only** when a run produces no summary at all, with a 5s
+pause between them (the crashes cluster: three back-to-back attempts all died where spaced ones did
+not). This provably cannot mask a real failure — a genuine failure prints `N failed` and is counted
+on the first attempt, never retried. Five consecutive full runs then came back 388/388, with retries
+fired and reported in three of them.
+
+Recorded rather than smoothed over: **the suite is green; the machine is not.** Whoever adds a sixth
+e2e file, or moves CI to a different runner, should read this first.
+
+---
+
+## 2026-09-24 — `STU-3`'s material relation: follow the design
+
+**Context.** Unit 13 built lesson detail but left one quarter of `PRODUCT_SPEC.md` §6's row unbuilt
+— *"Player, chapters, the work set from it, **its material**, and a 'Next recording' card"*.
+`materials` carried `course_id` and `category` and **nothing naming a lesson**, so there was no join
+to derive it from. The two available wrong answers were inventing a relation, or quietly rendering
+the whole course's materials as though they were this lesson's. Both were refused under §13 and the
+gap was recorded instead.
+
+**Chosen — client ruling 2026-09-24: follow the design.** Migration `025` adds
+`materials.lesson_id`.
+
+**Three shape decisions, each with a reason rather than a default.**
+- **Nullable, and null is the *normal* case.** Most materials belong to the course as a whole — a
+  syllabus, a formula sheet, a past-paper pack — and only some are the handout from lesson 4. A
+  `NOT NULL` column would have forced every existing row to claim a lesson it does not have.
+- **`ON DELETE SET NULL`**, matching `assessments.lesson_id` exactly. Deleting a lesson must not
+  delete the course's files; the material outlives the outline entry that referenced it and stays
+  reachable on the course's own Materials page.
+- **Partial index** on `(course_id, lesson_id) WHERE lesson_id IS NOT NULL`, beside the existing
+  category index rather than replacing it. Every read is already course-scoped before it filters by
+  lesson, and the rows that matter to this index are the minority.
+
+**No new route.** `GET /courses/:courseId/materials` already returns the course's materials and now
+carries the field, so the page filters what it already fetches — the same posture the work set took.
+At ~20 recordings and a handful of materials per course (§1) that is correct, not an N+1.
+`API_GAP_ANALYSIS.md` moves the route `[KEEP]` → `[MODIFY]`, because its response shape changed, and
+it is now specified in `API_SPEC.yaml`.
+
+**Deliberately not built: a staff control to set the lesson.** Materials have **no authoring surface
+at all** — the module exposes one `GET` and every material arrives by seed. Adding the column does
+not change that, and building material CRUD to fill the gap would be a feature of its own that
+nothing in §6 asks for. The absence is recorded here so it is not later mistaken for an oversight.
+
+**Tests.** Both drivers, in the shape that catches the actual failure mode: a mapper that drops a
+column yields `undefined`, which filters to an empty list and **looks exactly like "nothing attached
+to this lesson"**. So both the memory and the Postgres case assert the attached rows by id *and*
+that course-wide rows are `null` rather than `undefined`. Migration `025` and the updated seed ran
+from an **empty** schema against real PostgreSQL before this was called done.
 ## 2026-09-24 — Unit 8: sessions and attendance (`SESS-1`…`SESS-7`)
 
 **Context.** `SESS-1`…`SESS-7` build the group-grained session and attendance model. Recorded here:
@@ -2068,7 +2224,7 @@ assert it raises, so a guard removed or renamed already fails them by constructi
 would have been ceremony over a boundary the whole-file test already covers.
 
 ### Two student-facing field leaks, both closed — the first introduced and missed in this unit's own S1/S2
-Migration `019` widened `LiveSession` with `privateNotes`, `isVisible` and `state`. The student routes
+Migration `026` widened `LiveSession` with `privateNotes`, `isVisible` and `state`. The student routes
 serialised sessions by **spreading the row** — and there is no `ClassSerializerInterceptor` anywhere
 in the app — so those staff-only columns reached students, alongside an unwithheld `meetingLink` and
 the unpublished draft timetable. **The leak was introduced in this unit's own S1/S2 and missed in the
@@ -2100,6 +2256,55 @@ Clients must send offset-bearing ISO instants; the DTO's `@IsISO8601()` already 
 this correctly; recorded so a future caller of the same route does not repeat the bare-date mistake.
 
 **Affected.** `backend/src/manage/sessions.controller.ts`, `backend/src/live-sessions/
-student-session-view.ts`, `backend/src/database/migrations/019_*.sql`, `DOMAIN_MODEL.md`,
+student-session-view.ts`, `backend/src/database/migrations/026_*.sql`, `DOMAIN_MODEL.md`,
 `API_GAP_ANALYSIS.md`, `AUTHORIZATION_MODEL.md`, `IMPLEMENTATION_PLAN.md`, `PHASE_ROADMAP.md`,
 `CLAUDE.md`, `ARCHITECTURE.md`.
+
+## 2026-09-24 — Unit 8 lands: `origin/redesign` wins for everything that is not unit 8
+
+`redesign` had diverged into two histories carrying units 7 and 13 twice, under different SHAs. The
+user ruled: those units are finished, so **origin is authoritative for everything that is not unit
+8**. Every conflict was resolved that way, and three local duplicates were deleted rather than
+merged — local's mark book on `StaffManageController` (origin puts it on `StaffGroupsController`),
+local's `manage/markbook-csv.ts` (origin's `groups/markbook-csv.ts` is the wired one, and the better
+file: it documents the UTF-8 BOM, RFC 4180 quoting and CSV formula injection), and local's copies of
+three unit 7 e2e tests written against response shapes origin does not produce.
+
+**The migration renumbers 019 → 026.** Both branches claimed `019`. Unit 8's file moves to the end
+of the sequence, which is behaviour-neutral: only `001`, `005`, `012` and unit 8's own migration
+touch `live_sessions` or `attendance`, so nothing between `019` and `025` can observe the move.
+`001–026` were applied in order against an empty PostgreSQL 15.19 database to confirm it. The
+duplicate `023_recording_thumbnails.sql` was deleted after verifying it matched origin's `024`.
+
+**The mirror drift check earned its place twice in one merge.** `OPS-1` failed on unit 8's three new
+audit actions (`session.planned`, `session.published`, `attendance.marked`) and the `attendance`
+target type, none of which had reached `frontend/lib/types.ts` — exactly the defect the rule was
+written about, caught this time by a compiler rather than a reader. Fixing the mirror then made the
+activity page's exhaustive `Record<AuditAction, …>` fail, which is the second half of the same
+mechanism working.
+
+**Dead code the merge exposed, removed rather than left loaded.**
+`LiveSessionsService.getSessionsForCourse` served `GET /courses/:id/live-sessions`, a route unit 8
+replaced. It had no caller left, and it built its response by **spreading the session row** — the
+precise field-leak shape unit 8 spent a slice closing, sitting unreachable but intact for the next
+caller to find. It and its two response types (`LiveSessionListResponse`,
+`LiveSessionWithAttendance`) are gone. Its private helper `sessionsForCourse` is **kept**: it is
+still called by `getNextSession` and `getAttendanceSummary`.
+
+**The controller count was right for once, and the sub-count was not.** `role-guards.spec.ts`
+carried `CONTROLLERS` = 34, guessed mid-merge, which the spec confirmed; but
+`Object.keys(EXPECTED)` was still 28 against an actual 29. The invariant (`EXPECTED` + 2 public + 3
+per-method = 34) is now written beside the assertion so the next merge can check it by arithmetic
+instead of by running into it.
+
+**Gates on the merged tree, all measured here:** 803 unit / 48 files · 402 e2e / 5 files (via
+`run-e2e.mjs`, one file per process) · 191 integration, 0 skipped, against real PostgreSQL 15.19 ·
+`001–026` from an empty schema · backend and frontend `tsc --noEmit` both 0 · `npm run lint` exit 0
+with the 4 pre-existing warnings · `typecheck:drift` clean.
+
+**Affected.** `backend/test/postgres-repositories.integration-spec.ts`,
+`backend/test/staff.e2e-spec.ts`, `backend/src/manage/manage.controller.spec.ts`,
+`backend/src/auth/role-guards.spec.ts`, `backend/src/live-sessions/live-sessions.service.ts`,
+`backend/test/drift/mirror-drift.check.ts`, `frontend/lib/types.ts`,
+`frontend/app/(app)/manage/activity/page.tsx`, `DATABASE_PLAN.md`, `ARCHITECTURE.md`, `CLAUDE.md`,
+`PHASE_ROADMAP.md`, `IMPLEMENTATION_PLAN.md`.

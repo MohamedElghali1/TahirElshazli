@@ -1,4 +1,4 @@
--- 023_recording_thumbnails.sql
+-- 024_recording_thumbnails.sql
 --
 -- Nullable, no default, no backfill: every recording that exists today has no
 -- thumbnail, so the null path is the normal path, not an edge case. The

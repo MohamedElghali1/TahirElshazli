@@ -11,10 +11,10 @@ the time of this slice: `a7ac05f`.
 
 ## Slice order actually used
 
-S1 and S2 (migration `019` + the `Session`/`Attendance` repository seam, both drivers) were
+S1 and S2 (migration `026`, authored as `019` + the `Session`/`Attendance` repository seam, both drivers) were
 **checkpointed unverified first** (`wip(sessions): unit 8 S1-S2 checkpoint - UNVERIFIED`), then
 **verified** against real PostgreSQL in a follow-up commit (`feat(sessions): unit 8 S1-S2 verified -
-migration 019 and the repository seam`). S3 (staff routes) followed, then S4 (student routes, T-30,
+migration 026 and the repository seam`). S3 (staff routes) followed, then S4 (student routes, T-30,
 the projection), then S5 (frontend), then this slice, S6 (documentation).
 
 ## Who implemented which slice
@@ -24,7 +24,7 @@ the projection), then S5 (frontend), then this slice, S6 (documentation).
   `gemini-3.8-flash-high`, after `claude-sonnet-4-6` hit its roughly 96-hour `agy` quota window
   mid-unit and the coordinator switched implementer to keep the unit moving.
 
-**A field leak was introduced in S1/S2 and missed in the S1/S2 review.** Migration `019` widened
+**A field leak was introduced in S1/S2 and missed in the S1/S2 review.** Migration `026` widened
 `LiveSession` with `privateNotes`, `isVisible` and `state`, and the S1/S2 review did not catch that
 every student-facing read of a session still spread the raw row. It surfaced and was closed in S4/S6
 review, once the student routes and the sibling dashboard callers were compared side by side. See
@@ -41,7 +41,7 @@ asserting `null` against `null`.
 - lint clean apart from one pre-existing oxlint warning (`dashboard.controller.spec.ts:17`,
   `EXTERNAL_WORK_BINDER` unused) that predates this branch
 
-Migration `019` has run `001→019→020` from an empty schema on PostgreSQL 15.19, `020` extracted from
+Migration `026` (authored as `019`) has run from an empty schema on PostgreSQL 15.19; extracted from
 unit 7's commit `8eb6ad9` alongside — no merge involved. **The empty-schema run proves the SQL
 applies, not that the two abort guards fire or that the backfills do anything**: zero rows means the
 guards count nothing and the backfills touch nothing. Both guards are proven by seeded fixtures

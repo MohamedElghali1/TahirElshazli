@@ -24,14 +24,22 @@ const ACTION_LABEL: Record<AuditAction, string> = {
   'course_staff.assigned': 'assigned an assistant',
   'course_staff.unassigned': 'removed an assistant',
   'submission.graded': 'graded a submission',
+  'submission.returned': 'returned marked work',
+  'submission.annotated': 'marked up a submission',
   'recording.created': 'published a recording',
   'recording.updated': 'edited a recording',
   'recording.deleted': 'deleted a recording',
   'live_session.scheduled': 'scheduled a session',
   'live_session.updated': 'moved a session',
   'live_session.cancelled': 'cancelled a session',
+  // Unit 10's draft lifecycle. Missing from the mirror until `OPS-1`'s drift
+  // check found it, so these entries had rendered with no label at all.
+  'announcement.created': 'drafted an announcement',
+  'announcement.updated': 'edited an announcement',
+  'announcement.deleted': 'deleted a draft announcement',
   'announcement.posted': 'posted an announcement',
   'group.created': 'created a group',
+  'group.updated': 'edited a group',
   'group.renamed': 'renamed a group',
   'group.course_added': 'enrolled a group in a course',
   'group.course_removed': 'removed a group from a course',
@@ -62,6 +70,12 @@ const ACTION_LABEL: Record<AuditAction, string> = {
   'task_draft.created': 'created a draft task',
   'task_draft.updated': 'edited a draft task',
   'task_draft.deleted': 'deleted a draft task',
+  'account.google_linked': 'connected Google sign-in',
+  'account.google_unlinked': 'disconnected Google sign-in',
+  // Unit 8. A draft timetable is planned, then published; attendance is marked.
+  'session.planned': 'planned a session',
+  'session.published': 'published the timetable',
+  'attendance.marked': 'marked attendance',
 };
 
 /**
@@ -74,14 +88,22 @@ const ACTION_TONE: Record<AuditAction, TagTone> = {
   'course_staff.assigned': 'green',
   'course_staff.unassigned': 'red',
   'submission.graded': 'blue',
+  // Returning is the moment a student sees a mark - green, like other
+  // actions that make something reach students.
+  'submission.returned': 'green',
+  'submission.annotated': 'blue',
   'recording.created': 'green',
   'recording.updated': 'amber',
   'recording.deleted': 'red',
   'live_session.scheduled': 'green',
   'live_session.updated': 'amber',
   'live_session.cancelled': 'red',
+  'announcement.created': 'green',
+  'announcement.updated': 'amber',
+  'announcement.deleted': 'red',
   'announcement.posted': 'blue',
   'group.created': 'green',
+  'group.updated': 'amber',
   'group.renamed': 'amber',
   'group.course_added': 'green',
   'group.course_removed': 'red',
@@ -116,6 +138,13 @@ const ACTION_TONE: Record<AuditAction, TagTone> = {
   'task_draft.created': 'green',
   'task_draft.updated': 'amber',
   'task_draft.deleted': 'red',
+  // Who can sign in as the account: granting it is green, removing it red.
+  'account.google_linked': 'green',
+  'account.google_unlinked': 'red',
+  // Amber for the draft stage, green once it is out; marking is a neutral record.
+  'session.planned': 'amber',
+  'session.published': 'green',
+  'attendance.marked': 'blue',
 };
 
 export default function ActivityLogPage() {

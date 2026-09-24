@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
+import { StorageModule } from '../common/storage/storage.module.js';
 import { StaffManageController } from './staff-manage.controller.js';
 import { AdminManageController } from './admin-manage.controller.js';
 import { ManageService } from './manage.service.js';
 import { GradingService } from './grading.service.js';
-import { AnnotationsService } from './annotations.service.js';
 import { ManageRecordingsService } from './manage-recordings.service.js';
 import { ManageLiveSessionsService } from './manage-live-sessions.service.js';
 import { DirectoryService } from './directory.service.js';
@@ -13,6 +13,9 @@ import { AdminAssistantsService } from './admin-assistants.service.js';
 import { AssessmentAuthoringService } from './assessment-authoring.service.js';
 import { WorkAnalyticsController } from './work-analytics.controller.js';
 import { WorkAnalyticsGateService } from './work-analytics-gate.service.js';
+import { MarkingController } from './marking.controller.js';
+import { MarkingService } from './marking.service.js';
+import { SubmissionAccessService } from './submission-access.service.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { StaffModule } from '../staff/staff.module.js';
 import { CoursesModule } from '../courses/courses.module.js';
@@ -52,6 +55,9 @@ import { repositoryProvider } from '../database/repository.provider.js';
 @Module({
   imports: [
     AuthModule,
+    // `UploadsService.enabled`: a task may not ask for uploads the server
+    // cannot take (`D-48` (b)).
+    StorageModule,
     StaffModule,
     CoursesModule,
     EnrollmentsModule,
@@ -71,14 +77,11 @@ import { repositoryProvider } from '../database/repository.provider.js';
     WorkAnalyticsController,
     TaskDraftsController,
     SessionsController,
+    MarkingController,
   ],
   providers: [
     ManageService,
     GradingService,
-    // The marking overlay's data layer (`MARK-1`). Needs no new import edge:
-    // ASSESSMENT_REPOSITORY comes from AssessmentsModule above, StaffModule
-    // supplies StaffScopeService.
-    AnnotationsService,
     ManageRecordingsService,
     ManageLiveSessionsService,
     DirectoryService,
@@ -102,6 +105,11 @@ import { repositoryProvider } from '../database/repository.provider.js';
     // before it can be scoped on - one service rather than four lines repeated
     // per handler (CLAUDE.md §5.11).
     WorkAnalyticsGateService,
+    // Marking (unit 7). The annotation repository is NOT provided here: it
+    // comes from `AssessmentsModule`, which the student read needs it in too
+    // (assumption A-13).
+    SubmissionAccessService,
+    MarkingService,
     // The draft library (`TASK-2`), and the one repository this module owns.
     TaskDraftsService,
     InMemoryTaskDraftRepository,

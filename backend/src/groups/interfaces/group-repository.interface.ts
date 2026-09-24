@@ -114,6 +114,12 @@ export interface GroupRepository {
   addMember(input: NewGroupMembership): Promise<GroupMembership>;
   removeMember(groupId: string, studentId: string): Promise<boolean>;
   findMembers(groupId: string): Promise<GroupMembership[]>;
+  /**
+   * The members of many groups in one read (unit 7), ordered by `assigned_at`
+   * then id. Replaces a per-group `findMembers` loop on the per-task queue and
+   * the course queue - bounded by ~10 groups, but a daily screen (CLAUDE.md §1).
+   */
+  findMembersForGroups(groupIds: readonly string[]): Promise<GroupMembership[]>;
   findMembershipsForStudent(studentId: string): Promise<GroupMembership[]>;
 
   /**

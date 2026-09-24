@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Header,
   HttpCode,
   HttpStatus,
   Param,
@@ -11,9 +10,7 @@ import {
   Post,
   Query,
   Request,
-  Res,
 } from '@nestjs/common';
-import type { Response } from 'express';
 import { Roles } from '../auth/roles.decorator.js';
 import { STAFF_ALL } from '../auth/staff-roles.js';
 import type { JwtPayload } from '../auth/jwt.strategy.js';
@@ -25,14 +22,9 @@ import {
 } from './manage.service.js';
 import {
   GradingService,
-  type AssessmentRosterResponse,
   type GradingQueueItem,
   type GradingQueueResponse,
-  type MarkbookResponse,
 } from './grading.service.js';
-import { toMarkbookCsv } from './markbook-csv.js';
-import { AnnotationsService } from './annotations.service.js';
-import type { SubmissionAnnotation } from '../assessments/interfaces/assessment-repository.interface.js';
 import { ManageRecordingsService } from './manage-recordings.service.js';
 import type { Recording } from '../recordings/interfaces/recording-repository.interface.js';
 import {
@@ -42,7 +34,6 @@ import {
 } from './assessment-authoring.service.js';
 import { StaffTasksQueryDto } from './dto/staff-tasks-query.dto.js';
 import { GradeSubmissionDto } from './dto/grade-submission.dto.js';
-import { CreateAnnotationDto, UpdateAnnotationDto } from './dto/annotation.dto.js';
 import { ListGradingQueueQueryDto } from './dto/queries.dto.js';
 import {
   CreateAssessmentDto,
@@ -70,7 +61,6 @@ export class StaffManageController {
     private readonly grading: GradingService,
     private readonly recordings: ManageRecordingsService,
     private readonly authoring: AssessmentAuthoringService,
-    private readonly annotations: AnnotationsService,
   ) {}
 
   private actor(req: { user: JwtPayload }) {
@@ -109,56 +99,6 @@ export class StaffManageController {
   }
 
   /**
-   * `MARK-3`: one task's whole cohort, non-submitters included - the roster
-   * `queue` above cannot show, because a non-submitter never produces a row.
-   * No course id in the path: resolved from the assessment itself, same
-   * reasoning as `grade` below.
-   */
-  @Get('assessments/:assessmentId/submissions')
-  async assessmentSubmissions(
-    @Param('assessmentId') assessmentId: string,
-    @Request() req: { user: JwtPayload },
-  ): Promise<AssessmentRosterResponse> {
-    return this.grading.rosterForAssessment(assessmentId, this.actor(req));
-  }
-
-  /**
-   * `BOOK-1`: the student x task grid for one group, term total included.
-   * Group-grain (`D-10`): the path names a group, so this is scoped exactly
-   * like every other `/staff/groups/*` route - see `GradingService.markbook`.
-   */
-  @Get('groups/:groupId/markbook')
-  async markbook(
-    @Param('groupId') groupId: string,
-    @Request() req: { user: JwtPayload },
-  ): Promise<MarkbookResponse> {
-    return this.grading.markbook(groupId, this.actor(req));
-  }
-
-  /**
-   * `BOOK-3`: the same grid as CSV. Calls the identical `markbook` the grid
-   * route does - never a second read - so the file can never disagree with
-   * the screen. `filename*` carries the group's own name through RFC 5987 so
-   * an Arabic group name survives the header (CLAUDE.md §1).
-   */
-  @Get('groups/:groupId/markbook.csv')
-  @Header('Content-Type', 'text/csv; charset=utf-8')
-  async markbookCsv(
-    @Param('groupId') groupId: string,
-    @Request() req: { user: JwtPayload },
-    @Res({ passthrough: true }) res: Response,
-  ): Promise<string> {
-    const data = await this.grading.markbook(groupId, this.actor(req));
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="markbook.csv"; filename*=UTF-8''${encodeURIComponent(
-        `markbook-${data.groupName}.csv`,
-      )}`,
-    );
-    return toMarkbookCsv(data);
-  }
-
-  /**
    * Grading - the TA's core permission under §2.2, and the first non-admin
    * mutation the audit log covers (§5.4).
    *
@@ -180,80 +120,6 @@ export class StaffManageController {
     });
   }
 
-  /**
-   * `MARK-2`: release a saved mark to the student. Same no-course-id-in-path
-   * reasoning as `grade` above.
-   */
-  @Post('submissions/:submissionId/return')
-  @HttpCode(HttpStatus.OK)
-  async returnSubmission(
-    @Param('submissionId') submissionId: string,
-    @Request() req: { user: JwtPayload },
-  ): Promise<GradingQueueItem> {
-    return this.grading.returnToStudent(submissionId, this.actor(req));
-  }
-
-  /**
-   * The overlay's data (`MARK-1`, `D-2`): every mark drawn on a submission, in
-   * one page-percentage coordinate space. No course id in the path, same
-   * reasoning as `grade` above - resolved from the submission's own
-   * assessment so a submission id for a course the caller does not hold
-   * cannot be smuggled in.
-   */
-  @Get('submissions/:submissionId/annotations')
-  async listAnnotations(
-    @Param('submissionId') submissionId: string,
-    @Request() req: { user: JwtPayload },
-  ): Promise<SubmissionAnnotation[]> {
-    return this.annotations.list(submissionId, this.actor(req));
-  }
-
-  @Post('submissions/:submissionId/annotations')
-  @HttpCode(HttpStatus.CREATED)
-  async createAnnotation(
-    @Param('submissionId') submissionId: string,
-    @Body() body: CreateAnnotationDto,
-    @Request() req: { user: JwtPayload },
-  ): Promise<SubmissionAnnotation> {
-    return this.annotations.create(submissionId, this.actor(req), {
-      fileId: body.fileId ?? null,
-      page: body.page,
-      kind: body.kind,
-      x: body.x,
-      y: body.y,
-      path: body.path,
-      colour: body.colour,
-      width: body.width,
-      body: body.body,
-    });
-  }
-
-  /**
-   * No submission id in the path: resolved from the annotation itself, same
-   * shape as `grade` and `createAnnotation` above.
-   *
-   * `D-45`: refused for anyone but the annotation's own author - no teacher
-   * or admin override. The service enforces it; nothing here decides access.
-   */
-  @Patch('annotations/:annotationId')
-  async updateAnnotation(
-    @Param('annotationId') annotationId: string,
-    @Body() body: UpdateAnnotationDto,
-    @Request() req: { user: JwtPayload },
-  ): Promise<SubmissionAnnotation> {
-    return this.annotations.update(annotationId, this.actor(req), body);
-  }
-
-  /** `D-45`: same author-only rule as `updateAnnotation`. */
-  @Delete('annotations/:annotationId')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteAnnotation(
-    @Param('annotationId') annotationId: string,
-    @Request() req: { user: JwtPayload },
-  ): Promise<void> {
-    await this.annotations.remove(annotationId, this.actor(req));
-  }
-
   /** Read-only for a TA. The write routes live on the admin controller. */
   @Get('courses/:courseId/recordings')
   async listRecordings(
@@ -263,7 +129,10 @@ export class StaffManageController {
     return this.recordings.list(courseId, this.actor(req));
   }
 
-
+  // `GET courses/:courseId/live-sessions` was removed by unit 8. It was
+  // course-grained, and `D-6` puts sessions on the group grain: the schedule
+  // now lives on `SessionsController` as `GET /staff/sessions`, which scopes
+  // by held group rather than by course reach.
 
   /**
    * Every task the caller reaches, across courses (`TASK-6`). Group-grain: a

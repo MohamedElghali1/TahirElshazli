@@ -48,14 +48,14 @@ is otherwise a no-op; it is listed once per controller rather than once per rout
 | Route | Verdict | Note |
 |---|---|---|
 | `GET /courses/:id/assessments` | `[MODIFY]` | Must filter by `visibility` as well as the window, and split homework from quizzes — the design forbids them mixing on one page. |
-| `GET /assessments/:id` | `[MODIFY]` | Adds attachments, submission settings, annotations on the returned copy. |
+| `GET /assessments/:id` | `[MODIFY]` | Adds attachments, submission settings, annotations on the returned copy. **Unit 7 built:** `submission.returnedAt` and `submission.annotations` (empty until returned, no author); score, feedback and annotated URL null until returned. |
 | `POST /assessments/:id/submissions` | `[MODIFY]` | Honour `allowResubmission`; keep the refusal of non-`file_upload` work types. |
 
 ## A5. Materials, Recordings, Live sessions, Reports (student) (8)
 
 | Route | Verdict | Note |
 |---|---|---|
-| `GET /courses/:id/materials` | `[KEEP]` | |
+| `GET /courses/:id/materials` | `[MODIFY]` | Add `lessonId` (migration `025`, `STU-3`) so the lesson detail page can show "its material". Reclassified 2026-09-24 — it was `[KEEP]` while the response shape was unchanged. |
 | `GET /courses/:id/recordings` | `[MODIFY]` | Add `thumbnailUrl`, honour `isVisible`. |
 | `POST /recordings/:id/progress` | `[KEEP]` | |
 | `GET /courses/:id/live-sessions` | `[REPLACE]`d, done | Replaced by `GET /students/me/timetable?from=&to=` (unit 8, 2026-09-24). See B6. |
@@ -83,8 +83,8 @@ is otherwise a no-op; it is listed once per controller rather than once per rout
 | `GET /staff/overview` | `[MODIFY]` | Design wants Tasks set / Submissions to mark / Active students; current shape is courses/students/recordings/awaitingGrading. |
 | `GET /staff/courses/:id/roster` | `[MODIFY]` | Add group, status, attendance %, quiz avg, task avg — **separate columns, never merged**. |
 | `GET /staff/courses/:id/outline` | `[KEEP]` | |
-| `GET /staff/courses/:id/submissions` | `[MODIFY]` | Must include **non-submitters**; add `returnedAt`. |
-| `POST /staff/submissions/:id/grade` | `[MODIFY]` | Split save from save-and-return; add `includeInReport`. |
+| `GET /staff/courses/:id/submissions` | `[MODIFY]` | **Unit 7 built:** `returnedAt` on each item; items at the group grain (`D-44`), averages course-wide. **Non-submitters live on the per-task route** (`GET /staff/assessments/:id/submissions`), not here — this route stays a submissions queue (unit-7 conflict 5). |
+| `POST /staff/submissions/:id/grade` | `[MODIFY]` | **Unit 7 built:** saving is not returning (`/return` is its own route); group grain (`D-44`); the first saved mark claims an unclaimed task (`D-43`). `includeInReport` deferred to the weekly-reports unit (A-5). |
 | `GET /staff/courses/:id/recordings` | `[KEEP]` | |
 | `GET /staff/courses/:id/live-sessions` | `[REPLACE]` | See B6. |
 | `GET/POST /staff/courses/:id/assessments`, `PATCH/DELETE /staff/assessments/:id`, `POST /staff/assessments/:id/targets` | `[MODIFY]` ×5 | Add visibility, marker, attachments, submission settings, draft provenance. |
@@ -182,18 +182,19 @@ Task-results screen. It needs a frontend and nothing else.
 
 | Need | Route | Status |
 |---|---|---|
-| Submissions for one task, incl. non-submitters | `GET /staff/assessments/:id/submissions` | `[MISSING]` — today the queue is per course |
-| Read annotations | `GET /staff/submissions/:id/annotations` | `[MISSING]` |
-| Create / update / delete an annotation | `POST`/`PATCH`/`DELETE .../annotations[/:aid]` | `[MISSING]` ×3 |
-| Save marks without returning | `POST /staff/submissions/:id/grade` (+`return:false`) | `[EXISTS_BUT_INSUFFICIENT]` |
-| Return to student | `POST /staff/submissions/:id/return` | `[MISSING]` |
+| Submissions for one task, incl. non-submitters | `GET /staff/assessments/:id/submissions` | `[BUILT]` unit 7 (group grain, per-group counts, no cross-group total) |
+| Read annotations | `GET /staff/submissions/:id/annotations` | `[BUILT]` unit 7 |
+| Create / update / delete an annotation | `POST`/`PATCH`/`DELETE .../annotations[/:aid]` | `[BUILT]` ×3, unit 7 |
+| Save marks without returning | `POST /staff/submissions/:id/grade` — two operations, **not** a `return:false` flag | `[BUILT]` unit 7 |
+| Return to student | `POST /staff/submissions/:id/return` | `[BUILT]` unit 7 |
+| Student upload for a submission (`MARK-6`) | `POST /assessments/:id/files` | `[BUILT]` unit 7, slice 7i (`D-48`) |
 
 ## B5. Mark book
 
 | Need | Route | Status |
 |---|---|---|
-| Student × task grid for a group | `GET /staff/groups/:id/markbook` | `[MISSING]` |
-| CSV export | `GET /staff/groups/:id/markbook.csv` | `[MISSING]` |
+| Student × task grid for a group | `GET /staff/groups/:id/markbook` | `[BUILT]` unit 7 |
+| CSV export | `GET /staff/groups/:id/markbook.csv` | `[BUILT]` unit 7 |
 
 ## B6. Sessions and attendance — built by unit 8, 2026-09-24
 

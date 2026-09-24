@@ -103,11 +103,37 @@ export interface StoredAssessment {
   createdAt: string;
 }
 
+/**
+ * One uploaded file of a submission (`D-47`, `D-48`). A value object stored as a
+ * JSONB array element, never a row of its own - the unit-6 attachments
+ * precedent.
+ *
+ * `url` is minted by the student upload route (`POST /assessments/:id/files`);
+ * `mimeType` is re-derived by the submit route from the URL's server-minted
+ * extension (`storedMimeTypeOf`), never taken from the client. No size: the
+ * server could not vouch for one from a URL, and nothing decides on it.
+ */
+export interface SubmissionFile {
+  url: string;
+  mimeType: string;
+}
+
 export interface StoredSubmission {
   id: string;
   assessmentId: string;
   studentId: string;
+  /**
+   * A pasted URL: the legacy submission (a task stating no modes) or a
+   * `doc_link` submission. Null for an upload-mode submission, whose files are
+   * in `files` - one source per fact.
+   */
   fileUrl: string | null;
+  /**
+   * The uploaded files, in the student's order (`D-48`): one PDF for
+   * `pdf_upload`, 1-5 photos for `photo_upload`, empty otherwise.
+   */
+  files: SubmissionFile[];
+  /** On a task that states modes this is a note beside the work, never the work (`D-47`). */
   answerText: string | null;
   /** First submission. Never moves - it is the start of the history. */
   submittedAt: string;
@@ -123,83 +149,15 @@ export interface StoredSubmission {
   feedback: string | null;
   /** Teacher's annotated copy; the original submission stays immutable. */
   annotatedFileUrl: string | null;
-  /** `doc_link`: a link handed in instead of, or beside, the files. */
-  linkUrl: string | null;
   /**
-   * `MARK-2`: `correctedAt` says a mark exists, `returnedAt` says the student
-   * may see it. Marking can be saved and picked up again without returning.
+   * When the marked work was handed back (`MARK-2`). Saving a mark
+   * (`correctedAt`) and returning it are two states: a student sees the score,
+   * feedback and annotations only once this is set. Null is "not returned".
+   * Set once; a re-return keeps the first time. Migration `019` backfilled it
+   * to `correctedAt` for every mark that predates the split.
    */
   returnedAt: string | null;
 }
-
-/**
- * One file on a submission. A submission predating `020` has none and uses
- * `StoredSubmission.fileUrl`; the two are not merged.
- */
-export interface SubmissionFile {
-  id: string;
-  submissionId: string;
-  fileUrl: string;
-  displayName: string;
-  /** 0-based and stable - what "photo 3 of 5" means. */
-  position: number;
-  createdAt: string;
-}
-
-export type AnnotationKind = 'stroke' | 'pin' | 'text';
-
-/** A point in page-percentage space, so the overlay survives any zoom. */
-export interface AnnotationPoint {
-  x: number;
-  y: number;
-}
-
-/**
- * The teacher's overlay (`D-2`). Drawn over the file, never into it - the
- * original stays byte-identical and the eraser clears strokes, not pages.
- */
-export interface SubmissionAnnotation {
-  id: string;
-  submissionId: string;
-  /** `null` means the submission's pre-`020` single `fileUrl`. */
-  fileId: string | null;
-  page: number;
-  kind: AnnotationKind;
-  /** Set for `pin` and `text`; `null` for a `stroke`, which uses `path`. */
-  x: number | null;
-  y: number | null;
-  /** Set for a `stroke`; `null` otherwise. */
-  path: AnnotationPoint[] | null;
-  colour: string;
-  width: number | null;
-  body: string;
-  /** The eraser clears its author's own strokes only, so this is load-bearing. */
-  authorId: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export type NewSubmissionAnnotation = Omit<
-  SubmissionAnnotation,
-  'id' | 'createdAt' | 'updatedAt'
->;
-
-/** A partial edit; `undefined` leaves a field alone. */
-export interface SubmissionAnnotationUpdate {
-  page?: number;
-  x?: number | null;
-  y?: number | null;
-  path?: AnnotationPoint[] | null;
-  colour?: string;
-  width?: number | null;
-  body?: string;
-}
-
-/** One file as handed in, before the repository assigns it an id. */
-export type NewSubmissionFile = Omit<
-  SubmissionFile,
-  'id' | 'submissionId' | 'createdAt'
->;
 
 /**
  * A superseded version of a submission's content, kept so the correction
@@ -210,6 +168,8 @@ export interface SubmissionRevision {
   id: string;
   submissionId: string;
   fileUrl: string | null;
+  /** The superseded file set, archived whole (`D-48` (c)). */
+  files: SubmissionFile[];
   answerText: string | null;
   /** When this content was submitted. */
   submittedAt: string;
@@ -455,12 +415,31 @@ export interface AssessmentRepository {
     assessmentIds: readonly string[],
     studentId: string,
   ): Promise<StoredSubmission[]>;
+  /**
+   * Many students' submissions across many assessments, restricted to
+   * `studentIds` **in the query** (unit 7).
+   *
+   * The group-grain reads - the per-task queue, the course queue for a scoped
+   * caller (`D-44`), the mark book - resolve the students they may show from
+   * group memberships first and pass them here, so a submission by a student
+   * outside those groups is never read, rather than read and then filtered.
+   * Its own method, not an optional filter on `findSubmissionsForAssessments`:
+   * an optional filter left off defaults to "everyone".
+   */
+  findSubmissionsForStudents(
+    assessmentIds: readonly string[],
+    studentIds: readonly string[],
+  ): Promise<StoredSubmission[]>;
+  /**
+   * `files` is the upload-mode set (`D-48`); omitted is `[]`, which is every
+   * legacy and link submission.
+   */
   createSubmission(
     assessmentId: string,
     studentId: string,
     fileUrl: string | null,
     answerText: string | null,
-    linkUrl: string | null,
+    files?: readonly SubmissionFile[],
   ): Promise<StoredSubmission>;
   /**
    * Replaces the student's answer, archiving the previous content as a revision.
@@ -479,9 +458,15 @@ export interface AssessmentRepository {
   updateSubmission(
     submissionId: string,
     studentId: string,
-    fileUrl: string | undefined,
-    answerText: string | undefined,
-    linkUrl: string | undefined,
+    fileUrl: string | null | undefined,
+    /** `null` clears the note (a moded hand-in is replaced whole). */
+    answerText: string | null | undefined,
+    /**
+     * The replacement file set, archived and replaced WHOLE (`D-48` (c)) -
+     * never merged. `undefined` leaves the stored set alone, like the two
+     * fields above; the archived revision carries the old set either way.
+     */
+    files?: readonly SubmissionFile[],
   ): Promise<StoredSubmission | null>;
   findRevisions(
     submissionId: string,
@@ -555,49 +540,24 @@ export interface AssessmentRepository {
       annotatedFileUrl: string | undefined;
     },
   ): Promise<StoredSubmission | null>;
-
   /**
-   * `MARK-2`: hand the marked work back. Separate from `gradeSubmission` so
-   * that saving a mark and releasing it to the student are two decisions - a
-   * marker can put a task down half-marked without the student seeing it.
+   * Hands marked work back to the student (`MARK-2`).
    *
-   * Stamped by the repository for the same reason `correctedAt` is.
+   * Stamps `returnedAt` **once**: a second call keeps the first time. Returns
+   * null when the submission is absent **or unmarked** - a paper cannot be
+   * returned without a mark, which the database also refuses (migration `019`,
+   * `assessment_submissions_returned_needs_mark`). The caller tells the two
+   * apart by reading first. `gradeSubmission` never touches `returnedAt`, so a
+   * re-grade after return is visible immediately (assumption A-4).
    */
   returnSubmission(submissionId: string): Promise<StoredSubmission | null>;
-
   /**
-   * Files for many submissions at once. Batched because the marking queue
-   * shows a whole task's submissions and a per-row read is a round trip each.
+   * Names `userId` as the task's marker **only if nobody is named yet**
+   * (`D-43`: the first saved mark claims an unclaimed task). Atomic - the
+   * predicate is in the write - so two first marks racing cannot both claim.
+   * True when this call made the claim.
    */
-  findFilesForSubmissions(
-    submissionIds: readonly string[],
-  ): Promise<SubmissionFile[]>;
-
-  /**
-   * The files a submission currently holds, replacing whatever was there.
-   *
-   * Replace rather than append because resubmission swaps the content
-   * wholesale, and `position` is a `UNIQUE` column - appending would collide.
-   * The superseded content is already preserved in `submission_revisions`.
-   */
-  replaceSubmissionFiles(
-    submissionId: string,
-    files: readonly NewSubmissionFile[],
-  ): Promise<SubmissionFile[]>;
-
-  findAnnotations(submissionId: string): Promise<SubmissionAnnotation[]>;
-  findAnnotationById(
-    annotationId: string,
-  ): Promise<SubmissionAnnotation | null>;
-  createAnnotation(
-    annotation: NewSubmissionAnnotation,
-  ): Promise<SubmissionAnnotation>;
-  updateAnnotation(
-    annotationId: string,
-    update: SubmissionAnnotationUpdate,
-  ): Promise<SubmissionAnnotation | null>;
-  /** True when a row was removed; false when it was already gone. */
-  deleteAnnotation(annotationId: string): Promise<boolean>;
+  claimMarker(assessmentId: string, userId: string): Promise<boolean>;
 }
 
 export const ASSESSMENT_REPOSITORY = Symbol('ASSESSMENT_REPOSITORY');

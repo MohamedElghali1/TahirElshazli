@@ -484,18 +484,45 @@ not the rule.
 
 ---
 
-### Chat unit 7 — Marking and the mark book `[ ]`
+### Chat unit 7 — Marking and the mark book `[x]` **`COMPLETE` 2026-09-23**
 
-**Scope** `MARK-1` … `MARK-4`, `BOOK-1` … `BOOK-3`.
+**Status 2026-09-23: `COMPLETE`.** Review closed **`APPROVED`** after the user confirmed the 7i screens
+in a browser (user-performed, not observed by the coordinator). Artifacts: `PHASE_PLAN.md`,
+`EXECUTION_NOTES.md`, `REVIEW_7.md`. Carried forward, non-blocking: `MARK-F1`…`MARK-F5`, `TASK-F1`,
+`TASK-F2`, `TASK-F4` (narrowed), the `AUTH-6` remainder, and the open question on quiz scores in the
+mark book's average.
+
+**History.** Built on `redesign` `6657c7a..HEAD` (local, not pushed); artifacts in
+`docs/phases/unit-7/`. The user ran the pipeline without the agent harness: the coordinator did the
+planning pass (Revision 1 of `PHASE_PLAN.md`), the implementation and the review itself, in sequence.
+**`MARK-6` ruled and built the same day:** the user accepted the recommendations (`D-47`, `D-48`), slice 7i.
+**Review** (`REVIEW_7.md`, 2026-09-23, with a 7i addendum): `APPROVED WITH FOLLOW-UP`. Findings `R-1`,
+`R-2`, `R-6`…`R-8` fixed. `MARK-6` is ruled and built, and the 7a–7h browser pass was reported complete by
+the user. **One condition left:** a browser check of the three 7i screens (the student upload form, the
+file switcher, the authoring gate). Once the user confirms it, the unit is `[x]`.
+
+**Rulings** `D-40`…`D-46` (`B-3`…`B-9`). `D-38`/`D-39` (`B-1`/`B-2`, the `MARK-6` design) were
+accepted and **withdrawn** the same day; the question is escalated to the user.
+
+**Scope** `MARK-1` … `MARK-6`, `BOOK-1` … `BOOK-3`, plus `TASK-F3` and part of `TASK-F4`.
 **Depends on** unit 6.
-**Care** each annotation is **data** — page, x%, y%, kind, text — not a flattened file. The original
-submission stays **immutable**; the marked copy is a new artifact beside it. **Save** (annotations
-only) is distinct from **Save and return** (`returned_at`; the student sees it). The queue must show
-**non-submitters** — this is the answer to the old "no `missed` status" gap. **A missing mark is an
-em-dash, never `0`.**
-**Blocked within scope** `MARK-5` — decision `D-2` (flattened PDF vs rendered overlay).
+**Care** each annotation is **data** — page, x%, y%, kind, text, and freehand stroke paths — not a
+flattened file. The original submission stays **immutable**; the marked copy is a new artifact beside
+it. **Save** (annotations only) is distinct from **Save and return** (`returned_at`; the student sees
+it). The queue must show **non-submitters** — this is the answer to the old "no `missed` status" gap.
+**A missing mark is an em-dash, never `0`.**
+**`MARK-5` is not blocked:** `D-2` closed 2026-09-20 as a rendered overlay (the old "Blocked within
+scope `MARK-5`" line here was stale and is removed).
+**`MARK-6`** — `B-1`/`B-2` escalated, then ruled by the user on the recommendations (`D-47`, `D-48`) and
+built as slice 7i (migration `020`).
 
 ---
+
+> **2026-09-23 — one line again.** Units 10–12 were built on `origin/redesign` beside a separate,
+> partial unit 7; they were ported onto this line and that unit 7 was dropped (user ruling).
+> Baseline after: 771 unit, 354 e2e, 179 integration (001–022 from empty). Sessions take migration
+> `026` (unit 14 took `023`; unit 13 took `024` and `025`).
+> `docs/phases/RECONCILE_UNITS_10_12.md`.
 
 ### Chat unit 8 — Sessions and attendance `[x]` `COMPLETE` 2026-09-24
 
@@ -509,6 +536,13 @@ client — absent from the response.
 `D-6` is closed — **an assistant may create, edit, cancel and publish sessions, and mark attendance,
 for their own groups only** — and unit 8 built it that way, checked with
 `StaffScopeService.mayReachGroup`, never `assertAssigned(courseId)`.
+
+**Landed on `redesign` 2026-09-24.** The migration is **`026`**, not the `019` the phase plan
+claimed: origin had taken `019`-`025` while unit 8 ran in a parallel checkout. Merged-tree gates:
+803 unit / 48 files, 402 e2e, 191 integration (0 skipped), `001-026` from an empty schema, both
+typechecks 0, lint clean. **Still owed:** no unit 8 screen has been opened in a browser, so the
+`dir="rtl"` and dark-theme checks (CLAUDE.md §11) are outstanding — see
+`docs/phases/unit-8/HANDOFF.md` §10 for the five carried items.
 
 ---
 
@@ -616,18 +650,24 @@ mixes with the console's 13px. `/catalog` and the student `/achievements` rail e
 - **Landed `[x]`:** `SITE-1`…`SITE-5`, `STU-2`, `STU-4`, `STU-5`, `STU-7`.
 - **Deferred:** `STU-1` — composes unit 8's attendance figures, and migration `019` is still absent
   from `redesign`. The only item genuinely waiting on another unit.
-- **Partial `[~]`:** `STU-3` — player, chapters, the work set and the next-recording card are built;
-  **"its material" is not**, because `materials` has no relation to a lesson. Recorded rather than
-  invented (§13).
-- **Blocked `[~]`:** `STU-6`, on `F13-2` — a documentation conflict, not a technical one.
+- **Closed `[x]`:** `STU-3` — player, chapters, the work set, **its material**, and the
+  next-recording card. The material half was the open one; the client ruled 2026-09-24 to follow the
+  design, so migration `025` adds `materials.lesson_id`. No new route and no staff control: the
+  existing materials endpoint carries the field, and materials have no authoring surface to add one
+  to.
+- **Closed `[x]`:** `STU-6` — `F13-2` ruled on by the client 2026-09-24: **no avatars**. Names only,
+  which is what the service already returned. `PRODUCT_SPEC.md` §6 was the document in error and was
+  corrected at source.
 
 `STU-4` was expected to be deferred and turned out not to be: unit 7's `returnedAt` landed on
 `redesign` mid-session, and the four attempt states were already complete and server-derived. What
 it actually needed was `F13-4` — every Google Form task was rendering on **both** `/homework` and
 `/quizzes`.
 
-The unit cannot go `[x]` until `STU-1` lands, `STU-3`'s material gap is closed or dropped, and
-`F13-2` is ruled on; §2 condition 9 (zero unresolved blockers) is not met.
+**`STU-1` is the last item.** It composes unit 8's attendance figures, and unit 8 has not landed —
+its migration slot is now `026`, since `025` is taken by this unit's material relation. Everything
+else in unit 13 is `[x]`: `F13-2` ruled on (no avatars), `STU-3`'s material gap closed (follow the
+design). §2 condition 9 is unmet by exactly one dependency, held outside this unit.
 
 **The finding that dominated the unit (`F13-1`).** `SITE-1`…`SITE-5` were not a redesign. Every
 marketing and auth surface was still written against the token vocabulary `ad238a7` deleted with
@@ -639,7 +679,17 @@ Third recurrence of the class `CLAUDE.md` §11 records twice. Invisible to `tsc`
 
 ---
 
-### Chat unit 14 — Google sign-in and contract hygiene `[ ]`  *(last, deliberately)*
+### Chat unit 14 — Google sign-in and contract hygiene `[~]` **`APPROVED WITH FOLLOW-UP` 2026-09-23**
+
+**Status 2026-09-23: `[~]`.** Taken out of order by the user, in the same conversation as the units
+10–12 reconciliation, without the agent harness (coordinator: plan → execute → review, each its own
+artifact in `docs/phases/unit-14/`). `GAUTH-1` built under rulings `D-49`…`D-51`; `OPS-1` built as
+`D-52` redefined it and is `[x]`. Found and fixed F-1: an OAuth `state` worked as a bearer session.
+Tests: 790 unit / 47 files, 386 e2e, 182 integration (0 skipped, 001–023 from empty). **Stays `[~]`
+until `GAUTH-C1` (the user's browser check of the two account panels) and `GAUTH-C2` (`.env.example`)
+close** — then `APPROVED`, as unit 7 closed.
+
+*(Original entry, last, deliberately:)*
 
 **Scope** `GAUTH-1`, `OPS-1`.
 **Depends on** everything. Sequenced last because nothing depends on it and it **replaces a working,

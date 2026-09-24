@@ -79,4 +79,22 @@ describe('MaterialsController', () => {
       controller.listMaterials('course-unknown', {}, STUDENT),
     ).rejects.toThrow();
   });
+  it('should carry lessonId so the lesson detail page can filter on it', async () => {
+    // `STU-3` shows "its material" by matching `lessonId` against the
+    // recording's. If the memory driver drops the field the filter silently
+    // matches nothing, which renders as "nothing attached to this lesson" —
+    // a wrong answer that looks like a legitimate empty state.
+    const grouped = await controller.listMaterials('course-1', {}, STUDENT);
+    const notes = grouped.course_notes;
+
+    expect(notes.some((m) => m.lessonId === 'lesson-1')).toBe(true);
+
+    // Null is the normal case, and it must be null rather than undefined: the
+    // two behave identically in a `=== lessonId` filter but only one of them
+    // means "this material is course-wide" rather than "the driver forgot".
+    const all = Object.values(grouped).flat();
+    const courseWide = all.filter((m) => m.lessonId === null);
+    expect(courseWide.length).toBeGreaterThan(0);
+    expect(all.every((m) => m.lessonId !== undefined)).toBe(true);
+  });
 });

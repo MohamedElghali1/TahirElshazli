@@ -58,6 +58,13 @@ never had a client for them. The student reads `GET /courses/:id/live-sessions` 
 
 ## 2. Target schema — migration `019`
 
+> **Renumbered to `026` when unit 8 landed on `redesign`, 2026-09-24.** Origin's `redesign`
+> had already taken `019` (unit 7's annotations) through `025` (unit 13's material relation).
+> This section is left at `019` as the record of what was planned; the shipped file is
+> `026_sessions_and_attendance.sql`. The move is behaviour-neutral: only `001`, `005`, `012`
+> and this migration touch `live_sessions` or `attendance`.
+
+
 **Claim `019`.** Unit 7 (another agent, another checkout) also writes a migration; it takes `020`.
 Do not renumber without saying so.
 

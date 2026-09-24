@@ -41,6 +41,13 @@ export const PUBLIC_BROWSE_LIMIT: RateLimitRule = {
 export const UPLOAD_LIMIT: RateLimitRule = { limit: 30, windowMs: 60_000 };
 
 /**
+ * Student submission uploads (`D-48` (a)), the first upload a student can
+ * make. Its own, tighter limit rather than the staff one (`SECURITY.md` §2.4):
+ * a five-photo hand-in, a retry or two, and nothing like a loop filling disk.
+ */
+export const STUDENT_UPLOAD_LIMIT: RateLimitRule = { limit: 12, windowMs: 60_000 };
+
+/**
  * The Google OAuth callback.
  *
  * The only `@Public()` route in the build that is neither auth nor the public

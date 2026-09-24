@@ -25,10 +25,13 @@ export type AuditAction =
   // The first TA mutation the log covers. §5.4 names grading explicitly, and
   // it is the action a student is most likely to dispute.
   | 'submission.graded'
-  // `MARK-2`: handing marked work back is a separate decision from marking it,
-  // and a student-visible one the moment it happens - so it earns its own
-  // entry rather than riding along with `submission.graded`.
+  // Marking (unit 7). `returned` is the moment a student can see a mark
+  // (`MARK-2`) - "who handed this back, and when" is the question a disputed
+  // mark turns on. `annotated` covers create, edit and erase of a mark on the
+  // paper (assumption A-12): the before/after pair says which, and the target
+  // is the submission, so a paper's whole marking history is one filter.
   | 'submission.returned'
+  | 'submission.annotated'
   // Teacher-only writes (§2.2 grants a TA materials, not recordings), but
   // logged on the same terms: an admin action that changes what students can
   // see is history worth keeping.
@@ -144,7 +147,14 @@ export type AuditAction =
   // homework came from" is a question the log has to be able to answer.
   | 'task_draft.created'
   | 'task_draft.updated'
-  | 'task_draft.deleted';
+  | 'task_draft.deleted'
+  // Google sign-in (`GAUTH-1`, unit 14). Self-attributed, like an invitation
+  // accept: linking changes who can sign in as this account, so "when did this
+  // account start accepting a Google sign-in, and from which address" is the
+  // first question after a suspected takeover. Sign-in itself is not audited,
+  // matching password login.
+  | 'account.google_linked'
+  | 'account.google_unlinked';
 
 /** What the action happened *to*. Grows with `AuditAction`, for the same reason. */
 export type AuditTargetType =
@@ -221,7 +231,11 @@ export type AuditTargetType =
   // this template" is a different question from "what happened to this task".
   | 'task_draft'
   // Attendance sheet on a live session (unit 8, `SESS-3`).
-  | 'attendance';
+  | 'attendance'
+  // The sign-in link (`user_google_identities`, migration 023), not the user:
+  // "everything that happened to this account's Google sign-in" is its own
+  // question, and the target id is the user id the link belongs to.
+  | 'user_google_identity';
 
 /**
  * One side of a before/after pair.

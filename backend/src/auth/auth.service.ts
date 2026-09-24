@@ -100,6 +100,24 @@ export class AuthService {
   }
 
   /**
+   * The session for an account another mechanism has already authenticated -
+   * Google sign-in (`GAUTH-1`). The same token `login` mints, so every rule the
+   * strategy applies to a password session (denylist, cutoff, status, role
+   * re-read) applies unchanged. The caller has checked `status`.
+   */
+  async issueSession(user: {
+    id: string;
+    email: string;
+    name: string;
+    role: Role;
+  }): Promise<AuthResult> {
+    return {
+      accessToken: await this.issueToken(user),
+      user: { id: user.id, email: user.email, name: user.name, role: user.role },
+    };
+  }
+
+  /**
    * Creates a student account **in the waiting queue**. It cannot sign in
    * until staff accept it (`POST /admin/students/:id/accept`).
    */

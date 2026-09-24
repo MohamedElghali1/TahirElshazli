@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type {
   ExternalResult,
+  LatestResultScore,
   GoogleFormBinding,
   NewExternalResult,
   NewGoogleFormBinding,
@@ -190,5 +191,32 @@ export class InMemoryWorkRepository implements WorkRepository {
       }
     }
     return out;
+  }
+
+  async findLatestScoresForStudents(
+    assessmentIds: readonly string[],
+    studentIds: readonly string[],
+  ): Promise<LatestResultScore[]> {
+    const forms = new Set(assessmentIds);
+    const students = new Set(studentIds);
+    // Newest first by (submittedAt, id), keep the first per (form, student) -
+    // the Postgres driver's DISTINCT ON, so both drivers pick the same row.
+    const ordered = this.results
+      .filter((r) => r.studentId !== null && students.has(r.studentId) && forms.has(r.assessmentId))
+      .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt) || b.id.localeCompare(a.id));
+    const latest = new Map<string, LatestResultScore>();
+    for (const r of ordered) {
+      const key = `${r.assessmentId}|${r.studentId}`;
+      if (!latest.has(key)) {
+        latest.set(key, {
+          assessmentId: r.assessmentId,
+          studentId: r.studentId as string,
+          score: r.score,
+          maxScore: r.maxScore,
+          submittedAt: r.submittedAt,
+        });
+      }
+    }
+    return [...latest.values()];
   }
 }

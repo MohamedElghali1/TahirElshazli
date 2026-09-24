@@ -90,7 +90,7 @@ export interface AttendanceEntry {
  * halves are always present; a course with no sessions reports `0 of 0` rather
  * than serving a different shape.
  *
- * **Render them as two `Meter`s and never average them** (CLAUDE.md Ã‚Â§11.1
+ * **Render them as two `Meter`s and never average them** (CLAUDE.md §11.1
  * non-negotiable 2). `completionPercentage` and `attendancePercentage` measure
  * different things - watching the material and turning up - and one blended
  * figure would say neither. Grades never appear here at all: performance is
@@ -291,6 +291,14 @@ export type MaterialCategory =
 export interface Material {
   id: string;
   courseId: string;
+  /**
+   * The lesson this material belongs to, when it belongs to one (migration
+   * `025`). Null is the normal case: most materials are course-wide — a
+   * syllabus, a past-paper pack — and only some are the handout from one
+   * lesson. The lesson detail page shows the matching ones; `/materials` shows
+   * every one regardless, so a null hides nothing.
+   */
+  lessonId: string | null;
   title: string;
   description: string | null;
   category: MaterialCategory;
@@ -342,7 +350,7 @@ export interface RecordingProgress {
 }
 
 /* --- assessments (assessments/assessments.service.ts) ---------------------
-   CLAUDE.md Ã‚Â§5.10 - `status` is derived server-side from timestamps and
+   CLAUDE.md §5.10 - `status` is derived server-side from timestamps and
    submission state. The client renders it and never recomputes it. */
 
 export type AssessmentType = 'homework' | 'assignment' | 'quiz';
@@ -394,10 +402,18 @@ export interface AssessmentListItem {
   scorePercentage: number | null;
 }
 
+/** One uploaded file of a submission (`D-47`, `D-48`); the type is the server's. */
+export interface SubmissionFile {
+  url: string;
+  mimeType: string;
+}
+
 export interface SubmissionRevision {
   id: string;
   submissionId: string;
   fileUrl: string | null;
+  /** The superseded file set, archived whole (`D-48` (c)). */
+  files: SubmissionFile[];
   answerText: string | null;
   /** When this content was submitted. */
   submittedAt: string;
@@ -412,30 +428,25 @@ export interface SubmissionView {
   submittedAt: string;
   lastSubmittedAt: string;
   updatedAt: string;
+  /** Null until the work is returned (`MARK-2`). */
   score: number | null;
+  /**
+   * When a mark was SAVED. Non-null with a null `returnedAt` means "your
+   * teacher is marking this": the mark exists but is not visible yet.
+   */
   correctedAt: string | null;
+  /** Null until returned. */
   feedback: string | null;
-  /** CLAUDE.md Ã‚Â§5.5 - the annotated PDF is a new artifact beside the original. */
+  /** CLAUDE.md §5.5 - the annotated PDF is a new artifact beside the original. Null until returned. */
   annotatedFileUrl: string | null;
+  /** When the marked work came back (`MARK-2`). The key for showing a mark. */
+  returnedAt: string | null;
+  /** The uploaded files, in order (`D-47`, `D-48`). Empty for a link or legacy submission. */
+  files: SubmissionFile[];
+  /** Marks on the paper (`MARK-5`): empty until returned, never with an author. */
+  annotations: StudentAnnotation[];
   revisions: SubmissionRevision[];
 }
-
-/**
- * How this task is delivered, and where the student stands on it.
- * Mirrors `assessments.service.ts` `WorkExpectation` (lines 110-137).
- * Discriminated on `kind` so a client cannot render an upload box for a form task.
- */
-export type WorkExpectation =
-  | { kind: 'file_upload'; allowedFileTypes: string[]; maxFileSizeBytes: number }
-  | { kind: 'link'; url: string }
-  | {
-      kind: 'google_form';
-      formUrl: string;
-      completed: boolean;
-      score: number | null;
-      maxScore: number | null;
-      lastSyncedAt: string | null;
-    };
 
 export interface AssessmentDetail extends AssessmentListItem {
   instructions: string;
@@ -446,9 +457,28 @@ export interface AssessmentDetail extends AssessmentListItem {
   maxFileSizeBytes: number;
   canSubmit: boolean;
   submission: SubmissionView | null;
-  /** What the student is actually expected to do (mirror drift fix — backend already returns it). */
+  /** What the student is expected to do - the field the UI branches on. */
   work: WorkExpectation;
 }
+
+/** Mirrors `WorkExpectation` in `assessments.service.ts`. */
+export type WorkExpectation =
+  | {
+      kind: 'file_upload';
+      allowedFileTypes: string[];
+      maxFileSizeBytes: number;
+      /** `D-47`: empty keeps the old rule; otherwise exactly one per submission. */
+      submissionModes: SubmissionMode[];
+    }
+  | { kind: 'link'; url: string }
+  | {
+      kind: 'google_form';
+      formUrl: string;
+      completed: boolean;
+      score: number | null;
+      maxScore: number | null;
+      lastSyncedAt: string | null;
+    };
 
 /* --- dashboard (dashboard/dashboard.service.ts) --------------------------- */
 
@@ -539,7 +569,7 @@ export type NotificationType =
   | 'live_session_soon'
   | 'assessment_available'
   /**
-   * Announcement fan-out (CLAUDE.md Ã‚Â§5.14). Added by migration 005 on the
+   * Announcement fan-out (CLAUDE.md §5.14). Added by migration 005 on the
    * backend and missing here until 2026-09-08 - which was not a cosmetic gap:
    * both notification screens index an icon map by this union, so the first
    * announcement a student received rendered `<undefined />` and took the page
@@ -676,9 +706,157 @@ export interface GradingQueueItem {
   score: number | null;
   feedback: string | null;
   correctedAt: string | null;
+  /** When the mark was handed back (`MARK-2`); null while saved-not-returned. */
+  returnedAt: string | null;
   /** Server-derived, like every status on this platform (CLAUDE.md 5.10). */
   status: GradingStatus;
   isLate: boolean;
+}
+
+/* --- the mark book (groups/groups.service.ts, unit 7) ------------------- */
+
+/** A mirrored Google Form cell (`D-46`). */
+export type MirroredStatus = 'no_response' | 'responded' | 'scored';
+
+export interface MarkbookTask {
+  assessmentId: string;
+  title: string;
+  workType: 'file_upload' | 'google_form';
+  /** `platform`: marked here. `mirrored`: copied from Google Forms (`D-46`). */
+  source: 'platform' | 'mirrored';
+  maxScore: number | null;
+  dueAt: string;
+  /** Mirrored only: when the platform last checked the form. */
+  lastSyncedAt: string | null;
+  /** Mirrored only: responses on the whole form that matched no student. */
+  unmatchedCount: number | null;
+}
+
+export interface MarkbookCell {
+  assessmentId: string;
+  /** Null renders an em-dash - never 0. */
+  score: number | null;
+  maxScore: number | null;
+  status: SubmissionStatus | MirroredStatus;
+}
+
+export interface MarkbookStudent {
+  studentId: string;
+  name: string;
+  /** `D-45`: average of work marked in the platform. Null renders an em-dash. */
+  averagePercent: number | null;
+  cells: MarkbookCell[];
+}
+
+export interface Markbook {
+  groupId: string;
+  groupName: string;
+  courseId: string;
+  courseTitle: string;
+  tasks: MarkbookTask[];
+  omittedTasks: { assessmentId: string; title: string; workType: WorkType }[];
+  students: MarkbookStudent[];
+}
+
+/* --- marking (manage/marking.service.ts, unit 7) ------------------------- */
+
+/** Pins and freehand strokes (`D-2`). The eraser is a DELETE, not a kind. */
+export type AnnotationKind = 'comment' | 'tick' | 'cross' | 'pen' | 'highlight';
+
+/** `[x%, y%]` from the page box's physical top-left. */
+export type AnnotationPoint = [number, number];
+
+/** A mark as staff see it (`MARK-1`). */
+export interface Annotation {
+  id: string;
+  submissionId: string;
+  fileUrl: string;
+  page: number;
+  kind: AnnotationKind;
+  xPercent: number;
+  yPercent: number;
+  text: string;
+  path: AnnotationPoint[] | null;
+  createdBy: string;
+  createdByName: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** What the student receives on a returned paper: no author. */
+export type StudentAnnotation = Omit<Annotation, 'submissionId' | 'createdBy' | 'createdByName' | 'createdAt' | 'updatedAt'>;
+
+export interface AnnotationWrite {
+  fileUrl: string;
+  page: number;
+  kind: AnnotationKind;
+  xPercent: number;
+  yPercent: number;
+  text?: string;
+  path?: AnnotationPoint[];
+}
+
+/** `kind` and `fileUrl` are not editable: delete and create instead. */
+export type AnnotationPatch = Partial<Pick<AnnotationWrite, 'page' | 'xPercent' | 'yPercent' | 'text' | 'path'>>;
+
+/** Where one student stands on one task. Server-derived. */
+export type SubmissionStatus = 'not_submitted' | 'submitted' | 'marked' | 'returned';
+
+/**
+ * A file of a submission as the marking view renders it. Server-derived: the
+ * client never decides what may be drawn on (`D-41`). `link` is a pasted URL,
+ * shown as "Open original" and graded without mark-up.
+ */
+export interface SubmissionDocument {
+  url: string;
+  kind: 'image' | 'pdf' | 'file' | 'link';
+  annotatable: boolean;
+}
+
+export interface TaskSubmissionRow {
+  studentId: string;
+  studentName: string;
+  groupId: string;
+  groupName: string;
+  submissionId: string | null;
+  status: SubmissionStatus;
+  dueAt: string;
+  isLate: boolean;
+  isOverdue: boolean;
+  fileUrl: string | null;
+  documents: SubmissionDocument[];
+  answerText: string | null;
+  lastSubmittedAt: string | null;
+  score: number | null;
+  feedback: string | null;
+  correctedAt: string | null;
+  returnedAt: string | null;
+  annotationCount: number;
+  staleAnnotationCount: number;
+}
+
+/** One group's figures. Never summed across groups. */
+export interface TaskSubmissionGroup {
+  groupId: string;
+  groupName: string;
+  memberCount: number;
+  notSubmitted: number;
+  submitted: number;
+  marked: number;
+  returned: number;
+}
+
+export interface TaskSubmissions {
+  assessmentId: string;
+  courseId: string;
+  title: string;
+  maxScore: number;
+  dueAt: string;
+  workType: WorkType;
+  markerId: string | null;
+  markerName: string | null;
+  groups: TaskSubmissionGroup[];
+  rows: TaskSubmissionRow[];
 }
 
 /** Cohort-wide averages per task (CLAUDE.md 5.6) - was it hard or easy? */
@@ -782,7 +960,8 @@ export type AssistantScope = 'all_groups' | 'assigned_groups';
  * `manage/admin-assistants.service.ts`'s `Assistant`.
  */
 export interface Assistant extends DirectoryEntry {
-  role: Role;
+  /** Only the two roles an invitation can carry, as the backend types it. */
+  role: 'assistant' | 'admin';
   scope: AssistantScope;
   groupIds: string[];
   status: 'invited' | 'active';
@@ -821,21 +1000,28 @@ export interface AssistantWrite {
  *
  * There is no compile-time link between the two files, so **adding an action
  * on the backend means adding it here too** - the same hand-mirroring hazard
- * CLAUDE.md Ã‚Â§5.4 describes for the DTO's runtime arrays, one process boundary
+ * CLAUDE.md §5.4 describes for the DTO's runtime arrays, one process boundary
  * further out.
  */
 export type AuditAction =
   | 'course_staff.assigned'
   | 'course_staff.unassigned'
   | 'submission.graded'
+  // Unit 7: handing marked work back, and marks drawn on the paper.
+  | 'submission.returned'
+  | 'submission.annotated'
   | 'recording.created'
   | 'recording.updated'
   | 'recording.deleted'
   | 'live_session.scheduled'
   | 'live_session.updated'
   | 'live_session.cancelled'
+  | 'announcement.created'
+  | 'announcement.updated'
+  | 'announcement.deleted'
   | 'announcement.posted'
   | 'group.created'
+  | 'group.updated'
   | 'group.renamed'
   | 'group.course_added'
   | 'group.course_removed'
@@ -865,7 +1051,35 @@ export type AuditAction =
   | 'blog_post.deleted'
   | 'task_draft.created'
   | 'task_draft.updated'
-  | 'task_draft.deleted';
+  | 'task_draft.deleted'
+  | 'account.google_linked'
+  | 'account.google_unlinked'
+  // Unit 8: the timetable draft, its publication, and the attendance sheet.
+  | 'session.planned'
+  | 'session.published'
+  | 'attendance.marked';
+
+/** Mirrors the backend's `AuditTargetType`; `OPS-1`'s drift check holds the two together. */
+export type AuditTargetType =
+  | 'course_staff_assignment'
+  | 'assessment_submission'
+  | 'recording'
+  | 'live_session'
+  | 'announcement'
+  | 'group'
+  | 'group_course'
+  | 'group_membership'
+  | 'assessment'
+  | 'blog_post'
+  | 'google_credential'
+  | 'external_result'
+  | 'student'
+  | 'assistant'
+  | 'course'
+  | 'task_draft'
+  // Attendance sheet on a live session (unit 8, `SESS-3`).
+  | 'attendance'
+  | 'user_google_identity';
 
 export interface AuditLogEntry {
   id: string;
@@ -873,7 +1087,7 @@ export interface AuditLogEntry {
   /** The actor's role at the time of the action, not their role now. */
   actorRole: Role;
   action: AuditAction;
-  targetType: string;
+  targetType: AuditTargetType;
   targetId: string;
   courseId: string | null;
   before: Record<string, string | number | boolean | null> | null;
@@ -929,7 +1143,7 @@ export interface PublicCourseDetail extends PublicCourseSummary {
 }
 
 /* ------------------------------------------------------------------------
-   Groups (CLAUDE.md Ã‚Â§5.16) - the cohort a course is taught to.
+   Groups (CLAUDE.md §5.16) - the cohort a course is taught to.
 
    A group is a class of students studying **one** course. It used to carry no
    courseId, with a `GroupCourse` join row saying what it studied; migration 013
@@ -992,7 +1206,7 @@ export interface GroupPatch {
 
 /**
  * `GET /staff/groups/:id/report` (`GROUP-4`). Performance only - no
- * progress/completion figure sits beside it (CLAUDE.md Ã‚Â§11.1). No PDF field:
+ * progress/completion figure sits beside it (CLAUDE.md §11.1). No PDF field:
  * the browser's own print-to-PDF renders this data, there is no server-side
  * PDF file to link to.
  */
@@ -1018,7 +1232,7 @@ export interface GroupReport {
 }
 
 /**
- * The *staff* roster row. Carries an email; Ã‚Â§5.17's student-facing classmate
+ * The *staff* roster row. Carries an email; §5.17's student-facing classmate
  * list deliberately does not, and the two come from different endpoints so
  * widening one cannot widen the other.
  */
@@ -1031,7 +1245,7 @@ export interface GroupMemberView {
 }
 
 /**
- * What a student may see of another student (Ã‚Â§5.17): a name, and nothing else.
+ * What a student may see of another student (§5.17): a name, and nothing else.
  * Never an email, a mark, progress or attendance - a classmate list that
  * carries a grade is a leaderboard, which is a different product decision.
  */
@@ -1054,11 +1268,11 @@ export interface ClassmateGroup {
 }
 
 /* ------------------------------------------------------------------------
-   Authoring (CLAUDE.md Ã‚Â§5.18) and targeting (Ã‚Â§5.16).
+   Authoring (CLAUDE.md §5.18) and targeting (§5.16).
 
    A task is written **once** and aimed at one or more groups - the audience is
    per group, the task is not duplicated per group. So there is one assessment
-   row, one target row per group, and Ã‚Â§5.6's "average across all students"
+   row, one target row per group, and §5.6's "average across all students"
    stays one average over one task.
    ------------------------------------------------------------------------ */
 
@@ -1148,7 +1362,7 @@ export interface Attachment {
   /**
    * Who it is for (`D-29`). The student read returns only `students` ones; a
    * mark scheme is `staff`. This decides what the API returns, not who can
-   * fetch the file - see `SECURITY.md` Ã‚Â§4 on `/uploads/*`.
+   * fetch the file - see `SECURITY.md` §4 on `/uploads/*`.
    */
   audience: AttachmentAudience;
 }
@@ -1202,7 +1416,7 @@ export type TaskDraftUpdate = Partial<Omit<TaskDraftWrite, 'courseId'>>;
 
 /**
  * An announcement, as both the staff console and the student course page read
- * it. `audience` is the Ã‚Â§6.1 wire form: `all_students`, `all_tas` or
+ * it. `audience` is the §6.1 wire form: `all_students`, `all_tas` or
  * `course:<id>`.
  */
 export interface Announcement {
@@ -1223,7 +1437,7 @@ export interface Announcement {
 }
 
 /* ------------------------------------------------------------------------
-   The blog (CLAUDE.md Ã‚Â§5.19) - Dr. Tahir's achievements, authored by the
+   The blog (CLAUDE.md §5.19) - Dr. Tahir's achievements, authored by the
    teacher or an assistant and read by students and visitors alike.
 
    Two shapes, and the difference is what each reader is trusted with.
@@ -1421,4 +1635,31 @@ export interface NotificationPreferences {
   registrations: boolean;
   unmatched: boolean;
   weeklySummary: boolean;
+}
+
+/* --- Google sign-in (auth/google/google-sign-in.service.ts, `GAUTH-1`) ----- */
+
+/**
+ * What either start route returns. `browserKey` is kept in `sessionStorage` by
+ * the page that started the flow and presented on completion; it never goes in
+ * a URL. Mirrors `GoogleStart`.
+ */
+export interface GoogleStart {
+  authUrl: string;
+  browserKey: string;
+}
+
+/** Mirrors `GoogleLinkStatus`. `available` is false when the server or, for staff, the domain list says no. */
+export interface GoogleLinkStatus {
+  available: boolean;
+  linked: boolean;
+  email: string | null;
+  linkedAt: string | null;
+}
+
+/** What the callback page posts back to either completion route. Mirrors `CompleteGoogleDto`. */
+export interface GoogleCompletion {
+  code: string;
+  state: string;
+  browserKey: string;
 }

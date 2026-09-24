@@ -2,7 +2,6 @@ import { Inject, Injectable } from '@nestjs/common';
 import type {
   LiveSession,
   LiveSessionRepository,
-  LiveSessionWithAttendance,
 } from './interfaces/live-session-repository.interface.js';
 import { LIVE_SESSION_REPOSITORY } from './interfaces/live-session-repository.interface.js';
 import type { AttendanceRepository } from './interfaces/attendance-repository.interface.js';
@@ -15,11 +14,6 @@ import {
   toStudentSessionView,
   type StudentSessionView,
 } from './student-session-view.js';
-
-export interface LiveSessionListResponse {
-  upcoming: LiveSession[];
-  past: LiveSessionWithAttendance[];
-}
 
 /** Attendance timeline for a live-mode course - the live counterpart to watch progress. */
 export interface AttendanceSummary {
@@ -76,35 +70,6 @@ export class LiveSessionsService {
   private async sessionsForCourse(courseId: string): Promise<LiveSession[]> {
     const groups = await this.groupRepo.findByCourse(courseId);
     return this.liveSessionRepo.findByGroups(groups.map((g) => g.id));
-  }
-
-  async getSessionsForCourse(
-    courseId: string,
-    studentId: string,
-  ): Promise<LiveSessionListResponse> {
-    // Meeting links are private to enrolled students.
-    await this.enrollmentsService.assertEnrolled(courseId, studentId);
-    const now = new Date();
-    const sessions = await this.sessionsForCourse(courseId);
-    const attendance = await this.attendanceRepo.findForStudent(
-      studentId,
-      sessions.map((s) => s.id),
-    );
-    const upcoming: LiveSession[] = [];
-    const past: LiveSessionWithAttendance[] = [];
-    for (const session of sessions) {
-      if (this.hasEnded(session, now)) {
-        const mark = attendance.find((a) => a.sessionId === session.id);
-        past.push({
-          ...session,
-          attended: mark?.status === 'present',
-          attendedAt: mark?.markedAt ?? null,
-        });
-      } else {
-        upcoming.push(session);
-      }
-    }
-    return { upcoming, past };
   }
 
   /**

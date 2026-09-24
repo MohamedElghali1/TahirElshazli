@@ -25,8 +25,7 @@ import { UpdateProfileDto } from './dto/update-profile.dto.js';
 import { ChangePasswordDto } from './dto/change-password.dto.js';
 import type { JwtPayload } from '../auth/jwt.strategy.js';
 import { ALLOWED_AVATAR_MIME_TYPES, AVATAR_MAX_UPLOAD_BYTES } from '../common/storage/upload-types.js';
-import { UploadsService } from '../common/storage/uploads.service.js';
-import type { UploadedFileLike } from '../common/storage/uploads.service.js';
+import { UploadsService, type UploadedFileLike } from '../common/storage/uploads.service.js';
 
 @Controller('students')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -86,7 +85,7 @@ export class StudentsController {
     }
     const result = await this.uploadsService.store(file, {
       maxBytes: AVATAR_MAX_UPLOAD_BYTES,
-      allowedTypes: ALLOWED_AVATAR_MIME_TYPES,
+      allowedMimeTypes: ALLOWED_AVATAR_MIME_TYPES,
     });
     return this.studentsService.updateProfile(req.user.sub, { avatarUrl: result.url });
   }

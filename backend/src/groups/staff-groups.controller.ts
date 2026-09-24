@@ -3,17 +3,20 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
   Param,
   Post,
   Request,
+  StreamableFile,
 } from '@nestjs/common';
 import { Roles } from '../auth/roles.decorator.js';
 import { STAFF_ADMIN, STAFF_ALL } from '../auth/staff-roles.js';
 import type { JwtPayload } from '../auth/jwt.strategy.js';
 import { AddGroupMemberDto } from './dto/group.dto.js';
-import type { GroupMemberView, GroupReport, GroupSummary } from './groups.service.js';
+import type { GroupMemberView, GroupReport, GroupSummary, Markbook } from './groups.service.js';
+import { toMarkbookCsv } from './markbook-csv.js';
 import { GroupsService } from './groups.service.js';
 
 /**
@@ -89,6 +92,41 @@ export class StaffGroupsController {
     @Request() req: { user: JwtPayload },
   ): Promise<GroupReport> {
     return this.groups.report(groupId, this.actor(req));
+  }
+
+  /**
+   * The mark book (`BOOK-1`): every member against every task set for this
+   * group. Scoped like every other group read - an unheld group is the same
+   * 404 as a missing one (`D-10`).
+   */
+  @Get('groups/:groupId/markbook')
+  async markbook(
+    @Param('groupId') groupId: string,
+    @Request() req: { user: JwtPayload },
+  ): Promise<Markbook> {
+    return this.groups.markbook(groupId, this.actor(req));
+  }
+
+  /**
+   * The same mark book as a CSV download (`BOOK-3`). A read, so not audited
+   * (CLAUDE.md §9 audits mutations; A-9).
+   *
+   * The filename is minted from the group's **stored id** after the scope
+   * check - never from its name (non-ASCII, and a header is no place for
+   * user-typed text) and never from the raw path parameter.
+   */
+  @Get('groups/:groupId/markbook.csv')
+  @Header('Cache-Control', 'no-store')
+  async markbookCsv(
+    @Param('groupId') groupId: string,
+    @Request() req: { user: JwtPayload },
+  ): Promise<StreamableFile> {
+    const book = await this.groups.markbook(groupId, this.actor(req));
+    const safeId = book.groupId.replace(/[^A-Za-z0-9-]/g, '');
+    return new StreamableFile(Buffer.from(toMarkbookCsv(book), 'utf8'), {
+      type: 'text/csv; charset=utf-8',
+      disposition: `attachment; filename="markbook-${safeId}.csv"`,
+    });
   }
 
   /**

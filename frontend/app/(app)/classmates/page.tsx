@@ -9,8 +9,14 @@ import { CourseGate } from '@/components/student/course-gate';
 import { useSelectedCourse } from '@/components/shell/course-context';
 
 /**
- * Classmates (`docs/PRODUCT_SPEC.md` §6: `[EXISTING]`, "Names and avatars
- * only. Already correct."). Course-scoped via the rail's switcher.
+ * Classmates (`docs/PRODUCT_SPEC.md` §6: `[EXISTING]`, "**Names only** — no
+ * avatar."). Course-scoped via the rail's switcher.
+ *
+ * The spec used to say "names and avatars only" while the API returned
+ * neither; unit 13 raised that as `F13-2` instead of filling in the gap,
+ * because putting a child's photograph in front of other children is a privacy
+ * decision. Client ruling 2026-09-24: **no avatars.** Do not add one back
+ * because a design shows a circle.
  *
  * Never an email, a mark, progress or attendance (CLAUDE.md §5.17) — a
  * classmate list carrying a grade is a leaderboard, a different product

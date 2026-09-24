@@ -10,7 +10,7 @@ import {
 } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, ApiError } from './api';
-import type { AuthenticatedUser, RegistrationResult } from './types';
+import type { AuthenticatedUser, GoogleCompletion, RegistrationResult } from './types';
 
 /**
  * Session state for the logged-in student.
@@ -38,6 +38,8 @@ interface SessionValue {
    * without waiting a render for `user` to land in state.
    */
   signIn: (email: string, password: string) => Promise<AuthenticatedUser>;
+  /** Completes a Google sign-in the callback page started (`GAUTH-1`). */
+  signInWithGoogle: (completion: GoogleCompletion) => Promise<AuthenticatedUser>;
   /**
    * Accepts an assistant invitation and starts the session in one step
    * (`AUTH-4`) - unlike `register`, this account is `active` immediately.
@@ -134,6 +136,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     [adopt],
   );
 
+  const signInWithGoogle = useCallback(
+    async (completion: GoogleCompletion) => adopt(await api.auth.googleSignIn(completion)),
+    [adopt],
+  );
+
   const acceptInvitation = useCallback(
     async (invitationToken: string, password: string) =>
       adopt(await api.auth.acceptInvitation(invitationToken, password)),
@@ -164,8 +171,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, [token, router]);
 
   const value = useMemo<SessionValue>(
-    () => ({ user, token, loading, signIn, acceptInvitation, register, signOut }),
-    [user, token, loading, signIn, acceptInvitation, register, signOut],
+    () => ({ user, token, loading, signIn, signInWithGoogle, acceptInvitation, register, signOut }),
+    [user, token, loading, signIn, signInWithGoogle, acceptInvitation, register, signOut],
   );
 
   return (

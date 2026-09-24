@@ -121,6 +121,10 @@ const EXPECTED: Record<string, readonly Role[]> = {
   // Live sessions and attendance (`D-6`, unit 8 S3). Assistant-reachable
   // for held groups; scoped by group reach in the service.
   SessionsController: STAFF_ALL,
+  // Marking (unit 7): return, the per-task queue, annotations. Assistants
+  // "grade, annotate, return" (`AUTHORIZATION_MODEL.md` §3); every route is
+  // group-grain in `SubmissionAccessService` / `MarkingService`.
+  MarkingController: STAFF_ALL,
   UploadsController: STAFF_ALL,
   WorkAnalyticsController: STAFF_ALL,
   SettingsController: STAFF_ALL,
@@ -146,7 +150,7 @@ const EXPECTED: Record<string, readonly Role[]> = {
 const PUBLIC_CONTROLLERS = ['PublicBlogController', 'PublicCoursesController'];
 
 /** Controllers that decorate per method rather than per class. */
-const PER_METHOD_CONTROLLERS = ['AppController', 'AuthController'];
+const PER_METHOD_CONTROLLERS = ['AppController', 'AuthController', 'GoogleSignInController'];
 
 describe('the authorization boundary', () => {
   it('discovers every controller in the build', () => {
@@ -155,13 +159,17 @@ describe('the authorization boundary', () => {
     // defaulted - which is the entire point of asserting a count.
     // `AdminCoursesController` (`DOM-5`) was the thirtieth; `AdminStaffController`
     // left with `course_staff_assignments` (`AUTH-2`), which is a net -1.
-    // `TaskDraftsController` (`TASK-2`, unit 6) was the thirtieth again.
-    // Then unit 8 added `SessionsController` (`D-6`) and unit 10 its
-    // announcement controllers, in parallel branches that each independently
-    // updated this number - so the count below was recomputed at the merge
-    // rather than taken from either side. Two branches both writing "31" is
-    // exactly the merge that compiles and asserts the wrong thing.
-    expect(CONTROLLERS).toHaveLength(32);
+    // `TaskDraftsController` (`TASK-2`, unit 6) is the thirtieth again.
+    // `MarkingController` (unit 7, `MARK-1`/`MARK-2`/`MARK-3`) is the 31st;
+    // `SettingsController` (unit 12, `SET-1`/`SET-2`) the 32nd;
+    // `GoogleSignInController` (unit 14, `GAUTH-1`) the 33rd, per-method;
+    // `SessionsController` (unit 8, `D-6`) the 34th.
+    //
+    // This number has now been wrong twice at a merge, both times because two
+    // branches each bumped it correctly for their own controller and git took
+    // the identical text without a conflict. It is recomputed at every merge
+    // rather than carried from either side.
+    expect(CONTROLLERS).toHaveLength(34);
     const named = CONTROLLERS.map((c) => c.name);
     expect(new Set(named).size).toBe(named.length);
     const accounted = [
@@ -177,7 +185,9 @@ describe('the authorization boundary', () => {
     for (const name of named) {
       expect(accounted).toContain(name);
     }
-    expect(Object.keys(EXPECTED)).toHaveLength(28);
+    // 29 + PUBLIC_CONTROLLERS (2) + PER_METHOD_CONTROLLERS (3) = 34. Recomputed
+    // at unit 8's merge, 2026-09-24: `SessionsController` is the 29th entry here.
+    expect(Object.keys(EXPECTED)).toHaveLength(29);
   });
 
   describe('@Roles, read back off the decorator', () => {
@@ -316,6 +326,11 @@ describe('the authorization boundary', () => {
           // Google's top-level browser redirect back, which carries no
           // Authorization header. Its own signed-state check is the gate.
           'AdminGoogleIntegrationController.callback',
+          // Google sign-in (`GAUTH-1`): someone signing in has no session yet.
+          // Gated by the signed state, the starting browser's key and a
+          // verified id_token; neither route can create an account or a link.
+          'GoogleSignInController.start',
+          'GoogleSignInController.signIn',
           // The anonymous marketing surface, `@Public()` at class level.
           'PublicBlogController.list',
           'PublicBlogController.get',
@@ -362,17 +377,19 @@ describe('the authorization boundary', () => {
       // this list before it. They may delete any draft in the library on a
       // course they reach - `AUTHORIZATION_MODEL.md` §3 grants "Manage the
       // draft library" with no own-only rule (unit 6, `TASK-2`). They may
-      // delete an annotation they drew - `D-45` narrows that to authorship the
-      // same way the blog post is narrowed, in `AnnotationsService`, with no
-      // teacher or admin override (`MARK-1`, unit 7 slice 7c). They may cancel
-      // a live session on groups they hold (`D-6`, unit 8 S3).
+      // erase a mark on a paper - the eraser - but only one they drew
+      // (`D-42` (a), `MarkingService.ownAnnotation`), on a paper they reach.
+      // They may disconnect their own Google sign-in (`GAUTH-1`): the route
+      // names no resource, and acts only on the caller's own link. They may
+      // cancel a live session on groups they hold (`D-6`, unit 8 S3).
       expect(assistantDeletes.sort()).toEqual(
         [
+          'GoogleSignInController.unlink',
+          'MarkingController.removeAnnotation',
           'SessionsController.remove',
           'StaffAnnouncementsController.deleteCourseDraft',
           'StaffAnnouncementsController.deleteGroupDraft',
           'StaffBlogController.remove',
-          'StaffManageController.deleteAnnotation',
           'StaffManageController.deleteAssessment',
           'TaskDraftsController.remove',
         ].sort(),

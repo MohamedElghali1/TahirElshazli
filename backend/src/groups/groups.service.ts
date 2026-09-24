@@ -1,3 +1,4 @@
+import type { WorkType } from '../assessments/interfaces/work-repository.interface.js';
 import {
   BadRequestException,
   ConflictException,
@@ -16,6 +17,13 @@ import type { CourseRepository } from '../courses/interfaces/course-repository.i
 import { COURSE_REPOSITORY } from '../courses/interfaces/course-repository.interface.js';
 import type { AssessmentRepository } from '../assessments/interfaces/assessment-repository.interface.js';
 import { ASSESSMENT_REPOSITORY } from '../assessments/interfaces/assessment-repository.interface.js';
+import type { WorkRepository } from '../assessments/interfaces/work-repository.interface.js';
+import { WORK_REPOSITORY } from '../assessments/interfaces/work-repository.interface.js';
+import {
+  isVisibleToStudents,
+  submissionStatusOf,
+  type SubmissionStatus,
+} from '../assessments/assessments.service.js';
 import type { StaffActor } from '../staff/staff-scope.service.js';
 import { StaffScopeService } from '../staff/staff-scope.service.js';
 import type {
@@ -95,6 +103,69 @@ export interface GroupReport {
   entries: GroupReportEntry[];
 }
 
+/* --- The mark book (`BOOK-1`, unit 7) ----------------------------------- */
+
+/**
+ * A mirrored Google Form cell (`D-46`): no matched response, a response with
+ * nothing to mark (a non-quiz form), or a score.
+ */
+export type MirroredStatus = 'no_response' | 'responded' | 'scored';
+
+/** One column. `source` says who decided the number. */
+export interface MarkbookTask {
+  assessmentId: string;
+  title: string;
+  workType: 'file_upload' | 'google_form';
+  /** `platform`: marked here. `mirrored`: copied from Google Forms (`D-46`). */
+  source: 'platform' | 'mirrored';
+  /** The column's denominator. A form's may be unknown (`null`); each cell also carries its own. */
+  maxScore: number | null;
+  dueAt: string;
+  /** Mirrored only: when the platform last checked the form. Null if never. */
+  lastSyncedAt: string | null;
+  /**
+   * Mirrored only: responses that matched no student, on the whole form - a
+   * count, no names. Non-zero means some student's cell may read "no
+   * response" while their answers sit in the reconciliation queue.
+   */
+  unmatchedCount: number | null;
+}
+
+export interface MarkbookCell {
+  assessmentId: string;
+  /** Null is "no mark" and renders `—` - never `0` (CLAUDE.md §11.1). */
+  score: number | null;
+  /** The denominator for THIS score (a form response stores its own). */
+  maxScore: number | null;
+  status: SubmissionStatus | MirroredStatus;
+}
+
+export interface MarkbookStudent {
+  studentId: string;
+  /** Name only - no email (field minimisation; A-9). */
+  name: string;
+  /**
+   * `D-45`: "Average of marked work". The mean of this student's per-task
+   * shares over work MARKED IN THE PLATFORM (saved or returned), rounded to a
+   * percent - `GROUP-4`'s arithmetic, so the mark book and the group report
+   * agree. Not submitted, not yet marked, and mirrored form scores are not in
+   * it. Null when nothing is marked - `—`, never `0`.
+   */
+  averagePercent: number | null;
+  cells: MarkbookCell[];
+}
+
+export interface Markbook {
+  groupId: string;
+  groupName: string;
+  courseId: string;
+  courseTitle: string;
+  tasks: MarkbookTask[];
+  /** Visible tasks with no mark anywhere (link work), named so the screen can say what it leaves out. */
+  omittedTasks: { assessmentId: string; title: string; workType: WorkType }[];
+  students: MarkbookStudent[];
+}
+
 /**
  * Groups: the cohort Dr. Tahir teaches (CLAUDE.md §5.16).
  *
@@ -122,6 +193,8 @@ export class GroupsService {
     @Inject(COURSE_REPOSITORY) private readonly courseRepo: CourseRepository,
     @Inject(USER_REPOSITORY) private readonly userRepo: UserRepository,
     @Inject(ASSESSMENT_REPOSITORY) private readonly assessmentRepo: AssessmentRepository,
+    /** Google Form results for the mark book (`D-46`); exported by `AssessmentsModule`. */
+    @Inject(WORK_REPOSITORY) private readonly work: WorkRepository,
     private readonly scope: StaffScopeService,
     private readonly audit: AuditService,
     /** `DatabaseModule` is `@Global()`; this needs no import edge. */
@@ -551,6 +624,135 @@ export class GroupsService {
           ? Math.round((groupShares.reduce((a, b) => a + b, 0) / groupShares.length) * 100)
           : null,
       entries,
+    };
+  }
+
+  /**
+   * The mark book: every member of one group against every task set for it
+   * (`BOOK-1`). **Performance only** - no completion figure anywhere
+   * (CLAUDE.md §11.1, rule 2).
+   *
+   * - Scope: `requireGroup`, so an unheld group is the same `GROUP_NOT_FOUND`
+   *   as a missing one (`D-10`).
+   * - Columns: tasks set for this group and visible to students (A-8), by due
+   *   date then id. Uploaded work is `platform`; Google Form work is
+   *   `mirrored` with its last sync time and unmatched count (`D-46`); link
+   *   work has no mark anywhere and is listed in `omittedTasks`.
+   * - Cells: staff see a saved mark before it is returned, flagged `marked`
+   *   (A-8). A missing mark is `null`.
+   * - `averagePercent`: `D-45`, see `MarkbookStudent`.
+   *
+   * Every read is one query for the whole roster; nothing is read per student.
+   */
+  async markbook(groupId: string, actor: StaffActor): Promise<Markbook> {
+    const group = await this.requireGroup(groupId, actor);
+    const [course, members, targeted] = await Promise.all([
+      this.courseRepo.findById(group.courseId),
+      this.groupRepo.findMembers(groupId),
+      this.assessmentRepo.findByCourseForGroups(group.courseId, [groupId]),
+    ]);
+    if (!course) {
+      throw new NotFoundException('Course not found');
+    }
+    const visible = targeted
+      .filter(isVisibleToStudents)
+      .sort((a, b) => a.dueAt.localeCompare(b.dueAt) || a.id.localeCompare(b.id));
+    const uploads = visible.filter((a) => a.workType === 'file_upload');
+    const forms = visible.filter((a) => a.workType === 'google_form');
+    const columns = visible.filter((a) => a.workType !== 'link');
+    const studentIds = members.map((m) => m.studentId);
+
+    const [users, submissions, results, bindings, tallies] = await Promise.all([
+      this.userRepo.findByIds(studentIds),
+      this.assessmentRepo.findSubmissionsForStudents(uploads.map((a) => a.id), studentIds),
+      this.work.findLatestScoresForStudents(forms.map((a) => a.id), studentIds),
+      this.work.findBindings(forms.map((a) => a.id)),
+      // One count per FORM (bounded by the course's task count, not the
+      // roster), each already a single SQL aggregate (`TASK-F4`).
+      Promise.all(forms.map((a) => this.work.tallyResults(a.id))),
+    ]);
+    const unmatchedOf = new Map(forms.map((a, i) => [a.id, tallies[i]!.unmatched]));
+    const submissionOf = new Map(submissions.map((s) => [`${s.assessmentId}|${s.studentId}`, s]));
+    const resultOf = new Map(results.map((r) => [`${r.assessmentId}|${r.studentId}`, r]));
+    const nameOf = new Map(users.map((u) => [u.id, u.name]));
+
+    const tasks: MarkbookTask[] = columns.map((a) =>
+      a.workType === 'google_form'
+        ? {
+            assessmentId: a.id,
+            title: a.title,
+            workType: 'google_form',
+            source: 'mirrored',
+            maxScore: bindings[a.id]?.totalPoints ?? null,
+            dueAt: a.dueAt,
+            lastSyncedAt: bindings[a.id]?.lastSyncedAt ?? null,
+            unmatchedCount: unmatchedOf.get(a.id) ?? 0,
+          }
+        : {
+            assessmentId: a.id,
+            title: a.title,
+            workType: 'file_upload',
+            source: 'platform',
+            maxScore: a.maxScore,
+            dueAt: a.dueAt,
+            lastSyncedAt: null,
+            unmatchedCount: null,
+          },
+    );
+
+    const students: MarkbookStudent[] = [];
+    for (const studentId of studentIds) {
+      // A membership whose account is gone is dropped, same as `report`.
+      const name = nameOf.get(studentId);
+      if (name === undefined) continue;
+      const shares: number[] = [];
+      const cells: MarkbookCell[] = columns.map((a) => {
+        const key = `${a.id}|${studentId}`;
+        if (a.workType === 'google_form') {
+          const r = resultOf.get(key);
+          return {
+            assessmentId: a.id,
+            score: r?.score ?? null,
+            maxScore: r?.maxScore ?? null,
+            status: !r ? 'no_response' : r.score === null ? 'responded' : 'scored',
+          };
+        }
+        const s = submissionOf.get(key) ?? null;
+        // `GROUP-4`'s rule for a mark: a score AND a saved correction.
+        const marked = s !== null && s.score !== null && s.correctedAt !== null;
+        if (marked && a.maxScore > 0) {
+          shares.push((s.score as number) / a.maxScore);
+        }
+        return {
+          assessmentId: a.id,
+          score: marked ? s.score : null,
+          maxScore: a.maxScore,
+          status: submissionStatusOf(s),
+        };
+      });
+      students.push({
+        studentId,
+        name,
+        averagePercent:
+          shares.length > 0
+            ? Math.round((shares.reduce((x, y) => x + y, 0) / shares.length) * 100)
+            : null,
+        cells,
+      });
+    }
+    // Arabic-safe ordering.
+    students.sort((x, y) => x.name.localeCompare(y.name));
+
+    return {
+      groupId: group.id,
+      groupName: group.name,
+      courseId: group.courseId,
+      courseTitle: course.title,
+      tasks,
+      omittedTasks: visible
+        .filter((a) => a.workType === 'link')
+        .map((a) => ({ assessmentId: a.id, title: a.title, workType: a.workType })),
+      students,
     };
   }
 

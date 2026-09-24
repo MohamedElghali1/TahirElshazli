@@ -126,7 +126,7 @@ Plus four the handoff adds, each of which has bitten a real build:
 | `@phosphor-icons/react` | **Tabler**, stroke 1.6, local path data (115 glyphs) |
 | `motion` (framer) | **dropped** — "colour and opacity only; no transforms, no springs, no bounce" |
 
-Two runtime dependencies come out (`@phosphor-icons/react`, `motion`) and none go in.
+Two runtime dependencies come out (`@phosphor-icons/react`, `motion`). One goes in, by ruling: **`pdfjs-dist`** (`D-40`, unit 7), pinned exact, lazy-loaded on the marking routes only, so PDF pages can be drawn on in the browser.
 
 ## Navigation — the decided IA
 
@@ -160,12 +160,17 @@ homepage · sign in.
 | **Quizzes + runner** | Quiz engine unbuilt — `Question`, `QuestionOption`, `QuizAttempt`, `Answer` do not exist |
 | Staff **Reports** / ReportViewer | No `ReportRun`; §11's "can a TA generate reports" is still open |
 | **Draft tasks** / **Draft timetable** | No draft status on `AuthoredAssessment` or `LiveSession` |
-| **MarkingView** (PDF annotation) | `annotatedFileUrl` is read-only; nothing writes it (§5.5 unbuilt both sides) |
 | **Registration approval** | The console designs accept/reject; the app has §7.2 open self-enrollment |
 | Staff **Live sessions** week grid | Backend routes exist; `lib/api.ts` has no admin live-session methods |
 | Settings → **Google** tab | Migration 009 exists; no client API |
 | Student **profile photo** | `avatarUrl` exists; the upload endpoint is staff-only |
 | Student **Help** | Frontend + a config link only |
+
+### Mapped in unit 7
+| Screen | Where |
+|---|---|
+| **MarkingView** | `app/(app)/manage/tasks/[id]/submissions/[submissionId]` over `components/marking/*` (surface, overlay, pdf.js page). Built against `PRODUCT_SPEC` §2.2 — **the handoff was not reachable from the unit-7 environment**, so its measurements need a check against the design file. Toolbar uses labelled buttons with existing glyphs (Check, X, Message, Pencil, Edit, TrashX) rather than adding Eraser/Highlight glyphs to `icon-data.ts`. Ink: pen violet, highlight amber wash, tick green, cross red text — a design point for the reviewer |
+| **Mark book** | `app/(app)/manage/marks`. `Table` gained one optional prop, `stickyFirstColumn` (logical `start`, so it pins right in RTL) — a prop on the one primitive, not a fork |
 
 ### Built here, never designed
 `/catalog` (§7.2 self-enrollment) · `/achievements` ×2 · `/notifications` (the design makes it a

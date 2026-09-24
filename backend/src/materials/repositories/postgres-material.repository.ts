@@ -10,6 +10,7 @@ import type {
 interface MaterialRow {
   id: string;
   course_id: string;
+  lesson_id: string | null;
   title: string;
   description: string | null;
   category: MaterialCategory;
@@ -24,6 +25,7 @@ function toMaterial(row: MaterialRow): Material {
   return {
     id: row.id,
     courseId: row.course_id,
+    lessonId: row.lesson_id,
     title: row.title,
     description: row.description,
     category: row.category,
@@ -47,7 +49,7 @@ export class PostgresMaterialRepository implements MaterialRepository {
     // appending to the SQL string - one prepared statement, one plan, and no
     // path where a caller's value reaches the parser.
     const rows = await this.db.query<MaterialRow>(
-      `SELECT id, course_id, title, description, category, chapter,
+      `SELECT id, course_id, lesson_id, title, description, category, chapter,
               file_url, file_type, file_size_bytes, uploaded_at
        FROM materials
        WHERE course_id = $1

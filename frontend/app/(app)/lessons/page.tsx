@@ -342,7 +342,7 @@ function CurriculumSidebar({
 /**
  * The grid variant of the curriculum picker — thumbnail cards, one column at
  * the sidebar's width. `thumbnailUrl` is null for every recording that exists
- * today (`023_recording_thumbnails.sql`), so the icon fallback is the normal
+ * today (`024_recording_thumbnails.sql`), so the icon fallback is the normal
  * path, not an edge case.
  */
 function CurriculumGrid({

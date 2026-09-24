@@ -175,6 +175,14 @@ export class InMemoryGroupRepository implements GroupRepository {
       .map((m) => ({ ...m }));
   }
 
+  async findMembersForGroups(groupIds: readonly string[]): Promise<GroupMembership[]> {
+    const wanted = new Set(groupIds);
+    return this.memberships
+      .filter((m) => wanted.has(m.groupId))
+      .sort((a, b) => a.assignedAt.localeCompare(b.assignedAt) || a.id.localeCompare(b.id))
+      .map((m) => ({ ...m }));
+  }
+
   async findMembershipsForStudent(
     studentId: string,
   ): Promise<GroupMembership[]> {

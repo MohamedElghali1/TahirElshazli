@@ -1,12 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
 import { formatDate } from '@/lib/format';
 import type { StudentProfile } from '@/lib/types';
 import { Panel, EmptyState, Loader, Button, TextInput, InlineBanner, Avatar } from '@/components/ui';
 import { PageTitle } from '@/components/shell/page-chrome';
+import { GoogleSignInPanel } from '@/components/account/google-sign-in-panel';
 
 const PASSWORD_RULE = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
 
@@ -43,6 +44,9 @@ export default function ProfilePage() {
             <AvatarPanel profile={data} onSaved={reload} />
             <DetailsPanel profile={data} onSaved={reload} />
             <PasswordPanel />
+            <Suspense fallback={null}>
+              <GoogleSignInPanel returnTo="/profile" />
+            </Suspense>
           </>
         )}
       </div>

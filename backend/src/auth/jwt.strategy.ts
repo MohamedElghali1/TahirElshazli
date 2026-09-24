@@ -31,7 +31,14 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: JwtPayload): Promise<JwtPayload> {
+  async validate(payload: JwtPayload & { purpose?: unknown }): Promise<JwtPayload> {
+    // A single-purpose token - an OAuth `state` - is signed with this same
+    // secret and carries a `sub`, and it travels in a URL. Without this clause
+    // it opened the API as that user until it expired (unit 14, F-1). A session
+    // never carries `purpose`; anything that does is not a session.
+    if (payload.purpose !== undefined) {
+      throw new UnauthorizedException('Invalid token');
+    }
     if (payload.jti && this.denylist.isRevoked(payload.jti)) {
       throw new UnauthorizedException('Session has been logged out');
     }

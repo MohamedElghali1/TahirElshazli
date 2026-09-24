@@ -52,6 +52,12 @@ jobs:
       - name: Lint frontend
         run: npm run lint:frontend
 
+      # OPS-1 (D-52): the frontend mirror (frontend/lib/types.ts) is typechecked
+      # against the backend's own types, both directions. Drift is a compile
+      # error here rather than blank labels in production.
+      - name: Mirror drift check
+        run: npm run typecheck:drift
+
       - name: Build backend
         run: npm run build:backend
 

@@ -119,9 +119,7 @@ export class PostgresAnnouncementRepository implements AnnouncementRepository {
   }
 
   async remove(id: string): Promise<boolean> {
-    // `RETURNING id` rather than a row count: `DatabaseService` exposes no
-    // `execute`, and this is how every other delete in the codebase reports
-    // whether it removed anything.
+    // `DatabaseService` returns rows, not a `rowCount`, so the delete says what it removed.
     const row = await this.db.queryOne<{ id: string }>(
       `DELETE FROM announcements WHERE id = $1 AND published_at IS NULL RETURNING id`,
       [id],

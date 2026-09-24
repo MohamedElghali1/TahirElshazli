@@ -150,6 +150,7 @@ backfills everyone to `assigned_groups` including an assistant who held every co
 | Read the audit log | — | — | ✓ | ✓ |
 | Course CRUD | — | — | ✓ | ✓ |
 | Google connection | — | — | ✓ | ✓ |
+| Connect own Google sign-in (`GAUTH-1`) | own | own, if `STAFF_GOOGLE_DOMAINS` is set and the Google account is on it | own, same pin | own, same pin |
 | Notification preferences | own | own | own | own |
 
 **Recordings stay teacher-only — confirmed 2026-09-20.** Briefly recorded as widening to assistants
@@ -216,7 +217,12 @@ Role alone is never sufficient. Every handler must also answer an ownership or m
 | Report document | resolved through `document.courseId` then `assertEnrolled` |
 | Any assistant-facing read/write | group scope → 404. **PARTLY built — read the next row before citing this one.** Built (`AUTH-2` + `D-10`): `StaffScopeService.assertAssigned` for a route naming a *course*, `GroupsService.requireGroup` → `StaffScopeService.mayReachGroup` for one naming a *group*. Both messages are one exported `const` each — `COURSE_NOT_IN_SCOPE`, `GROUP_NOT_FOUND` — asserted `===` against the genuine-miss path in the same test, because the property dies silently if the strings drift by a byte |
 | ⚠ ...but only where the route **names a group** | **A route naming a *course* is still course-grained**, and `assertAssigned(courseId)` does **not** satisfy group scope on a course with more than one cohort. An assistant holding one group of a course still reads **every** cohort on it: `GET /staff/courses/:id/roster` (`manage.service.ts:182`), `GET /staff/courses/:id/submissions` (`grading.service.ts:92`), the analytics pair, `GET /staff/courses/:id/groups`, and assessment targeting (`assessment-authoring.service.ts:170`) accepts a group the assistant does not hold. Found by the 2b-ii review (F1, F3, F4) and **pre-existing** — `AUTH-2` narrowed the group door, not the course door. **Decision `D-23` (2026-09-21) closes it: narrow to held groups**, as task `AUTH-6`, not in phase 2. Until `AUTH-6` lands, the row above describes group-named routes only. |
-| ⚠ ...unit 6 narrowed that list (`D-33`) | **Closed 2026-09-22:** assessment targeting (`create`/`setTargets` put every target through `mayReachGroup`; an unheld group is a 404 byte-identical to `Group <id> is not enrolled in this course`, and re-targeting a task whose audience includes an unreachable group is **403** — the task is on the caller's screen) and `GET /staff/courses/:id/groups` (held groups only). **Still course-grained (`AUTH-6` remainder):** roster, submissions, the analytics pair, the per-course assessment list, and `PATCH`/`DELETE` of a task shared with an unheld group. |
+| ⚠ ...unit 6 narrowed that list (`D-33`) | **Closed 2026-09-22:** assessment targeting (`create`/`setTargets` put every target through `mayReachGroup`; an unheld group is a 404 byte-identical to `Group <id> is not enrolled in this course`, and re-targeting a task whose audience includes an unreachable group is **403** — the task is on the caller's screen) and `GET /staff/courses/:id/groups` (held groups only). **Still course-grained (`AUTH-6` remainder):** roster, submissions, the analytics pair, the per-course assessment list, and `PATCH`/`DELETE` of a task shared with an unheld group. **Unit 7 (`D-44`, 2026-09-23) closed** `POST /staff/submissions/:id/grade` (course-grained, and missing from this list until then) and the **items** of `GET /staff/courses/:id/submissions`; that queue's per-task averages stay course-wide by ruling. **Remainder now:** roster, the analytics pair, the per-course assessment list, and `PATCH`/`DELETE` of a task shared with an unheld group. |
+| Submission (staff), unit 7 — `/grade`, `/return`, and the four `/staff/submissions/:id/annotations` routes | **Group grain** (`SubmissionAccessService.loadInScope`): allowed when some group is in all three sets — the task's targets, the caller's reach, the student's groups on the course. Otherwise `SUBMISSION_NOT_FOUND` 404, `===` a missing id, checked **before** any 403/409 so no status is an oracle. A missing scope row fails closed. Stated, not a bug: a student who left every held group after submitting is unreachable to a scoped assistant |
+| Annotation (staff), unit 7 | After the submission gate: an annotation id from another paper is `ANNOTATION_NOT_FOUND` 404, `===` a missing one. Changing or erasing **someone else's** mark is **403** (`D-42` (a)) — the mark is on the caller's screen. Allowed after return, audited (`D-42` (b)) |
+| Per-task submissions `GET /staff/assessments/:id/submissions` (`MARK-3`), unit 7 | Group grain in the reads: only students of the caller's reachable targeted groups become rows; a task reached through no target is `ASSESSMENT_NOT_FOUND` 404, `===` a missing id. Per-group counts are each over that group's own members, so they do not depend on the viewer; **no cross-group total** |
+| Mark book `GET /staff/groups/:id/markbook` and `.csv`, unit 7 | `requireGroup` → `mayReachGroup`: `GROUP_NOT_FOUND` 404 for an unheld or missing group. Reads only that group's members, in the query. The CSV filename is minted from the stored id |
+| Returned copy (student), unit 7 | Resolved from `jwt.sub` only — the student route never takes a submission id. Score, feedback, annotated URL, annotations and `corrected` are withheld until `returnedAt` (one predicate, `isReturnedToStudent`, across all five student reads). Annotations reach the student **without** who drew them |
 | Task draft (`TASK-2`) | A draft carries no group, so the grain is **course reach through a held group** (`scopeFor`/`assertAssigned`) — it exposes no roster, submission or cohort number. List: filters narrow (`200 []`). Create: `COURSE_NOT_IN_SCOPE` 404. Edit/delete: `TASK_DRAFT_NOT_FOUND` 404, identical for a missing and an unreachable draft. **No own-only rule** — any staff member in scope edits any draft in scope |
 | Staff task list `GET /staff/tasks` (`TASK-6`) | **Group grain from birth:** listed only through a target the caller reaches (`StaffScopeService.reachableGroupIds`), targets narrowed to held groups in SQL. Unheld/unknown `groupId` and unreachable `courseId` → `200 []`. Derived `status` and marker drift are judged over the whole audience, so they do not depend on who is looking |
 | Sessions and attendance (`SESS-1`…`SESS-7`, unit 8) | **`D-6` closed and built:** an assistant may create, edit, cancel and publish a session, and mark its attendance, **for their own groups only** — every route checks `StaffScopeService.mayReachGroup(groupId)`, never `assertAssigned(courseId)`. **Group grain from birth**, same as `GET /staff/tasks` above: none of these routes is course-named, so none carries `AUTH-6`'s course-grain debt (§ row above). An assistant holding group A gets a 404 byte-identical to the genuine-miss message on a session or attendance write for group B. The unscoped week grid (no `groupId` given) still narrows to `reachableGroupIds` |
@@ -239,10 +245,14 @@ must stay so.
   "remembered `@UseGuards`, forgot `@Roles`" half-mistake and must not be relaxed.
 - **`JwtStrategy` re-reads the user on every request** — denylisted `jti`, password-change cutoff,
   account still exists — and **overwrites `role` from the database**. A tampered role claim dies at
-  signature verification; a demoted account loses access immediately, not at token expiry.
-- **Exactly 7 `@Public()` routes** today: health, register, login, the two password-reset routes, the
-  Google OAuth callback, and the two public controllers. Any addition to this list is a security
-  review, not a routine change.
+  signature verification; a demoted account loses access immediately, not at token expiry. **A token
+  carrying a `purpose` claim (an OAuth `state`) is refused outright** (unit 14, F-1).
+- **The `@Public()` surface is pinned by `auth/role-guards.spec.ts`**, which is the authority on the
+  exact list. It contains health, register, login, the two password-reset routes, the invitation
+  accept, the Google Forms OAuth callback, **the two Google sign-in routes (`POST /auth/google/start`,
+  `POST /auth/google/sign-in`, unit 14)**, and the two public controllers. (This line said "exactly 7"
+  and had gone stale long before unit 14.) Any addition to this list is a security review, not a
+  routine change.
 
 ---
 
@@ -254,7 +264,7 @@ must stay so.
 | Scoping is per course, the product is per group | High | `AUTH-2` |
 | ~~Assistant capability is implicit in which controller a route sits on~~ — **closed 2026-09-19 by `AUTH-3`.** `backend/src/auth/capabilities.ts` declares the four withheld verbs as an exhaustive `Record<Capability, boolean>`, so adding a capability without deciding whether an assistant holds it is a compile error. `DELETE /staff/groups/:groupId/members/:studentId` is now teacher/admin with a **403**, refused both at a method-level `@Roles` and again in `GroupsService.removeMember` before any repository read. | Medium | `AUTH-3` |
 | Token denylist and rate limiter are **per-process** — logout and lockout do not cross replicas | Medium (High once a second replica exists) | Redis; `CLAUDE.md` §7.3's named trigger |
-| No object-level gate yet exists for reports, annotations, attendance — they do not exist (drafts got theirs with the feature in unit 6, §4) | — | Build with the feature, never after |
+| No object-level gate yet exists for reports, attendance — they do not exist (drafts got theirs with the feature in unit 6, annotations in unit 7, §4) | — | Build with the feature, never after |
 | `forbidNonWhitelisted` is off — unknown body fields are dropped silently | Low | Considered: dropping is currently load-bearing (the TA announcement DTO relies on it) |
 
 ---

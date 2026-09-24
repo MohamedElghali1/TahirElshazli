@@ -51,6 +51,9 @@ import { JWT_SECRET, JWT_EXPIRES_IN } from './constants.js';
   // which cannot be constructed without it - every module using the guards
   // imports AuthModule to get it.
   exports: [
+    // For Google sign-in (`GAUTH-1`), which mints its session through
+    // `issueSession` rather than a second copy of the token shape.
+    AuthService,
     JwtModule,
     PassportModule,
     USER_REPOSITORY,

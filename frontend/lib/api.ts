@@ -6,6 +6,9 @@ import type {
   AuthoredAssessment,
   AuditLogPage,
   AuthResult,
+  GoogleCompletion,
+  GoogleLinkStatus,
+  GoogleStart,
   RegistrationResult,
   UserStatus,
   AdminCourse,
@@ -67,6 +70,12 @@ import type {
   StaffTask,
   StaffTaskStatus,
   SubmissionMode,
+  TaskSubmissions,
+  Markbook,
+  SubmissionFile,
+  Annotation,
+  AnnotationPatch,
+  AnnotationWrite,
   SyncOutcome,
   TaskDraft,
   TaskVisibility,
@@ -289,15 +298,24 @@ const qs = (params: Record<string, string | undefined>) => {
 async function uploadFile(
   token: string,
   file: File,
-  endpoint: string = '/staff/uploads',
   signal?: AbortSignal,
 ): Promise<UploadResult> {
+  return uploadTo<UploadResult>('/staff/uploads', token, file, signal);
+}
+
+/** Multipart POST of one `file`, with the bearer token and the usual error mapping. */
+async function uploadTo<T>(
+  path: string,
+  token: string,
+  file: File,
+  signal?: AbortSignal,
+): Promise<T> {
   const form = new FormData();
   form.append('file', file);
 
   let res: Response;
   try {
-    res = await fetch(`${baseUrl()}${endpoint}`, {
+    res = await fetch(`${baseUrl()}${path}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
       body: form,
@@ -313,7 +331,37 @@ async function uploadFile(
   if (!res.ok) {
     throw new ApiError(res.status, messageFrom(payload, res.status), payload);
   }
-  return payload as UploadResult;
+  return payload as T;
+}
+
+/**
+ * A GET that answers a file rather than JSON - the mark-book CSV (`BOOK-3`).
+ * Same bearer token and the same error mapping as `request`, so a 404 on an
+ * unheld group reads exactly like one from the JSON route.
+ */
+async function requestBlob(
+  path: string,
+  token: string,
+): Promise<{ blob: Blob; filename: string | null }> {
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl()}${path}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    });
+  } catch (cause) {
+    if (cause instanceof DOMException && cause.name === 'AbortError') throw cause;
+    throw new ApiError(0, 'Could not reach the server. Check your connection.');
+  }
+  if (!res.ok) {
+    const text = await res.text();
+    const payload: unknown = text ? safeJson(text) : null;
+    throw new ApiError(res.status, messageFrom(payload, res.status), payload);
+  }
+  // The server mints the name from the group id; read it rather than rebuild it.
+  const disposition = res.headers.get('Content-Disposition') ?? '';
+  const match = /filename="([^"]+)"/.exec(disposition);
+  return { blob: await res.blob(), filename: match ? match[1]! : null };
 }
 
 /* ------------------------------------------------------------------------
@@ -429,6 +477,25 @@ export const api = {
         method: 'POST',
         body: { password },
       }),
+
+    /* Google sign-in (`GAUTH-1`). A 503 from either start means the server
+       has no Google client; its message says to use the password. */
+    googleStart: () => request<GoogleStart>('/auth/google/start', { method: 'POST' }),
+
+    googleSignIn: (body: GoogleCompletion) =>
+      request<AuthResult>('/auth/google/sign-in', { method: 'POST', body }),
+
+    googleLinkStatus: (token: string) =>
+      request<GoogleLinkStatus>('/auth/google/link', { token }),
+
+    googleLinkStart: (token: string) =>
+      request<GoogleStart>('/auth/google/link/start', { method: 'POST', token }),
+
+    googleLink: (token: string, body: GoogleCompletion) =>
+      request<GoogleLinkStatus>('/auth/google/link', { method: 'POST', token, body }),
+
+    googleUnlink: (token: string) =>
+      request<void>('/auth/google/link', { method: 'DELETE', token }),
   },
 
   courses: {
@@ -482,10 +549,17 @@ export const api = {
     get: (token: string, assessmentId: string) =>
       request<AssessmentDetail>(`/assessments/${assessmentId}`, { token }),
 
+    /**
+     * One file for a submission to this task (`D-48`): stored and typed by the
+     * server, attached to nothing until `submit` names its URL.
+     */
+    uploadFile: (token: string, assessmentId: string, file: File) =>
+      uploadTo<SubmissionFile>(`/assessments/${assessmentId}/files`, token, file),
+
     submit: (
       token: string,
       assessmentId: string,
-      body: { fileUrl?: string; answerText?: string },
+      body: { fileUrl?: string; answerText?: string; files?: string[] },
     ) =>
       request<unknown>(`/assessments/${assessmentId}/submissions`, {
         method: 'POST',
@@ -621,6 +695,48 @@ export const api = {
         body,
       }),
 
+    /**
+     * Hand marked work back (`MARK-2`). Saving a mark and returning it are two
+     * calls on purpose: if this one fails the paper is saved-not-returned, and
+     * the screen must say so.
+     */
+    returnSubmission: (token: string, submissionId: string) =>
+      request<GradingQueueItem>(`/staff/submissions/${submissionId}/return`, {
+        method: 'POST',
+        token,
+      }),
+
+    /**
+     * Marks on a paper (`MARK-1`). Each stroke or pin is POSTed as it is
+     * finished, so nothing important lives only in the browser. Only the
+     * author may PATCH or DELETE a mark (403 otherwise, `D-42`).
+     */
+    annotations: {
+      list: (token: string, submissionId: string) =>
+        request<Annotation[]>(`/staff/submissions/${submissionId}/annotations`, { token }),
+      create: (token: string, submissionId: string, body: AnnotationWrite) =>
+        request<Annotation>(`/staff/submissions/${submissionId}/annotations`, {
+          method: 'POST',
+          token,
+          body,
+        }),
+      update: (token: string, submissionId: string, annotationId: string, body: AnnotationPatch) =>
+        request<Annotation>(`/staff/submissions/${submissionId}/annotations/${annotationId}`, {
+          method: 'PATCH',
+          token,
+          body,
+        }),
+      remove: (token: string, submissionId: string, annotationId: string) =>
+        request<void>(`/staff/submissions/${submissionId}/annotations/${annotationId}`, {
+          method: 'DELETE',
+          token,
+        }),
+    },
+
+    /** Every targeted student on one task, submitted or not (`MARK-3`). */
+    taskSubmissions: (token: string, assessmentId: string) =>
+      request<TaskSubmissions>(`/staff/assessments/${assessmentId}/submissions`, { token }),
+
     recordings: (token: string, courseId: string) =>
       request<StaffRecording[]>(`/staff/courses/${courseId}/recordings`, { token }),
 
@@ -645,6 +761,14 @@ export const api = {
     /** Stats plus a per-student table (`GROUP-4`). No PDF route - the browser's own print-to-PDF renders the file. */
     groupReport: (token: string, groupId: string) =>
       request<GroupReport>(`/staff/groups/${groupId}/report`, { token }),
+
+    /** Student × task grid for one group (`BOOK-1`). Missing marks are null. */
+    markbook: (token: string, groupId: string) =>
+      request<Markbook>(`/staff/groups/${groupId}/markbook`, { token }),
+
+    /** The same grid as a CSV file (`BOOK-3`), with the server-minted filename. */
+    markbookCsv: (token: string, groupId: string) =>
+      requestBlob(`/staff/groups/${groupId}/markbook.csv`, token),
 
     /**
      * Placement - a TA power, granted by the client in as many words (§2.2,
@@ -1096,7 +1220,7 @@ export const api = {
      * write. Uploading and publishing are deliberately two steps.
      */
     upload: (token: string, file: File, signal?: AbortSignal) =>
-      uploadFile(token, file, '/staff/uploads', signal),
+      uploadFile(token, file, signal),
 
     /* --------------------------------------------------------------------
        Work analytics (`WORK-1`…`WORK-3`). All seven routes live on
@@ -1419,7 +1543,7 @@ export const api = {
 
   students: {
     uploadAvatar: (token: string, file: File, signal?: AbortSignal) =>
-      uploadFile(token, file, '/students/me/avatar', signal),
+      uploadTo<StudentProfile>('/students/me/avatar', token, file, signal),
 
     profile: (token: string) =>
       request<StudentProfile>('/students/me/profile', { token }),

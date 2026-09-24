@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  resolveGoogleSignInConfig,
   resolveAutoSeed,
   resolveMailDriver,
   resolveSmtpConfig,
@@ -125,5 +126,63 @@ describe('resolveSmtpConfig', () => {
     expect(() =>
       resolveSmtpConfig({ ...full, MAIL_SMTP_PORT: 'abc' }),
     ).toThrow(/must be a number/);
+  });
+});
+
+describe('resolveGoogleSignInConfig (GAUTH-1, D-51)', () => {
+  const google = {
+    GOOGLE_CLIENT_ID: 'client-id',
+    GOOGLE_CLIENT_SECRET: 'client-secret',
+    GOOGLE_OAUTH_REDIRECT_URI: 'https://api.example.com/admin/integrations/google/callback',
+  };
+
+  it('is off (null) without a sign-in redirect URI, even with Google configured', () => {
+    expect(resolveGoogleSignInConfig('google', 'production', { ...google })).toBeNull();
+    expect(resolveGoogleSignInConfig('none', 'development', {})).toBeNull();
+  });
+
+  it('reuses the OAuth client and normalises the staff domain list', () => {
+    const config = resolveGoogleSignInConfig('google', 'production', {
+      ...google,
+      GOOGLE_SIGN_IN_REDIRECT_URI: 'https://tahirelshazli.com/google/callback',
+      STAFF_GOOGLE_DOMAINS: ' TahirElshazli.com, tahirelshazli.com ,school.org',
+    });
+    expect(config).toEqual({
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      redirectUri: 'https://tahirelshazli.com/google/callback',
+      staffDomains: ['tahirelshazli.com', 'school.org'],
+    });
+  });
+
+  it('leaves staff Google sign-in off when the domain list is empty', () => {
+    const config = resolveGoogleSignInConfig('google', 'production', {
+      ...google,
+      GOOGLE_SIGN_IN_REDIRECT_URI: 'https://tahirelshazli.com/google/callback',
+    });
+    expect(config!.staffDomains).toEqual([]);
+  });
+
+  it('refuses a malformed staff domain at boot', () => {
+    for (const bad of ['@gmail.com', 'https://school.org', '*.school.org', 'localhost', 'school .org']) {
+      expect(() =>
+        resolveGoogleSignInConfig('google', 'development', { ...google, STAFF_GOOGLE_DOMAINS: bad }),
+      ).toThrow(/STAFF_GOOGLE_DOMAINS/);
+    }
+  });
+
+  it('refuses a sign-in URI without the Google driver, a relative URI, and http in production', () => {
+    expect(() =>
+      resolveGoogleSignInConfig('none', 'development', { GOOGLE_SIGN_IN_REDIRECT_URI: 'https://x.org/cb' }),
+    ).toThrow(/GOOGLE_DRIVER/);
+    expect(() =>
+      resolveGoogleSignInConfig('google', 'development', { ...google, GOOGLE_SIGN_IN_REDIRECT_URI: '/google/callback' }),
+    ).toThrow(/absolute URL/);
+    expect(() =>
+      resolveGoogleSignInConfig('google', 'production', { ...google, GOOGLE_SIGN_IN_REDIRECT_URI: 'http://x.org/cb' }),
+    ).toThrow(/https/);
+    expect(
+      resolveGoogleSignInConfig('google', 'development', { ...google, GOOGLE_SIGN_IN_REDIRECT_URI: 'http://localhost:3000/google/callback' }),
+    ).not.toBeNull();
   });
 });

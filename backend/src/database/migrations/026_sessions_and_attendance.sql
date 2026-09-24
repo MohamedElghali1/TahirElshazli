@@ -1,4 +1,4 @@
--- 019_sessions_and_attendance.sql
+-- 026_sessions_and_attendance.sql
 --
 -- Unit 8: sessions and attendance (`SESS-1`, `SESS-3`). `PHASE_PLAN.md` §2.
 --

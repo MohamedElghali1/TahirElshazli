@@ -24,9 +24,13 @@ import { PostgresBlogRepository } from '../src/blog/repositories/postgres-blog.r
 import { PostgresMailDeliveryRepository } from '../src/mail/postgres-mail-delivery.repository.js';
 import { PostgresAssistantInvitationRepository } from '../src/manage/repositories/postgres-assistant-invitation.repository.js';
 import { PostgresTaskDraftRepository } from '../src/manage/repositories/postgres-task-draft.repository.js';
+import { PostgresWorkRepository } from '../src/assessments/repositories/postgres-work.repository.js';
+import { PostgresSubmissionAnnotationRepository } from '../src/assessments/repositories/postgres-submission-annotation.repository.js';
 import { PostgresNotificationPreferencesRepository } from '../src/settings/repositories/postgres-notification-preferences.repository.js';
 import type { NewAssessment } from '../src/assessments/interfaces/assessment-repository.interface.js';
 import { Role } from '../src/auth/roles.enum.js';
+import { PostgresGoogleIdentityRepository } from '../src/auth/google/repositories/postgres-google-identity.repository.js';
+import { GoogleIdentityConflictError } from '../src/auth/google/interfaces/google-identity-repository.interface.js';
 
 /**
  * Executes the real SQL against a real Postgres.
@@ -162,127 +166,6 @@ describeIfDb('Postgres repositories', () => {
             AND column_name = 'mode'`,
       );
       expect(rows).toEqual([]);
-    });
-  });
-
-  /**
-   * Migration 020's post-conditions.
-   *
-   * The backfill gets its own test because **the ordinary empty-schema gate is
-   * silent about it**: `UPDATE ... WHERE corrected_at IS NOT NULL` touches zero
-   * rows when there are no rows, so a clean migration run is not evidence that
-   * it works. It is the one non-additive statement in 020 and the one whose
-   * failure is silent and destructive - every mark every student can currently
-   * see would simply stop being visible once `MARK-2` moves the gate from
-   * `corrected_at` to `returned_at`.
-   *
-   * The statement is **read out of the migration file** rather than retyped, so
-   * this cannot pass against a copy that has drifted from what actually ships.
-   */
-  describe('migration 020', () => {
-    const migrations020Dir = fileURLToPath(
-      new URL('../src/database/migrations', import.meta.url),
-    );
-
-    /** The migration's own backfill, extracted rather than reproduced. */
-    const backfillSql = async (): Promise<string> => {
-      const sql = await readFile(
-        join(migrations020Dir, '020_marking.sql'),
-        'utf8',
-      );
-      const match = sql.match(
-        /UPDATE assessment_submissions[\s\S]*?WHERE corrected_at IS NOT NULL;/,
-      );
-      if (!match) {
-        throw new Error('020 no longer contains the returned_at backfill');
-      }
-      return match[0];
-    };
-
-    it('restores returned_at for a corrected row, so no student loses a visible mark', async () => {
-      // Put a seeded submission back into its pre-020 shape: corrected, and
-      // with no returned_at, which is exactly what every existing row looked
-      // like the instant before the migration ran.
-      const target = await db.queryOne<{ id: string; corrected_at: Date }>(
-        `SELECT id, corrected_at FROM assessment_submissions
-          WHERE corrected_at IS NOT NULL LIMIT 1`,
-      );
-      expect(target).not.toBeNull();
-      await db.query(
-        `UPDATE assessment_submissions SET returned_at = NULL WHERE id = $1`,
-        [target!.id],
-      );
-
-      await db.query(await backfillSql());
-
-      const after = await db.queryOne<{ returned_at: Date | null }>(
-        `SELECT returned_at FROM assessment_submissions WHERE id = $1`,
-        [target!.id],
-      );
-      expect(after?.returned_at).not.toBeNull();
-      expect(after?.returned_at?.getTime()).toBe(target!.corrected_at.getTime());
-    });
-
-    it('leaves an uncorrected row alone, so nothing unmarked is shown as returned', async () => {
-      // The other direction, and the one that matters for trust: a backfill
-      // that over-reached would publish unmarked work to students.
-      const uncorrected = await db.queryOne<{ id: string }>(
-        `SELECT id FROM assessment_submissions
-          WHERE corrected_at IS NULL LIMIT 1`,
-      );
-      expect(uncorrected).not.toBeNull();
-
-      await db.query(await backfillSql());
-
-      const after = await db.queryOne<{ returned_at: Date | null }>(
-        `SELECT returned_at FROM assessment_submissions WHERE id = $1`,
-        [uncorrected!.id],
-      );
-      expect(after?.returned_at).toBeNull();
-    });
-
-    it('orders annotations deterministically when several share a millisecond', async () => {
-      // `TIMESTAMPTZ(3)` leaves ties, and a batched stroke post writes several
-      // inside one millisecond. Stroke order is visible - a later one paints
-      // over an earlier one - so the driver tiebreaks on id. What that buys is
-      // *repeatability across reads*, not parity with the in-memory driver,
-      // whose ids are sequential where these are UUIDs. Forced here with an
-      // identical `created_at` rather than hoping for a natural collision.
-      const submission = await db.queryOne<{ id: string }>(
-        `SELECT id FROM assessment_submissions LIMIT 1`,
-      );
-      const author = await db.queryOne<{ id: string }>(
-        `SELECT id FROM users WHERE role IN ('teacher', 'admin') LIMIT 1`,
-      );
-      expect(submission).not.toBeNull();
-      expect(author).not.toBeNull();
-
-      const ids = ['zz-annot', 'mm-annot', 'aa-annot'];
-      for (const id of ids) {
-        await db.query(
-          `INSERT INTO submission_annotations
-             (id, submission_id, page, kind, path, author_id, created_at)
-           VALUES ($1, $2, 0, 'stroke', '[{"x":1,"y":2}]'::jsonb, $3,
-                   '2026-09-23T12:00:00.000Z')`,
-          [id, submission!.id, author!.id],
-        );
-      }
-
-      const found = await new PostgresAssessmentRepository(db).findAnnotations(
-        submission!.id,
-      );
-      const written = found.filter((a) => ids.includes(a.id)).map((a) => a.id);
-      // Insertion order was zz, mm, aa; with the timestamps tied the id
-      // tiebreak is the only thing that can make this repeatable at all.
-      expect(written).toEqual(['aa-annot', 'mm-annot', 'zz-annot']);
-
-      // And the JSONB round-trips as a real array, not a string.
-      const stroke = found.find((a) => a.id === 'aa-annot');
-      expect(stroke?.path).toEqual([{ x: 1, y: 2 }]);
-
-      await db.query(`DELETE FROM submission_annotations WHERE id = ANY($1)`, [
-        ids,
-      ]);
     });
   });
 
@@ -737,6 +620,26 @@ describeIfDb('Postgres repositories', () => {
       expect(notes.every((m) => m.category === 'course_notes')).toBe(true);
       expect(notes).toHaveLength(3);
     });
+
+    it('carries lesson_id, and null where a material is course-wide', async () => {
+      // `STU-3` reads this to show "its material" on the lesson detail page, so
+      // the column has to survive the SELECT list — the failure mode a mapper
+      // that forgets a column produces is `undefined`, which filters to an
+      // empty list and looks exactly like "nothing attached to this lesson".
+      const repo = new PostgresMaterialRepository(db);
+      const all = await repo.findByCourse('course-1');
+
+      const attached = all.filter((m) => m.lessonId !== null);
+      expect(attached.map((m) => m.id).sort()).toEqual(['mat-1', 'mat-2', 'mat-3']);
+      expect(all.find((m) => m.id === 'mat-1')?.lessonId).toBe('lesson-1');
+
+      // Null is a real value here, not an absent one: most materials belong to
+      // the course rather than a lesson, and `undefined` would pass a
+      // `!== null` filter while meaning the mapper dropped the column.
+      const courseWide = all.filter((m) => m.lessonId === null);
+      expect(courseWide.length).toBeGreaterThan(0);
+      expect(courseWide.every((m) => 'lessonId' in m)).toBe(true);
+    });
   });
 
   describe('recordings', () => {
@@ -1075,7 +978,6 @@ describeIfDb('Postgres repositories', () => {
         'student-1',
         'https://storage.example.com/first.pdf',
         null,
-        null,
       );
 
       const updated = await repo.updateSubmission(
@@ -1083,7 +985,6 @@ describeIfDb('Postgres repositories', () => {
         'student-1',
         undefined,
         'typed answer',
-        undefined,
       );
       // fileUrl was not supplied, so the uploaded file must survive.
       expect(updated?.fileUrl).toBe('https://storage.example.com/first.pdf');
@@ -1107,7 +1008,6 @@ describeIfDb('Postgres repositories', () => {
           'student-1',
           'x',
           'y',
-          undefined,
         ),
       ).toBeNull();
     });
@@ -1116,13 +1016,7 @@ describeIfDb('Postgres repositories', () => {
       const repo = new PostgresAssessmentRepository(db);
       // sub-1 belongs to student-1. Holding its id must not be enough.
       expect(
-        await repo.updateSubmission(
-          'sub-1',
-          'student-2',
-          'evil.pdf',
-          undefined,
-          undefined,
-        ),
+        await repo.updateSubmission('sub-1', 'student-2', 'evil.pdf', undefined),
       ).toBeNull();
       expect(await repo.findRevisions('sub-1', 'student-2')).toEqual([]);
       // And the real owner's content is untouched.
@@ -1243,6 +1137,32 @@ describeIfDb('Postgres repositories', () => {
       expect(platform.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     });
 
+    it('deletes a draft, and refuses to delete a published row or a missing one', async () => {
+      // `remove` once called a `db.execute` that `DatabaseService` does not
+      // have, so deleting a draft threw on this driver and on no other.
+      const draft = () =>
+        repo().create({
+          audienceType: 'all_tas',
+          courseId: null,
+          groupId: null,
+          mediaKind: null,
+          mediaUrl: null,
+          title: 'To delete',
+          body: 'Body.',
+          postedBy: 'teacher-1',
+          recipientCount: 0,
+        });
+      const d = await draft();
+      expect(await repo().remove(d.id)).toBe(true);
+      expect(await repo().findById(d.id)).toBeNull();
+      expect(await repo().remove(d.id)).toBe(false);
+
+      const p = await draft();
+      await repo().publish(p.id, 2);
+      expect(await repo().remove(p.id)).toBe(false);
+      expect(await repo().findById(p.id)).not.toBeNull();
+    });
+
     it('refuses an audience_type and course_id that disagree', async () => {
       // The CHECK in migration 005. Neither half is reachable through the
       // service, which is exactly why the database has to be the one holding
@@ -1294,7 +1214,7 @@ describeIfDb('Postgres repositories', () => {
 
     it('lists a course’s own announcements, newest first, and pages them', async () => {
       for (const title of ['older', 'newer'] as const) {
-        await repo().create({
+        const created = await repo().create({
           audienceType: 'course',
           courseId: 'course-2',
           groupId: null,
@@ -1305,6 +1225,16 @@ describeIfDb('Postgres repositories', () => {
           postedBy: 'teacher-1',
           recipientCount: 1,
         });
+        // Two inserts can land in the same millisecond of `created_at`, and the
+        // tie then falls to `id DESC` over random UUIDs - so without this the
+        // test passed about half the time a tie happened (RC-F4). The order is
+        // correct either way; the fixture has to actually be older.
+        if (title === 'older') {
+          await db.query(
+            `UPDATE announcements SET created_at = created_at - interval '1 minute' WHERE id = $1`,
+            [created.id],
+          );
+        }
       }
 
       const courseTwo = await repo().findByCourse('course-2', 10, 0);
@@ -2930,6 +2860,418 @@ describeIfDb('Postgres repositories', () => {
     });
   });
 
+  /**
+   * Migration `019`'s post-conditions (unit 7, `MARK-1`/`MARK-2`/`MARK-6`),
+   * asserted against the catalog and by offering it bad rows. Every constraint
+   * is exercised, not merely declared.
+   */
+  describe('migration 019', () => {
+    const bad = (sql: string) => db.query(sql);
+    let submissionId: string;
+
+    beforeAll(async () => {
+      // A paper of its own, so the cascade below deletes nothing a later block reads.
+      const task = await new PostgresAssessmentRepository(db).create({ ...NEW_TASK, title: '019 constraints' });
+      submissionId = (
+        await new PostgresAssessmentRepository(db).createSubmission(task.id, 'student-2', null, 'x')
+      ).id;
+    });
+
+    const insertAnnotation = (overrides: string) =>
+      bad(`INSERT INTO submission_annotations
+             (id, submission_id, file_url, page, kind, x_percent, y_percent, text, path, created_by)
+           SELECT ${overrides}`);
+
+    it('refuses a stroke without a path, and a pin with one', async () => {
+      await expect(
+        insertAnnotation(`'a1', '${submissionId}', '/uploads/a.png', 1, 'pen', 10, 10, '', NULL, 'teacher-1'`),
+      ).rejects.toThrow(/submission_annotations_path_iff_stroke/);
+      await expect(
+        insertAnnotation(`'a2', '${submissionId}', '/uploads/a.png', 1, 'tick', 10, 10, '', '[[1,1],[2,2]]'::jsonb, 'teacher-1'`),
+      ).rejects.toThrow(/submission_annotations_path_iff_stroke/);
+    });
+
+    it('refuses a comment with blank text', async () => {
+      await expect(
+        insertAnnotation(`'a3', '${submissionId}', '/uploads/a.png', 1, 'comment', 10, 10, '   ', NULL, 'teacher-1'`),
+      ).rejects.toThrow(/submission_annotations_comment_has_text/);
+    });
+
+    it('refuses an out-of-range point, page, kind and path length', async () => {
+      await expect(
+        insertAnnotation(`'a4', '${submissionId}', '/uploads/a.png', 1, 'tick', 100.01, 10, '', NULL, 'teacher-1'`),
+      ).rejects.toThrow(/x_percent/);
+      await expect(
+        insertAnnotation(`'a5', '${submissionId}', '/uploads/a.png', 0, 'tick', 1, 1, '', NULL, 'teacher-1'`),
+      ).rejects.toThrow(/page/);
+      await expect(
+        insertAnnotation(`'a6', '${submissionId}', '/uploads/a.png', 1, 'eraser', 1, 1, '', NULL, 'teacher-1'`),
+      ).rejects.toThrow(/kind/);
+      await expect(
+        insertAnnotation(`'a7', '${submissionId}', '/uploads/a.png', 1, 'pen', 1, 1, '', '[[1,1]]'::jsonb, 'teacher-1'`),
+      ).rejects.toThrow(/path/);
+    });
+
+    it('refuses a return without a mark', async () => {
+      await expect(
+        bad(`UPDATE assessment_submissions SET returned_at = now() WHERE id = '${submissionId}'`),
+      ).rejects.toThrow(/assessment_submissions_returned_needs_mark/);
+    });
+
+    it('indexes annotations by (submission_id, page)', async () => {
+      const row = await db.queryOne<{ indexdef: string }>(
+        `SELECT indexdef FROM pg_indexes
+          WHERE schemaname = current_schema() AND indexname = 'submission_annotations_submission_id_page_idx'`,
+      );
+      expect(row?.indexdef).toMatch(/\(submission_id, page\)/);
+    });
+
+    it('cascades annotations away with their submission', async () => {
+      const repo = new PostgresSubmissionAnnotationRepository(db);
+      const doomed = await new PostgresAssessmentRepository(db).createSubmission(
+        (await new PostgresAssessmentRepository(db).create({ ...NEW_TASK, title: '019 cascade' })).id,
+        'student-2',
+        null,
+        'x',
+      );
+      const a = await repo.create({
+        submissionId: doomed.id, fileUrl: '/uploads/c.png', page: 1, kind: 'tick',
+        xPercent: 1, yPercent: 1, text: '', path: null, createdBy: 'teacher-1',
+      });
+      await db.query('DELETE FROM assessment_submissions WHERE id = $1', [doomed.id]);
+      expect(await repo.findById(a.id)).toBeNull();
+    });
+
+    it('refuses deleting a staff user who marked a paper (RESTRICT)', async () => {
+      await db.query(
+        `INSERT INTO users (id, email, password_hash, role, name)
+         VALUES ('marker-019', 'marker019@example.com', 'x', 'assistant', 'Marker')`,
+      );
+      await new PostgresSubmissionAnnotationRepository(db).create({
+        submissionId, fileUrl: '/uploads/r.png', page: 1, kind: 'cross',
+        xPercent: 5, yPercent: 5, text: '', path: null, createdBy: 'marker-019',
+      });
+      await expect(bad(`DELETE FROM users WHERE id = 'marker-019'`)).rejects.toThrow(
+        /submission_annotations_created_by_fkey/,
+      );
+    });
+
+    it('seeds sub-1..6 as returned exactly when corrected (the seed edit, finding 2)', async () => {
+      const rows = await db.query<{ id: string; corrected_at: Date | null; returned_at: Date | null }>(
+        `SELECT id, corrected_at, returned_at FROM assessment_submissions
+          WHERE id IN ('sub-1','sub-2','sub-3','sub-4','sub-5','sub-6') ORDER BY id`,
+      );
+      expect(rows).toHaveLength(6);
+      for (const row of rows) {
+        if (row.id === 'sub-2') {
+          expect(row.corrected_at).toBeNull();
+          expect(row.returned_at).toBeNull();
+        } else {
+          expect(row.returned_at?.toISOString()).toBe(row.corrected_at?.toISOString());
+        }
+      }
+    });
+  });
+
+  describe('submission annotations', () => {
+    const repo = () => new PostgresSubmissionAnnotationRepository(db);
+    let submissionId: string;
+
+    beforeAll(async () => {
+      const task = await new PostgresAssessmentRepository(db).create({ ...NEW_TASK, title: 'Annotations' });
+      submissionId = (
+        await new PostgresAssessmentRepository(db).createSubmission(task.id, 'student-2', null, 'x')
+      ).id;
+    });
+
+    it('creates, reads back numbers as numbers, and round-trips a path', async () => {
+      const stroke = await repo().create({
+        submissionId, fileUrl: '/uploads/p.png', page: 2, kind: 'pen',
+        xPercent: 12.5, yPercent: 40.25, text: '', path: [[12.5, 40.25], [13, 41], [99.99, 0]],
+        createdBy: 'teacher-1',
+      });
+      expect(typeof stroke.xPercent).toBe('number');
+      expect(stroke.xPercent).toBe(12.5);
+      expect(stroke.yPercent).toBe(40.25);
+      expect(stroke.path).toEqual([[12.5, 40.25], [13, 41], [99.99, 0]]);
+      const read = await repo().findById(stroke.id);
+      expect(typeof read!.yPercent).toBe('number');
+      expect(read!.path).toEqual(stroke.path);
+    });
+
+    it('orders a paper by (page, created_at, id)', async () => {
+      await repo().create({ submissionId, fileUrl: '/uploads/p.png', page: 1, kind: 'tick', xPercent: 1, yPercent: 1, text: '', path: null, createdBy: 'teacher-1' });
+      await repo().create({ submissionId, fileUrl: '/uploads/p.png', page: 1, kind: 'comment', xPercent: 2, yPercent: 2, text: 'ليلى: good', path: null, createdBy: 'assistant-1' });
+      const all = await repo().findBySubmission(submissionId);
+      // Page first. Two marks written in the same millisecond tie on
+      // created_at and fall to the id, so page 1's pair is compared as a set.
+      expect(all.map((a) => a.page)).toEqual([1, 1, 2]);
+      expect(all.slice(0, 2).map((a) => a.kind).sort()).toEqual(['comment', 'tick']);
+      expect(all[2]!.kind).toBe('pen');
+      expect(all.find((a) => a.kind === 'comment')!.text).toBe('ليلى: good');
+    });
+
+    it('updates only what is supplied, and stamps updated_at', async () => {
+      const [first] = await repo().findBySubmission(submissionId);
+      const moved = await repo().update(first!.id, { xPercent: 50 });
+      expect(moved!.xPercent).toBe(50);
+      expect(moved!.yPercent).toBe(first!.yPercent);
+      expect(moved!.kind).toBe(first!.kind);
+      expect(new Date(moved!.updatedAt).getTime()).toBeGreaterThanOrEqual(new Date(first!.updatedAt).getTime());
+      expect(await repo().update('nope', { xPercent: 1 })).toBeNull();
+    });
+
+    it('counts per submission and per (submission, file), and deletes', async () => {
+      expect(await repo().countBySubmission(submissionId)).toBe(3);
+      await repo().create({ submissionId, fileUrl: '/uploads/old.png', page: 1, kind: 'cross', xPercent: 3, yPercent: 3, text: '', path: null, createdBy: 'teacher-1' });
+      const counts = await repo().countBySubmissionFiles([submissionId, 'none']);
+      const byFile = Object.fromEntries(counts.map((c) => [c.fileUrl, c.count]));
+      expect(byFile).toEqual({ '/uploads/p.png': 3, '/uploads/old.png': 1 });
+      expect(counts.every((c) => typeof c.count === 'number')).toBe(true);
+      expect(await repo().countBySubmissionFiles([])).toEqual([]);
+
+      const [first] = await repo().findBySubmission(submissionId);
+      expect(await repo().remove(first!.id)).toBe(true);
+      expect(await repo().remove(first!.id)).toBe(false);
+      expect(await repo().countBySubmission(submissionId)).toBe(3);
+    });
+  });
+
+  /**
+   * Migration `020` and the multi-file submission (`MARK-6`, `D-47`, `D-48`).
+   */
+  describe('migration 020: the submission file set (MARK-6)', () => {
+    const repo = () => new PostgresAssessmentRepository(db);
+    const photos = [
+      { url: '/uploads/11111111-1111-4111-8111-111111111111.jpg', mimeType: 'image/jpeg' },
+      { url: '/uploads/22222222-2222-4222-8222-222222222222.png', mimeType: 'image/png' },
+    ];
+
+    it('refuses more than five files, and a non-array, on submissions and revisions', async () => {
+      const task = (await repo().create({ ...NEW_TASK, title: '020 checks' })).id;
+      const sub = (await repo().createSubmission(task, 'student-1', null, 'x')).id;
+      const six = JSON.stringify(Array.from({ length: 6 }, (_, i) => ({ url: `/uploads/${i}.png`, mimeType: 'image/png' })));
+      await expect(db.query(`UPDATE assessment_submissions SET files = $1::jsonb WHERE id = $2`, [six, sub]))
+        .rejects.toThrow(/assessment_submissions_files_is_list/);
+      await expect(db.query(`UPDATE assessment_submissions SET files = '{}'::jsonb WHERE id = $1`, [sub]))
+        .rejects.toThrow(/assessment_submissions_files_is_list/);
+      await expect(
+        db.query(
+          `INSERT INTO submission_revisions (id, submission_id, submitted_at, files) VALUES ('rev-020', $1, now(), $2::jsonb)`,
+          [sub, six],
+        ),
+      ).rejects.toThrow(/submission_revisions_files_is_list/);
+    });
+
+    it('defaults every existing and new row to an empty set', async () => {
+      expect((await repo().findSubmissionById('sub-1'))!.files).toEqual([]);
+      const task = (await repo().create({ ...NEW_TASK, title: '020 default' })).id;
+      expect((await repo().createSubmission(task, 'student-1', null, 'x')).files).toEqual([]);
+    });
+
+    it('stores a file set, and a resubmission archives and replaces it WHOLE (D-48 (c))', async () => {
+      const task = (await repo().create({ ...NEW_TASK, title: 'Photos' })).id;
+      const created = await repo().createSubmission(task, 'student-2', null, 'note', photos);
+      expect(created.files).toEqual(photos);
+      expect(created.fileUrl).toBeNull();
+
+      const pdf = [{ url: '/uploads/33333333-3333-4333-8333-333333333333.pdf', mimeType: 'application/pdf' }];
+      const updated = await repo().updateSubmission(created.id, 'student-2', null, undefined, pdf);
+      expect(updated!.files).toEqual(pdf);
+      expect(updated!.answerText).toBe('note');
+      const revisions = await repo().findRevisions(created.id, 'student-2');
+      expect(revisions).toHaveLength(1);
+      expect(revisions[0]!.files).toEqual(photos);
+
+      // `undefined` leaves the set alone, like the other two fields.
+      const noteOnly = await repo().updateSubmission(created.id, 'student-2', undefined, 'new note');
+      expect(noteOnly!.files).toEqual(pdf);
+      // Every read carries it.
+      expect((await repo().findSubmission(task, 'student-2'))!.files).toEqual(pdf);
+      // R-6: null clears the note (a moded hand-in is replaced whole).
+      const cleared = await repo().updateSubmission(created.id, 'student-2', null, null, pdf);
+      expect(cleared!.answerText).toBeNull();
+      expect((await repo().findSubmissionsForStudents([task], ['student-2']))[0]!.files).toEqual(pdf);
+    });
+  });
+
+  describe('assessments: returned_at and the marker claim (unit 7)', () => {
+    const repo = () => new PostgresAssessmentRepository(db);
+    let taskId: string;
+    let submissionId: string;
+
+    beforeAll(async () => {
+      taskId = (await repo().create({ ...NEW_TASK, title: 'Return me' })).id;
+      submissionId = (await repo().createSubmission(taskId, 'student-2', null, 'answer')).id;
+    });
+
+    it('returnSubmission refuses an unmarked paper with null and writes nothing', async () => {
+      expect(await repo().returnSubmission(submissionId)).toBeNull();
+      expect((await repo().findSubmissionById(submissionId))!.returnedAt).toBeNull();
+      expect(await repo().returnSubmission('nope')).toBeNull();
+    });
+
+    it('gradeSubmission marks without returning, and carries returnedAt on its RETURNING list', async () => {
+      const graded = await repo().gradeSubmission(submissionId, { score: 15, feedback: 'ok', annotatedFileUrl: undefined });
+      expect(graded!.score).toBe(15);
+      expect(graded!.correctedAt).not.toBeNull();
+      expect(graded!.returnedAt).toBeNull();
+    });
+
+    it('returnSubmission stamps once and keeps the first time on a second call', async () => {
+      const first = await repo().returnSubmission(submissionId);
+      expect(first!.returnedAt).not.toBeNull();
+      const again = await repo().returnSubmission(submissionId);
+      expect(again!.returnedAt).toBe(first!.returnedAt);
+    });
+
+    it('a re-grade after return leaves returned_at alone (A-4)', async () => {
+      const before = (await repo().findSubmissionById(submissionId))!.returnedAt;
+      const regraded = await repo().gradeSubmission(submissionId, { score: 16, feedback: 'better', annotatedFileUrl: undefined });
+      expect(regraded!.returnedAt).toBe(before);
+      expect(regraded!.score).toBe(16);
+    });
+
+    it('every submission read carries returnedAt', async () => {
+      const reads = [
+        await repo().findSubmission(taskId, 'student-2'),
+        await repo().findSubmissionById(submissionId),
+        (await repo().findSubmissionsForStudent([taskId], 'student-2'))[0],
+        (await repo().findSubmissionsForAssessments([taskId]))[0],
+        (await repo().findSubmissionsForStudents([taskId], ['student-2']))[0],
+      ];
+      for (const read of reads) {
+        expect(read!.returnedAt).not.toBeNull();
+      }
+      const seeded = await repo().findSubmissionById('sub-1');
+      expect(seeded!.returnedAt).toBe(seeded!.correctedAt);
+    });
+
+    it('findSubmissionsForStudents restricts to the students named, in the query', async () => {
+      expect(await repo().findSubmissionsForStudents([taskId, 'assess-3'], ['student-1'])).toEqual([
+        expect.objectContaining({ id: 'sub-1' }),
+      ]);
+      expect(await repo().findSubmissionsForStudents([taskId], [])).toEqual([]);
+      expect(await repo().findSubmissionsForStudents([], ['student-2'])).toEqual([]);
+    });
+
+    it('claimMarker names the first claimant only', async () => {
+      const task = (await repo().create({ ...NEW_TASK, title: 'Claim me' })).id;
+      expect(await repo().claimMarker(task, 'assistant-1')).toBe(true);
+      expect(await repo().claimMarker(task, 'teacher-1')).toBe(false);
+      expect((await repo().findById(task))!.markerId).toBe('assistant-1');
+      expect(await repo().claimMarker('nope', 'teacher-1')).toBe(false);
+    });
+  });
+
+  describe('groups: findMembersForGroups', () => {
+    it('reads many rosters in one call, ordered by placement', async () => {
+      const repo = new PostgresGroupRepository(db);
+      const rows = await repo.findMembersForGroups(['group-1', 'group-2']);
+      const pairs = rows.map((m) => [m.groupId, m.studentId]);
+      expect(pairs).toEqual(expect.arrayContaining([
+        ['group-1', 'student-1'],
+        ['group-1', 'student-2'],
+        ['group-2', 'student-1'],
+      ]));
+      const times = rows.map((m) => m.assignedAt);
+      expect([...times].sort()).toEqual(times);
+      expect(await repo.findMembersForGroups([])).toEqual([]);
+      expect(await repo.findMembersForGroups(['group-nope'])).toEqual([]);
+    });
+  });
+
+  /**
+   * `TASK-F4` (unit 7, part): the external-results reads that guard a delete
+   * (`D-36`, `tallyResults`), feed the student list (`countResultsByAssessments`)
+   * and feed the mark book (`findResults`, `findResultsForStudent`, `D-46`).
+   * None had ever run against real Postgres before this block. The SQL is
+   * unchanged: these pin what it already does.
+   */
+  describe('work results (TASK-F4)', () => {
+    const work = () => new PostgresWorkRepository(db);
+    let formTask: string;
+    let emptyTask: string;
+
+    beforeAll(async () => {
+      const assessments = new PostgresAssessmentRepository(db);
+      formTask = (
+        await assessments.create({ ...NEW_TASK, title: 'TASK-F4 form', workType: 'google_form' })
+      ).id;
+      emptyTask = (
+        await assessments.create({ ...NEW_TASK, title: 'TASK-F4 empty', workType: 'google_form' })
+      ).id;
+      await work().replaceResults(formTask, 'google_form', [
+        { assessmentId: formTask, provider: 'google_form', externalId: 'r-1', studentId: 'student-1', respondentId: 'student@example.com', score: 8, maxScore: 10, submittedAt: '2026-09-02T10:00:00.000Z', raw: {} },
+        { assessmentId: formTask, provider: 'google_form', externalId: 'r-2', studentId: 'student-2', respondentId: 's2@example.com', score: 6.5, maxScore: 10, submittedAt: '2026-09-03T10:00:00.000Z', raw: {} },
+        { assessmentId: formTask, provider: 'google_form', externalId: 'r-3', studentId: null, respondentId: 'stranger@example.com', score: 5, maxScore: 10, submittedAt: '2026-09-04T10:00:00.000Z', raw: {} },
+      ]);
+    });
+
+    it('tallyResults counts matched and unmatched, and averages matched scores only', async () => {
+      const tally = await work().tallyResults(formTask);
+      expect(tally).toEqual({ matched: 2, unmatched: 1, averageScore: 7.25, averageMaxScore: 10 });
+      // COUNT is bigint and AVG is numeric: both arrive as strings from `pg`.
+      expect(typeof tally.matched).toBe('number');
+      expect(typeof tally.averageScore).toBe('number');
+    });
+
+    it('tallyResults answers zeros and nulls for a task with no results', async () => {
+      expect(await work().tallyResults(emptyTask)).toEqual({
+        matched: 0,
+        unmatched: 0,
+        averageScore: null,
+        averageMaxScore: null,
+      });
+    });
+
+    it('countResultsByAssessments counts per task for one student, absent meaning none', async () => {
+      expect(await work().countResultsByAssessments([formTask, emptyTask], 'student-1')).toEqual({
+        [formTask]: 1,
+      });
+      expect(await work().countResultsByAssessments([formTask], 'nobody')).toEqual({});
+      expect(await work().countResultsByAssessments([], 'student-1')).toEqual({});
+    });
+
+    it('findResultsForStudent returns only that student’s rows, with numeric scores', async () => {
+      const mine = await work().findResultsForStudent([formTask, emptyTask], 'student-2');
+      expect(mine.map((r) => r.externalId)).toEqual(['r-2']);
+      expect(mine[0]!.score).toBe(6.5);
+      expect(typeof mine[0]!.maxScore).toBe('number');
+      expect(await work().findResultsForStudent([], 'student-2')).toEqual([]);
+    });
+
+    it('findResults returns every row for a task, newest first, unmatched included', async () => {
+      const all = await work().findResults(formTask);
+      expect(all.map((r) => r.externalId)).toEqual(['r-3', 'r-2', 'r-1']);
+      expect(all.find((r) => r.externalId === 'r-3')!.studentId).toBeNull();
+    });
+
+    it('findLatestScoresForStudents keeps the LATEST response per student, restricted to those named (D-46)', async () => {
+      const assessments = new PostgresAssessmentRepository(db);
+      const twice = (await assessments.create({ ...NEW_TASK, title: 'Answered twice', workType: 'google_form' })).id;
+      await work().replaceResults(twice, 'google_form', [
+        { assessmentId: twice, provider: 'google_form', externalId: 't-old', studentId: 'student-1', respondentId: 'a', score: 2, maxScore: 10, submittedAt: '2026-09-01T10:00:00.000Z', raw: {} },
+        { assessmentId: twice, provider: 'google_form', externalId: 't-new', studentId: 'student-1', respondentId: 'a', score: 9.5, maxScore: 10, submittedAt: '2026-09-05T10:00:00.000Z', raw: {} },
+      ]);
+      const rows = await work().findLatestScoresForStudents([formTask, twice, emptyTask], ['student-1']);
+      const byTask = Object.fromEntries(rows.map((r) => [r.assessmentId, r]));
+      expect(Object.keys(byTask).sort()).toEqual([formTask, twice].sort());
+      expect(byTask[twice]).toEqual({
+        assessmentId: twice,
+        studentId: 'student-1',
+        score: 9.5,
+        maxScore: 10,
+        submittedAt: '2026-09-05T10:00:00.000Z',
+      });
+      expect(typeof byTask[formTask]!.score).toBe('number');
+      // student-2 answered formTask but was not named; the unmatched row has no student.
+      expect(rows.every((r) => r.studentId === 'student-1')).toBe(true);
+      expect(await work().findLatestScoresForStudents([], ['student-1'])).toEqual([]);
+      expect(await work().findLatestScoresForStudents([formTask], [])).toEqual([]);
+    });
+  });
+
   describe('notification preferences', () => {
     it('returns the opt-out defaults when no row exists', async () => {
       const repo = new PostgresNotificationPreferencesRepository(db);
@@ -2965,6 +3307,80 @@ describeIfDb('Postgres repositories', () => {
       prefs = await repo.get('student-1');
       expect(prefs.submissions).toBe(true);
       expect(prefs.registrations).toBe(false);
+    });
+  });
+
+  /**
+   * Migration 023 and its repository (`GAUTH-1`, unit 14). Both uniqueness
+   * rules are the link-collision refusal, so they are proven here against the
+   * constraint itself - a race past the service's pre-check lands on these.
+   */
+  describe('google identities (migration 023)', () => {
+    const repo = () => new PostgresGoogleIdentityRepository(db);
+    const freshUser = async (tag: string) =>
+      new PostgresUserRepository(db).create({
+        email: `gid-${tag}-${Date.now()}@example.com`,
+        passwordHash: 'x',
+        name: `GID ${tag}`,
+        role: Role.Student,
+        status: 'active',
+      });
+
+    it('stores, finds by sub and by user, and removes a link', async () => {
+      const user = await freshUser('basic');
+      const created = await repo().create({
+        userId: user.id,
+        googleSub: `sub-basic-${user.id}`,
+        email: 'someone@gmail.com',
+        hd: null,
+      });
+      expect(created.linkedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      expect(await repo().findBySub(`sub-basic-${user.id}`)).toEqual(created);
+      expect(await repo().findByUser(user.id)).toEqual(created);
+
+      expect(await repo().removeForUser(user.id)).toEqual(created);
+      expect(await repo().findByUser(user.id)).toBeNull();
+      expect(await repo().removeForUser(user.id)).toBeNull();
+    });
+
+    it('refuses a second link for one user, and one Google account for two users', async () => {
+      const a = await freshUser('a');
+      const b = await freshUser('b');
+      await repo().create({ userId: a.id, googleSub: `sub-a-${a.id}`, email: 'a@x.org', hd: 'x.org' });
+
+      await expect(
+        repo().create({ userId: a.id, googleSub: `sub-other-${a.id}`, email: 'a2@x.org', hd: null }),
+      ).rejects.toEqual(new GoogleIdentityConflictError('user'));
+      await expect(
+        repo().create({ userId: b.id, googleSub: `sub-a-${a.id}`, email: 'a@x.org', hd: 'x.org' }),
+      ).rejects.toEqual(new GoogleIdentityConflictError('google_sub'));
+      // Neither refusal wrote anything.
+      expect(await repo().findByUser(b.id)).toBeNull();
+      expect((await repo().findByUser(a.id))!.googleSub).toBe(`sub-a-${a.id}`);
+    });
+
+    it('holds its constraints in SQL: empty sub, unknown user, and the cascade', async () => {
+      await expect(
+        db.query(
+          `INSERT INTO user_google_identities (user_id, google_sub, email) VALUES ('student-1', '', 'e@x.org')`,
+        ),
+      ).rejects.toThrow();
+      await expect(
+        db.query(
+          `INSERT INTO user_google_identities (user_id, google_sub, email) VALUES ('no-such-user', 's-x', 'e@x.org')`,
+        ),
+      ).rejects.toThrow();
+
+      const doomed = await freshUser('cascade');
+      await repo().create({ userId: doomed.id, googleSub: `sub-c-${doomed.id}`, email: 'c@x.org', hd: null });
+      await db.query('DELETE FROM users WHERE id = $1', [doomed.id]);
+      expect(await repo().findBySub(`sub-c-${doomed.id}`)).toBeNull();
+
+      const [col] = await db.query<{ datetime_precision: number }>(
+        `SELECT datetime_precision FROM information_schema.columns
+          WHERE table_name = 'user_google_identities' AND column_name = 'linked_at'`,
+      );
+      expect(col.datetime_precision).toBe(3);
     });
   });
 });
@@ -3331,7 +3747,71 @@ describeIfDb('migration 015 backfills the course grants it drops', () => {
 });
 
 /**
- * **Migration 019's two destructive backfills, exercised rather than believed.**
+ * Migration `019`'s backfill, run the way production will meet it: over rows
+ * that already exist. The main suite migrates BEFORE it seeds, so there the
+ * `UPDATE` sees an empty table and proves nothing (unit-7 plan, Risk 4).
+ */
+describeIfDb('migration 019 backfills returned_at from corrected_at', () => {
+  const migrationsDir = fileURLToPath(
+    new URL('../src/database/migrations', import.meta.url),
+  );
+
+  it('returns every existing mark, and leaves unmarked work unreturned', async () => {
+    const schema = 'migtest_019_backfill';
+    const admin = new Pool({ connectionString });
+    await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+    await admin.query(`CREATE SCHEMA ${schema}`);
+    await admin.end();
+    const client = new Pool({ connectionString, options: `-c search_path=${schema}` });
+    try {
+      const files = (await readdir(migrationsDir)).filter((n) => n.endsWith('.sql')).sort();
+      for (const name of files.filter((n) => n < '019')) {
+        await client.query(await readFile(join(migrationsDir, name), 'utf8'));
+      }
+      await client.query(
+        `INSERT INTO users (id, email, password_hash, name, role)
+         VALUES ('t', 't@example.com', 'x', 'Teacher', 'teacher'),
+                ('s', 's@example.com', 'x', 'Student', 'student')`,
+      );
+      await client.query(
+        `INSERT INTO courses (id, slug, is_published, title, description, teacher_name)
+         VALUES ('c1', 'c-one', true, 'One', 'One', 'Dr. Tahir')`,
+      );
+      await client.query(
+        `INSERT INTO assessments (id, course_id, title, description, instructions, type,
+                                  available_from, available_to, due_at, max_score,
+                                  allowed_file_types, max_file_size_bytes)
+         VALUES ('a1', 'c1', 'A1', '', '', 'homework', now(), now() + interval '1 day', now(), 10, ARRAY['application/pdf'], 1024),
+                ('a2', 'c1', 'A2', '', '', 'homework', now(), now() + interval '1 day', now(), 10, ARRAY['application/pdf'], 1024)`,
+      );
+      await client.query(
+        `INSERT INTO assessment_submissions (id, assessment_id, student_id, score, corrected_at)
+         VALUES ('marked', 'a1', 's', 7, '2026-08-01T10:00:00.123Z'),
+                ('unmarked', 'a2', 's', NULL, NULL)`,
+      );
+
+      await client.query(
+        await readFile(join(migrationsDir, '019_submission_annotations_and_return.sql'), 'utf8'),
+      );
+
+      const rows = await client.query<{ id: string; returned_at: Date | null }>(
+        'SELECT id, returned_at FROM assessment_submissions ORDER BY id',
+      );
+      expect(rows.rows).toEqual([
+        { id: 'marked', returned_at: new Date('2026-08-01T10:00:00.123Z') },
+        { id: 'unmarked', returned_at: null },
+      ]);
+    } finally {
+      await client.end();
+      const cleanup = new Pool({ connectionString });
+      await cleanup.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+      await cleanup.end();
+    }
+  }, 60_000);
+});
+
+/**
+ * **Migration 026's two destructive backfills, exercised rather than believed.**
  *
  * `live_sessions` re-parenting onto `group_id` aborts on a course holding
  * zero or several groups rather than guess which one a session meant
@@ -3339,25 +3819,25 @@ describeIfDb('migration 015 backfills the course grants it drops', () => {
  * reachable from valid data (§2.2's join is total by construction), so only
  * the happy path is asserted for it here.
  */
-describeIfDb('migration 019 refuses rather than guessing', () => {
+describeIfDb('migration 026 refuses rather than guessing', () => {
   const migrationsDir = fileURLToPath(
     new URL('../src/database/migrations', import.meta.url),
   );
 
-  /** 001-018, in order. 019 is applied separately so its failure is the test. */
-  const upTo018 = async (client: Pool) => {
+  /** 001-025, in order. 026 is applied separately so its failure is the test. */
+  const upTo025 = async (client: Pool) => {
     const files = (await readdir(migrationsDir))
-      .filter((n) => n.endsWith('.sql') && n < '019')
+      .filter((n) => n.endsWith('.sql') && n < '026')
       .sort();
     for (const name of files) {
       await client.query(await readFile(join(migrationsDir, name), 'utf8'));
     }
   };
 
-  const apply019 = async (client: Pool) =>
+  const apply026 = async (client: Pool) =>
     client.query(
       await readFile(
-        join(migrationsDir, '019_sessions_and_attendance.sql'),
+        join(migrationsDir, '026_sessions_and_attendance.sql'),
         'utf8',
       ),
     );
@@ -3371,7 +3851,7 @@ describeIfDb('migration 019 refuses rather than guessing', () => {
       connectionString,
       options: `-c search_path=${schema}`,
     });
-    await upTo018(scoped);
+    await upTo025(scoped);
     return scoped;
   };
 
@@ -3408,7 +3888,7 @@ describeIfDb('migration 019 refuses rather than guessing', () => {
   };
 
   it('aborts on a course holding two groups, and leaves the schema untouched', async () => {
-    const schema = 'migtest_019_two_groups';
+    const schema = 'migtest_026_two_groups';
     const client = await inFreshSchema(schema);
     try {
       await seedTeacher(client, 't1');
@@ -3422,7 +3902,7 @@ describeIfDb('migration 019 refuses rather than guessing', () => {
          VALUES ('s1', 'c1', 'Ambiguous session', 'https://zoom.us/j/1', now(), 60)`,
       );
 
-      await expect(apply019(client)).rejects.toThrow(
+      await expect(apply026(client)).rejects.toThrow(
         /Cannot re-parent 1 live_sessions: their course holds zero or several groups/,
       );
 
@@ -3445,7 +3925,7 @@ describeIfDb('migration 019 refuses rather than guessing', () => {
     // NOT NULL violation naming a column, not a session. This is the guard
     // widened to `LEFT JOIN` to catch that too (see the migration's own
     // comment).
-    const schema = 'migtest_019_no_group';
+    const schema = 'migtest_026_no_group';
     const client = await inFreshSchema(schema);
     try {
       await seedTeacher(client, 't1');
@@ -3455,7 +3935,7 @@ describeIfDb('migration 019 refuses rather than guessing', () => {
          VALUES ('s1', 'c1', 'Orphaned session', 'https://zoom.us/j/1', now(), 60)`,
       );
 
-      await expect(apply019(client)).rejects.toThrow(
+      await expect(apply026(client)).rejects.toThrow(
         /Cannot re-parent 1 live_sessions: their course holds zero or several groups/,
       );
 
@@ -3466,7 +3946,7 @@ describeIfDb('migration 019 refuses rather than guessing', () => {
   }, 60_000);
 
   it('re-parents cleanly and backfills marked_by from the session group teacher, when the data is sound', async () => {
-    const schema = 'migtest_019_happy';
+    const schema = 'migtest_026_happy';
     const client = await inFreshSchema(schema);
     try {
       await seedTeacher(client, 'group-teacher');
@@ -3483,7 +3963,7 @@ describeIfDb('migration 019 refuses rather than guessing', () => {
         `INSERT INTO users (id, email, password_hash, name, role)
          VALUES ('student-1', 'student-1@example.com', 'x', 'Student', 'student')`,
       );
-      // The shape migration 019's own comment names: a row marked absent with
+      // The shape migration 026's own comment names: a row marked absent with
       // no timestamp at all (`seeds/001_development_fixtures.sql`'s
       // `('sess-6', 'student-1', false, NULL)`, pre-move).
       await client.query(
@@ -3491,7 +3971,7 @@ describeIfDb('migration 019 refuses rather than guessing', () => {
          VALUES ('s1', 'student-1', false, NULL)`,
       );
 
-      await apply019(client);
+      await apply026(client);
 
       const session = await client.query(
         `SELECT group_id, meeting_link, scheduled_at, ends_at, state, is_visible

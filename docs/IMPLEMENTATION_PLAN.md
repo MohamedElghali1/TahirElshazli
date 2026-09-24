@@ -98,7 +98,7 @@ and is **already handled**: `postgres-work.repository.ts:37-38` declares the row
 | `AUTH-3` `[x]` | `AssistantCapabilities` preset gating the four withheld verbs (`backend/src/auth/capabilities.ts`). `DELETE /staff/groups/:id/members/:studentId` → teacher/admin with a **403**. **Dep corrected: `AUTH-1`, not `AUTH-2`** — the preset is a pure module and the one routed verb needs no scope table, which is what let it ship in unit 1 while `AUTH-2` deferred. | `AUTH-1` | — | 1 route | The four verbs | One refusal test per verb (`capabilities.spec.ts`), plus a service-layer refusal proving the repository is never read. **Strengthened 2026-09-19:** `WITHHELD` is now derived from an exhaustive `Record<Capability, true>` in the spec and asserted against the module's exported `ALL_CAPABILITIES`, so a fifth capability fails the spec (proved by adding one and watching it go red) rather than shipping with no refusal test. The module's preset already gave the compile error; it was the spec's mirror that did not. |
 | `AUTH-4` `[x]` **unit 5, slice 5c** | Assistant invitations: `assistant_invitations` table (**017**, `[x]` ran 2026-09-22 against real PostgreSQL 16 from an empty schema, with 10 integration tests over `PostgresAssistantInvitationRepository`; see `docs/phases/unit-5/FOLLOW_UP_CLOSURE.md`), 4 admin routes (`POST/PATCH/DELETE /admin/assistants/{userId}`, `POST .../resend`) plus `POST /auth/invitations/{token}/accept` (`@Public()`). `AuthService.acceptInvitation`: one transaction — create the user `active`, set scope, assign every listed group, mark the invitation accepted, self-attributed `assistant.invitation_accepted` audit entry, issue a token. Five audited actions landed (`invited`/`invitation_accepted`/`invitation_resent`/`scope_changed`/`removed`), all costed in advance per the note this row used to carry. | `AUTH-2`, `MAIL-1` | 017 (own number) | 5 new | Teacher/admin only for the four admin routes; `@Public()` for accept, rate-limited like login | Token reuse, expiry, and unknown all give the identical `'Invitation is invalid or has expired'` message — asserted `===` across all three in `auth.controller.spec.ts` |
 | ~~`AUTH-5`~~ `[REMOVED]` | ~~Device/session list.~~ **Dropped from scope 2026-09-20 (`D-1`): no Redis, no Security tab.** Not deferred — dropped. The per-process rate limiter and token denylist therefore stay as they are, and `SECURITY.md` §3.1 is a **permanent** known weakness until a second replica is configured. | — | — | — | — | — |
-| `AUTH-6` `[ ]` (narrowed by `D-33`) | **When this narrows the per-course `GET /staff/courses/:id/assessments`, the `setTargets` 403 (`RETARGET_UNREACHABLE_AUDIENCE`) on a task set *only* for groups the caller cannot reach must become the `ASSESSMENT_NOT_FOUND` 404** — its "on the caller's own screen" basis is that list, and once the task leaves it the 403 is an existence oracle (unit-6 review, deviation 7). **Remainder after unit 6:** `GET /staff/courses/:id/roster`, `GET /staff/courses/:id/submissions`, the work-analytics pair, the per-course `GET /staff/courses/:id/assessments`, and `PATCH`/`DELETE` of a task shared with an unheld group. **Closed by unit 6 (`D-33`, slice 6h):** the targeting write (`create`/`setTargets` refuse an unheld group with the not-enrolled 404; re-targeting a task whose audience includes an unreachable group is 403) and `GET /staff/courses/:id/groups` (narrowed to held groups). The original text follows. **Narrow the course-named staff routes to held groups** (`D-23`). `AUTH-2` moved assistant scope to the group grain and `D-10` enforced it on group-named routes; the routes that name a **course** were left course-grained and still hand an assistant every cohort on that course. In scope: `GET /staff/courses/:id/roster`, `GET /staff/courses/:id/submissions`, `GET /staff/courses/:id/groups`, the work-analytics pair, and `assessment-authoring.service.ts:170` (an assistant may currently **target work at a group they do not hold** — an assistant-facing *write* naming a group that skips `mayReachGroup`). **The hard part is not the filter, it is one ruling per screen on whether a number may depend on who is looking** — `B-4`'s trap: `StaffScopeService` already exposes the held-group set, so the filter itself is small. Completion rates and averages must stay caller-independent or be labelled as scoped; `CLAUDE.md` §11.1 forbids merging progress and performance, and a denominator that silently narrows is the same class of error. Refusal test in both directions per route, 404 byte-identical to a genuine miss. | `AUTH-2` | — | Medium |
+| `AUTH-6` `[ ]` (narrowed by `D-33`) | **When this narrows the per-course `GET /staff/courses/:id/assessments`, the `setTargets` 403 (`RETARGET_UNREACHABLE_AUDIENCE`) on a task set *only* for groups the caller cannot reach must become the `ASSESSMENT_NOT_FOUND` 404** — its "on the caller's own screen" basis is that list, and once the task leaves it the 403 is an existence oracle (unit-6 review, deviation 7). **Unit 7 (`D-44`) closed** `POST /staff/submissions/:id/grade` (course-grained and missing from this list until unit 7 found it) and the **items** of `GET /staff/courses/:id/submissions`; that queue's per-task averages stay course-wide by ruling, recorded as the residue. **Remainder after unit 7:** `GET /staff/courses/:id/roster`, the work-analytics pair, the per-course `GET /staff/courses/:id/assessments`, and `PATCH`/`DELETE` of a task shared with an unheld group. **Closed by unit 6 (`D-33`, slice 6h):** the targeting write (`create`/`setTargets` refuse an unheld group with the not-enrolled 404; re-targeting a task whose audience includes an unreachable group is 403) and `GET /staff/courses/:id/groups` (narrowed to held groups). The original text follows. **Narrow the course-named staff routes to held groups** (`D-23`). `AUTH-2` moved assistant scope to the group grain and `D-10` enforced it on group-named routes; the routes that name a **course** were left course-grained and still hand an assistant every cohort on that course. In scope: `GET /staff/courses/:id/roster`, `GET /staff/courses/:id/submissions`, `GET /staff/courses/:id/groups`, the work-analytics pair, and `assessment-authoring.service.ts:170` (an assistant may currently **target work at a group they do not hold** — an assistant-facing *write* naming a group that skips `mayReachGroup`). **The hard part is not the filter, it is one ruling per screen on whether a number may depend on who is looking** — `B-4`'s trap: `StaffScopeService` already exposes the held-group set, so the filter itself is small. Completion rates and averages must stay caller-independent or be labelled as scoped; `CLAUDE.md` §11.1 forbids merging progress and performance, and a denominator that silently narrows is the same class of error. Refusal test in both directions per route, 404 byte-identical to a genuine miss. | `AUTH-2` | — | Medium |
 
 ---
 
@@ -278,24 +278,35 @@ way:
 
 `TASK-F2` `[ ]` follow-up (unit-6 review) — **retire `frontend/app/(app)/manage/courses/[id]/assessments/page.tsx` after a consumer count** (the `D-25` discipline). The `/manage/tasks` screens supersede it; it still works today, but it sends no attachment `audience`, so extending it would meet a 400.
 
-`TASK-F3` `[ ]` follow-up (unit-6 re-check 1, user ruling) — **deleting a task that has submissions should return 409, not 400** (`CLAUDE.md` §6: a state conflict is 409). Today `DELETE /staff/assessments/:id` refuses with 400 for `assessment_submissions`, while `D-36`'s external-result refusal is 409. Code **not** changed in unit 6; the e2e `refuses to delete a task that has submissions` asserts 400 and moves with it. Unit 7 rebuilds the submissions surface and is a natural place.
+`TASK-F3` `[x]` **built in unit 7 (slice 7a), reviewed `APPROVED`** — 409 now, e2e moved. Follow-up (unit-6 re-check 1, user ruling) — **deleting a task that has submissions should return 409, not 400** (`CLAUDE.md` §6: a state conflict is 409). Today `DELETE /staff/assessments/:id` refuses with 400 for `assessment_submissions`, while `D-36`'s external-result refusal is 409. Code **not** changed in unit 6; the e2e `refuses to delete a task that has submissions` asserts 400 and moves with it. Unit 7 rebuilds the submissions surface and is a natural place.
 
-`TASK-F4` `[ ]` follow-up, pre-existing, **filed here because no entry existed** (it was carried only in the unit-6 plan's and review's out-of-scope lists): integration coverage for `PostgresWorkRepository` and `PostgresGoogleCredentialRepository`. **`PostgresWorkRepository.tallyResults` goes first**, because `D-36`'s hide and delete guards now depend on it (unit-6 re-check 1). Their SQL was not changed by unit 6.
+`TASK-F4` `[ ]` **narrowed by unit 7**: `tallyResults`, `countResultsByAssessments`, `findResultsForStudent`, `findResults` and the new `findLatestScoresForStudents` now run against real Postgres (7a, 7n). **Remaining:** `PostgresGoogleCredentialRepository`, and the binding/sync/attach methods of `PostgresWorkRepository`. Original entry: follow-up, pre-existing, **filed here because no entry existed** (it was carried only in the unit-6 plan's and review's out-of-scope lists): integration coverage for `PostgresWorkRepository` and `PostgresGoogleCredentialRepository`. **`PostgresWorkRepository.tallyResults` goes first**, because `D-36`'s hide and delete guards now depend on it (unit-6 re-check 1). Their SQL was not changed by unit 6.
 
 `[x]` = built, tested and reviewed **`APPROVED`** on 2026-09-22 (`docs/phases/unit-6/REVIEW.md`, three rounds; closed on the user's browser confirmation per re-check 2). Unit 6 also closed the
 existence oracle on `PATCH`/`DELETE /staff/assessments/:id` and `POST …/targets` (plan finding 2).
 
 ### Phase 8 — Marking
-`MARK-1` `[ ]` `submission_annotations` + 4 routes ·
-`MARK-2` `[ ]` Split save from save-and-return (`returned_at`) ·
-`MARK-3` `[ ]` Submissions-for-one-task **including non-submitters** ·
-`MARK-4` `[ ]` Marking view (page, toolbar, annotation list, mark, feedback) ·
-`MARK-6` `[ ]` **Submission-mode enforcement + the multi-file model** (moved here from unit 6 by the user, 2026-09-22; `D-31`). Unit 6 stores `assessments.submission_modes` (`pdf_upload | doc_link | photo_upload`) but enforces nothing at submit time. Unit 7 decides what each mode admits (does `doc_link` accept a student URL as the submission? does `pdf_upload` narrow `allowedFileTypes`?) together with up-to-five photos on one submission, which changes per-file annotation ·
-`MARK-5` `[ ]` Marked-copy delivery — **rendered overlay** (`D-2`, closed). No server-side PDF library. **Annotations include freehand stroke paths, not only pins:** the teacher draws over the PDF with marker and eraser tools and never edits it; the eraser clears the teacher's own strokes only. Original stays immutable. A downloadable flattened PDF is additive and out of scope.
+Unit 7, 2026-09-23. `[x]` = built, tested and reviewed **`APPROVED`** (`docs/phases/unit-7/REVIEW_7.md`; closed on the user's browser confirmation). Rulings `D-40`…`D-46`; `D-38`/`D-39` withdrawn (`CHANGELOG.md`).
+
+`MARK-1` `[x]` `submission_annotations` (migration `019`, both drivers) + 4 routes (list, create, update, delete), `submission.annotated` audit; author-only edit/erase, allowed after return (`D-42`); the first annotation claims an unclaimed task (`D-43`) ·
+`MARK-2` `[x]` Save and return are two operations: `POST /staff/submissions/:id/return` (`returned_at`, `submission.returned` audit); one `isReturnedToStudent` predicate across the five student reads; `019` backfills `returned_at := corrected_at` ·
+`MARK-3` `[x]` `GET /staff/assessments/:id/submissions` — every targeted student **including non-submitters**, group grain, per-group counts never summed; screen `/manage/tasks/[id]/submissions` ·
+`MARK-4` `[x]` Marking view (page, toolbar, annotation list, mark, feedback, Save / Save and return) ·
+`MARK-5` `[x]` Marked copy as a **rendered overlay** (`D-2`): pins and freehand strokes as data over the immutable original; images and PDFs (`pdfjs-dist` 6.3.289, `D-40`); the student sees it only once returned. **Only platform-stored files can be marked up (`D-41`) — and no student route can store one while `MARK-6` is open, so no real submission is annotatable yet in any environment.** A flattened download stays out of scope ·
+`MARK-6` `[x]` **Built 2026-09-23 (slice 7i)** on the user's ruling `D-47`/`D-48` (the recommendations; `D-38`/`D-39` stay withdrawn): modes enforced at submit time (one PDF, 1–5 photos, or a link; a note never alone); the student upload route `POST /assessments/:id/files`; upload modes refused while storage is off; `allowedFileTypes` derived from the modes; the file set in migration `020` (both drivers), replaced and archived whole; marking over every file of a hand-in.
+
+`AUTH-6` progress (unit 7, `D-44`): `POST /staff/submissions/:id/grade` and the **items** of `GET /staff/courses/:id/submissions` are now group-grain; that queue's per-task averages stay course-wide by ruling. The remainder is below in `AUTH-6`'s own entry.
+
+Unit-7 follow-ups (found, recorded, **not** fixed here):
+- `MARK-F1` `[ ]` **R2 storage driver** (`D-41`). Without it production stores no files: students cannot upload, so upload-mode tasks cannot be authored there (`D-48` (b)) and nothing is annotatable.
+- `MARK-F5` `[ ]` **Bind a submitted file to the student who uploaded it** (assumption A-15). Today a submission accepts any platform-stored file of the right type; a student could name another platform file they can see. No data is exposed and the marker sees the file, but the platform cannot prove authorship. Needs an upload ledger (a table, two repositories) or a signed upload token. Client subscription; not assumed.
+- `MARK-F2` `[ ]` **`WorkAnalyticsService.forStudent` shows a student's OLDEST form response on Postgres and the newest in memory.** `findResultsForStudent` orders `DESC` in SQL and by insertion in memory, and `forStudent` keeps the last row per task in a `Map`. The mark book does not share the bug (it picks the latest in the query, `findLatestScoresForStudents`). Pin the rule with an integration test, then fix.
+- `MARK-F3` `[ ]` `GROUP-4` report's `assessmentCount` includes hidden tasks (`groups.service.ts` `report` calls `findByCourseForGroups` without `isVisibleToStudents`). The averages are unaffected (a hidden task has no submissions, `D-28`).
+- `MARK-F4` `[ ]` **Helmet's `Cross-Origin-Resource-Policy: same-origin` is on `/uploads/*`**, and the web app is a different origin, so a plain `<img src={mediaSrc(...)}>` of an uploaded file is blocked by the browser (checked with `curl -I`, 2026-09-23). The marking screens avoid it by fetching through CORS; the existing blog/media screens that use `mediaSrc` in an `<img>` need a browser check.
 
 ### Phase 9 — Mark book
-`BOOK-1` `[ ]` Grid endpoint · `BOOK-2` `[ ]` Screen (sticky first column, em-dash for missing) ·
-`BOOK-3` `[ ]` CSV export
+`BOOK-1` `[x]` `GET /staff/groups/:id/markbook`: uploads as platform cells (saved marks shown to staff, flagged), Google Form columns mirrored with sync time and unmatched count (`D-46`), link work named as omitted, "Average of marked work" (`D-45`, `GROUP-4`'s arithmetic, platform work only) · `BOOK-2` `[x]` Screen `/manage/marks` (sticky first column, em-dash for missing, CSV export) ·
+`BOOK-3` `[x]` `GET /staff/groups/:id/markbook.csv` (UTF-8 BOM, RFC 4180, formula-injection neutralised, em-dash)
 
 ### Phase 10 — Sessions and attendance
 `SESS-1` `[x]` Sessions re-parent to group + meetingLink/assistant/visible/state (`DOM-1`; no mode or location, `D-9`) ·
@@ -350,23 +361,45 @@ assistant retarget their draft platform-wide for a teacher to publish unaware).
 
 ---
 
+### Reconciliation follow-ups — units 10–12 ported onto the unit 7 line, 2026-09-23
+
+`docs/phases/RECONCILE_UNITS_10_12.md`. None blocks unit 14.
+
+- `RC-F1` `[ ]` `announcements.controller.spec.ts` does not typecheck (11 errors): fixtures pass `id` to repository `create` calls that ignore it. The scope refusals hold only because the seed already has an unheld `group-2`. Rewrite against the seed; add backend `tsc --noEmit` (specs included) to CI — the remote line shipped a backend `nest build` could not compile.
+- `RC-F2` `[ ]` `SettingsService.getProfile` throws a bare `Error` on a missing user: a 500, not a 404.
+- `RC-F3` `[ ]` No e2e for the five `/staff/groups/:groupId/announcements*` routes or `/staff/announcements/reach`.
+- `RC-F4` `[x]` One unreproduced integration failure during the reconciliation. **Closed in unit 14:** the announcements "newest first" test tied at millisecond `created_at` and broke the tie on a random UUID; the fixture now makes the older row older (`REVIEW_14.md` R-5).
+
 ## Phases 15–17 — Remaining surfaces
 
-`STU-1` `[ ]` Overview (action-first; **no mark on this page**) — **deferred**, it composes unit 8's
-attendance figures and unit 8 is in flight ·
+`STU-1` `[ ]` Overview (action-first; **no mark on this page**) — **unblocked 2026-09-24**: unit 8
+landed on `redesign`, so the attendance figures this page composes now exist
+(`GET /students/me/attendance`, migration `026`). It is unit 13's last open item ·
 `STU-2` `[x]` `recordings.thumbnail_url` + library grid/list — migration `023`, both repository
 drivers, DTO guarded like `videoUrl` so the field cannot become a `javascript:` URL. Thumbnails
 default with a `surface-3` + icon fallback, because `thumbnail_url` is null for every recording that
 exists today — the null path is the normal path. Watched share is a `Meter`, never a `Score` ·
-`STU-3` `[~]` Lesson detail + next-recording — `app/(app)/lessons/[recordingId]/page.tsx`. Player
-(reusing `RecordingPlayer`, not a second one), chapter and topics, the work set from the lesson, and
-a next-recording card that stops at the last recording rather than wrapping. **No backend change**:
-`assessments.lessonId` and `recordings.position` already answer both questions, and at ~20
-recordings a course (§1) filtering the existing list client-side is correct, not an N+1.
-**"Its material" is NOT built** — `materials` carries `course_id` and `category` and has *no*
-relation to a lesson or a recording. Closing it needs a `materials.lesson_id` column, both
-repository drivers and a staff control to set it; inventing the join was refused (§13). `[~]` for
-that quarter of the requirement ·
+`STU-3` `[x]` Lesson detail + next-recording — `app/(app)/lessons/[recordingId]/page.tsx`. Player
+(reusing `RecordingPlayer`, not a second one), chapter and topics, the work set from the lesson,
+**its material**, and a next-recording card that stops at the last recording rather than wrapping.
+
+**"Its material" closed by client ruling 2026-09-24: follow the design.** It had been the open half
+of this task — `materials` carried `course_id` and `category` and nothing naming a lesson, so unit 13
+raised it rather than showing the whole course's materials as though they were one lesson's.
+Migration `025` adds `materials.lesson_id`: nullable because most materials *are* course-wide (a
+syllabus, a past-paper pack) and only some are the handout from lesson 4; `ON DELETE SET NULL`
+matching `assessments.lesson_id`, because deleting a lesson must not delete the course's files; and
+a partial index on the minority of rows that carry one.
+
+**No backend route was added.** `GET /courses/:courseId/materials` already returns the course's
+materials and now carries `lessonId`, so the page filters what it already fetches — the same posture
+as the work set. `API_GAP_ANALYSIS.md` reclassified the route `[KEEP]` → `[MODIFY]` (the response
+shape changed) and it is specified in `API_SPEC.yaml` accordingly.
+
+**Deliberately NOT built: a staff control to set the lesson.** Materials have no authoring surface
+at all — the module exposes one `GET`, and every material arrives by seed. Material CRUD is a
+feature in its own right, nothing in `PRODUCT_SPEC.md` §6 asks for it, and inventing it here would
+be the scope creep §13 forbids. Recorded so the absence is not mistaken for an oversight ·
 `STU-4` `[x]` Homework + four attempt states — unblocked when unit 7's `MARK-2` (`returnedAt`)
 landed on `redesign`. **The four states were already complete** and server-derived
 (`assessments.service.ts:computeStatus`); the real gap was the split (`F13-4`). Every
@@ -376,8 +409,10 @@ because one filtered and the other did not. Now one exhaustive
 `STU-5` `[x]` Materials — **no gap found.** Course-scoped, on the current kit, and reachable: it has
 no rail slot by design (`PRODUCT_SPEC.md` §6 lists none) and is linked from the Overview's own
 Materials panel. Verified, not rebuilt — the same posture unit 12 took with `SET-3`/`SET-5` ·
-`STU-6` `[~]` Classmates — verified against the narrower reading (names only, no email, mark,
-progress or attendance). **Blocked on a documentation conflict**, `F13-2` below ·
+`STU-6` `[x]` Classmates — names only, no email, mark, progress or attendance. **`F13-2` closed by
+client ruling 2026-09-24: no avatars.** Verified, not built — the service already returned "name and
+id, and nothing else", so the only change was correcting `PRODUCT_SPEC.md` §6, which was the
+document in error ·
 `STU-7` `[x]` Help/WhatsApp — the card was right; its call to action was a `Button` running
 `window.open`, which cannot be middle-clicked or opened in a new tab and is the exact shape a popup
 blocker suppresses. It would have left the one support route on the platform silently doing nothing.
@@ -403,11 +438,76 @@ page — the scale mixing §11 forbids, shipped and invisible.
 catches this class. All five marketing steps are emitted and defined, and no dead custom property
 reaches the compiled CSS. See `OPS-1` — this wants a build-time check, not a reviewer.
 
-`GAUTH-1` `[ ]` Google OAuth sign-in. **Last.** Nothing depends on it and it replaces a working,
-well-tested mechanism. Non-negotiables in `SECURITY.md` §2.6 — especially: never auto-link a Google
-account to a password account by email alone.
+`GAUTH-1` `[~]` Google OAuth sign-in. **Built, unit 14 (2026-09-23), review `APPROVED WITH FOLLOW-UP`.**
+Rulings `D-49` (no auto-link; link only from a signed-in account), `D-50` (no account created through
+Google; passwords stay), `D-51` (`STAFF_GOOGLE_DOMAINS` pin, empty = staff off). Migration `023`, both
+drivers, six routes, 32 e2e through the real `id_token` verifier. Found and fixed F-1 (an OAuth `state`
+worked as a session). **Open, the two closing conditions** (`docs/phases/unit-14/REVIEW_14.md`):
+- `GAUTH-C1` `[ ]` The user checks the staff Account and student Settings Google panels in a browser (LTR and `dir="rtl"`).
+- `GAUTH-C2` `[ ]` Add `GOOGLE_SIGN_IN_REDIRECT_URI=` and `STAFF_GOOGLE_DOMAINS=` to `.env.example` (the session could not read `.env*`).
+Not performed, and not a condition: a live Google round trip (needs the client's Google Cloud client, `google-forms-setup.md` §A5a).
 
-`OPS-1` `[ ]` Regenerate `lib/api.ts` + `lib/types.ts` from `API_SPEC.yaml`, or add a CI drift check.
+`OPS-1` `[x]` **Redefined by `D-52`:** `frontend/lib/types.ts` typechecked against the backend's own types, both directions, as a CI step (`npm run typecheck:drift`, `backend/test/drift/`). 119 of 139 mirror types checked; the rest listed in the check's header. Four drifts found and fixed on its first run. `lib/api.ts` (route paths) is **not** covered; a path check would need the backend's routes as types, and was not built.
+
+`OPS-2` `[x]` **Fail the build on a `var(--x)` that names an undefined custom property.** Filed
+2026-09-24 out of `F13-1`; **built the same day, after the class recurred a fourth time before the
+ink was dry** — unit 14's Google screens reintroduced `--sp-3/6/8` into the login and callback pages
+days after unit 13 spent a whole slice removing 491 of them.
+
+`frontend/scripts/check-tokens.mjs`, wired into `npm run lint`. Resolves every `var(--…)` written in
+`app/`, `components/` and `lib/` against the set actually defined in `app/tokens/*.css` +
+`app/globals.css`, and fails on a miss. It also flags the `F5-1` shape — `text-[var(--…)]` — which is
+wrong *even when the token exists*, because Tailwind v4 compiles a bare `var()` after `text-` to
+`color:` and the size never applies. Dependency-free, ~110 lines.
+
+Two false-positive classes it has to handle, both found by running it: **comments**, because the rule
+is documented in `globals.css` and `components/ui/index.ts` by quoting the bad pattern (blanked, not
+deleted, so line numbers stay honest); and **`next/font`** variables, injected at runtime and
+therefore never written in a stylesheet — a two-entry allowlist, kept short because every entry is a
+hole in the check. Template-literal names (`var(--status-${tone}-wash)`) cannot be resolved
+statically and are skipped rather than reported.
+
+**Proved against the real regressions**, not just run clean: reintroducing `p-[var(--sp-6)]` and
+`text-[var(--fs-lead)]` into `login/page.tsx` — the exact shapes unit 14 shipped and unit 13
+removed — is caught with file and line, and exits 1.
+
+The same stated reason as `OPS-1`: **make drift a compile error, not a code review.** Four shipments
+(478, 113, 491, then 3), invisible to `tsc`, `eslint` and `next build` every time, with independent
+reviewers reading the code in between. A reviewer is the wrong instrument; a resolver is the right one.
+
+`OPS-3` `[x]` **The e2e suite must never exit without a reading.** Filed and built 2026-09-24.
+
+`backend/scripts/run-e2e.mjs`, now behind `npm run test:e2e` (the raw command stays as
+`test:e2e:combined`). Each e2e file boots the whole `AppModule`, and `vitest.config.e2e.ts` records
+two previous rounds of this: file parallelism off when a third concurrent boot killed a worker, then
+forked processes → threads when a fourth brought it back. A fifth file
+(`google-sign-in.e2e-spec.ts`, unit 14) broke it again — the combined run dies with `0xC0000409`
+having printed **no summary at all**.
+
+The crash is not the danger; its *shape* is. That config's own comment names it — *"a reader sees
+'0 failed' and the total quietly drops"* — and `CLAUDE.md` §10 says the same of the integration
+suite: **a suite that skips itself is indistinguishable from one that passes.**
+
+So the runner does two things the combined run cannot: one file per process, so five booted apps
+never share one V8; and it **parses the summary out of every file and fails if one is missing**. A
+file that prints no `Tests N passed` line is an error, never a silent zero — even on exit 0. That is
+the whole point of it.
+
+Reading restored: **388 passed across 5 files**, where the combined run gave nothing.
+
+**One honest caveat, measured rather than assumed.** `staff.e2e-spec.ts` (244 cases, one booted
+`AppModule`, real bcrypt) dies with `0xC0000409` roughly one run in three **in its own process**,
+under both the `threads` and the `forks` pool. So it is the weight of that single file, not
+cross-file concurrency — which is what the config's two earlier rounds had already narrowed toward.
+The runner therefore allows up to three attempts **per file, and only when a run produces no summary
+at all**. That cannot hide a real failure: a genuine test failure always prints `N failed`, so it is
+counted on the first attempt and never retried. The crashes also *cluster* — three back-to-back
+attempts all died where spaced ones did not — so there is a 5s pause between attempts; with it,
+five consecutive full runs came back 388/388. Every retry is printed, and the run still fails when
+the budget is exhausted. `E2E_ATTEMPTS=1` turns retrying off for investigating the crash itself.
+
+This is an environmental instability on one Windows machine, not a passing suite pretending to be
+green: all 388 tests pass whenever the process survives long enough to report.
 
 `OPS-2` `[ ]` **Fail the build on a `var(--x)` that names an undefined custom property.** Added
 2026-09-24 out of `F13-1`. Resolve every custom property written inside a Tailwind arbitrary value
@@ -497,7 +597,7 @@ Report findings; do not fix silently.
 | Tasks | 87 (`AUTH-6` added 2026-09-21), less `AUTH-5` (dropped) = **86** |
 | Blocked | **0** — all eight decisions closed 2026-09-20 |
 | Complete | **15** — Phase 0's 13 done (`SPEC-16`/`SPEC-17` outstanding), plus `AUTH-1` and `AUTH-3` |
-| Migrations | 11 (011–021), one destructive |
+| Migrations | 12 (011–022), one destructive |
 | New backend routes | ~48 |
 | Routes modified | ~28 |
 | Routes retired | 12 |

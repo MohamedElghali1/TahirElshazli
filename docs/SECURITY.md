@@ -17,13 +17,13 @@ changes and what is genuinely weak — because that is where the risk is.
 | **Login timing** | Always runs one bcrypt comparison — against a hardcoded dummy hash when the email is unknown — so response time cannot enumerate accounts |
 | **Reset enumeration** | `POST /auth/password-reset/request` returns an identical body for known and unknown emails; asserted byte-for-byte in a spec |
 | **Reset token** | UUID, 1-hour TTL, single-use enforced in SQL (`WHERE token = $1 AND used_at IS NULL`), and redemption revokes every existing session |
-| **Token handling** | JWT with `jti` and a millisecond `iatMs`; `JwtStrategy` checks the denylist, a per-user password-change cutoff, and that the account still exists — then **re-reads `role` from the database**, so a tampered claim dies at signature verification and a demoted account loses access immediately |
+| **Token handling** | JWT with `jti` and a millisecond `iatMs`; `JwtStrategy` checks the denylist, a per-user password-change cutoff, and that the account still exists — then **re-reads `role` from the database**, so a tampered claim dies at signature verification and a demoted account loses access immediately. **It refuses any token carrying a `purpose` claim** (unit 14, F-1): OAuth `state` tokens share the signing secret, and before this a Forms connect `state` worked as a 10-minute bearer session for the teacher |
 | **Guards** | Three global, in order: rate limit → authenticate → authorize. `RolesGuard` is **fail-closed**: a route with no `@Roles`/`@Public`/`@AnyRole` throws 403 with an explanatory message rather than admitting any signed-in account |
 | **Scope leaks** | Out-of-scope resources answer **404 with a message byte-identical to a genuine miss**, so an assistant cannot enumerate courses one id at a time. Tested at unit and e2e level |
 | **Injection** | Parameterised queries throughout; `DatabaseService` is the only thing that talks to Postgres |
 | **SSRF** | `IsPublicHttpUrl` rejects non-http(s) schemes, loopback, RFC1918, CGNAT, link-local and cloud metadata (`169.254.169.254`), IPv6 equivalents, and bare internal hostnames |
 | **Uploads** | MIME whitelist, **server-minted UUID filenames** (the client's filename is never read, so traversal is structurally impossible), 64 MB cap enforced twice, `wx` write flag, no SVG/HTML/zip. Unit 6 (`D-29`) added `audio/mpeg` and `audio/mp4` for task attachments — both non-executable, served with `nosniff`. A task attachment's `audience: staff` hides it from the **API's** student response only; the file under `/uploads/*` is still reachable by anyone holding its URL until signed URLs land (§4) |
-| **Rate limiting** | Global 120/min default; 5/min on login and password change; 3/5min on register and reset-request; 30/min on upload; 10/min on the OAuth callback |
+| **Rate limiting** | Global 120/min default; 5/min on login and password change; 3/5min on register and reset-request; 30/min on upload; 10/min on the OAuth callback and on both Google sign-in starts; 5/min on Google sign-in and link completion |
 | **Secrets** | `JWT_SECRET` refused in production if unset, < 32 chars, or matching a known placeholder; Google refresh tokens AES-256-GCM encrypted; connection-string passwords redacted before reaching a log |
 | **Fail-fast config** | `PERSISTENCE_DRIVER=memory`, `STORAGE_DRIVER=local` and `DB_AUTO_SEED=1` all **throw at boot** in production |
 | **Audit** | Append-only by interface (no update, no delete method exists to call), no foreign keys so it outlives what it describes, and `AuditService.record` **throws outside a transaction** so an action and its log entry commit together |
@@ -90,12 +90,69 @@ The profile photo is the first upload a student can perform. It needs its own ti
 images only, smaller cap, its own rate limit — rather than widening `@Roles` on the staff endpoint.
 Widening the existing route would also give students PDF and video upload.
 
-### 2.5 PDF annotations
-Stored as coordinates and text, not as a rewritten file, which removes a whole class of file-parsing
-risk. The text is staff-authored and rendered to students: **escape it; never
-`dangerouslySetInnerHTML`.** Same rule `CLAUDE.md` §5.19 applies to blog bodies.
+**Submissions (unit 7, slice 7i, `D-48`) — BUILT.** `POST /assessments/:assessmentId/files` is the
+first student-reachable upload, with its own contract rather than a widened staff route:
+- `@Roles(Student)`, then `loadForStudent`: not enrolled, not targeted or hidden is a 404 identical to
+  a missing task. It also refuses (400) a task that is not uploaded work, is outside its window, or
+  states no upload mode.
+- Types **derived from the task's modes** (PDF; JPEG/PNG/WebP), a strict subset of the whitelist; no
+  HEIC, no GIF, no SVG. The ceiling is `min(task cap, 20 MB)`, enforced by multer (it stops reading)
+  and again in `UploadsService`. Server-minted name; the client filename is never read.
+- Its own rate limit (`STUDENT_UPLOAD_LIMIT`, 12/min per IP). The global guards and the rate limit run
+  **before** multer buffers a body, so an anonymous or non-student caller costs no memory. An
+  authenticated student can still make the server buffer up to 20 MB before the task check refuses,
+  12 times a minute. Recorded, not solved.
+- It attaches nothing. A file becomes work only when the submit route names it, and the submit route
+  accepts only platform-stored URLs whose server-minted type fits the mode.
+- **Residual (A-15, `MARK-F5`):** the submit route does not prove the student uploaded that file. A
+  student could name another platform file they can see, such as a task attachment or a classmate's
+  shared URL. That exposes no data, and the marker sees the file.
+- With `STORAGE_DRIVER=none` (production today) the route answers 503, and authoring refuses upload
+  modes (`D-48` (b)), so no task promises what the server cannot take.
 
-### 2.6 Google OAuth sign-in (decision 9)
+### 2.5 PDF annotations — **BUILT 2026-09-23 (unit 7)**
+Stored as coordinates, text and stroke points, not as a rewritten file, which removes a whole class of
+file-parsing risk on the server: **no server-side PDF library** (`D-2`). The text is staff-authored and
+rendered to students: **escape it; never `dangerouslySetInnerHTML`** — all marking screens render it
+as React text nodes (grep-checked). Same rule `CLAUDE.md` §5.19 applies to blog bodies.
+- **Only platform-stored files are drawn on** (`D-41`). A pasted third-party URL is never fetched by
+  the API (no SSRF-shaped proxy) and never auto-loaded into a staff browser (no IP leak to a host the
+  student chose); it is graded with a mark and feedback and offered as "Open original".
+- **PDFs are rendered in the browser by pdf.js** (`D-40`), pinned exact at 6.3.289 — past 4.2.67, the
+  fix for CVE-2024-4367 (arbitrary JavaScript via a crafted font). From v5 the eval-based font path it
+  abused is gone. Lazy-loaded on the marking routes only; worker bundled from the app's own origin.
+  Keep it pinned and on the dependency audit.
+- **Helmet's `Cross-Origin-Resource-Policy: same-origin` is kept.** It blocks a cross-origin `<img>`
+  of `/uploads/*` (the web app is a different origin from the API), so the marking screens fetch the
+  file through CORS (not subject to CORP; the allow-list already names the web origin) and draw it
+  from a `blob:` URL. The header was **not** relaxed. Other `<img src={mediaSrc(...)}>` uses may be
+  affected (`MARK-F4`).
+- Validation: every annotation field is decorated; stroke points are validated per element
+  (`IsPointList`, each `[x, y]` in 0–100, 2–2000 points); kind/path/text coherence is re-checked in the
+  service and by two CHECKs in `019`.
+
+### 2.5a Mark-book CSV export (`BOOK-3`, unit 7)
+Student names are typed by students and task titles by staff; a CSV opened in a spreadsheet runs a
+cell that starts with `=`, `+`, `-` or `@`. Every field starting with one of those, a TAB or a CR is
+prefixed with `'` (formula-injection neutralisation), then RFC 4180-quoted. Names only, no email. The
+`Content-Disposition` filename is minted from the stored group id — never the group's name, never the
+raw path parameter. Scoped like every group read (`GROUP_NOT_FOUND` 404). A read, so not audited.
+
+### 2.6 Google OAuth sign-in (decision 9) — **BUILT 2026-09-23 (unit 14, `GAUTH-1`)**
+As built, against each non-negotiable below. `state` reuses the signed, 10-minute, purpose-claimed JWT,
+plus an OIDC nonce and `sha256(browserKey)`. The key is held only by the starting page, which closes
+login CSRF. The `id_token` is verified in `auth/google/google-id-token.verifier.ts`: RS256 pinned, the
+JWKS `kid`, signature, `iss`, `aud`, `exp`, `iat`, `nonce`, `email_verified`. Staff need a verified `hd`
+on `STAFF_GOOGLE_DOMAINS` at link time and at every sign-in; an empty list turns staff Google off
+(`D-51`). **No auto-link:** a Google identity reaches an account only through `user_google_identities`,
+which is written only inside a signed-in session (`D-49`). A matching email only chooses the refusal
+message, which reveals an account exists only to someone who has just proven control of that address
+at Google. No account is created through Google (`D-50`). The unverified `users.google_email` is never
+read. The link collision is refused by `UNIQUE (google_sub)` as well as by the service. Both directions
+of every path are tested in `test/google-sign-in.e2e-spec.ts` through the real verifier. **Reusing the
+pattern exposed F-1:** the strategy never checked `purpose`, fixed above. **Not performed:** a live
+round trip with Google (it needs the client's Google Cloud client).
+
 The largest auth change, sequenced last. Non-negotiables when it lands: validate `state` (the
 existing signed, expiring, purpose-claimed JWT pattern is correct — reuse it), verify `id_token`
 signature and `aud`, pin `hd`/allowed domains for staff, and **never auto-link a Google account to

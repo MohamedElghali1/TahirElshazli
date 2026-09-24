@@ -152,10 +152,12 @@ Backend TypeScript is `strict: true`, `module: nodenext`, `target: ES2023`, with
 
 ```
 npm run dev                  # both services, no database needed
-npm test                     # backend unit — 678 tests, 40 files
-npm run test:e2e             # backend e2e
+npm test                     # backend unit — 803 tests, 48 files
+npm run test:e2e             # backend e2e — 402 in 5 files, ONE FILE PER PROCESS (OPS-3)
+npm run test:e2e:combined    # the raw single-process run; dies with no summary on Windows
 npm run test:integration     # backend integration; SKIPS ITSELF without TEST_DATABASE_URL
-npm run lint                 # frontend eslint + backend oxlint
+npm run lint                 # frontend eslint + token check (OPS-2) + backend oxlint
+npm run typecheck:drift      # OPS-1: frontend/lib/types.ts against the backend's types (CI)
 npm run db:migrate           # or DB_AUTO_MIGRATE=1 at boot
 npm run docker:up            # full stack: postgres + api + web
 cd frontend && npx tsc --noEmit
@@ -230,10 +232,11 @@ destroyed live code (`docs/phases/unit-4/REVIEW_4D.md`). Do not read `SHELL-4`'s
 ("delete `components/app/*`, `components/site/*`") as still describing the directory's contents —
 verify against the actual consumer graph before treating either directory as legacy again.
 
-The backend **is** green and must stay green: **678 unit / 40 files, 306 e2e, 152 integration**
-(against real PostgreSQL 15.19, 001–019 from an empty schema, with 020 composing on top from unit 7)
-as measured by the coordinator at unit 8's `a7ac05f`, 2026-09-24
-(`docs/phases/unit-8/EXECUTION_NOTES.md`).
+The backend **is** green and must stay green: **803 unit / 48 files, 402 e2e, 191 integration**
+(against real PostgreSQL 15.19, 001–026 from an empty schema) as of unit 8's landing, 2026-09-24
+(`docs/phases/unit-8/`; units 1–8 and 10–13 are `[x]`, unit 14 `[~]`). **Backend `tsc
+--noEmit` is not a CI gate yet** and specs are excluded from `nest build`; the remote line shipped a
+backend that did not compile because of it (`RC-F1`).
 
 ---
 
@@ -313,8 +316,12 @@ PostgreSQL
 - **Authentication:** bearer JWT on every route but the `@Public()` few. **Authorization:** §7.
 - **The frontend mirror is a liability at this scale.** `frontend/lib/api.ts` and `lib/types.ts`
   mirror the backend by hand and have drifted before (the `AuditAction` union carried 6 of 27
-  members, so the activity log rendered blank labels). Generate them from `API_SPEC.yaml`, or add a
-  CI drift check. Make drift a compile error, not a code review.
+  members, so the activity log rendered blank labels; it had drifted again by unit 14). **`lib/types.ts`
+  is now a compile error away from drift:** `backend/test/drift/mirror-drift.check.ts` asserts each
+  mirror type against its backend counterpart, both directions, in CI (`OPS-1`, `D-52`). A new mirror
+  type with a backend counterpart gets a `Check_` line there. It is checked against the backend and
+  **not** `API_SPEC.yaml`, which omits the `[KEEP]` routes by design. `lib/api.ts`'s paths are not
+  covered.
 
 ---
 
@@ -324,8 +331,16 @@ PostgreSQL
 withheld verbs. The durable rules:
 
 - **`JwtAuthGuard` + `RolesGuard` are global.** A new controller is protected by default. `@Public()`
-  (health, register, login, password reset) and `@AnyRole()` (logout) are the only exits, and adding
-  one is a security decision.
+  (health, register, login, password reset, invitation accept, the Google Forms OAuth callback, and
+  Google sign-in's start and completion) and `@AnyRole()` (logout) are the only exits; `auth/role-guards.spec.ts` pins the exact
+  list, and adding one is a security decision.
+- **A token carrying a `purpose` claim is never a session.** OAuth `state` tokens are signed with the
+  session secret; `JwtStrategy` refuses any token with `purpose` (unit 14, F-1: before that, a Forms
+  `state` in a URL was ten minutes of the teacher's access). Any new single-purpose JWT must carry
+  `purpose`.
+- **Google sign-in reaches an account only through a link** (`user_google_identities`, by OIDC `sub`),
+  written only inside a signed-in session. Never match a Google identity to an account by email, and
+  never read `users.google_email` (unverified, Forms matching only) for identity (`D-49`).
 - **Roles** are `visitor | student | parent | assistant | admin | teacher`. `admin` is a full admin
   with the teacher's access under their own identity, because sharing one role destroys attribution and
   attribution is the whole point of the audit log. Added by `AUTH-1`, 2026-09-19. The pair is defined
@@ -339,9 +354,8 @@ withheld verbs. The durable rules:
   (`all_groups | assigned_groups`). Stored as a column, never inferred from a row count — "no
   assignment rows" must never be ambiguous between "everything" and "not set up yet".
 - **`StaffScopeService` is the single place that decides** whether a staff member may reach a
-  resource. **Ten** services call it, across **34** call sites (unit 8 recount at `a7ac05f`, same
-  method as `ARCHITECTURE.md` §2.4: lines calling `assertAssigned`, `scopeFor`, `mayReachGroup` or
-  `reachableGroupIds` outside specs). Its interface and behaviour are a contract
+  resource. **Twelve** services call it, across **48** call sites (unit 8 landing recount,
+  2026-09-24; method in `ARCHITECTURE.md` §2.4). Its interface and behaviour are a contract
   (`staff-scope.service.spec.ts`); `AUTH-2` rewrote its internals from course-scoped to group-scoped
   on 2026-09-20 and **changed neither** — the seven contract cases passed unmodified.
 - **Scope is held at the group grain.** `assistant_scopes` (how wide) + `assistant_group_assignments`
@@ -354,9 +368,11 @@ withheld verbs. The durable rules:
   `/staff/groups/*` routes; a route naming a **course** still calls `assertAssigned(courseId)`, which
   after `015` no longer implies group scope — one held cohort reaches the whole course's roster,
   submission queue and analytics. Pre-existing, ruled on as `D-23` (narrow to held groups) and open as
-  task `AUTH-6`. **Unit 6 (`D-33`) closed the targeting write and the course group list**; `AUTH-6`'s
-  remainder is the roster, submissions, analytics, the per-course assessment list, and `PATCH`/`DELETE`
-  of a task shared with an unheld group. `GET /staff/tasks` and the draft routes were built at the
+  task `AUTH-6`. **Unit 6 (`D-33`) closed the targeting write and the course group list**; **unit 7
+  (`D-44`) closed `POST /staff/submissions/:id/grade` and the items of the course submission queue**
+  (whose per-task averages stay course-wide by ruling). `AUTH-6`'s remainder is the roster, analytics,
+  the per-course assessment list, and `PATCH`/`DELETE` of a task shared with an unheld group. Every
+  route naming a **submission** goes through `SubmissionAccessService` at the group grain. `GET /staff/tasks` and the draft routes were built at the
   group grain from birth. **Until it lands, do not read a "group scope" statement in
   `AUTHORIZATION_MODEL.md` as describing the course-named routes**, and do not add a new
   course-grained staff route without saying which grain it is on.
@@ -423,12 +439,13 @@ A security claim needs a test that proves the unauthorized case fails (§10).
   a gate, not a nicety: migrations 001–008 were each verified this way and **every single first run
   found something** — including the audit log silently ending after page one, because
   `created_at` was microsecond `TIMESTAMPTZ` while the JavaScript cursor carried only milliseconds.
-  **As of 2026-09-24, 001–019 have all run from an empty schema**, on `postgres:15-alpine` (15.19),
-  with unit 7's `020` composing on top (`docs/phases/unit-8/EXECUTION_NOTES.md`). Keep it that way:
-  authoring a migration on top of an unverified one buries whatever it gets wrong. Without
+  **As of 2026-09-24, 001–026 have all run from an empty schema**, on `postgres:15-alpine` (15.19)
+  (`docs/phases/unit-7/EXECUTION_NOTES.md`, `docs/phases/RECONCILE_UNITS_10_12.md`, and unit 8's
+  landing), including a one-off check of `019`'s backfill on a
+  database populated before it ran. Keep it that way: authoring a migration on top of an unverified one buries whatever it gets wrong. Without
   Docker, a local `postgres` cluster pointed at by `TEST_DATABASE_URL` is enough.
   **An empty-schema run is silent about every guard and every backfill — a guard that counts rows
-  proves nothing against zero rows.** Unit 8's `019` reparents sessions to their group and backfills
+  proves nothing against zero rows.** Unit 8's `026` reparents sessions to their group and backfills
   `attendance.status`; both abort guards needed **seeded fixtures**, not the empty-schema run, because
   an empty schema has no ambiguous course and no row to backfill — the run proves only that the SQL
   applies, not that the guards fire.
@@ -486,6 +503,19 @@ expired or reused token · missing required relation.
 without `TEST_DATABASE_URL`; CI has a guard step that fails the job if the suite reports no executed
 tests. Keep it.
 
+**The same rule now covers e2e, and for a sharper reason (`OPS-3`, `F13-6`).** Every e2e file boots
+the whole `AppModule`. Running five of them in one process dies on Windows with `0xC0000409`
+**having printed no summary at all** — a run you cannot tell apart from a pass. `npm run test:e2e`
+therefore goes through `backend/scripts/run-e2e.mjs`, which runs **one file per process** and
+**fails when any file produces no `Tests N passed` line**, even on exit 0. `test:e2e:combined` is
+the raw command, kept for diagnosis. Do not "fix" a flaky e2e run by raising a timeout and reporting
+a green exit code: read the counts, and treat a missing count as a failure. The config's own comment
+put it best — *a reader sees "0 failed" and the total quietly drops.*
+
+**Adding a sixth e2e file is a decision, not a detail.** Three separate rounds of worker death have
+already been traced to the number of concurrently booted apps. Ask whether the cases belong in an
+existing file first.
+
 **When a list-shaped mirror of a union exists, derive it from an exhaustive `Record<Union, true>`.** A
 spec that iterates an array can only prove that what is listed works, never that nothing is missing.
 That distinction let six audit actions log correctly and then be rejected by the log's own filter.
@@ -526,6 +556,14 @@ historical only.
      named utilities: `text-fg`, `text-fg-2`, `text-accent`, `text-status-amber-text`. **The same
      holds for sizes:** Tailwind v4 compiles `text-[var(--fs-*)]` to `color:`, so it never sets a
      size at all (113 shipped, `F5-1`). A size from a variable is `text-(length:--x)`.
+     **This is now enforced, not remembered.** `npm run lint` runs
+     `frontend/scripts/check-tokens.mjs` (`OPS-2`), which resolves every `var(--…)` in `app/`,
+     `components/` and `lib/` against the properties actually defined in `app/tokens/*.css` +
+     `app/globals.css` and fails on a miss, and flags every `text-[var(--…)]` besides. It exists
+     because the class shipped **four** times — 478, then 113, then 491 across the whole public site
+     (`F13-1`), then 3 more in unit 14's Google screens *days after* unit 13 removed the other 491.
+     Independent reviewers read the code between each recurrence. **A reviewer is the wrong
+     instrument for a defect that passes every gate; a resolver is the right one.**
   2. **One utility per property.** Two `rounded-*` or two `text-*` in one class string are resolved
      by stylesheet source order, not the order you wrote them.
   3. **No card inside a card.** `Panel` is the application's one container.

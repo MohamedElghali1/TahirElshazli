@@ -1,8 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { randomUUID } from 'node:crypto';
+import { UploadsService } from '../common/storage/uploads.service.js';
+import { FILE_STORAGE } from '../common/storage/file-storage.interface.js';
+import { SUBMISSION_ANNOTATION_REPOSITORY } from './interfaces/submission-annotation-repository.interface.js';
+import { InMemorySubmissionAnnotationRepository } from './repositories/in-memory-submission-annotation.repository.js';
 import { AssessmentsController } from './assessments.controller.js';
 import { AssessmentsService } from './assessments.service.js';
-import { DatabaseService } from '../database/database.service.js';
-import { DATABASE_POOL } from '../database/database.tokens.js';
 import { ASSESSMENT_REPOSITORY } from './interfaces/assessment-repository.interface.js';
 import { InMemoryAssessmentRepository } from './repositories/in-memory-assessment.repository.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
@@ -25,7 +28,9 @@ const OTHER_STUDENT = {
 
 describe('AssessmentsController', () => {
   let controller: AssessmentsController;
-  let assessmentsRepo: InMemoryAssessmentRepository;
+  let service: AssessmentsService;
+  let repo: InMemoryAssessmentRepository;
+  let marks: InMemorySubmissionAnnotationRepository;
 
   beforeEach(async () => {
     // Status is derived from "now" vs. the stored window, so pin the clock.
@@ -35,6 +40,20 @@ describe('AssessmentsController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AssessmentsController],
       providers: [
+        // Storage is ON here: `D-48` (b) refuses upload modes without it. A
+        // double of the port, so nothing touches disk.
+        UploadsService,
+        {
+          provide: FILE_STORAGE,
+          useValue: {
+            save: async (i: { bytes: Buffer; mimeType: string; extension: string }) => ({
+              url: `/uploads/${randomUUID()}.${i.extension}`,
+              sizeBytes: i.bytes.length,
+              mimeType: i.mimeType,
+            }),
+            remove: async () => true,
+          },
+        },
         EnrollmentsService,
         { provide: ENROLLMENT_REPOSITORY, useClass: InMemoryEnrollmentRepository },
         // Work is set per group now (CLAUDE.md §5.16), so the student read
@@ -43,8 +62,6 @@ describe('AssessmentsController', () => {
         { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },
         StudentGroupsService,
         AssessmentsService,
-        { provide: DATABASE_POOL, useValue: null },
-        DatabaseService,
         { provide: ASSESSMENT_REPOSITORY, useClass: InMemoryAssessmentRepository },
         // Work types and mirrored external results. The real implementation
         // rather than a stub, for the same reason as the group repository
@@ -52,6 +69,7 @@ describe('AssessmentsController', () => {
         // is exactly the behaviour every existing assertion depends on, and a
         // stub would let a regression in that path pass unnoticed.
         { provide: WORK_REPOSITORY, useClass: InMemoryWorkRepository },
+        { provide: SUBMISSION_ANNOTATION_REPOSITORY, useClass: InMemorySubmissionAnnotationRepository },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -61,7 +79,9 @@ describe('AssessmentsController', () => {
       .compile();
 
     controller = module.get<AssessmentsController>(AssessmentsController);
-    assessmentsRepo = module.get(ASSESSMENT_REPOSITORY);
+    service = module.get(AssessmentsService);
+    repo = module.get(ASSESSMENT_REPOSITORY);
+    marks = module.get(SUBMISSION_ANNOTATION_REPOSITORY);
   });
 
   afterEach(() => {
@@ -111,71 +131,6 @@ describe('AssessmentsController', () => {
     expect(corrected).toMatchObject({ score: 35, maxScore: 40, scorePercentage: 88 });
     // Submitted-but-unmarked work must not leak a score.
     expect(items.find((a) => a.id === 'assess-4')?.score).toBeNull();
-  });
-
-  describe('MARK-2: returnedAt gates what the student sees', () => {
-    it('reads a marked-but-unreturned submission exactly as before marking', async () => {
-      // assess-4/sub-2 starts submitted-but-ungraded; mark it without returning.
-      await assessmentsRepo.gradeSubmission('sub-2', {
-        score: 14,
-        feedback: 'Careful with units.',
-        annotatedFileUrl: undefined,
-      });
-
-      const items = await controller.listAssessments('course-1', {}, STUDENT);
-      expect(items.find((a) => a.id === 'assess-4')).toMatchObject({
-        status: 'submitted',
-        score: null,
-      });
-
-      const detail = await controller.getAssessmentDetail('assess-4', STUDENT);
-      expect(detail.status).toBe('submitted');
-      expect(detail.submission).toMatchObject({
-        score: null,
-        correctedAt: null,
-        feedback: null,
-      });
-    });
-
-    it('reveals the mark once the submission is returned', async () => {
-      await assessmentsRepo.gradeSubmission('sub-2', {
-        score: 14,
-        feedback: 'Careful with units.',
-        annotatedFileUrl: undefined,
-      });
-      await assessmentsRepo.returnSubmission('sub-2');
-
-      const items = await controller.listAssessments('course-1', {}, STUDENT);
-      expect(items.find((a) => a.id === 'assess-4')).toMatchObject({
-        status: 'corrected',
-        score: 14,
-      });
-
-      const detail = await controller.getAssessmentDetail('assess-4', STUDENT);
-      expect(detail.status).toBe('corrected');
-      expect(detail.submission).toMatchObject({
-        score: 14,
-        feedback: 'Careful with units.',
-      });
-      expect(detail.submission?.correctedAt).not.toBeNull();
-    });
-
-    it('still blocks resubmission by correctedAt alone, unreturned or not', async () => {
-      await assessmentsRepo.gradeSubmission('sub-2', {
-        score: 14,
-        feedback: null,
-        annotatedFileUrl: undefined,
-      });
-      // Not returned - the student cannot see the mark, but the marker's work
-      // must still be protected from an overwrite mid-review.
-      await expect(
-        controller.submitAssessment(
-          'assess-4',
-          { fileUrl: 'https://storage.example.com/submissions/moles-v2.pdf' },
-          STUDENT,
-        ),
-      ).rejects.toThrow('already been corrected');
-    });
   });
 
   it('should flag an unsubmitted past-due item as overdue', async () => {
@@ -373,524 +328,93 @@ describe('AssessmentsController', () => {
       ).rejects.toThrow();
     });
   });
-
   /**
-   * File-type and submission-mode enforcement (slice 7a, gap 1 & 2).
-   *
-   * Each case creates a fresh assessment with the properties under test and
-   * targets it at `group-1` (student-1's group in course-1), then verifies
-   * both the accepted and refused direction. CLAUDE.md §10: "a test that only
-   * proves the happy path is not evidence of a boundary."
+   * `MARK-2`: a saved mark is invisible to the student until it is returned.
+   * One predicate (`isReturnedToStudent`) over the five reads that used to key
+   * on `correctedAt`; each read is asserted here (unit-7 plan, Risk 1).
    */
-  describe('allowedFileTypes and submissionModes enforcement', () => {
-    let assessmentRepo: import('./repositories/in-memory-assessment.repository.js').InMemoryAssessmentRepository;
+  describe('saved is not returned (MARK-2)', () => {
+    const saveMark = () =>
+      repo.gradeSubmission('sub-2', { score: 17, feedback: 'Nearly there', annotatedFileUrl: 'https://storage.example.com/annotated/moles.pdf' });
 
-    // A window that is open relative to the pinned clock (2026-08-27T12:00:00Z).
-    const OPEN_WINDOW = {
-      availableFrom: '2026-08-01T00:00:00Z',
-      availableTo: '2026-09-30T23:59:59Z',
-      dueAt: '2026-09-30T23:59:59Z',
-    };
+    it('hides the score, feedback, annotated copy and corrected status until return', async () => {
+      await saveMark();
+      const list = await controller.listAssessments('course-1', {}, STUDENT);
+      const row = list.find((a) => a.id === 'assess-4')!;
+      expect(row.status).toBe('submitted');
+      expect(row.score).toBeNull();
+      expect(row.scorePercentage).toBeNull();
 
-    // Base assessment fields shared by all test tasks created in this block.
-    const BASE_ASSESSMENT = {
-      courseId: 'course-1',
-      lessonId: null,
-      description: 'enforcement test',
-      instructions: 'enforcement test',
-      type: 'homework' as const,
-      workType: 'file_upload' as const,
-      externalUrl: null,
-      topics: [],
-      maxScore: 10,
-      maxFileSizeBytes: 10 * 1024 * 1024,
-      visibility: 'published' as const,
-      markerId: null,
-      allowResubmission: true,
-      draftId: null,
-      attachments: [],
-      ...OPEN_WINDOW,
-    };
+      const detail = await controller.getAssessmentDetail('assess-4', STUDENT);
+      expect(detail.status).toBe('submitted');
+      expect(detail.score).toBeNull();
+      expect(detail.submission).toMatchObject({
+        score: null,
+        feedback: null,
+        annotatedFileUrl: null,
+        returnedAt: null,
+      });
+      // The freeze is unchanged (A-2): a saved mark still closes resubmission,
+      // and `correctedAt` is what lets the page say the teacher is marking it.
+      expect(detail.canSubmit).toBe(false);
+      expect(detail.submission!.correctedAt).not.toBeNull();
 
-    beforeEach(async () => {
-      // Re-compile the module to get a fresh repository instance with no
-      // carry-over from the shared `controller` setup above.
-      const mod = await Test.createTestingModule({
-        controllers: [AssessmentsController],
-        providers: [
-          EnrollmentsService,
-          { provide: ENROLLMENT_REPOSITORY, useClass: InMemoryEnrollmentRepository },
-          { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },
-          StudentGroupsService,
-          AssessmentsService,
-          // `submitAssessment` wraps its writes in a transaction, so the
-          // service needs the real DatabaseService. A null pool puts it in the
-          // memory passthrough documented in `CLAUDE.md` §9 - no rollback, and
-          // the multi-file tests below say where that matters.
-          { provide: DATABASE_POOL, useValue: null },
-          DatabaseService,
-          { provide: ASSESSMENT_REPOSITORY, useClass: InMemoryAssessmentRepository },
-          { provide: WORK_REPOSITORY, useClass: InMemoryWorkRepository },
-        ],
-      })
-        .overrideGuard(JwtAuthGuard)
-        .useValue({ canActivate: () => true })
-        .overrideGuard(RolesGuard)
-        .useValue({ canActivate: () => true })
-        .compile();
-
-      controller = mod.get(AssessmentsController);
-      assessmentRepo = mod.get(ASSESSMENT_REPOSITORY);
+      const performance = await service.getPerformanceEntries('course-1', 'student-1');
+      const entry = performance.find((e) => e.assessmentId === 'assess-4')!;
+      expect(entry.score).toBeNull();
+      expect(entry.status).toBe('submitted');
     });
 
-    /** Creates an assessment and targets it at group-1 so loadForStudent finds it. */
-    async function createTargeted(
-      overrides: Partial<Parameters<typeof assessmentRepo.create>[0]>,
-    ) {
-      const created = await assessmentRepo.create({
-        ...BASE_ASSESSMENT,
-        title: 'Enforcement test task',
-        allowedFileTypes: [],
-        submissionModes: [],
-        ...overrides,
-      });
-      await assessmentRepo.setTargets(created.id, [{ groupId: 'group-1' }]);
-      return created;
-    }
+    it('shows all of it once returned', async () => {
+      await saveMark();
+      await repo.returnSubmission('sub-2');
 
-    // --- allowedFileTypes tests ---
+      const list = await controller.listAssessments('course-1', {}, STUDENT);
+      expect(list.find((a) => a.id === 'assess-4')).toMatchObject({ status: 'corrected', score: 17 });
 
-    it('allowedFileTypes: accepts a .pdf url when pdf-only is set', async () => {
-      const task = await createTargeted({
-        allowedFileTypes: ['application/pdf'],
-        submissionModes: [],
+      const detail = await controller.getAssessmentDetail('assess-4', STUDENT);
+      expect(detail.submission).toMatchObject({
+        score: 17,
+        feedback: 'Nearly there',
+        annotatedFileUrl: 'https://storage.example.com/annotated/moles.pdf',
       });
-      await expect(
-        controller.submitAssessment(
-          task.id,
-          { fileUrl: 'https://storage.example.com/submissions/hw.pdf' },
-          STUDENT,
-        ),
-      ).resolves.toBeDefined();
+      expect(detail.submission!.returnedAt).not.toBeNull();
+
+      const performance = await service.getPerformanceEntries('course-1', 'student-1');
+      expect(performance.find((e) => e.assessmentId === 'assess-4')).toMatchObject({ score: 17, status: 'corrected' });
     });
 
-    it('allowedFileTypes: refuses a .png url when pdf-only is set', async () => {
-      const task = await createTargeted({
-        allowedFileTypes: ['application/pdf'],
-        submissionModes: [],
-      });
-      await expect(
-        controller.submitAssessment(
-          task.id,
-          { fileUrl: 'https://storage.example.com/submissions/hw.png' },
-          STUDENT,
-        ),
-      ).rejects.toThrow('application/pdf');
+    it('does not show feedback typed before a mark exists (it was unconditional before unit 7)', async () => {
+      // Force the pre-unit-7 shape: feedback stored, nothing returned.
+      const stored = await repo.findSubmission('assess-4', 'student-1');
+      stored!.feedback = 'draft note';
+      const detail = await controller.getAssessmentDetail('assess-4', STUDENT);
+      expect(detail.submission!.feedback).toBeNull();
     });
 
-    it('allowedFileTypes: empty list accepts any globally-valid file', async () => {
-      // The regression guard: existing tasks with empty allowedFileTypes must
-      // keep working exactly as before this slice.
-      const task = await createTargeted({
-        allowedFileTypes: [],
-        submissionModes: [],
+    it('MARK-5: carries the marks only once returned, and never who drew them', async () => {
+      await marks.create({
+        submissionId: 'sub-2', fileUrl: '/uploads/x.png', page: 1, kind: 'comment',
+        xPercent: 10, yPercent: 20, text: 'Units!', path: null, createdBy: 'assistant-1',
       });
-      await expect(
-        controller.submitAssessment(
-          task.id,
-          { fileUrl: 'https://storage.example.com/submissions/hw.pdf' },
-          STUDENT,
-        ),
-      ).resolves.toBeDefined();
+      await saveMark();
+      const before = await controller.getAssessmentDetail('assess-4', STUDENT);
+      expect(before.submission!.annotations).toEqual([]);
+
+      await repo.returnSubmission('sub-2');
+      const after = await controller.getAssessmentDetail('assess-4', STUDENT);
+      expect(after.submission!.annotations).toHaveLength(1);
+      expect(after.submission!.annotations[0]).toMatchObject({ kind: 'comment', text: 'Units!', xPercent: 10 });
+      expect(Object.keys(after.submission!.annotations[0]!).sort()).toEqual(
+        ['fileUrl', 'id', 'kind', 'page', 'path', 'text', 'xPercent', 'yPercent'],
+      );
     });
 
-    it('allowedFileTypes: refuses a url with no extension', async () => {
-      const task = await createTargeted({
-        allowedFileTypes: ['application/pdf'],
-        submissionModes: [],
-      });
-      await expect(
-        controller.submitAssessment(
-          task.id,
-          { fileUrl: 'https://storage.example.com/submissions/homework' },
-          STUDENT,
-        ),
-      ).rejects.toThrow();
-    });
-
-    it('allowedFileTypes: reads the extension correctly through a query string', async () => {
-      const task = await createTargeted({
-        allowedFileTypes: ['application/pdf'],
-        submissionModes: [],
-      });
-      // The url has a query string; the extension must still be read as `pdf`.
-      await expect(
-        controller.submitAssessment(
-          task.id,
-          { fileUrl: 'https://cdn.example.com/hw.pdf?token=abc&v=2' },
-          STUDENT,
-        ),
-      ).resolves.toBeDefined();
-    });
-
-    it('allowedFileTypes: comparison is case-insensitive on the extension', async () => {
-      const task = await createTargeted({
-        allowedFileTypes: ['application/pdf'],
-        submissionModes: [],
-      });
-      // `.PDF` must be treated the same as `.pdf`.
-      await expect(
-        controller.submitAssessment(
-          task.id,
-          { fileUrl: 'https://storage.example.com/submissions/hw.PDF' },
-          STUDENT,
-        ),
-      ).resolves.toBeDefined();
-    });
-
-    it('allowedFileTypes: answerText-only submission passes even when pdf-only is set', async () => {
-      const task = await createTargeted({
-        allowedFileTypes: ['application/pdf'],
-        submissionModes: [],
-      });
-      await expect(
-        controller.submitAssessment(
-          task.id,
-          { answerText: 'My typed answer.' },
-          STUDENT,
-        ),
-      ).resolves.toBeDefined();
-    });
-
-    // --- submissionModes: pdf_upload tests ---
-
-    it('submissionModes: pdf_upload accepts a .pdf url', async () => {
-      const task = await createTargeted({
-        allowedFileTypes: [],
-        submissionModes: ['pdf_upload'],
-      });
-      await expect(
-        controller.submitAssessment(
-          task.id,
-          { fileUrl: 'https://storage.example.com/submissions/essay.pdf' },
-          STUDENT,
-        ),
-      ).resolves.toBeDefined();
-    });
-
-    it('submissionModes: pdf_upload accepts a .docx url', async () => {
-      const task = await createTargeted({
-        allowedFileTypes: [],
-        submissionModes: ['pdf_upload'],
-      });
-      await expect(
-        controller.submitAssessment(
-          task.id,
-          { fileUrl: 'https://storage.example.com/submissions/essay.docx' },
-          STUDENT,
-        ),
-      ).resolves.toBeDefined();
-    });
-
-    it('submissionModes: pdf_upload refuses a .txt url', async () => {
-      // `D-41` names pdf and docx, and `text/plain` is in the *global* upload
-      // whitelist - so deriving this mode from the whitelist's `kind: 'file'`
-      // bucket silently admits a .txt. This test is what pins the mode to the
-      // decision instead of to the storage layer's file/image split.
-      const task = await createTargeted({
-        allowedFileTypes: [],
-        submissionModes: ['pdf_upload'],
-      });
-      await expect(
-        controller.submitAssessment(
-          task.id,
-          { fileUrl: 'https://storage.example.com/submissions/notes.txt' },
-          STUDENT,
-        ),
-      ).rejects.toThrow('pdf_upload');
-    });
-
-    it('submissionModes: pdf_upload refuses a .jpg url', async () => {
-      const task = await createTargeted({
-        allowedFileTypes: [],
-        submissionModes: ['pdf_upload'],
-      });
-      await expect(
-        controller.submitAssessment(
-          task.id,
-          { fileUrl: 'https://storage.example.com/submissions/photo.jpg' },
-          STUDENT,
-        ),
-      ).rejects.toThrow('pdf_upload');
-    });
-
-    // --- submissionModes: photo_upload tests ---
-
-    it('submissionModes: photo_upload accepts a .jpg url', async () => {
-      const task = await createTargeted({
-        allowedFileTypes: [],
-        submissionModes: ['photo_upload'],
-      });
-      await expect(
-        controller.submitAssessment(
-          task.id,
-          { fileUrl: 'https://storage.example.com/submissions/work.jpg' },
-          STUDENT,
-        ),
-      ).resolves.toBeDefined();
-    });
-
-    it('submissionModes: photo_upload refuses a .pdf url', async () => {
-      const task = await createTargeted({
-        allowedFileTypes: [],
-        submissionModes: ['photo_upload'],
-      });
-      await expect(
-        controller.submitAssessment(
-          task.id,
-          { fileUrl: 'https://storage.example.com/submissions/work.pdf' },
-          STUDENT,
-        ),
-      ).rejects.toThrow('photo_upload');
-    });
-
-    // --- multiple modes ---
-
-    it('submissionModes: a file satisfying either stated mode is accepted', async () => {
-      const task = await createTargeted({
-        allowedFileTypes: [],
-        submissionModes: ['pdf_upload', 'photo_upload'],
-      });
-      // pdf passes pdf_upload
-      await expect(
-        controller.submitAssessment(
-          task.id,
-          { fileUrl: 'https://storage.example.com/submissions/essay.pdf' },
-          STUDENT,
-        ),
-      ).resolves.toBeDefined();
-      // jpg passes photo_upload (resubmission allowed, so the second call also succeeds)
-      await expect(
-        controller.submitAssessment(
-          task.id,
-          { fileUrl: 'https://storage.example.com/submissions/photo.jpg' },
-          STUDENT,
-        ),
-      ).resolves.toBeDefined();
-    });
-
-    // --- both checks are independent ---
-
-    it('both allowedFileTypes and submissionModes must pass independently', async () => {
-      // The task says pdf_upload AND only allows docx. That combination is
-      // internally consistent (docx is a file-kind type accepted by pdf_upload)
-      // but illustrates that both gates are evaluated.
-      const task = await createTargeted({
-        allowedFileTypes: [
-          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        ],
-        submissionModes: ['pdf_upload'],
-      });
-      // docx passes both
-      await expect(
-        controller.submitAssessment(
-          task.id,
-          { fileUrl: 'https://storage.example.com/submissions/essay.docx' },
-          STUDENT,
-        ),
-      ).resolves.toBeDefined();
-      // pdf passes submissionModes but NOT allowedFileTypes -> rejected
-      await expect(
-        controller.submitAssessment(
-          task.id,
-          { fileUrl: 'https://storage.example.com/submissions/essay.pdf' },
-          STUDENT,
-        ),
-      ).rejects.toThrow();
-    });
-
-    // --- empty modes ---
-
-    it('empty allowedFileTypes AND empty submissionModes: accepts any globally-valid file', async () => {
-      // This is the regression guard for all existing tasks. Their behaviour
-      // must be identical to before this slice was added.
-      const task = await createTargeted({
-        allowedFileTypes: [],
-        submissionModes: [],
-      });
-      await expect(
-        controller.submitAssessment(
-          task.id,
-          { fileUrl: 'https://storage.example.com/submissions/hw.pdf' },
-          STUDENT,
-        ),
-      ).resolves.toBeDefined();
-    });
-
-    it('empty allowedFileTypes AND empty submissionModes: answerText-only submission succeeds', async () => {
-      const task = await createTargeted({
-        allowedFileTypes: [],
-        submissionModes: [],
-      });
-      await expect(
-        controller.submitAssessment(
-          task.id,
-          { answerText: 'Text answer, no file.' },
-          STUDENT,
-        ),
-      ).resolves.toBeDefined();
-    });
-
-    /**
-     * Multi-file submission and `linkUrl` (slice 7b-ii; `D-39`, `D-42`, `D-43`).
-     *
-     * These run against the in-memory driver, where `runInTransaction` is a
-     * passthrough with no rollback (`CLAUDE.md` §9). That is not a gap for the
-     * refusal cases below, because **every file is validated before the
-     * transaction opens** - a bad file is refused before anything is written,
-     * rather than written and rolled back. True mid-transaction rollback is
-     * only provable against real PostgreSQL and is not claimed here.
-     */
-    describe('multi-file and linkUrl', () => {
-      const FILE = (n: string) => ({
-        fileUrl: `https://storage.example.com/submissions/${n}`,
-        displayName: n,
-      });
-
-      it('persists several files in order, with 0-based positions', async () => {
-        const task = await createTargeted({});
-        await controller.submitAssessment(
-          task.id,
-          { files: [FILE('a.pdf'), FILE('b.pdf'), FILE('c.pdf')] },
-          STUDENT,
-        );
-        const detail = await controller.getAssessmentDetail(task.id, STUDENT);
-        expect(detail.submission?.files).toHaveLength(3);
-        expect(detail.submission?.files.map((f) => f.position)).toEqual([0, 1, 2]);
-        expect(detail.submission?.files.map((f) => f.displayName)).toEqual([
-          'a.pdf',
-          'b.pdf',
-          'c.pdf',
-        ]);
-      });
-
-      it('accepts five files and refuses six (`D-43`)', async () => {
-        const five = await createTargeted({});
-        await expect(
-          controller.submitAssessment(
-            five.id,
-            { files: ['a', 'b', 'c', 'd', 'e'].map((n) => FILE(`${n}.pdf`)) },
-            STUDENT,
-          ),
-        ).resolves.toBeDefined();
-
-        const six = await createTargeted({});
-        await expect(
-          controller.submitAssessment(
-            six.id,
-            { files: ['a', 'b', 'c', 'd', 'e', 'f'].map((n) => FILE(`${n}.pdf`)) },
-            STUDENT,
-          ),
-        ).rejects.toThrow(/at most 5 files/i);
-      });
-
-      it('refuses the whole submission when one file among several is bad, and writes nothing', async () => {
-        const task = await createTargeted({
-          allowedFileTypes: ['application/pdf'],
-        });
-        await expect(
-          controller.submitAssessment(
-            task.id,
-            { files: [FILE('good.pdf'), FILE('bad.png'), FILE('also-good.pdf')] },
-            STUDENT,
-          ),
-        ).rejects.toThrow('File 2');
-
-        // Not merely "it threw": nothing may have been persisted. No
-        // submission row at all, so no files either.
-        const detail = await controller.getAssessmentDetail(task.id, STUDENT);
-        expect(detail.submission).toBeNull();
-      });
-
-      it('replaces the previous file set on resubmission rather than appending', async () => {
-        const task = await createTargeted({});
-        await controller.submitAssessment(
-          task.id,
-          { files: [FILE('v1-a.pdf'), FILE('v1-b.pdf'), FILE('v1-c.pdf')] },
-          STUDENT,
-        );
-        await controller.submitAssessment(
-          task.id,
-          { files: [FILE('v2-a.pdf'), FILE('v2-b.pdf')] },
-          STUDENT,
-        );
-        const detail = await controller.getAssessmentDetail(task.id, STUDENT);
-        expect(detail.submission?.files).toHaveLength(2);
-        expect(detail.submission?.files.map((f) => f.displayName)).toEqual([
-          'v2-a.pdf',
-          'v2-b.pdf',
-        ]);
-        expect(detail.submission?.files.map((f) => f.position)).toEqual([0, 1]);
-      });
-
-      it('accepts an https link and refuses an http one (`D-39`)', async () => {
-        const ok = await createTargeted({});
-        await expect(
-          controller.submitAssessment(
-            ok.id,
-            { linkUrl: 'https://docs.example.com/essay' },
-            STUDENT,
-          ),
-        ).resolves.toBeDefined();
-        const detail = await controller.getAssessmentDetail(ok.id, STUDENT);
-        expect(detail.submission?.linkUrl).toBe('https://docs.example.com/essay');
-
-        // http is refused by the DTO's IsPublicHttpUrl in production; the
-        // service check is the copy that matters and is asserted directly.
-        const bad = await createTargeted({});
-        await expect(
-          controller.submitAssessment(
-            bad.id,
-            { linkUrl: 'http://docs.example.com/essay' },
-            STUDENT,
-          ),
-        ).rejects.toThrow(/https/i);
-      });
-
-      it('leaves an existing link alone when a resubmission omits it', async () => {
-        const task = await createTargeted({});
-        await controller.submitAssessment(
-          task.id,
-          { linkUrl: 'https://docs.example.com/first' },
-          STUDENT,
-        );
-        await controller.submitAssessment(
-          task.id,
-          { answerText: 'Adding a note, leaving the link.' },
-          STUDENT,
-        );
-        const detail = await controller.getAssessmentDetail(task.id, STUDENT);
-        expect(detail.submission?.linkUrl).toBe('https://docs.example.com/first');
-        expect(detail.submission?.answerText).toBe(
-          'Adding a note, leaving the link.',
-        );
-      });
-
-      it('leaves a single-fileUrl submission working unchanged', async () => {
-        // The regression guard: every submission made before this slice used
-        // the scalar `fileUrl` and carries no `submission_files` rows.
-        const task = await createTargeted({});
-        await controller.submitAssessment(
-          task.id,
-          { fileUrl: 'https://storage.example.com/submissions/legacy.pdf' },
-          STUDENT,
-        );
-        const detail = await controller.getAssessmentDetail(task.id, STUDENT);
-        expect(detail.submission?.fileUrl).toContain('legacy.pdf');
-        expect(detail.submission?.files).toEqual([]);
-        expect(detail.submission?.linkUrl).toBeNull();
-      });
+    it('keeps every fixture mark that predates the split visible (019 backfill parity)', async () => {
+      const detail = await controller.getAssessmentDetail('assess-3', STUDENT);
+      expect(detail.status).toBe('corrected');
+      expect(detail.submission).toMatchObject({ score: 35 });
+      expect(detail.submission!.returnedAt).not.toBeNull();
     });
   });
 });
-

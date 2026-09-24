@@ -50,7 +50,15 @@ export default function CourseGradingPage({ params }: { params: Promise<{ id: st
     <div className="flex flex-col gap-6 p-6">
       {/* Per-assessment averages across every student - CLAUDE.md §5.6, the
           number that says whether a task was hard or easy. */}
-      <Panel title="Assessment averages" bodyClassName="">
+      <Panel
+        title="Assessment averages"
+        action={
+          // `D-44`: the submissions below are the caller's own groups; these
+          // figures are the whole course's, the same for every viewer.
+          <span className="text-xs text-fg-4">Whole course, every group</span>
+        }
+        bodyClassName=""
+      >
         {loading && (
           <div className="flex justify-center p-8">
             <Loader label="Loading assessment averages" />
@@ -126,7 +134,7 @@ export default function CourseGradingPage({ params }: { params: Promise<{ id: st
           <ul className="divide-y divide-border-light">
             {data.items.map((item) => (
               <li key={item.submissionId}>
-                <SubmissionRow item={item} onGrade={() => setEditing(item)} />
+                <SubmissionRow item={item} onGrade={() => setEditing(item)} onReturned={reload} />
               </li>
             ))}
           </ul>
@@ -147,7 +155,34 @@ export default function CourseGradingPage({ params }: { params: Promise<{ id: st
   );
 }
 
-function SubmissionRow({ item, onGrade }: { item: GradingQueueItem; onGrade: () => void }) {
+function SubmissionRow({
+  item,
+  onGrade,
+  onReturned,
+}: {
+  item: GradingQueueItem;
+  onGrade: () => void;
+  onReturned: () => void;
+}) {
+  const { token } = useSession();
+  const [returning, setReturning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // `MARK-2`: saving and returning are two operations. Since `D-44` every row
+  // listed here is one the caller may return, so the action can live here.
+  async function giveBack() {
+    if (!token) return;
+    setReturning(true);
+    setError(null);
+    try {
+      await api.staff.returnSubmission(token, item.submissionId);
+      onReturned();
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : 'Could not return that work. Please try again.');
+      setReturning(false);
+    }
+  }
+
   return (
     <div className="flex flex-wrap items-center gap-3 px-4 py-3">
       <span className="min-w-0 flex-1">
@@ -157,8 +192,16 @@ function SubmissionRow({ item, onGrade }: { item: GradingQueueItem; onGrade: () 
         </span>
       </span>
 
-      {item.isLate && <Tag tone="red">Late</Tag>}
-      <Tag tone={item.status === 'graded' ? 'green' : 'amber'}>{item.status === 'graded' ? 'Graded' : 'Awaiting'}</Tag>
+      {/* Amber: late is a fact about the queue, not a failure (CLAUDE.md §11.1). */}
+      {item.isLate && <Tag tone="amber">Late</Tag>}
+      {item.status !== 'graded' ? (
+        <Tag tone="amber">Awaiting</Tag>
+      ) : item.returnedAt ? (
+        <Tag tone="green">Returned</Tag>
+      ) : (
+        // Saved, not yet visible to the student.
+        <Tag tone="blue">Marked, not returned</Tag>
+      )}
 
       <span className="num w-[68px] text-end text-base text-fg">
         {item.score === null ? '—' : `${item.score}/${item.maxScore}`}
@@ -179,6 +222,16 @@ function SubmissionRow({ item, onGrade }: { item: GradingQueueItem; onGrade: () 
       <Button size="small" variant={item.status === 'graded' ? 'tertiary' : 'primary'} onClick={onGrade}>
         {item.status === 'graded' ? 'Re-grade' : 'Grade'}
       </Button>
+      {item.status === 'graded' && !item.returnedAt && (
+        <Button size="small" variant="primary" disabled={returning} onClick={() => void giveBack()}>
+          {returning ? <Loader size={3} label="Returning" /> : 'Return'}
+        </Button>
+      )}
+      {error && (
+        <InlineBanner tone="danger" className="w-full">
+          {error}
+        </InlineBanner>
+      )}
     </div>
   );
 }
@@ -186,10 +239,15 @@ function SubmissionRow({ item, onGrade }: { item: GradingQueueItem; onGrade: () 
 /**
  * The marking form.
  *
- * The annotated file is a URL field, not an upload, and that is honest rather
- * than lazy: CLAUDE.md §5.5 wants in-platform PDF annotation and §3 puts the
- * files in Cloudflare R2 - neither exists yet. The field records the separate
- * annotated artifact §5.5 asks for without pretending to be the editor.
+ * **Save** stores the mark; **Save and return** also hands it back, and only a
+ * returned mark reaches the student (`MARK-2`). Two calls, two operations: if
+ * the return fails after the save, the form says the work is saved but not
+ * returned. Once returned, a re-grade is visible at once (A-4), so there is a
+ * single Save.
+ *
+ * Mark-up drawn on the paper lives on the task's Submissions page (`MARK-4`).
+ * The annotated-copy URL stays: no document retires it, and existing marks use
+ * it.
  */
 function GradeDialog({
   item,
@@ -207,6 +265,9 @@ function GradeDialog({
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!token) return;
+    // Which button sent the form: Save, or Save and return.
+    const andReturn =
+      (event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') === 'return';
     const form = new FormData(event.currentTarget);
     const annotated = String(form.get('annotatedFileUrl') ?? '').trim();
     setError(null);
@@ -217,13 +278,24 @@ function GradeDialog({
         feedback: String(form.get('feedback') ?? '').trim() || undefined,
         annotatedFileUrl: annotated || undefined,
       });
-      onGraded();
     } catch (cause) {
       // The score ceiling is the assessment's own maxScore and is enforced
       // server-side, so its message is the useful one to surface verbatim.
       setError(cause instanceof ApiError ? cause.message : 'Could not save that mark. Please try again.');
       setBusy(false);
+      return;
     }
+    if (andReturn) {
+      try {
+        await api.staff.returnSubmission(token, item.submissionId);
+      } catch (cause) {
+        const why = cause instanceof ApiError ? cause.message : 'Please try again.';
+        setError(`Saved, but not returned: ${why} The student cannot see it yet.`);
+        setBusy(false);
+        return;
+      }
+    }
+    onGraded();
   }
 
   return (
@@ -284,7 +356,7 @@ function GradeDialog({
             inputMode="url"
             defaultValue={item.annotatedFileUrl ?? ''}
             placeholder="https://"
-            hint="Optional link to the marked-up file. The student's original is never replaced."
+            hint="Optional link to a marked-up file. To draw on the paper, use the task's Submissions page. The student's original is never replaced."
           />
 
           {error && <InlineBanner tone="danger">{error}</InlineBanner>}
@@ -293,9 +365,20 @@ function GradeDialog({
             <Button type="button" variant="tertiary" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" variant="primary" disabled={busy}>
-              {busy ? <Loader size={3} label="Saving" /> : 'Save mark'}
-            </Button>
+            {item.returnedAt ? (
+              <Button type="submit" variant="primary" value="save" disabled={busy}>
+                {busy ? <Loader size={3} label="Saving" /> : 'Save mark'}
+              </Button>
+            ) : (
+              <>
+                <Button type="submit" value="save" disabled={busy}>
+                  Save mark
+                </Button>
+                <Button type="submit" variant="primary" value="return" disabled={busy}>
+                  {busy ? <Loader size={3} label="Saving" /> : 'Save and return'}
+                </Button>
+              </>
+            )}
           </div>
         </form>
       </div>

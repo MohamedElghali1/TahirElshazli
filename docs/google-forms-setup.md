@@ -105,6 +105,41 @@ If you set `GOOGLE_DRIVER=google` and miss one of the others, the server
 **refuses to start** and names the missing variable. That is intentional — a
 half-configured integration that boots and fails later is worse.
 
+### A5a. Google sign-in (optional, `GAUTH-1`)
+
+Sign-in reuses **the same OAuth client**, so it needs `GOOGLE_DRIVER=google` and
+A5's variables. It asks only for `openid email`, not the Forms scopes, and it
+stores no Google token.
+
+1. On the A4 client, add a **second** Authorized redirect URI. This one is a page
+   on the **web app**, not the API:
+
+   ```
+   http://localhost:3000/google/callback
+   https://tahirelshazli.com/google/callback
+   ```
+
+2. Add to the backend environment:
+
+   ```bash
+   GOOGLE_SIGN_IN_REDIRECT_URI=http://localhost:3000/google/callback
+   # Staff (teacher, admin, assistants) may use Google only from these
+   # Workspace domains, checked against the verified token's `hd`. Empty or
+   # unset: staff keep passwords and only students can use Google.
+   STAFF_GOOGLE_DOMAINS=
+   ```
+
+Without `GOOGLE_SIGN_IN_REDIRECT_URI`, Google sign-in is off: "Continue with
+Google" answers with *"Google sign-in is not set up on this server. Sign in with
+your password."* Password sign-in is never affected. In production the URI
+must be `https`, and a malformed `STAFF_GOOGLE_DOMAINS` entry stops the boot.
+
+**How people use it.** Nobody can create an account through Google, and a
+Google account is never matched to an account by email. Each person first
+signs in with their password, then chooses **Connect Google** on their Account
+(staff) or Settings (student) screen. After that, "Continue with Google" works
+for them.
+
 ### A6. The publishing-status trap (External user type only)
 
 **Read this or you will lose a week.**

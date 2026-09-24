@@ -165,20 +165,26 @@ The reusable template library. `id`, `courseId`, `type`, `workType`, `title`, `d
 
 ### `AssessmentSubmission`
 `assessmentId`, `studentId`, `fileUrl?`, `answerText?`, `submittedAt` (first), `lastSubmittedAt`,
-`score?`, `feedback?`, `correctedAt?`, `annotatedFileUrl?`, plus **`returnedAt?`** and
-**`includeInReport`**.
+`score?`, `feedback?`, `correctedAt?`, `annotatedFileUrl?`, plus **`returnedAt?`** (unit 7).
+`includeInReport` is deferred to the weekly-reports unit (unit-7 assumption A-5).
 
 - **`correctedAt` vs `returnedAt`** — the design separates *Save* from *Save and return*. A marked
-  paper the student cannot yet see is a real state.
+  paper the student cannot yet see is a real state. Built in unit 7: the student sees the score,
+  feedback, annotations and `corrected` status only once `returnedAt` is set; a return needs a saved
+  mark; a re-return keeps the first time; there is no un-return.
 - **Invariant.** The original is immutable; resubmission archives the prior content to
   `SubmissionRevision`. The annotated copy is a **new artifact beside** the original, never over it.
 - **Projection.** "Not submitted" is not a row — it is the absence of one, computed against the
   targeted groups' membership. This answers `CLAUDE.md` §11's missing `missed` state.
 
 ### `SubmissionAnnotation` **New**
-`submissionId`, `page`, `xPercent`, `yPercent`, `kind (comment | tick | cross)`, `text`, `createdBy`,
-`createdAt`. Stored as **data, not a flattened file** — which is what makes it editable and
-deletable. Whether the student receives a rendered PDF or the same overlay is open.
+`submissionId`, `fileUrl` (which file it is on), `page`, `xPercent`, `yPercent`,
+`kind (comment | tick | cross | pen | highlight)`, `text`, `path` (a freehand stroke's points),
+`createdBy`, `createdAt`, `updatedAt`. Stored as **data, not a flattened file** — which is what makes
+it editable and deletable. The student receives **the same overlay**, drawn over the untouched
+original, once the work is returned (`D-2`, closed). Only the author may change or erase a mark
+(`D-42`); the eraser is a delete, never an edit of the page. A mark on a file a resubmission replaced
+is kept and counted as stale. Built in unit 7.
 
 ### `ExternalResult`, `GoogleFormBinding`
 Already built (migration 010) and vendor-neutral: `provider`, opaque `externalId`, nullable

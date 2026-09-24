@@ -1,11 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { UserRepository } from '../auth/interfaces/user-repository.interface.js';
-import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js';
-import type {
-  NotificationPreferences,
-  NotificationPreferencesRepository,
-} from './interfaces/notification-preferences-repository.interface.js';
-import { NOTIFICATION_PREFERENCES_REPOSITORY } from './interfaces/notification-preferences-repository.interface.js';
+import { USER_REPOSITORY, type UserRepository } from '../auth/interfaces/user-repository.interface.js';
+import { NOTIFICATION_PREFERENCES_REPOSITORY, type NotificationPreferences, type NotificationPreferencesRepository } from './interfaces/notification-preferences-repository.interface.js';
 import { UpdateStaffProfileDto } from './dto/update-staff-profile.dto.js';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto.js';
 

@@ -39,6 +39,8 @@ import type {
 import { EXTERNAL_WORK_BINDER } from '../assessments/interfaces/work-repository.interface.js';
 import type { TaskDraftRepository } from './interfaces/task-draft-repository.interface.js';
 import type { WorkRepository } from '../assessments/interfaces/work-repository.interface.js';
+import { UploadsService } from '../common/storage/uploads.service.js';
+import { hasUploadMode, mimeTypesForModes } from '../assessments/submission-rules.js';
 import { WORK_REPOSITORY } from '../assessments/interfaces/work-repository.interface.js';
 import { TASK_DRAFT_REPOSITORY } from './interfaces/task-draft-repository.interface.js';
 import { TASK_DRAFT_NOT_FOUND } from './task-drafts.service.js';
@@ -146,6 +148,47 @@ export interface StaffTaskListFilter {
   search?: string;
   /** `D-30`, `D-34`. */
   status?: StaffTaskStatus;
+}
+
+/** `D-48` (b): the refusal when a task asks for uploads the server cannot take. */
+export const UPLOAD_MODES_NEED_STORAGE =
+  'File uploads are not set up on this server, so a task cannot ask for a PDF or photos yet. ' +
+  'Choose a Google Doc link, or set up file storage first.';
+
+/**
+ * `D-32`: does this user qualify to mark a task set for these groups?
+ *
+ * The teacher and any admin always do. An assistant does when their account
+ * is active and they reach **every** targeted group - otherwise they would be
+ * assigned work they cannot open. `StaffScopeService` decides the reach, as it
+ * does for every other staff question; a missing scope row fails closed.
+ *
+ * Exported (unit 7) so the claim on a first saved mark (`D-43`) applies the
+ * same rule a teacher naming a marker does - one definition of "qualifies".
+ */
+export async function markerQualifies(
+  scope: Pick<StaffScopeService, 'reachableGroupIds'>,
+  user: Pick<StoredUser, 'id' | 'role' | 'status'> | null,
+  groupIds: readonly string[],
+  reachCache?: Map<string, Promise<readonly string[] | null>>,
+): Promise<boolean> {
+  if (!user) {
+    return false;
+  }
+  if (isUnscopedStaffRole(user.role)) {
+    return true;
+  }
+  if (user.role !== Role.Assistant || user.status !== 'active') {
+    return false;
+  }
+  // One scope read per marker, not per task, when judging a whole list.
+  let pending = reachCache?.get(user.id);
+  if (!pending) {
+    pending = scope.reachableGroupIds({ id: user.id, role: user.role });
+    reachCache?.set(user.id, pending);
+  }
+  const reach = await pending;
+  return reach === null || groupIds.every((g) => reach.includes(g));
 }
 
 /**
@@ -305,7 +348,32 @@ export class AssessmentAuthoringService {
      * student's work too. `AssessmentsModule` exports the token.
      */
     @Inject(WORK_REPOSITORY) private readonly work: WorkRepository,
+    /** Whether this server stores files at all (`D-48` (b)). */
+    private readonly uploads: UploadsService,
   ) {}
+
+  /**
+   * `D-47`/`D-48` (b): what a task's stated modes mean for its authoring.
+   *
+   * - An upload mode (`pdf_upload`, `photo_upload`) is **refused while file
+   *   storage is off** - a task must never promise students an upload the
+   *   server cannot take, nor quietly accept a link in its place. Checked only
+   *   when the modes are being SET: an older task that already carries one
+   *   stays editable, and its students meet the upload route's honest 503.
+   * - `allowedFileTypes` is **derived from the modes** whenever modes are
+   *   stated, so the two can never disagree; with no modes it stays as
+   *   authored (the old rule).
+   */
+  private modeRules(
+    modes: readonly SubmissionMode[],
+    settingModes: boolean,
+    authoredTypes: string[] | undefined,
+  ): string[] | undefined {
+    if (settingModes && hasUploadMode(modes) && !this.uploads.enabled) {
+      throw new BadRequestException(UPLOAD_MODES_NEED_STORAGE);
+    }
+    return modes.length > 0 ? mimeTypesForModes(modes) : authoredTypes;
+  }
 
   /**
    * `D-36`: how many synced external responses a task has, matched to a
@@ -317,36 +385,13 @@ export class AssessmentAuthoringService {
     return tally.matched + tally.unmatched;
   }
 
-  /**
-   * `D-32`: does this user qualify to mark a task set for these groups?
-   *
-   * The teacher and any admin always do. An assistant does when their account
-   * is active and they reach **every** targeted group - otherwise they would be
-   * assigned work they cannot open. `StaffScopeService` decides the reach, as
-   * it does for every other staff question; a missing scope row fails closed.
-   */
+  /** `D-32`, through the one exported definition above. */
   private async markerQualifies(
     user: StoredUser | null,
     groupIds: readonly string[],
     reachCache?: Map<string, Promise<readonly string[] | null>>,
   ): Promise<boolean> {
-    if (!user) {
-      return false;
-    }
-    if (isUnscopedStaffRole(user.role)) {
-      return true;
-    }
-    if (user.role !== Role.Assistant || user.status !== 'active') {
-      return false;
-    }
-    // One scope read per marker, not per task, when judging a whole list.
-    let pending = reachCache?.get(user.id);
-    if (!pending) {
-      pending = this.scope.reachableGroupIds({ id: user.id, role: user.role });
-      reachCache?.set(user.id, pending);
-    }
-    const reach = await pending;
-    return reach === null || groupIds.every((g) => reach.includes(g));
+    return markerQualifies(this.scope, user, groupIds, reachCache);
   }
 
   /**
@@ -711,7 +756,9 @@ export class AssessmentAuthoringService {
         availableTo: input.availableTo,
         dueAt: input.dueAt,
         maxScore: input.maxScore,
-        allowedFileTypes: input.allowedFileTypes,
+        allowedFileTypes:
+          this.modeRules(input.submissionModes ?? [], true, input.allowedFileTypes) ??
+          input.allowedFileTypes,
         maxFileSizeBytes: input.maxFileSizeBytes,
         workType,
         // Only a `link` task stores a URL here. A Google Form's address is
@@ -827,8 +874,14 @@ export class AssessmentAuthoringService {
       });
 
       const { googleForm, ...columns } = update;
+      const derivedTypes = this.modeRules(
+        update.submissionModes ?? before.submissionModes,
+        update.submissionModes !== undefined,
+        update.allowedFileTypes,
+      );
       const after = await this.assessmentRepo.update(assessmentId, {
         ...columns,
+        ...(derivedTypes !== undefined ? { allowedFileTypes: derivedTypes } : {}),
         // Clearing the URL when a task stops being a link: leaving it behind is
         // harmless to the read path (which selects on `work_type`) but it makes
         // the row say something untrue about itself.
@@ -935,6 +988,10 @@ export class AssessmentAuthoringService {
       const submissions = await this.assessmentRepo.findSubmissionsForAssessments([
         assessmentId,
       ]);
+      // A 409 - a state conflict (CLAUDE.md §6) - since `TASK-F3` (unit 7).
+      // It was a 400 until then, which disagreed with `D-36`'s own 409 below
+      // for the same refusal on a different kind of handed-in work. The
+      // message is unchanged.
       if (submissions.length > 0) {
         throw new ConflictException(
           'This assessment has submissions and cannot be deleted. ' +

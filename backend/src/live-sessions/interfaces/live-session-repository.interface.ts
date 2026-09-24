@@ -49,22 +49,6 @@ export interface AttendanceRecord {
 }
 
 /**
- * A past session with the student's own mark attached, for the legacy
- * `GET /courses/:id/live-sessions` response (`LiveSessionsService`).
- *
- * `attended` is the boolean projection (`status === 'present'`) that the old
- * API shape requires; `late` collapses to `false` there, which the field
- * comment states. S4 (`/students/me/attendance`) is where the full three-state
- * shape belongs.
- */
-export interface LiveSessionWithAttendance extends LiveSession {
-  /** `true` when `status === 'present'`, `false` for `absent` or `late`. */
-  attended: boolean;
-  /** `null` when this session has no mark for the student. */
-  attendedAt: string | null;
-}
-
-/**
  * What the caller supplies when scheduling a session.
  *
  * `id` is the repository's to assign. The meeting link is whatever the
