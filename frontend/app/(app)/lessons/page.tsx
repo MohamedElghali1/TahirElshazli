@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
 import { formatDate, formatDuration } from '@/lib/format';
 import type { RecordingWithProgress } from '@/lib/types';
-import { Panel, EmptyState, Loader, Tag, Meter, Button, Select, Icon, cx } from '@/components/ui';
+import { Panel, EmptyState, Loader, Tag, Meter, Button, IconButton, Select, Icon, cx } from '@/components/ui';
 import { PageTitle } from '@/components/shell/page-chrome';
 import { CourseGate } from '@/components/student/course-gate';
 import { useSelectedCourse } from '@/components/shell/course-context';
@@ -13,11 +14,14 @@ import { RecordingPlayer } from '@/components/student/recording-player';
 
 /**
  * My lessons (`docs/PRODUCT_SPEC.md` §6: `[CHANGED]`, "Recording library,
- * thumbnails by default, grid/list toggle, watched bar" — that layout is a
- * content redesign out of this unit's scope). This is the existing recordings
- * screen, course-scoped via the rail's switcher.
+ * thumbnails by default, grid/list toggle, watched bar"). Course-scoped via
+ * the rail's switcher; the curriculum picker alongside the player toggles
+ * between a thumbnail grid (the default) and the original dense row list.
  */
 type ProgressOverride = Pick<RecordingWithProgress, 'watchedSeconds' | 'completed' | 'completedAt'>;
+
+type ViewMode = 'grid' | 'list';
+const VIEW_MODE_KEY = 'lessons.viewMode';
 
 export default function LessonsPage() {
   const { courses, selectedId, loading } = useSelectedCourse();
@@ -39,6 +43,25 @@ function RecordingsList({ courseId }: { courseId: string }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [overrides, setOverrides] = useState<Record<string, ProgressOverride>>({});
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    if (typeof window === 'undefined') return 'grid';
+    try {
+      const stored = window.localStorage.getItem(VIEW_MODE_KEY);
+      return stored === 'list' || stored === 'grid' ? stored : 'grid';
+    } catch {
+      // A private window with storage disabled just keeps the default.
+      return 'grid';
+    }
+  });
+
+  const changeViewMode = (mode: ViewMode) => {
+    setViewMode(mode);
+    try {
+      window.localStorage.setItem(VIEW_MODE_KEY, mode);
+    } catch {
+      // Nothing remembered; every visit falls back to the default.
+    }
+  };
 
   const { data, error, loading, reload } = useApi(
     (token) =>
@@ -183,6 +206,13 @@ function RecordingsList({ courseId }: { courseId: string }) {
                       <h2 className="text-lg font-medium text-fg">{selected.title}</h2>
                       <Tag>{selected.chapter}</Tag>
                       {selected.completed && <Tag tone="green">Watched</Tag>}
+                      <Link
+                        href={`/lessons/${selected.id}`}
+                        className="inline-flex items-center gap-1 text-xs text-fg-3 underline underline-offset-2 hover:text-fg"
+                      >
+                        Open lesson page
+                        <Icon name="ArrowUpRight" size={12} />
+                      </Link>
                     </div>
                     <p className="num mt-1 text-xs text-fg-3">
                       {formatDate(selected.lessonDate)} · {formatDuration(selected.durationSeconds)}
@@ -228,6 +258,8 @@ function RecordingsList({ courseId }: { courseId: string }) {
             }}
             open={sidebarOpen}
             onClose={() => setSidebarOpen(false)}
+            viewMode={viewMode}
+            onChangeViewMode={changeViewMode}
           />
         </div>
       )}
@@ -246,25 +278,146 @@ function CurriculumSidebar({
   onSelect,
   open,
   onClose,
+  viewMode,
+  onChangeViewMode,
 }: {
   recordings: RecordingWithProgress[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   open: boolean;
   onClose: () => void;
+  viewMode: ViewMode;
+  onChangeViewMode: (mode: ViewMode) => void;
 }) {
+  const viewToggle = (
+    <div className="flex items-center gap-1">
+      <IconButton
+        icon="Apps"
+        label="Grid view"
+        active={viewMode === 'grid'}
+        onClick={() => onChangeViewMode('grid')}
+      />
+      <IconButton
+        icon="LayoutList"
+        label="List view"
+        active={viewMode === 'list'}
+        onClick={() => onChangeViewMode('list')}
+      />
+    </div>
+  );
+
+  const list =
+    viewMode === 'grid' ? (
+      <CurriculumGrid recordings={recordings} selectedId={selectedId} onSelect={onSelect} />
+    ) : (
+      <CurriculumList recordings={recordings} selectedId={selectedId} onSelect={onSelect} />
+    );
+
   return (
     <>
-      <Panel title="Curriculum" className="hidden md:block" bodyClassName="max-h-[70vh] overflow-y-auto">
-        <CurriculumList recordings={recordings} selectedId={selectedId} onSelect={onSelect} />
+      <Panel
+        title="Curriculum"
+        action={viewToggle}
+        className="hidden md:block"
+        bodyClassName={cx('max-h-[70vh] overflow-y-auto', viewMode === 'grid' && 'p-3')}
+      >
+        {list}
       </Panel>
 
       {open && (
         <CurriculumDrawer onClose={onClose}>
-          <CurriculumList recordings={recordings} selectedId={selectedId} onSelect={onSelect} />
+          {viewMode === 'grid' ? (
+            <div className="p-3">
+              <CurriculumGrid recordings={recordings} selectedId={selectedId} onSelect={onSelect} />
+            </div>
+          ) : (
+            <CurriculumList recordings={recordings} selectedId={selectedId} onSelect={onSelect} />
+          )}
         </CurriculumDrawer>
       )}
     </>
+  );
+}
+
+/**
+ * The grid variant of the curriculum picker — thumbnail cards, one column at
+ * the sidebar's width. `thumbnailUrl` is null for every recording that exists
+ * today (`023_recording_thumbnails.sql`), so the icon fallback is the normal
+ * path, not an edge case.
+ */
+function CurriculumGrid({
+  recordings,
+  selectedId,
+  onSelect,
+}: {
+  recordings: RecordingWithProgress[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <ul className="flex flex-col gap-2" role="list">
+      {recordings.map((recording) => {
+        const watchedPercentage =
+          recording.durationSeconds > 0
+            ? (recording.watchedSeconds / recording.durationSeconds) * 100
+            : 0;
+        return (
+          <li key={recording.id}>
+            <button
+              type="button"
+              onClick={() => onSelect(recording.id)}
+              aria-current={recording.id === selectedId ? 'true' : undefined}
+              className={cx(
+                'flex w-full flex-col gap-2 rounded-md p-2 text-left transition-colors duration-[var(--dur-fast)] ease-[var(--ease)] hover:bg-wash-hover',
+                recording.id === selectedId && 'bg-wash-hover',
+              )}
+            >
+              <span className="relative block aspect-video w-full overflow-hidden rounded-sm bg-surface-3">
+                {recording.thumbnailUrl ? (
+                  // A teacher-supplied external URL, not an optimizable local asset.
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={recording.thumbnailUrl}
+                    alt=""
+                    width={320}
+                    height={180}
+                    loading="lazy"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <span className="flex h-full w-full items-center justify-center">
+                    <Icon name="Video" size={24} className="text-fg-4" />
+                  </span>
+                )}
+                {recording.completed && (
+                  <span className="absolute end-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-surface shadow-[inset_0_0_0_1px_var(--border-light)]">
+                    <Icon name="CircleCheck" size={14} className="text-status-green-text" />
+                  </span>
+                )}
+              </span>
+              <span className="min-w-0">
+                <span
+                  className={cx(
+                    'block truncate text-xs',
+                    recording.id === selectedId ? 'font-medium text-fg' : 'text-fg-2',
+                  )}
+                >
+                  {recording.title}
+                </span>
+                <span className="num mt-[2px] block text-xxs text-fg-4">
+                  {formatDuration(recording.durationSeconds)}
+                </span>
+                {recording.watchedSeconds > 0 && !recording.completed && (
+                  <span className="mt-1 block">
+                    <Meter value={watchedPercentage} name={`${recording.title} watched`} label={false} />
+                  </span>
+                )}
+              </span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

@@ -1,4 +1,4 @@
-import type { AssessmentStatus, AssessmentType, MaterialCategory } from './types';
+import type { AssessmentStatus, AssessmentType, MaterialCategory, WorkType } from './types';
 
 /**
  * Formatting helpers. Timestamps arrive from the API in UTC (CLAUDE.md §6) and
@@ -115,6 +115,31 @@ export const ASSESSMENT_STATUS_CHIP: Record<AssessmentStatus, string> = {
   submitted: 'amber',
   corrected: 'green',
 };
+
+/**
+ * Which student screen a task belongs on.
+ *
+ * `docs/PRODUCT_SPEC.md` §6 splits the student's work across two pages —
+ * Homework is "**Homework only** — no quiz appears here", and Quizzes is
+ * "driven by the existing Google Form work type". One list endpoint serves
+ * both, so the split is made here rather than twice.
+ *
+ * It is a `Record<WorkType, …>` on purpose. Both pages filtering by hand let
+ * every `google_form` task render on BOTH of them, and a third work type would
+ * have landed on NEITHER without anyone noticing. Exhaustiveness makes adding a
+ * work type a compile error at the one place that has to decide — the same
+ * mechanism `CLAUDE.md` §10 prescribes for the `AuditAction` mirror, and for
+ * the same reason: an array can only prove that what is listed works, never
+ * that nothing is missing.
+ */
+const WORK_SURFACE: Record<WorkType, 'homework' | 'quizzes'> = {
+  file_upload: 'homework',
+  link: 'homework',
+  google_form: 'quizzes',
+};
+
+export const isQuizWork = (workType: WorkType): boolean =>
+  WORK_SURFACE[workType] === 'quizzes';
 
 export const MATERIAL_CATEGORY_LABEL: Record<MaterialCategory, string> = {
   course_notes: 'Course notes',

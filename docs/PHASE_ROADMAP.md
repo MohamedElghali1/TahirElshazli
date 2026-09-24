@@ -603,12 +603,39 @@ directions are asserted now; **that guard covers the whole authorization boundar
 
 ---
 
-### Chat unit 13 — Student surface and the public site `[ ]`
+### Chat unit 13 — Student surface and the public site `[~]`
 
 **Scope** `STU-1` … `STU-7`, `SITE-1` … `SITE-5`.
 **Depends on** unit 4, and each feature's own backend unit.
 **Care** the Overview is action-first and carries **no mark anywhere**. Marketing typography never
 mixes with the console's 13px. `/catalog` and the student `/achievements` rail entry are `[REMOVED]`.
+
+**State, 2026-09-24: PARTIAL by design, `[~]`.** The session deliberately took a subset while units
+7 and 8 were in flight on other branches.
+
+- **Landed `[x]`:** `SITE-1`…`SITE-5`, `STU-2`, `STU-4`, `STU-5`, `STU-7`.
+- **Deferred:** `STU-1` — composes unit 8's attendance figures, and migration `019` is still absent
+  from `redesign`. The only item genuinely waiting on another unit.
+- **Partial `[~]`:** `STU-3` — player, chapters, the work set and the next-recording card are built;
+  **"its material" is not**, because `materials` has no relation to a lesson. Recorded rather than
+  invented (§13).
+- **Blocked `[~]`:** `STU-6`, on `F13-2` — a documentation conflict, not a technical one.
+
+`STU-4` was expected to be deferred and turned out not to be: unit 7's `returnedAt` landed on
+`redesign` mid-session, and the four attempt states were already complete and server-derived. What
+it actually needed was `F13-4` — every Google Form task was rendering on **both** `/homework` and
+`/quizzes`.
+
+The unit cannot go `[x]` until `STU-1` lands, `STU-3`'s material gap is closed or dropped, and
+`F13-2` is ruled on; §2 condition 9 (zero unresolved blockers) is not met.
+
+**The finding that dominated the unit (`F13-1`).** `SITE-1`…`SITE-5` were not a redesign. Every
+marketing and auth surface was still written against the token vocabulary `ad238a7` deleted with
+`frontend/app/tokens.css` — **491 references to 38 custom properties defined nowhere in the
+repository**, so every padding, gap, font size, radius and max-width they named rendered as nothing.
+Third recurrence of the class `CLAUDE.md` §11 records twice. Invisible to `tsc`, `eslint` and
+`next build` all three times. New task `OPS-2` makes it a build failure; the full account is in
+`docs/phases/unit-13/PHASE_PLAN.md`.
 
 ---
 

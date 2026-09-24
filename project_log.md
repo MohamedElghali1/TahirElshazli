@@ -3887,6 +3887,111 @@ nothing about what a rewrite took away with it: compare test counts across a mer
 State on `redesign`: unit 11 `[x]`, unit 12 `[x]`, unit 10 `[~]` — slice 10a (backend) merged and
 `APPROVED`, slice 10b (the announcements frontend, `ANN-1`/`ANN-2`/`ANN-3`/`ANN-5`/`ANN-6`) is the
 whole of what remains on that unit.
+
+---
+
+## 2026-09-24 — Unit 13, part one: the public site was never actually ported
+
+Unit 13 opened expecting `SITE-1`…`SITE-5` to be a styling pass. `CLAUDE.md` §4.1 says
+`components/site/*` "was ported onto the current `components/ui` API *in place* during unit 4 rather
+than replaced", and the pages do import the current primitives, so the assumption looked safe.
+
+It was half true, and the wrong half. The components were ported; **the token vocabulary was not.**
+
+Resolving every `var(--…)` written in `frontend/app` and `frontend/components` against every custom
+property actually defined in `app/tokens/*.css` and `app/globals.css` returned **38 distinct
+undefined properties in 491 references across 24 files** — `--sp-*`, `--fs-h1/h2/h3/lead/body/
+display`, `--bg-*`, `--fg-primary`, `--r-*`, `--maxw-*`, `--h-sm/md`, `--lh-loose`,
+`--accent-line/press/edge`. All of them belong to the Twenty-derived system that `ad238a7` deleted
+along with `frontend/app/tokens.css`.
+
+A `var()` naming an undefined property with no fallback is invalid at computed-value time and gets
+dropped. Every padding, gap, font size, radius and max-width the marketing site and the auth screens
+named **was not being applied at all**. The site rendered as unstyled-ish flow content with correct
+colours, because the colour tokens happened to be the ones that survived.
+
+**This is the third time the same failure class has shipped here.** §11 rule 1 records 478 colour
+instances; `F5-1` records 113 size instances; this is 491. The cause is identical every time:
+Tailwind's arbitrary-value syntax accepts any string, so `p-[var(--nope)]` typechecks, lints and
+builds, and only the rendered stylesheet is wrong. Three independent reviewers have read this code
+since the tokens were deleted.
+
+So the fix was verified the only way that can see it: **against the compiled stylesheet, not the
+source.** `next build`, then grep the emitted CSS. All five marketing steps emitted and defined,
+zero dead custom properties reaching the output. A new task `OPS-2` makes that a build failure
+rather than a habit — the same argument `OPS-1` already makes about the `lib/api.ts` mirror. **A
+reviewer is the wrong instrument for this class; a resolver is the right one.**
+
+Two judgment calls inside the repair worth keeping. `--r-lg` (16px) collapses to `rounded-md`
+(8px) — the live system names no 16 step, and restoring one would re-introduce the "16px buttons
+reading as pills" error that `frontend-design-system.md` §4 says this rebuild existed to correct.
+And marketing small print became body size at a lower tint rather than a smaller size, because the
+marketing scale has no step below 17px and 46 of the references had been reaching for a **console**
+token on a `data-surface="site"` page — the scale mixing §11 forbids, shipped and invisible.
+
+One thing the first attempt got wrong and the compiled-CSS check caught: every marketing heading is
+a responsive `clamp()`, and the literal pixel values that first went inside them would have drifted
+from the scale forever. They hold `var(--fs-marketing-*)` again.
+
+`STU-5` and `STU-6` were verified rather than rebuilt — the posture unit 12 took with `SET-3`/
+`SET-5`. `STU-7`'s card was right but its call to action was a `Button` running `window.open`:
+un-middle-clickable, un-copyable, and exactly the shape a popup blocker suppresses. It would have
+left the single support route on the platform silently doing nothing.
+
+`STU-6` is `[~]` on a documentation conflict, not a technical one: `PRODUCT_SPEC.md` §6 says
+Classmates is "Names **and avatars** only. Already correct." while `redesign-mapping.md` says
+"**names only** — an exact match", and the service returns name and id deliberately. Adding avatars
+publishes a child's photograph to other children — a privacy ruling, not a judgment call. Raised as
+`F13-2` rather than decided.
+
+---
+
+## 2026-09-24 — Unit 13, part two: the states were fine, the split was not
+
+Continuing the unit, two of the three items held back turned out to be movable. Unit 7's `MARK-2`
+landed `returnedAt` on `redesign` mid-session, which was `STU-4`'s only stated dependency, and
+`STU-3` had never been blocked at all — it was simply not taken in the first pass.
+
+**`STU-4` was not the work it looked like.** The four attempt states —
+`locked | available | submitted | corrected` — were already complete, already derived server-side in
+`assessments.service.ts:computeStatus` from stored timestamps and the submission row on every read,
+and already grouped without recomputation on the homework page. Nothing to build.
+
+What was actually broken was the split between the two student work surfaces. `PRODUCT_SPEC.md` §6
+defines Homework as *"Homework only — no quiz appears here"* and Quizzes as *"driven by the existing
+Google Form work type"*, and **one list endpoint serves both screens.** `/quizzes` filtered to
+`google_form`; `/homework` filtered on nothing. So **every Google Form task rendered on both pages**
+— and inconsistently, because a form is submitted on Google and never reaches `corrected` here, so
+Homework showed it stuck awaiting marking forever while Quizzes showed it correctly. A student would
+have been invited to redo it from the wrong page.
+
+The fix is one exhaustive `Record<WorkType, 'homework' | 'quizzes'>` in `lib/format.ts`. Not two
+corrected filters: **two hand-written filters are what produced the bug**, and a third work type
+would have landed on *neither* page with nothing to catch it. The record makes adding a `WorkType` a
+compile error at the one place that has to decide — the mechanism §10 already prescribes for the
+`AuditAction` mirror, and for its stated reason: an array proves only that what is listed works,
+never that nothing is missing. All three student surfaces read it now, including the new lesson
+detail page — the implementer had hand-rolled a fourth copy and was redirected to the predicate.
+
+**Two axes that are easy to conflate**, and the fix depends on telling them apart. `workType`
+(`file_upload | link | google_form`) is how a task is *delivered*; `type`
+(`homework | assignment | quiz`) is what it is *called*. §6's Quizzes page is defined by delivery,
+so that is what Homework excludes — and the `type` filter tabs keep all three, because a task
+labelled "quiz" that is handed in as a file upload is delivered on Homework and has nowhere else to
+go. Narrowing on the label axis would have hidden working tasks.
+
+**`STU-3` is `[~]`, and the missing quarter is the interesting part.** Player, chapters, the work
+set from the lesson and a next-recording card that stops at the last recording rather than wrapping
+— all built, and with **no backend change at all**: `assessments.lessonId` and `recordings.position`
+already answer both questions, and at ~20 recordings a course, filtering the list already fetched is
+correct rather than an N+1. But §6 also asks for *"its material"*, and `materials` carries
+`course_id` and `category` and **has no relation to a lesson or a recording**. Closing that needs a
+`materials.lesson_id` column, both repository drivers and a staff control to set it. Inventing the
+join — or quietly showing the whole course's materials as though they were this lesson's — was
+refused. §13: never invent business behaviour. It is recorded as the open half of `STU-3`.
+
+`STU-1` remains the one item genuinely waiting on another unit: migration `019` is still absent from
+`redesign`, so unit 8's attendance figures do not exist to compose.
 **Unit 8 — sessions and attendance, closed 2026-09-24.** Migration `019` re-parents sessions to the
 group and moves `attendance` from a boolean to `present | absent | late`, with `marked_by`/
 `marked_at`. Eight staff routes landed in a new `backend/src/manage/sessions.controller.ts` (week

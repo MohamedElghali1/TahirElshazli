@@ -1289,6 +1289,7 @@ export const api = {
         videoUrl: string;
         durationSeconds: number;
         lessonDate?: string;
+        thumbnailUrl?: string;
       },
     ) =>
       request<StaffRecording>(`/admin/courses/${courseId}/recordings`, {
@@ -1307,6 +1308,7 @@ export const api = {
         videoUrl?: string;
         durationSeconds?: number;
         lessonDate?: string;
+        thumbnailUrl?: string | null;
       },
     ) =>
       request<StaffRecording>(`/admin/recordings/${recordingId}`, {

@@ -27,6 +27,7 @@ interface RecordingRow {
   duration_seconds: number;
   lesson_date: Date;
   position: number;
+  thumbnail_url: string | null;
 }
 
 interface RecordingWithProgressRow extends RecordingRow {
@@ -57,6 +58,7 @@ function toRecording(row: RecordingRow): Recording {
     durationSeconds: row.duration_seconds,
     lessonDate: iso(row.lesson_date),
     order: row.position,
+    thumbnailUrl: row.thumbnail_url,
   };
 }
 
@@ -85,7 +87,7 @@ export class PostgresRecordingRepository implements RecordingRepository {
     // the N+1 CLAUDE.md §7.1 catalogues, and it is cheapest to not write here.
     const rows = await this.db.query<RecordingWithProgressRow>(
       `SELECT r.id, r.course_id, r.module_id, r.lesson_id, r.title, r.chapter,
-              r.topics, r.video_url, r.duration_seconds, r.lesson_date, r.position,
+              r.topics, r.video_url, r.duration_seconds, r.lesson_date, r.position, r.thumbnail_url,
               p.watched_seconds, p.completed, p.completed_at
        FROM recordings r
        LEFT JOIN recording_progress p
@@ -150,7 +152,7 @@ export class PostgresRecordingRepository implements RecordingRepository {
   async findRecordingById(recordingId: string): Promise<Recording | null> {
     const row = await this.db.queryOne<RecordingRow>(
       `SELECT id, course_id, module_id, lesson_id, title, chapter, topics,
-              video_url, duration_seconds, lesson_date, position
+              video_url, duration_seconds, lesson_date, position, thumbnail_url
        FROM recordings WHERE id = $1`,
       [recordingId],
     );
@@ -160,7 +162,7 @@ export class PostgresRecordingRepository implements RecordingRepository {
   async findByCourseForStaff(courseId: string): Promise<Recording[]> {
     const rows = await this.db.query<RecordingRow>(
       `SELECT id, course_id, module_id, lesson_id, title, chapter, topics,
-              video_url, duration_seconds, lesson_date, position
+              video_url, duration_seconds, lesson_date, position, thumbnail_url
        FROM recordings
        WHERE course_id = $1
        ORDER BY position`,
@@ -196,11 +198,11 @@ export class PostgresRecordingRepository implements RecordingRepository {
     const row = await this.db.queryOne<RecordingRow>(
       `INSERT INTO recordings
          (id, course_id, module_id, lesson_id, title, chapter, topics,
-          video_url, duration_seconds, lesson_date, position)
+          video_url, duration_seconds, lesson_date, position, thumbnail_url)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-               COALESCE((SELECT MAX(position) FROM recordings WHERE course_id = $2), 0) + 1)
+               COALESCE((SELECT MAX(position) FROM recordings WHERE course_id = $2), 0) + 1, $11)
        RETURNING id, course_id, module_id, lesson_id, title, chapter, topics,
-                 video_url, duration_seconds, lesson_date, position`,
+                 video_url, duration_seconds, lesson_date, position, thumbnail_url`,
       [
         randomUUID(),
         input.courseId,
@@ -212,6 +214,7 @@ export class PostgresRecordingRepository implements RecordingRepository {
         input.videoUrl,
         input.durationSeconds,
         input.lessonDate,
+        input.thumbnailUrl ?? null,
       ],
     );
     return toRecording(row!);
@@ -225,6 +228,10 @@ export class PostgresRecordingRepository implements RecordingRepository {
     // omitted it, which keeps this one statement instead of a dynamic SET list
     // assembled by string concatenation (CLAUDE.md §8 - no string-built SQL).
     // The casts are needed because a bare NULL parameter has no type.
+    //
+    // thumbnail_url is the one nullable column here, so COALESCE can't tell
+    // "leave it alone" from "clear it" - both arrive as a NULL parameter. $8
+    // carries whether the caller supplied the field at all.
     const row = await this.db.queryOne<RecordingRow>(
       `UPDATE recordings SET
          title            = COALESCE($2::text, title),
@@ -232,10 +239,11 @@ export class PostgresRecordingRepository implements RecordingRepository {
          topics           = COALESCE($4::text[], topics),
          video_url        = COALESCE($5::text, video_url),
          duration_seconds = COALESCE($6::integer, duration_seconds),
-         lesson_date      = COALESCE($7::timestamptz, lesson_date)
+         lesson_date      = COALESCE($7::timestamptz, lesson_date),
+         thumbnail_url    = CASE WHEN $8::boolean THEN $9::text ELSE thumbnail_url END
        WHERE id = $1
        RETURNING id, course_id, module_id, lesson_id, title, chapter, topics,
-                 video_url, duration_seconds, lesson_date, position`,
+                 video_url, duration_seconds, lesson_date, position, thumbnail_url`,
       [
         recordingId,
         patch.title ?? null,
@@ -244,6 +252,8 @@ export class PostgresRecordingRepository implements RecordingRepository {
         patch.videoUrl ?? null,
         patch.durationSeconds ?? null,
         patch.lessonDate ?? null,
+        patch.thumbnailUrl !== undefined,
+        patch.thumbnailUrl ?? null,
       ],
     );
     return row ? toRecording(row) : null;

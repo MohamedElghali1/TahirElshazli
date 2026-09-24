@@ -8,6 +8,7 @@ import {
   ASSESSMENT_TYPE_LABEL,
   formatDate,
   formatRelative,
+  isQuizWork,
 } from '@/lib/format';
 import type { AssessmentDetail } from '@/lib/types';
 import {
@@ -58,7 +59,7 @@ function QuizList({ courseId }: { courseId: string }) {
   const { data, error, loading, reload } = useApi(
     async (token) => {
       const list = await api.assessments.list(token, courseId);
-      const quizItems = list.filter((item) => item.workType === 'google_form');
+      const quizItems = list.filter((item) => isQuizWork(item.workType));
       const details = await Promise.all(
         quizItems.map((item) => api.assessments.get(token, item.id)),
       );

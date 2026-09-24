@@ -231,6 +231,73 @@ describe('Staff and admin API (e2e)', () => {
       expect(library.body.length).toBeGreaterThan(0);
     });
 
+    it('MARK-3: gives an assigned TA the whole task cohort, non-submitters included', async () => {
+      // assess-4 targets group-1 (student-1, student-2). student-1 has an
+      // ungraded submission; student-2 has never submitted at all - the row
+      // `GET .../courses/course-1/submissions` above can never show.
+      const roster = await request(app.getHttpServer())
+        .get('/staff/assessments/assess-4/submissions')
+        .set(bearer(assignedTaToken))
+        .expect(200);
+      expect(roster.body.items.length).toBeGreaterThanOrEqual(2);
+
+      const nonSubmitter = roster.body.items.find(
+        (i: { submitted: boolean }) => i.submitted === false,
+      );
+      expect(nonSubmitter).toMatchObject({
+        submissionId: null,
+        status: 'missing',
+      });
+      // CLAUDE.md §11.1's API half: a missing mark is `null`, never `0`.
+      expect(nonSubmitter.score).toBeNull();
+    });
+
+    it('404s the task roster for a TA who does not hold the course', async () => {
+      await request(app.getHttpServer())
+        .get('/staff/assessments/assess-4/submissions')
+        .set(bearer(unassignedTaToken))
+        .expect(404);
+    });
+
+    describe('BOOK-1/BOOK-3: the mark book grid and its CSV export', () => {
+      it('gives the holding assistant the grid, and 404s the group an assistant does not hold, identically to a genuine miss', async () => {
+        const grid = await request(app.getHttpServer())
+          .get('/staff/groups/group-1/markbook')
+          .set(bearer(assignedTaToken))
+          .expect(200);
+        expect(grid.body.groupId).toBe('group-1');
+        expect(grid.body.columns.length).toBeGreaterThan(0);
+        expect(grid.body.rows.map((r: { studentId: string }) => r.studentId).sort()).toEqual([
+          'student-1',
+          'student-2',
+        ]);
+
+        // D-10, this route's own version: an assistant holding no group at
+        // all gets the same message as a genuinely nonexistent one.
+        const denied = await request(app.getHttpServer())
+          .get('/staff/groups/group-1/markbook')
+          .set(bearer(unassignedTaToken))
+          .expect(404);
+        const missing = await request(app.getHttpServer())
+          .get('/staff/groups/group-nope/markbook')
+          .set(bearer(unassignedTaToken))
+          .expect(404);
+        expect(denied.body.message).toBe(missing.body.message);
+      });
+
+      it('serves the CSV with the right content type and an attachment filename', async () => {
+        const csv = await request(app.getHttpServer())
+          .get('/staff/groups/group-1/markbook.csv')
+          .set(bearer(assignedTaToken))
+          .expect(200);
+        expect(csv.headers['content-type']).toMatch(/^text\/csv/);
+        expect(csv.headers['content-disposition']).toMatch(/attachment/);
+        expect(csv.headers['content-disposition']).toMatch(/filename\*=UTF-8''/);
+        // A gap is an empty CSV cell, never a rendered "0".
+        expect(csv.text).not.toMatch(/,0,/);
+      });
+    });
+
     it.each([
       '/staff/courses/course-2/roster',
       '/staff/courses/course-2/submissions',
@@ -404,6 +471,37 @@ describe('Staff and admin API (e2e)', () => {
           durationSeconds: 600,
         })
         .expect(400);
+    });
+
+    it('rejects a recording whose thumbnail URL is not a URL', async () => {
+      await request(app.getHttpServer())
+        .post('/admin/courses/course-1/recordings')
+        .set(bearer(adminToken))
+        .send({
+          moduleId: 'mod-1',
+          lessonId: 'lesson-1',
+          title: 'Bad thumbnail',
+          videoUrl: 'https://video.example.com/ok',
+          durationSeconds: 600,
+          thumbnailUrl: 'javascript:alert(1)',
+        })
+        .expect(400);
+    });
+
+    it('round-trips a thumbnail URL over HTTP', async () => {
+      const created = await request(app.getHttpServer())
+        .post('/admin/courses/course-1/recordings')
+        .set(bearer(adminToken))
+        .send({
+          moduleId: 'mod-1',
+          lessonId: 'lesson-1',
+          title: 'Thumbnailed over HTTP',
+          videoUrl: 'https://video.example.com/thumb-http',
+          durationSeconds: 600,
+          thumbnailUrl: 'https://cdn.example.com/thumb-http.jpg',
+        })
+        .expect(201);
+      expect(created.body.thumbnailUrl).toBe('https://cdn.example.com/thumb-http.jpg');
     });
   });
 
@@ -2440,6 +2538,7 @@ describe('Staff and admin API (e2e)', () => {
       ['PATCH', 'patch', '', { title: 'x' }],
       ['DELETE', 'delete', '', undefined],
       ['POST targets', 'post', '/targets', { targets: [{ groupId: 'group-1' }] }],
+      ['GET submissions', 'get', '/submissions', undefined],
     ] as const)('%s: a course-2 task for assistant-1 === a nonexistent id', async (_l, method, suffix, body) => {
       const call = (id: string) => {
         const req = request(server())[method](`/staff/assessments/${id}${suffix}`).set(bearer(assignedTaToken));

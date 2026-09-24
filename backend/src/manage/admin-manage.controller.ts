@@ -204,6 +204,7 @@ export class AdminManageController {
       videoUrl: body.videoUrl,
       durationSeconds: body.durationSeconds,
       lessonDate: body.lessonDate,
+      thumbnailUrl: body.thumbnailUrl,
     });
   }
 
