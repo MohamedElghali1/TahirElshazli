@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
   Param,
@@ -10,7 +11,9 @@ import {
   Post,
   Query,
   Request,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { Roles } from '../auth/roles.decorator.js';
 import { STAFF_ALL } from '../auth/staff-roles.js';
 import type { JwtPayload } from '../auth/jwt.strategy.js';
@@ -25,7 +28,9 @@ import {
   type AssessmentRosterResponse,
   type GradingQueueItem,
   type GradingQueueResponse,
+  type MarkbookResponse,
 } from './grading.service.js';
+import { toMarkbookCsv } from './markbook-csv.js';
 import { AnnotationsService } from './annotations.service.js';
 import type { SubmissionAnnotation } from '../assessments/interfaces/assessment-repository.interface.js';
 import { ManageRecordingsService } from './manage-recordings.service.js';
@@ -118,6 +123,42 @@ export class StaffManageController {
     @Request() req: { user: JwtPayload },
   ): Promise<AssessmentRosterResponse> {
     return this.grading.rosterForAssessment(assessmentId, this.actor(req));
+  }
+
+  /**
+   * `BOOK-1`: the student x task grid for one group, term total included.
+   * Group-grain (`D-10`): the path names a group, so this is scoped exactly
+   * like every other `/staff/groups/*` route - see `GradingService.markbook`.
+   */
+  @Get('groups/:groupId/markbook')
+  async markbook(
+    @Param('groupId') groupId: string,
+    @Request() req: { user: JwtPayload },
+  ): Promise<MarkbookResponse> {
+    return this.grading.markbook(groupId, this.actor(req));
+  }
+
+  /**
+   * `BOOK-3`: the same grid as CSV. Calls the identical `markbook` the grid
+   * route does - never a second read - so the file can never disagree with
+   * the screen. `filename*` carries the group's own name through RFC 5987 so
+   * an Arabic group name survives the header (CLAUDE.md §1).
+   */
+  @Get('groups/:groupId/markbook.csv')
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  async markbookCsv(
+    @Param('groupId') groupId: string,
+    @Request() req: { user: JwtPayload },
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<string> {
+    const data = await this.grading.markbook(groupId, this.actor(req));
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="markbook.csv"; filename*=UTF-8''${encodeURIComponent(
+        `markbook-${data.groupName}.csv`,
+      )}`,
+    );
+    return toMarkbookCsv(data);
   }
 
   /**

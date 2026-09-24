@@ -382,6 +382,164 @@ describe('Manage surface', () => {
     });
   });
 
+  describe('GET /staff/groups/:groupId/markbook (BOOK-1)', () => {
+    it('returns every group member and every targeted task, missing marks as null', async () => {
+      // group-1: student-1, student-2. All eight stub assessments target it
+      // (in-memory-assessment.repository.ts). student-2 has never submitted
+      // anything, so their whole row must be gaps rather than absent.
+      const grid = await staff.markbook('group-1', ASSIGNED_TA);
+      expect(grid.groupId).toBe('group-1');
+      expect(grid.columns).toHaveLength(8);
+      expect(grid.rows.map((r) => r.studentId).sort()).toEqual([
+        'student-1',
+        'student-2',
+      ]);
+
+      const row2 = grid.rows.find((r) => r.studentId === 'student-2')!;
+      expect(row2.cells).toHaveLength(8);
+      // The em-dash rule's API half (CLAUDE.md §11.1): null, never 0, never absent.
+      expect(row2.cells.every((c) => c.score === null)).toBe(true);
+      expect(row2.totalScore).toBe(0);
+      expect(row2.totalMaxScore).toBe(0);
+      expect(row2.totalPercent).toBeNull();
+
+      // student-1 has a real, ungraded submission on assess-4 (sub-2) - a gap,
+      // not a fake zero.
+      const row1 = grid.rows.find((r) => r.studentId === 'student-1')!;
+      const assess4Cell = row1.cells.find((c) => c.assessmentId === 'assess-4')!;
+      expect(assess4Cell.score).toBeNull();
+      expect(assess4Cell.awaitingReturn).toBe(false);
+    });
+
+    it("D-47: the term total sums marked tasks only, excluding an unmarked one from both sides", async () => {
+      // A fresh group and student, isolated from the eight-task fixture, so
+      // the totals below are exactly the two tasks this test creates.
+      const group = await groups.create({
+        name: 'Isolated group',
+        teacherId: 'teacher-1',
+        courseId: 'course-1',
+        assistantId: null,
+        meets: null,
+        room: null,
+      });
+      await users.create({
+        email: 'isolated-student@example.com',
+        passwordHash: 'x',
+        name: 'Isolated Student',
+        role: Role.Student,
+        status: 'active',
+      });
+      const student = await users.findByEmail('isolated-student@example.com');
+      await groups.addMember({
+        groupId: group.id,
+        studentId: student!.id,
+        assignedBy: 'teacher-1',
+      });
+
+      const marked = await assessments.create({
+        courseId: 'course-1',
+        lessonId: null,
+        title: 'Marked task',
+        description: '',
+        instructions: '',
+        type: 'homework',
+        workType: 'file_upload',
+        externalUrl: null,
+        topics: [],
+        availableFrom: '2026-01-01T00:00:00Z',
+        availableTo: '2026-12-31T00:00:00Z',
+        dueAt: '2026-06-01T00:00:00Z',
+        maxScore: 10,
+        allowedFileTypes: ['application/pdf'],
+        maxFileSizeBytes: 1024,
+        visibility: 'published',
+        markerId: null,
+        allowResubmission: true,
+        submissionModes: [],
+        draftId: null,
+        attachments: [],
+      });
+      const unmarked = await assessments.create({
+        courseId: 'course-1',
+        lessonId: null,
+        title: 'Unmarked task',
+        description: '',
+        instructions: '',
+        type: 'homework',
+        workType: 'file_upload',
+        externalUrl: null,
+        topics: [],
+        availableFrom: '2026-01-01T00:00:00Z',
+        availableTo: '2026-12-31T00:00:00Z',
+        dueAt: '2026-06-02T00:00:00Z',
+        maxScore: 10,
+        allowedFileTypes: ['application/pdf'],
+        maxFileSizeBytes: 1024,
+        visibility: 'published',
+        markerId: null,
+        allowResubmission: true,
+        submissionModes: [],
+        draftId: null,
+        attachments: [],
+      });
+      await assessments.setTargets(marked.id, [{ groupId: group.id }]);
+      await assessments.setTargets(unmarked.id, [{ groupId: group.id }]);
+
+      const submission = await assessments.createSubmission(
+        marked.id,
+        student!.id,
+        'https://storage.example.com/submissions/marked.pdf',
+        null,
+        null,
+      );
+      await assessments.gradeSubmission(submission.id, {
+        score: 10,
+        feedback: null,
+        annotatedFileUrl: undefined,
+      });
+
+      const grid = await staff.markbook(group.id, ADMIN);
+      const row = grid.rows.find((r) => r.studentId === student!.id)!;
+      // 10/10, not 10/20 - the unmarked task counts on neither side (D-47).
+      expect(row.totalScore).toBe(10);
+      expect(row.totalMaxScore).toBe(10);
+      expect(row.totalPercent).toBe(100);
+    });
+
+    it('D-48: a corrected-but-unreturned mark is shown and flagged, and counts toward the total', async () => {
+      // sub-2 (assess-4, 20) is submitted and ungraded in the seed. Grading it
+      // without returning is exactly the state the ruling describes.
+      await staff.grade('sub-2', { score: 17 }, ASSIGNED_TA);
+
+      const grid = await staff.markbook('group-1', ASSIGNED_TA);
+      const row1 = grid.rows.find((r) => r.studentId === 'student-1')!;
+      const cell = row1.cells.find((c) => c.assessmentId === 'assess-4')!;
+      expect(cell.score).toBe(17);
+      expect(cell.awaitingReturn).toBe(true);
+      // It is a real mark, so it counts toward the total like any other.
+      expect(row1.totalMaxScore).toBeGreaterThanOrEqual(20);
+    });
+
+    it('404s a group the assistant does not hold, identically to a genuine miss', async () => {
+      const denied = await staff
+        .markbook('group-2', ASSIGNED_TA)
+        .catch((e: Error) => e.message);
+      const missing = await staff
+        .markbook('group-nope', ASSIGNED_TA)
+        .catch((e: Error) => e.message);
+      expect(denied).toBe(missing);
+      await expect(staff.markbook('group-2', ASSIGNED_TA)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('lets the teacher read any group', async () => {
+      await expect(staff.markbook('group-2', ADMIN)).resolves.toMatchObject({
+        groupId: 'group-2',
+      });
+    });
+  });
+
   describe('POST /staff/submissions/:id/grade', () => {
     it('records a mark and returns it', async () => {
       const result = await staff.grade(

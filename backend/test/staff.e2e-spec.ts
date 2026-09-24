@@ -259,6 +259,45 @@ describe('Staff and admin API (e2e)', () => {
         .expect(404);
     });
 
+    describe('BOOK-1/BOOK-3: the mark book grid and its CSV export', () => {
+      it('gives the holding assistant the grid, and 404s the group an assistant does not hold, identically to a genuine miss', async () => {
+        const grid = await request(app.getHttpServer())
+          .get('/staff/groups/group-1/markbook')
+          .set(bearer(assignedTaToken))
+          .expect(200);
+        expect(grid.body.groupId).toBe('group-1');
+        expect(grid.body.columns.length).toBeGreaterThan(0);
+        expect(grid.body.rows.map((r: { studentId: string }) => r.studentId).sort()).toEqual([
+          'student-1',
+          'student-2',
+        ]);
+
+        // D-10, this route's own version: an assistant holding no group at
+        // all gets the same message as a genuinely nonexistent one.
+        const denied = await request(app.getHttpServer())
+          .get('/staff/groups/group-1/markbook')
+          .set(bearer(unassignedTaToken))
+          .expect(404);
+        const missing = await request(app.getHttpServer())
+          .get('/staff/groups/group-nope/markbook')
+          .set(bearer(unassignedTaToken))
+          .expect(404);
+        expect(denied.body.message).toBe(missing.body.message);
+      });
+
+      it('serves the CSV with the right content type and an attachment filename', async () => {
+        const csv = await request(app.getHttpServer())
+          .get('/staff/groups/group-1/markbook.csv')
+          .set(bearer(assignedTaToken))
+          .expect(200);
+        expect(csv.headers['content-type']).toMatch(/^text\/csv/);
+        expect(csv.headers['content-disposition']).toMatch(/attachment/);
+        expect(csv.headers['content-disposition']).toMatch(/filename\*=UTF-8''/);
+        // A gap is an empty CSV cell, never a rendered "0".
+        expect(csv.text).not.toMatch(/,0,/);
+      });
+    });
+
     it.each([
       '/staff/courses/course-2/roster',
       '/staff/courses/course-2/submissions',

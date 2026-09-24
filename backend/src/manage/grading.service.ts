@@ -21,6 +21,10 @@ import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import { actorRoleOf } from '../auth/actor-role.js';
 import { ASSESSMENT_NOT_FOUND } from './assessment-authoring.service.js';
+// Same message an out-of-scope or nonexistent group gets everywhere else
+// (`D-10`) - imported rather than re-declared, so the anti-enumeration
+// property can never drift by one byte between the two files that throw it.
+import { GROUP_NOT_FOUND } from '../groups/groups.service.js';
 
 /** A submission is awaiting marking exactly while nobody has corrected it. */
 export type GradingStatus = 'awaiting' | 'graded';
@@ -117,6 +121,52 @@ export interface GradeInput {
   score: number;
   feedback?: string;
   annotatedFileUrl?: string;
+}
+
+/** One task, as a mark book column. */
+export interface MarkbookColumn {
+  assessmentId: string;
+  title: string;
+  maxScore: number;
+}
+
+/**
+ * One student's mark for one task, or a gap.
+ *
+ * `score: null` is the em-dash rule's API half (CLAUDE.md §11.1) - never `0`
+ * for a non-submitter or an unmarked submission.
+ */
+export interface MarkbookCell {
+  assessmentId: string;
+  score: number | null;
+  /**
+   * `D-48`: a mark that is corrected but not yet returned is still shown -
+   * this is a staff working view, so a marker must see their own progress -
+   * but flagged, so nobody reading the grid assumes the student has seen it.
+   * A boolean, not a status string: the only fact this adds to `score` is
+   * whether the student may see it yet.
+   */
+  awaitingReturn: boolean;
+}
+
+/** One student's row: a cell per column, plus the term total (`D-47`). */
+export interface MarkbookRow {
+  studentId: string;
+  studentName: string;
+  studentEmail: string;
+  cells: MarkbookCell[];
+  /** Sum of scores over marked tasks only - an unmarked task counts on neither side. */
+  totalScore: number;
+  totalMaxScore: number;
+  /** `null` when nothing is marked yet, same as an average with no data. */
+  totalPercent: number | null;
+}
+
+export interface MarkbookResponse {
+  groupId: string;
+  groupName: string;
+  columns: MarkbookColumn[];
+  rows: MarkbookRow[];
 }
 
 @Injectable()
@@ -378,6 +428,100 @@ export class GradingService {
       maxScore: assessment.maxScore,
       items,
     };
+  }
+
+  /**
+   * `BOOK-1`/`BOOK-3`: the student x task grid for one group, term total
+   * included. Backs both the grid route and the CSV export - one method, so
+   * the export can never disagree with what the screen shows.
+   *
+   * **Group grain, like every other `/staff/groups/*` route** (`D-10`): the
+   * path names a group, so this goes through the same `mayReachGroup` check
+   * `GroupsService.requireGroup` uses, and answers with the identical
+   * `GROUP_NOT_FOUND` message - not re-implemented, because the
+   * anti-enumeration property only holds while every caller throws the same
+   * string.
+   *
+   * Columns are `findByCourseForGroups` narrowed to this one group - exactly
+   * what was targeted at it, not every assessment on the course (the same
+   * read `GroupsService.report` uses for its assessment count).
+   *
+   * Four reads total regardless of roster or task count: the targeted
+   * assessments, the group's memberships, the members' user rows, and every
+   * submission across those assessments in one batch - never a query per
+   * cell.
+   */
+  async markbook(groupId: string, actor: StaffActor): Promise<MarkbookResponse> {
+    const group = await this.groupRepo.findById(groupId);
+    if (!group) {
+      throw new NotFoundException(GROUP_NOT_FOUND);
+    }
+    if (!(await this.scope.mayReachGroup(groupId, actor))) {
+      throw new NotFoundException(GROUP_NOT_FOUND);
+    }
+
+    const [assessments, memberships] = await Promise.all([
+      this.assessmentRepo.findByCourseForGroups(group.courseId, [groupId]),
+      this.groupRepo.findMembers(groupId),
+    ]);
+
+    const columns: MarkbookColumn[] = assessments
+      .slice()
+      .sort((a, b) => a.dueAt.localeCompare(b.dueAt) || a.id.localeCompare(b.id))
+      .map((a) => ({ assessmentId: a.id, title: a.title, maxScore: a.maxScore }));
+
+    const studentIds = [...new Set(memberships.map((m) => m.studentId))];
+    const [students, submissions] = await Promise.all([
+      this.userRepo.findByIds(studentIds),
+      this.assessmentRepo.findSubmissionsForAssessments(assessments.map((a) => a.id)),
+    ]);
+    const studentById = new Map(students.map((u) => [u.id, u]));
+    // One submission per (student, assessment) - a student submits a task once.
+    const submissionByKey = new Map(
+      submissions.map((s) => [`${s.studentId}:${s.assessmentId}`, s]),
+    );
+
+    const rows: MarkbookRow[] = studentIds.flatMap((studentId) => {
+      const student = studentById.get(studentId);
+      // A membership whose account is gone is dropped, same as `GroupsService.members`.
+      if (!student) return [];
+
+      let totalScore = 0;
+      let totalMaxScore = 0;
+      const cells: MarkbookCell[] = columns.map((column) => {
+        const submission = submissionByKey.get(`${studentId}:${column.assessmentId}`);
+        // `D-47`: marked means a mark actually exists - `correctedAt` set,
+        // per `MARK-2` - regardless of whether it has been returned yet.
+        const marked = submission?.correctedAt != null && submission.score !== null;
+        if (marked) {
+          totalScore += submission!.score as number;
+          totalMaxScore += column.maxScore;
+        }
+        return {
+          assessmentId: column.assessmentId,
+          score: marked ? (submission!.score as number) : null,
+          awaitingReturn: marked && submission!.returnedAt === null,
+        };
+      });
+
+      return [
+        {
+          studentId,
+          studentName: student.name,
+          studentEmail: student.email,
+          cells,
+          totalScore,
+          totalMaxScore,
+          totalPercent:
+            totalMaxScore > 0 ? Math.round((totalScore / totalMaxScore) * 100) : null,
+        },
+      ];
+    });
+
+    // Alphabetical - the class list's own order, same as `rosterForAssessment`.
+    rows.sort((a, b) => a.studentName.localeCompare(b.studentName));
+
+    return { groupId: group.id, groupName: group.name, columns, rows };
   }
 
   /**
