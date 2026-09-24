@@ -2308,3 +2308,38 @@ with the 4 pre-existing warnings · `typecheck:drift` clean.
 `backend/test/drift/mirror-drift.check.ts`, `frontend/lib/types.ts`,
 `frontend/app/(app)/manage/activity/page.tsx`, `DATABASE_PLAN.md`, `ARCHITECTURE.md`, `CLAUDE.md`,
 `PHASE_ROADMAP.md`, `IMPLEMENTATION_PLAN.md`.
+
+## 2026-09-25 - The browser check unit 8 owed, and the one bug it found
+
+Unit 8 landed with "no screen has been opened in a browser" as its largest recorded gap. Done now,
+against the running dev server: `/timetable`, `/attendance`, `/manage/live-sessions`, at 1280x800 and
+375x812, in light and dark, LTR and RTL, with an Arabic session title and `ليلى فهمي` in the data.
+
+**`F8-1`: every score rendered its fraction backwards in RTL.** `2 / 6` is correct in the DOM, but
+`/` is bidi-neutral between two number runs, so in an RTL paragraph the runs reorder and the reader
+sees `6 / 2`. On the attendance screen that is a student reading 6-out-of-2 attendance. It looks
+perfectly correct in LTR, which is why review after review missed it.
+
+Fixed once at the seam: `.num` in `app/tokens/semantic.css` now carries `direction: ltr` and
+`unicode-bidi: isolate`. A number run is LTR in every locale. Both `Score` and `StatNumber` carry
+`.num`, so every caller was affected and every caller is fixed - patching the attendance screen alone
+would have left the mark book, the tabs counts and the avatar overflow badge still reversed.
+
+Verified as an A/B under a genuinely server-rendered `lang="ar" dir="rtl"`, not a runtime attribute
+flip: with the rule removed the `2` sits at x=292 and the `6` at x=261 (reversed); with it restored,
+266 and 290 (correct), while a plain control span in the same paragraph still reverses - which is
+what proves the page context really was RTL. **`check-tokens.mjs` now fails if the rule is removed**,
+and that guard was seen failing before it was seen passing.
+
+**Everything else passed.** Sidebars mirror correctly (x 0->1036 at desktop), the mobile drawer is
+fully offscreen when closed in both directions, nothing is pushed out of the viewport, no screen
+scrolls horizontally, and dark theme resolves correctly on a fresh load.
+
+**Two things I got wrong while checking, recorded because they will mislead the next person too.**
+Setting `dir`/`data-theme` at runtime in the Browser pane does **not** restyle reliably - a control
+test (forcing `--fg-2` red) changed nothing, and an apparent "dark theme is broken" reading vanished
+on a fresh load. And **Tailwind's `rtl:`/`ltr:` variants here key off `:lang()`, not `[dir]`**, so
+`dir="rtl"` alone silently fails to activate them. That confound produced a phantom "the closed
+mobile drawer leaves 131px on screen" finding; measured properly with `lang="ar"` the existing
+`max-md:-translate-x-full max-md:rtl:translate-x-full` is correct, and the change I had made to it
+was reverted. **Set `lang` and `dir` together, server-side, and reload.**

@@ -192,4 +192,11 @@ body { margin: 0; font-size: var(--fs-base); line-height: var(--lh-body); -webki
 
 :focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 
-.num, .tabular { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+/* A number run is LTR in every locale, and `isolate` keeps it that way inside an
+   RTL paragraph. Without it the `/` in a score is bidi-neutral between two number
+   runs, so `2 / 6` renders as `6 / 2` under `dir="rtl"` — the DOM is right and the
+   reader sees the fraction inverted. Found on the unit 8 attendance screen; fixed
+   here rather than there because `Score` and `StatNumber` both carry `.num` and
+   every other caller had the same bug. */
+.num, .tabular { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  direction: ltr; unicode-bidi: isolate; }

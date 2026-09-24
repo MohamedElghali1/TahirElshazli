@@ -540,9 +540,14 @@ for their own groups only** — and unit 8 built it that way, checked with
 **Landed on `redesign` 2026-09-24.** The migration is **`026`**, not the `019` the phase plan
 claimed: origin had taken `019`-`025` while unit 8 ran in a parallel checkout. Merged-tree gates:
 803 unit / 48 files, 402 e2e, 191 integration (0 skipped), `001-026` from an empty schema, both
-typechecks 0, lint clean. **Still owed:** no unit 8 screen has been opened in a browser, so the
-`dir="rtl"` and dark-theme checks (CLAUDE.md §11) are outstanding — see
-`docs/phases/unit-8/HANDOFF.md` §10 for the five carried items.
+typechecks 0, lint clean.
+
+**Browser check done 2026-09-25**, closing the unit's largest recorded gap. `/timetable`,
+`/attendance` and `/manage/live-sessions` at 1280×800 and 375×812, light and dark, LTR and RTL,
+with an Arabic session title. Layout, mirroring, the mobile drawer and dark theme all correct.
+One real bug found and fixed — **`F8-1`**: every score rendered its fraction reversed in RTL
+(`2 / 6` as `6 / 2`), fixed at `.num` and now guarded by `check-tokens.mjs`. Four carried items
+remain in `docs/phases/unit-8/HANDOFF.md` §10.
 
 ---
 
@@ -648,8 +653,9 @@ mixes with the console's 13px. `/catalog` and the student `/achievements` rail e
 7 and 8 were in flight on other branches.
 
 - **Landed `[x]`:** `SITE-1`…`SITE-5`, `STU-2`, `STU-4`, `STU-5`, `STU-7`.
-- **Deferred:** `STU-1` — composes unit 8's attendance figures, and migration `019` is still absent
-  from `redesign`. The only item genuinely waiting on another unit.
+- **Unblocked 2026-09-24, was deferred:** `STU-1` — composes unit 8's attendance figures, which
+  landed on `redesign` the same day as migration `026`. The dependency has cleared; the item is
+  open work, not blocked work.
 - **Closed `[x]`:** `STU-3` — player, chapters, the work set, **its material**, and the
   next-recording card. The material half was the open one; the client ruled 2026-09-24 to follow the
   design, so migration `025` adds `materials.lesson_id`. No new route and no staff control: the
@@ -664,10 +670,11 @@ mixes with the console's 13px. `/catalog` and the student `/achievements` rail e
 it actually needed was `F13-4` — every Google Form task was rendering on **both** `/homework` and
 `/quizzes`.
 
-**`STU-1` is the last item.** It composes unit 8's attendance figures, and unit 8 has not landed —
-its migration slot is now `026`, since `025` is taken by this unit's material relation. Everything
-else in unit 13 is `[x]`: `F13-2` ruled on (no avatars), `STU-3`'s material gap closed (follow the
-design). §2 condition 9 is unmet by exactly one dependency, held outside this unit.
+**`STU-1` is the last item, and it is now unblocked.** It composes unit 8's attendance figures;
+unit 8 landed on `redesign` 2026-09-24 as migration `026` (`025` being this unit's material
+relation), so `GET /students/me/attendance` exists. Everything else in unit 13 is `[x]`: `F13-2`
+ruled on (no avatars), `STU-3`'s material gap closed (follow the design). §2 condition 9 is unmet
+by exactly one item, and that item is no longer waiting on anything.
 
 **The finding that dominated the unit (`F13-1`).** `SITE-1`…`SITE-5` were not a redesign. Every
 marketing and auth surface was still written against the token vocabulary `ad238a7` deleted with

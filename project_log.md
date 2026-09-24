@@ -4229,3 +4229,20 @@ Merged tree: 803 unit / 48 files, 402 e2e, 191 integration (0 skipped, `001–02
 PostgreSQL 15.19), both typechecks 0, lint clean. The open items carried forward are unchanged and
 listed in `docs/phases/unit-8/HANDOFF.md` §10 — chief among them that **no unit 8 screen has been
 opened in a browser**, so the RTL and dark-theme checks CLAUDE.md §11 asks for are still owed.
+
+**The unit 8 browser check, 2026-09-25.** The gap unit 8 recorded as its largest - no screen ever
+opened in a browser - is closed. Three screens, two viewport sizes, both themes, both directions,
+with Arabic content.
+
+It found one real bug, and it was not in unit 8's code: every score on the platform rendered its
+fraction reversed under RTL. `2 / 6` in the DOM, `6 / 2` on screen, because `/` is bidi-neutral
+between two numbers. An Arabic-reading student would have read their attendance backwards. One line
+on `.num` fixes it for `Score`, `StatNumber` and every other caller at once, and the token check now
+fails if anyone removes it.
+
+The more useful lesson was about the instrument. Flipping `dir` or `data-theme` at runtime in the
+Browser pane does not reliably restyle, and Tailwind's `rtl:` variants key off `:lang()` rather than
+`[dir]` - between them those two facts produced one phantom defect (a mobile drawer that measured as
+half-visible and is actually fine) and one phantom all-clear. Both were caught by running a control
+alongside the measurement. Set `lang` and `dir` together, server-side, reload, and always measure a
+control you know the answer for.

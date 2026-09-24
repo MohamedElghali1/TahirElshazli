@@ -112,6 +112,18 @@ for (const file of SOURCE_DIRS.flatMap((d) => walk(join(ROOT, d)))) {
   });
 }
 
+// --- 2b. `.num` must stay bidi-isolated ------------------------------------
+// A score is `2 / 6` in the DOM, but `/` is bidi-neutral between two number
+// runs, so under `dir="rtl"` it renders as `6 / 2` unless the run is isolated.
+// Caught on unit 8's attendance screen; both `Score` and `StatNumber` carry
+// `.num`, so the rule lives there and this asserts it stays.
+const semanticCss = readFileSync(join(ROOT, 'app/tokens/semantic.css'), 'utf8');
+const numRule = semanticCss.match(/\.num[^{]*\{[^}]*\}/s);
+const numBidiBroken =
+  !numRule ||
+  !/unicode-bidi:\s*isolate/.test(numRule[0]) ||
+  !/direction:\s*ltr/.test(numRule[0]);
+
 // --- 3. Report -------------------------------------------------------------
 let failed = false;
 
@@ -129,6 +141,16 @@ if (sizeAsColour.length > 0) {
   console.error('  Use a named utility (`text-fg`, `text-base`, `text-m-body`),');
   console.error('  or `text-(length:--x)` when the size really must come from a variable.\n');
   for (const r of sizeAsColour) console.error(`  ${r.rel}:${r.line}  ${r.name}\n      ${r.text}`);
+}
+
+if (numBidiBroken) {
+  failed = true;
+  console.error('');
+  console.error('✖ `.num` in app/tokens/semantic.css lost `direction: ltr`');
+  console.error('  or `unicode-bidi: isolate`. Every score then renders its');
+  console.error('  fraction reversed under dir=rtl (2 / 6 shows as 6 / 2),');
+  console.error('  while looking perfectly correct in LTR.');
+  console.error('');
 }
 
 if (failed) {
