@@ -28,6 +28,8 @@ import { PostgresSubmissionAnnotationRepository } from '../src/assessments/repos
 import { PostgresNotificationPreferencesRepository } from '../src/settings/repositories/postgres-notification-preferences.repository.js';
 import type { NewAssessment } from '../src/assessments/interfaces/assessment-repository.interface.js';
 import { Role } from '../src/auth/roles.enum.js';
+import { PostgresGoogleIdentityRepository } from '../src/auth/google/repositories/postgres-google-identity.repository.js';
+import { GoogleIdentityConflictError } from '../src/auth/google/interfaces/google-identity-repository.interface.js';
 
 /**
  * Executes the real SQL against a real Postgres.
@@ -3104,6 +3106,80 @@ describeIfDb('Postgres repositories', () => {
       prefs = await repo.get('student-1');
       expect(prefs.submissions).toBe(true);
       expect(prefs.registrations).toBe(false);
+    });
+  });
+
+  /**
+   * Migration 023 and its repository (`GAUTH-1`, unit 14). Both uniqueness
+   * rules are the link-collision refusal, so they are proven here against the
+   * constraint itself - a race past the service's pre-check lands on these.
+   */
+  describe('google identities (migration 023)', () => {
+    const repo = () => new PostgresGoogleIdentityRepository(db);
+    const freshUser = async (tag: string) =>
+      new PostgresUserRepository(db).create({
+        email: `gid-${tag}-${Date.now()}@example.com`,
+        passwordHash: 'x',
+        name: `GID ${tag}`,
+        role: Role.Student,
+        status: 'active',
+      });
+
+    it('stores, finds by sub and by user, and removes a link', async () => {
+      const user = await freshUser('basic');
+      const created = await repo().create({
+        userId: user.id,
+        googleSub: `sub-basic-${user.id}`,
+        email: 'someone@gmail.com',
+        hd: null,
+      });
+      expect(created.linkedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      expect(await repo().findBySub(`sub-basic-${user.id}`)).toEqual(created);
+      expect(await repo().findByUser(user.id)).toEqual(created);
+
+      expect(await repo().removeForUser(user.id)).toEqual(created);
+      expect(await repo().findByUser(user.id)).toBeNull();
+      expect(await repo().removeForUser(user.id)).toBeNull();
+    });
+
+    it('refuses a second link for one user, and one Google account for two users', async () => {
+      const a = await freshUser('a');
+      const b = await freshUser('b');
+      await repo().create({ userId: a.id, googleSub: `sub-a-${a.id}`, email: 'a@x.org', hd: 'x.org' });
+
+      await expect(
+        repo().create({ userId: a.id, googleSub: `sub-other-${a.id}`, email: 'a2@x.org', hd: null }),
+      ).rejects.toEqual(new GoogleIdentityConflictError('user'));
+      await expect(
+        repo().create({ userId: b.id, googleSub: `sub-a-${a.id}`, email: 'a@x.org', hd: 'x.org' }),
+      ).rejects.toEqual(new GoogleIdentityConflictError('google_sub'));
+      // Neither refusal wrote anything.
+      expect(await repo().findByUser(b.id)).toBeNull();
+      expect((await repo().findByUser(a.id))!.googleSub).toBe(`sub-a-${a.id}`);
+    });
+
+    it('holds its constraints in SQL: empty sub, unknown user, and the cascade', async () => {
+      await expect(
+        db.query(
+          `INSERT INTO user_google_identities (user_id, google_sub, email) VALUES ('student-1', '', 'e@x.org')`,
+        ),
+      ).rejects.toThrow();
+      await expect(
+        db.query(
+          `INSERT INTO user_google_identities (user_id, google_sub, email) VALUES ('no-such-user', 's-x', 'e@x.org')`,
+        ),
+      ).rejects.toThrow();
+
+      const doomed = await freshUser('cascade');
+      await repo().create({ userId: doomed.id, googleSub: `sub-c-${doomed.id}`, email: 'c@x.org', hd: null });
+      await db.query('DELETE FROM users WHERE id = $1', [doomed.id]);
+      expect(await repo().findBySub(`sub-c-${doomed.id}`)).toBeNull();
+
+      const [col] = await db.query<{ datetime_precision: number }>(
+        `SELECT datetime_precision FROM information_schema.columns
+          WHERE table_name = 'user_google_identities' AND column_name = 'linked_at'`,
+      );
+      expect(col.datetime_precision).toBe(3);
     });
   });
 });
