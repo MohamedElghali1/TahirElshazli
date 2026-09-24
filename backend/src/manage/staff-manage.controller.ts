@@ -22,6 +22,7 @@ import {
 } from './manage.service.js';
 import {
   GradingService,
+  type AssessmentRosterResponse,
   type GradingQueueItem,
   type GradingQueueResponse,
 } from './grading.service.js';
@@ -103,6 +104,20 @@ export class StaffManageController {
     @Request() req: { user: JwtPayload },
   ): Promise<GradingQueueResponse> {
     return this.grading.queue(courseId, this.actor(req), { status: query.status });
+  }
+
+  /**
+   * `MARK-3`: one task's whole cohort, non-submitters included - the roster
+   * `queue` above cannot show, because a non-submitter never produces a row.
+   * No course id in the path: resolved from the assessment itself, same
+   * reasoning as `grade` below.
+   */
+  @Get('assessments/:assessmentId/submissions')
+  async assessmentSubmissions(
+    @Param('assessmentId') assessmentId: string,
+    @Request() req: { user: JwtPayload },
+  ): Promise<AssessmentRosterResponse> {
+    return this.grading.rosterForAssessment(assessmentId, this.actor(req));
   }
 
   /**

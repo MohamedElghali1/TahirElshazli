@@ -83,6 +83,7 @@ describe('Manage surface', () => {
   let audit: AuditService;
   let assessments: InMemoryAssessmentRepository;
   let users: InMemoryUserRepository;
+  let groups: InMemoryGroupRepository;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -162,6 +163,7 @@ describe('Manage surface', () => {
     audit = module.get(AuditService);
     assessments = module.get(ASSESSMENT_REPOSITORY);
     users = module.get(USER_REPOSITORY);
+    groups = module.get(GROUP_REPOSITORY);
   });
 
   describe('GET /staff/overview', () => {
@@ -257,6 +259,126 @@ describe('Manage surface', () => {
       await expect(staff.submissions('course-2', {}, ASSIGNED_TA)).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  describe('GET /staff/assessments/:id/submissions (MARK-3)', () => {
+    it('returns every targeted student, non-submitters included, and never fakes a zero score', async () => {
+      // assess-4 targets group-1 by default (student-1, student-2). student-1
+      // has an ungraded submission (sub-2); student-2 has none at all.
+      const roster = await staff.assessmentSubmissions('assess-4', ASSIGNED_TA);
+      expect(roster.items).toHaveLength(2);
+
+      const submitter = roster.items.find((i) => i.studentId === 'student-1');
+      expect(submitter).toMatchObject({ submitted: true, status: 'awaiting' });
+      expect(submitter?.score).toBeNull(); // genuinely ungraded, not a fake zero
+
+      const nonSubmitter = roster.items.find((i) => i.studentId === 'student-2');
+      expect(nonSubmitter).toMatchObject({
+        submitted: false,
+        submissionId: null,
+        status: 'missing',
+      });
+      // The em-dash rule's API half (CLAUDE.md §11.1): null, never 0.
+      expect(nonSubmitter?.score).toBeNull();
+    });
+
+    it('deduplicates a student targeted through two groups', async () => {
+      await assessments.setTargets('assess-2', [
+        { groupId: 'group-1' },
+        { groupId: 'group-2' },
+      ]);
+      // group-1: student-1, student-2. group-2: student-1. Teacher is
+      // unscoped, so this exercises the join, not the narrowing.
+      const roster = await staff.assessmentSubmissions('assess-2', ADMIN);
+      const ids = roster.items.map((i) => i.studentId);
+      expect(ids.filter((id) => id === 'student-1')).toHaveLength(1);
+      expect(new Set(ids).size).toBe(ids.length);
+    });
+
+    it('narrows an assistant to only the groups they hold, even when the task targets more', async () => {
+      const group3 = await groups.create({
+        name: 'IGCSE Chemistry — Monday 17:00',
+        teacherId: 'teacher-1',
+        courseId: 'course-1',
+        assistantId: null,
+        meets: 'Monday 17:00',
+        room: null,
+      });
+      await users.create({
+        email: 'student3@example.com',
+        passwordHash: 'x',
+        name: 'Student Three',
+        role: Role.Student,
+        status: 'active',
+      });
+      const created = await users.findByEmail('student3@example.com');
+      await groups.addMember({
+        groupId: group3.id,
+        studentId: created!.id,
+        assignedBy: 'teacher-1',
+      });
+      // A 3-group task (assistant-1 holds only group-1) - the case the brief
+      // names.
+      await assessments.setTargets('assess-2', [
+        { groupId: 'group-1' },
+        { groupId: 'group-2' },
+        { groupId: group3.id },
+      ]);
+
+      const asAssistant = await staff.assessmentSubmissions('assess-2', ASSIGNED_TA);
+      const assistantIds = asAssistant.items.map((i) => i.studentId);
+      // group-1's own roster only - genuinely absent, not merely unflagged.
+      expect(new Set(assistantIds)).toEqual(new Set(['student-1', 'student-2']));
+      expect(assistantIds).not.toContain(created!.id);
+
+      const asAdmin = await staff.assessmentSubmissions('assess-2', ADMIN);
+      expect(asAdmin.items.map((i) => i.studentId)).toContain(created!.id);
+    });
+
+    it('404s an assessment on a course the assistant does not hold', async () => {
+      const created = await assessments.create({
+        courseId: 'course-2',
+        lessonId: null,
+        title: 'Course-2 task',
+        description: '',
+        instructions: '',
+        type: 'homework',
+        workType: 'file_upload',
+        externalUrl: null,
+        topics: [],
+        availableFrom: '2026-01-01T00:00:00Z',
+        availableTo: '2026-12-31T00:00:00Z',
+        dueAt: '2026-06-01T00:00:00Z',
+        maxScore: 20,
+        allowedFileTypes: ['application/pdf'],
+        maxFileSizeBytes: 1024,
+        visibility: 'published',
+        markerId: null,
+        allowResubmission: true,
+        submissionModes: [],
+        draftId: null,
+        attachments: [],
+      });
+      await assessments.setTargets(created.id, [{ groupId: 'group-2' }]);
+
+      await expect(
+        staff.assessmentSubmissions(created.id, ASSIGNED_TA),
+      ).rejects.toThrow(NotFoundException);
+
+      const outOfScope = await staff
+        .assessmentSubmissions(created.id, ASSIGNED_TA)
+        .catch((error: Error) => error.message);
+      const nonexistent = await staff
+        .assessmentSubmissions('assess-does-not-exist', ASSIGNED_TA)
+        .catch((error: Error) => error.message);
+      expect(outOfScope).toBe(nonexistent);
+    });
+
+    it('returns an empty list rather than throwing for a task with no targets', async () => {
+      await assessments.setTargets('assess-1', []);
+      const roster = await staff.assessmentSubmissions('assess-1', ADMIN);
+      expect(roster.items).toEqual([]);
     });
   });
 

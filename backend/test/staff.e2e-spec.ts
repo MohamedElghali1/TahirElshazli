@@ -231,6 +231,34 @@ describe('Staff and admin API (e2e)', () => {
       expect(library.body.length).toBeGreaterThan(0);
     });
 
+    it('MARK-3: gives an assigned TA the whole task cohort, non-submitters included', async () => {
+      // assess-4 targets group-1 (student-1, student-2). student-1 has an
+      // ungraded submission; student-2 has never submitted at all - the row
+      // `GET .../courses/course-1/submissions` above can never show.
+      const roster = await request(app.getHttpServer())
+        .get('/staff/assessments/assess-4/submissions')
+        .set(bearer(assignedTaToken))
+        .expect(200);
+      expect(roster.body.items.length).toBeGreaterThanOrEqual(2);
+
+      const nonSubmitter = roster.body.items.find(
+        (i: { submitted: boolean }) => i.submitted === false,
+      );
+      expect(nonSubmitter).toMatchObject({
+        submissionId: null,
+        status: 'missing',
+      });
+      // CLAUDE.md §11.1's API half: a missing mark is `null`, never `0`.
+      expect(nonSubmitter.score).toBeNull();
+    });
+
+    it('404s the task roster for a TA who does not hold the course', async () => {
+      await request(app.getHttpServer())
+        .get('/staff/assessments/assess-4/submissions')
+        .set(bearer(unassignedTaToken))
+        .expect(404);
+    });
+
     it.each([
       '/staff/courses/course-2/roster',
       '/staff/courses/course-2/submissions',
@@ -2242,6 +2270,7 @@ describe('Staff and admin API (e2e)', () => {
       ['PATCH', 'patch', '', { title: 'x' }],
       ['DELETE', 'delete', '', undefined],
       ['POST targets', 'post', '/targets', { targets: [{ groupId: 'group-1' }] }],
+      ['GET submissions', 'get', '/submissions', undefined],
     ] as const)('%s: a course-2 task for assistant-1 === a nonexistent id', async (_l, method, suffix, body) => {
       const call = (id: string) => {
         const req = request(server())[method](`/staff/assessments/${id}${suffix}`).set(bearer(assignedTaToken));

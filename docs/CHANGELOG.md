@@ -1875,3 +1875,41 @@ types and `StaffActor` gained a required `id`, without the three calling modules
 rather than a cosmetic issue. Recorded here, not fixed: it is outside unit 7's scope (§12 — record
 what you find and move on), and the modules belong to units that landed while unit 7 was in
 progress.
+
+## 2026-09-24 — `D-46` and `MARK-3`: the roster, not the rows
+
+Slice 7e adds `GET /staff/assessments/:assessmentId/submissions`. The only staff view of submissions
+was a whole course's queue built from rows that **exist**, so a student who handed in nothing
+produced no row and was invisible. That is the wrong shape for marking one task: a marker needs the
+cohort, with the non-submitters visible *as* non-submitters.
+
+This is the answer to the old "no `missed` status" gap — you do not need a status on a row that is
+not there, you need the roster. `AssessmentRosterItem` is deliberately **not** `GradingQueueItem`
+with optional fields bolted on: a non-submitter has no `submissionId`, and every submission-only
+field is `null` rather than absent, so a caller cannot mistake "field omitted" for "field checked
+and empty". `score` is `null`, never `0` — §11.1's em-dash rule, in its API half.
+
+**`D-46`: the route is on the group grain.** §7 requires saying which grain a new staff route sits
+on, and this one names an *assessment*, so the answer was not automatic. An assistant sees only
+students in groups they hold, even when the task targets groups they do not — a three-group task
+shows one group's students to an assistant holding one. It follows `D-33`, which already narrowed
+assistants to held groups when *targeting* a task, and `AUTH-2`, which exists precisely because the
+course grain handed back every cohort on a course. A submissions view ignoring held groups would
+have reopened that leak behind a new route.
+
+The narrowing happens **at read time** via `StaffScopeService.reachableGroupIds`, not by filtering a
+wider result afterwards — and the file fetch is restricted to in-scope submissions, so another
+cohort's attachments are never even loaded. A task with no reachable target returns an empty list
+rather than an error: a filter matching nothing is not a failure.
+
+**Fan-out, checked because §1 says it is still worth checking:** batched throughout — one
+`findByIds`, one `findSubmissionsForAssessments`, one `findFilesForSubmissions` — with the only
+per-group read being `findMembers`, bounded by ~10 groups. A three-group task issues three of those,
+not one per student. A student in two targeted groups appears once.
+
+**The security test proves both directions**, which is the part most easily faked here: it asserts
+exact set equality for the assistant *and* that an admin does see the excluded student. Without the
+second half the test would pass merely because that student was never created.
+
+Slice 7a's `[~]` was stale and is now `[x]`: all eight methods verified present in
+`postgres-assessment.repository.ts`, not merely in the interface.

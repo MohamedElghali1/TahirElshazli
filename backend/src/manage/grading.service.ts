@@ -13,11 +13,14 @@ import type {
   StoredSubmission,
 } from '../assessments/interfaces/assessment-repository.interface.js';
 import { ASSESSMENT_REPOSITORY } from '../assessments/interfaces/assessment-repository.interface.js';
+import type { GroupRepository } from '../groups/interfaces/group-repository.interface.js';
+import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interface.js';
 import type { UserRepository } from '../auth/interfaces/user-repository.interface.js';
 import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js';
 import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import { actorRoleOf } from '../auth/actor-role.js';
+import { ASSESSMENT_NOT_FOUND } from './assessment-authoring.service.js';
 
 /** A submission is awaiting marking exactly while nobody has corrected it. */
 export type GradingStatus = 'awaiting' | 'graded';
@@ -67,6 +70,49 @@ export interface GradingQueueResponse {
   assessments: AssessmentAverage[];
 }
 
+/** `awaiting`/`graded` plus the third state a queue row can never carry: no submission at all. */
+export type RosterStatus = GradingStatus | 'missing';
+
+/**
+ * `MARK-3`: one targeted student, whether or not they submitted.
+ *
+ * Deliberately not `GradingQueueItem` with optional fields bolted on - a
+ * non-submitter has no `submissionId`, and every submission-only field is
+ * `null` rather than absent, so a caller cannot mistake "field omitted" for
+ * "field checked and empty".
+ */
+export interface AssessmentRosterItem {
+  studentId: string;
+  studentName: string;
+  studentEmail: string;
+  /** The row's own fact, ahead of `status` - the one field a UI checks first. */
+  submitted: boolean;
+  submissionId: string | null;
+  submittedAt: string | null;
+  lastSubmittedAt: string | null;
+  fileUrl: string | null;
+  answerText: string | null;
+  linkUrl: string | null;
+  files: { fileUrl: string; displayName: string; position: number }[];
+  annotatedFileUrl: string | null;
+  /** Never `0` for a non-submitter (CLAUDE.md §11.1) - `null`, the same as an unmarked one. */
+  score: number | null;
+  feedback: string | null;
+  correctedAt: string | null;
+  returnedAt: string | null;
+  status: RosterStatus;
+  /** `false` for a non-submitter - there is no submitted work to judge as late. */
+  isLate: boolean;
+}
+
+export interface AssessmentRosterResponse {
+  assessmentId: string;
+  assessmentTitle: string;
+  assessmentType: AssessmentType;
+  maxScore: number;
+  items: AssessmentRosterItem[];
+}
+
 export interface GradeInput {
   score: number;
   feedback?: string;
@@ -79,6 +125,8 @@ export class GradingService {
     private readonly scope: StaffScopeService,
     @Inject(ASSESSMENT_REPOSITORY)
     private readonly assessmentRepo: AssessmentRepository,
+    /** `GroupDataModule` is `@Global()`; this needs no import edge. */
+    @Inject(GROUP_REPOSITORY) private readonly groupRepo: GroupRepository,
     @Inject(USER_REPOSITORY) private readonly userRepo: UserRepository,
     private readonly audit: AuditService,
     /** `DatabaseModule` is `@Global()`; this needs no import edge. */
@@ -179,6 +227,156 @@ export class GradingService {
       assessments: assessments.map((assessment) =>
         averageFor(assessment, submissions),
       ),
+    };
+  }
+
+  /**
+   * `MARK-3`: one task's whole targeted cohort, non-submitters included.
+   *
+   * The gap `queue` above cannot close: a row only exists once a student has
+   * handed something in, so a student who submitted nothing produces no row
+   * and is invisible to a marker working from `queue`. This builds the roster
+   * from the **targets**, not the submissions, and left-joins what exists.
+   *
+   * **Group grain, by decision** (CLAUDE.md §7): the course-level scope check
+   * below is the same "does the actor hold anything on this course at all"
+   * gate `grade` uses, so a genuinely out-of-scope course still 404s. But an
+   * assistant holding only *some* of the task's targeted groups must see only
+   * those groups' students, even though the course check above passed - the
+   * same narrowing `listForStaff` applies to the task list, and for the same
+   * reason `D-33` gave it: a course-grained read here would hand back every
+   * cohort the task was set for, which is the exact leak `AUTH-2` closed.
+   */
+  async rosterForAssessment(
+    assessmentId: string,
+    actor: StaffActor,
+  ): Promise<AssessmentRosterResponse> {
+    const assessment = await this.assessmentRepo.findById(assessmentId);
+    if (!assessment) {
+      throw new NotFoundException(ASSESSMENT_NOT_FOUND);
+    }
+    // Rethrown under the assessment's own wording, same reasoning as
+    // `resolveScoped` below: two different 404 bodies for one route is the
+    // existence oracle the status code exists to avoid.
+    try {
+      await this.scope.assertAssigned(assessment.courseId, actor);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw new NotFoundException(ASSESSMENT_NOT_FOUND);
+      }
+      throw error;
+    }
+
+    const targets = await this.assessmentRepo.findTargets(assessmentId);
+    // `null` means unrestricted (admin, or an `all_groups` assistant); an
+    // array is the actual held set, and only THOSE targeted groups count -
+    // narrowed here, not filtered out of a wider read after the fact.
+    const reachable = await this.scope.reachableGroupIds(actor);
+    const reachableSet = reachable === null ? null : new Set(reachable);
+    const groupIds = [
+      ...new Set(
+        targets
+          .filter((t) => reachableSet === null || reachableSet.has(t.groupId))
+          .map((t) => t.groupId),
+      ),
+    ];
+
+    if (groupIds.length === 0) {
+      // No held target - a task set for nobody the actor reaches, or a task
+      // with no targets at all. Empty, not an error (§6: a filter that
+      // matches nothing is not a failure).
+      return {
+        assessmentId: assessment.id,
+        assessmentTitle: assessment.title,
+        assessmentType: assessment.type,
+        maxScore: assessment.maxScore,
+        items: [],
+      };
+    }
+
+    // One read per held+targeted group (bounded by ~10 groups, §1) - no
+    // batch `findMembers` exists, and a 3-group task issues 3 of these, not
+    // one per student.
+    const memberships = await Promise.all(
+      groupIds.map((groupId) => this.groupRepo.findMembers(groupId)),
+    );
+    // A student in two targeted, held groups appears once.
+    const studentIds = [...new Set(memberships.flat().map((m) => m.studentId))];
+
+    const [students, submissions] = await Promise.all([
+      this.userRepo.findByIds(studentIds),
+      this.assessmentRepo.findSubmissionsForAssessments([assessmentId]),
+    ]);
+    const studentById = new Map(students.map((u) => [u.id, u]));
+    const submissionByStudent = new Map(submissions.map((s) => [s.studentId, s]));
+
+    const inScopeSubmissionIds = studentIds
+      .map((id) => submissionByStudent.get(id)?.id)
+      .filter((id): id is string => id !== undefined);
+    const filesBySubmissionId = new Map<string, { fileUrl: string; displayName: string; position: number }[]>();
+    if (inScopeSubmissionIds.length > 0) {
+      const allFiles = await this.assessmentRepo.findFilesForSubmissions(inScopeSubmissionIds);
+      for (const f of allFiles) {
+        if (!filesBySubmissionId.has(f.submissionId)) {
+          filesBySubmissionId.set(f.submissionId, []);
+        }
+        filesBySubmissionId.get(f.submissionId)!.push({
+          fileUrl: f.fileUrl,
+          displayName: f.displayName,
+          position: f.position,
+        });
+      }
+      for (const files of filesBySubmissionId.values()) {
+        files.sort((a, b) => a.position - b.position);
+      }
+    }
+
+    const items: AssessmentRosterItem[] = studentIds.flatMap((studentId) => {
+      const student = studentById.get(studentId);
+      if (!student) return [];
+      const submission = submissionByStudent.get(studentId) ?? null;
+      const status: RosterStatus = !submission
+        ? 'missing'
+        : submission.correctedAt === null
+          ? 'awaiting'
+          : 'graded';
+      return [
+        {
+          studentId: student.id,
+          studentName: student.name,
+          studentEmail: student.email,
+          submitted: submission !== null,
+          submissionId: submission?.id ?? null,
+          submittedAt: submission?.submittedAt ?? null,
+          lastSubmittedAt: submission?.lastSubmittedAt ?? null,
+          fileUrl: submission?.fileUrl ?? null,
+          answerText: submission?.answerText ?? null,
+          linkUrl: submission?.linkUrl ?? null,
+          files: submission ? filesBySubmissionId.get(submission.id) ?? [] : [],
+          annotatedFileUrl: submission?.annotatedFileUrl ?? null,
+          score: submission?.score ?? null,
+          feedback: submission?.feedback ?? null,
+          correctedAt: submission?.correctedAt ?? null,
+          returnedAt: submission?.returnedAt ?? null,
+          status,
+          isLate: submission
+            ? new Date(submission.lastSubmittedAt).getTime() >
+              new Date(assessment.dueAt).getTime()
+            : false,
+        },
+      ];
+    });
+
+    // Alphabetical - this is a roster, not a worklist worked top-down like
+    // `queue`, so the ordering a marker expects is the class list's.
+    items.sort((a, b) => a.studentName.localeCompare(b.studentName));
+
+    return {
+      assessmentId: assessment.id,
+      assessmentTitle: assessment.title,
+      assessmentType: assessment.type,
+      maxScore: assessment.maxScore,
+      items,
     };
   }
 

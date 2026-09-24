@@ -51,6 +51,11 @@ columns, so they went to the user rather than being assumed (`CLAUDE.md` §13). 
 | `D-39` | `doc_link` admits **either** a file or a link. `link_url` is nullable and sits beside the files. https-only scheme check **in the service**, not a SQL CHECK — one copy of the whitelist. |
 | `D-40` | `pdf_upload` admits **pdf, docx, zip**. `photo_upload` admits images, **five at most**. Enforced at submit time in the service. Supersedes 018's "govern the upload exactly as before". |
 | `D-41` | **Narrows `D-40`: pdf and docx only — zip is refused.** The global upload whitelist admitted neither, so `D-40` required widening it, which is a `SECURITY.md` §4 decision. A zip can hold anything and §8 admits nothing executable. |
+| `D-42` | `submission_files.display_name` is **client-supplied and capped** at the DTO. It is a label a marker reads, never a path — §8's "the client filename is never read" governs the *stored path*, which stays a server-minted UUID. |
+| `D-43` | The **five-file cap applies to every multi-file submission**, not only `photo_upload` as `D-40` wrote it, so a task stating no mode cannot accept an unbounded count. |
+| `D-44` | Annotations are audited **per save, not per mutation** — a freehand pass is 50–200 strokes, and logging each would make the audit log mostly brush strokes. Slice 7c writes no audit entry; the entry is 7d's. |
+| `D-45` | An annotation may be edited or deleted **only by its author — no teacher or admin override.** The one place a teacher is refused something an assistant may do. Refusal is 403, per §7's exception for a row on the caller's own list. |
+| `D-46` | `GET /staff/assessments/:id/submissions` is on the **group grain**: an assistant sees only students in groups they hold, even when the task targets more. Follows `D-33`, which already narrowed *targeting* the same way, and `AUTH-2`, which exists because the course grain leaked every cohort. |
 
 **A pre-existing gap found while implementing `D-40`, and fixed on the user's call rather than
 filed:** a task's `allowedFileTypes` was **enforced nowhere** — the upload route validates only the
@@ -72,11 +77,11 @@ leaving the column NULL would have removed, on deploy, every mark every student 
 
 | Slice | Content | Status |
 |---|---|---|
-| **7a** | Migration `020`; interface types + 8 methods; **both** repository drivers | `[~]` memory driver done; Postgres driver delegated |
+| **7a** | Migration `020`; interface types + 8 methods; **both** repository drivers | `[x]` both drivers verified: all 8 methods present in `postgres-assessment.repository.ts` |
 | **7b** | `MARK-6` — submit-time mode enforcement, multi-file, `link_url` validation | `[x]` split 7b-i / 7b-ii, both landed |
 | **7c** | `MARK-1` — annotation service, 4 routes, authz; **no audit actions** (`D-44` moves them to 7d's save) | `[x]` |
 | **7d** | `MARK-2` — save vs save-and-return; student visibility moves to `returnedAt` | `[x]` |
-| **7e** | `MARK-3` — submissions for one task **including non-submitters** | `[ ]` |
+| **7e** | `MARK-3` — submissions for one task **including non-submitters** | `[x]` group grain (`D-46`) |
 | **7f** | `MARK-4` + `MARK-5` — marking view: canvas overlay, toolbar, marker/eraser | `[ ]` |
 | **7g** | `BOOK-1` … `BOOK-3` — grid endpoint, screen, CSV export | `[ ]` |
 
