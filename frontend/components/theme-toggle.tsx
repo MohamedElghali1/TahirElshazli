@@ -7,10 +7,20 @@ type Theme = 'dark' | 'light';
 
 const STORAGE_KEY = 'te.theme';
 
+/** What <html> without a `data-theme` paints. Not a preference — a fact about the CSS. */
+const CSS_DEFAULT: Theme = 'light';
+
 /**
- * Three-state theme in two clicks: the page follows the system until someone
- * chooses, then the choice sticks. Written to `data-theme` on <html>, which is
- * the selector every token block in tokens.css keys off.
+ * Two-state theme: light until someone chooses dark, then the choice sticks.
+ * Written to `data-theme` on <html>, which is the selector every token block in
+ * tokens.css keys off.
+ *
+ * It does **not** follow the OS, and must not: `fig-tokens.css` carries no
+ * `prefers-color-scheme` block, so an unset attribute always paints light
+ * (app/layout.tsx explains why — it is the handoff's decision). Resolving the OS
+ * here instead made the control lie on any machine set to dark: the page painted
+ * light, the button read "Switch to light theme", and the first click stamped
+ * the theme already on screen, changing nothing (`F14-1`).
  *
  * The resolved theme is read from the DOM rather than held in component state.
  * `THEME_BOOTSTRAP` in app/layout.tsx has already stamped `data-theme` before
@@ -31,7 +41,7 @@ function subscribe(listener: () => void) {
   // Another tab changing the theme fires `storage` here, not in that tab.
   const onStorage = (event: StorageEvent) => {
     if (event.key === STORAGE_KEY) {
-      applyAttribute(readStored() ?? systemTheme());
+      applyAttribute(readStored() ?? CSS_DEFAULT);
       listener();
     }
   };
@@ -42,28 +52,22 @@ function subscribe(listener: () => void) {
   };
 }
 
-/** What the DOM currently says, falling back to the system preference. */
+/** What the DOM currently says, falling back to what an unset attribute paints. */
 function getSnapshot(): Theme {
   const attribute = document.documentElement.getAttribute('data-theme');
   if (attribute === 'dark' || attribute === 'light') {
     return attribute;
   }
-  return systemTheme();
+  return CSS_DEFAULT;
 }
 
 /**
  * On the server there is no DOM and no stored choice, so the markup is rendered
- * for the default (dark) and the bootstrap script corrects the attribute before
- * paint. The icon is hidden until mount for the same reason.
+ * for the default and the bootstrap script corrects the attribute before paint.
+ * The icon is hidden until mount for the same reason.
  */
 function getServerSnapshot(): Theme {
-  return 'dark';
-}
-
-function systemTheme(): Theme {
-  return window.matchMedia('(prefers-color-scheme: light)').matches
-    ? 'light'
-    : 'dark';
+  return CSS_DEFAULT;
 }
 
 function readStored(): Theme | null {

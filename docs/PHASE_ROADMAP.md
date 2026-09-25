@@ -696,15 +696,29 @@ Third recurrence of the class `CLAUDE.md` §11 records twice. Invisible to `tsc`
 
 ---
 
-### Chat unit 14 — Google sign-in and contract hygiene `[~]` **`APPROVED WITH FOLLOW-UP` 2026-09-23**
+### Chat unit 14 — Google sign-in and contract hygiene `[x]` **`COMPLETE` 2026-09-25**
+
+**Status 2026-09-25: `COMPLETE`.** Review closed **`APPROVED`** when `GAUTH-C1` and `GAUTH-C2` closed.
+`GAUTH-C2` added both sign-in variables to `.env.example`, the redirect URI deliberately left empty
+because the template's own `GOOGLE_DRIVER=none` would otherwise refuse the boot. `GAUTH-C1` was
+driven by the coordinator and confirmed by the user rather than user-performed as worded: every state
+the panel can reach — unlinked, linked, unavailable — in both directions and both themes, against
+real Postgres (`docs/phases/unit-14/BROWSER_CHECK_14.md`). **No defect in either Google panel.** It
+did find one elsewhere: `F14-1`, a theme toggle that resolved the OS preference while the stylesheet
+has no `prefers-color-scheme` block, so on a dark-set machine the first click did nothing visible.
+Fixed on the user's instruction. Gates re-measured on closing, all unmoved: **804 unit / 48 files,
+404 e2e / 5 files, 191 integration**, lint 0 errors (4 pre-existing warnings), both `tsc` 0, drift
+clean. Carried forward, non-blocking: a live Google round trip, which needs the client's Google Cloud
+client and was never a condition.
 
 **Status 2026-09-23: `[~]`.** Taken out of order by the user, in the same conversation as the units
 10–12 reconciliation, without the agent harness (coordinator: plan → execute → review, each its own
 artifact in `docs/phases/unit-14/`). `GAUTH-1` built under rulings `D-49`…`D-51`; `OPS-1` built as
 `D-52` redefined it and is `[x]`. Found and fixed F-1: an OAuth `state` worked as a bearer session.
-Tests: 790 unit / 47 files, 386 e2e, 182 integration (0 skipped, 001–023 from empty). **Stays `[~]`
-until `GAUTH-C1` (the user's browser check of the two account panels) and `GAUTH-C2` (`.env.example`)
-close** — then `APPROVED`, as unit 7 closed.
+Tests: 790 unit / 47 files, 386 e2e, 182 integration (0 skipped, 001–023 from empty) — the counts as
+they stood that day; unit 13 landed after this entry was written. **Stayed `[~]` until `GAUTH-C1`
+(the browser check of the two account panels) and `GAUTH-C2` (`.env.example`) closed** — then
+`APPROVED`, as unit 7 closed. Both closed 2026-09-25; see the status above.
 
 *(Original entry, last, deliberately:)*
 

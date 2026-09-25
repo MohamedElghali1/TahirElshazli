@@ -4300,3 +4300,53 @@ reverted. Recorded in the changelog so the next reader does not re-report it —
 the second half of a browser check is deciding which of the odd-looking things are actually wrong.
 
 Unit 13 is `[x]`. No migration; `027` is still the next free number.
+
+## Unit 14 closed — the two conditions, and a defect the panels did not have (2026-09-25)
+
+Unit 14 had been `[~]` since 2026-09-23 on `APPROVED WITH FOLLOW-UP`, held open by exactly two
+conditions. Both are now met and the unit is `[x]`, `APPROVED`.
+
+`GAUTH-C2` was supposed to be clerical — add `GOOGLE_SIGN_IN_REDIRECT_URI=` and
+`STAFF_GOOGLE_DOMAINS=` to `.env.example`, which the authoring session could not do because
+`.claude/settings.json` denies `Read(./.env.*)` and that glob catches the committed, secret-free
+template as surely as it catches a real `.env`. Reading the tracked copy out of git got round it.
+The clerical part turned out to have a trap in it: the obvious thing, writing
+`GOOGLE_SIGN_IN_REDIRECT_URI=http://localhost:3000/google/callback` as the example value, would have
+made a verbatim copy of the template **refuse to boot**, because the template also ships
+`GOOGLE_DRIVER=none` and `env.ts` rejects a set redirect URI under any driver but `google`. The
+variable is therefore left empty with the localhost value in its comment. A template that does not
+start is worse than a template that is vague.
+
+`GAUTH-C1` — the browser check — was driven here rather than performed by the user, then confirmed.
+It covered every state the panel can reach, unlinked, linked and unavailable, in both directions and
+both themes, on both the staff Account and the student Settings screens, against **real Postgres** so
+the linked state was a real `user_google_identities` row rather than a stubbed response. `D-51` was
+watched end to end for the first time: with `STAFF_GOOGLE_DOMAINS` empty the API answers
+`available:false` for the teacher and `true` for the student, and the panel swaps to copy that names
+no reason. The specific thing being hunted — an `F8-1`-shaped inversion in the linked line, which
+mixes a Latin email, a middot and a date inside an RTL paragraph — was measured rather than eyeballed:
+the email span sits left of the date span in RTL, so the reading order survives. **No defect in
+either Google panel.**
+
+It found one anyway, three screens away, and that is the entry worth keeping. The theme toggle
+resolved the current theme from `prefers-color-scheme` whenever `data-theme` was unset — but
+`fig-tokens.css` carries no `prefers-color-scheme` block at all, and `app/layout.tsx` says so in
+as many words: light is the default, dark is an explicit opt-in, and that is the handoff's decision.
+Two defaults for one thing, in two languages, and they had drifted. On any machine set to dark with
+no stored choice the page painted light while the control reported dark: the button read "Switch to
+light theme", and the first click stamped the theme that was already on screen. Nothing happened.
+Every gate passed through it — it is not a type error, not a token error, not a test any suite was
+ever going to write, and a reviewer reading either file alone would find it correct. Only opening the
+page on a dark-set machine shows it. Filed and fixed as `F14-1`: the fallback is now
+`CSS_DEFAULT = 'light'`, named as a fact about the stylesheet rather than a preference, and
+`systemTheme()` is gone. Verified in the browser — with the OS preferring dark and nothing stored,
+the label now agrees with the paint and one click actually turns the page dark.
+
+Three browser checks in a row have now each found something no automated gate could
+(`F8-1`, `F13-7`, `F14-1`). The pattern across all three is the same: they were defects of
+*agreement* — between a renderer and a reader, between two callers, between a stylesheet and a
+script — and nothing that inspects one artifact at a time can see a disagreement.
+
+Gates on closing, re-measured rather than quoted: 804 unit / 48 files, 404 e2e / 5 files, 191
+integration, lint 0 errors and the same 4 pre-existing oxlint warnings, both `tsc --noEmit` at 0,
+drift clean. No migration; `027` is still the next free number.

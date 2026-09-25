@@ -446,14 +446,26 @@ page — the scale mixing §11 forbids, shipped and invisible.
 catches this class. All five marketing steps are emitted and defined, and no dead custom property
 reaches the compiled CSS. See `OPS-1` — this wants a build-time check, not a reviewer.
 
-`GAUTH-1` `[~]` Google OAuth sign-in. **Built, unit 14 (2026-09-23), review `APPROVED WITH FOLLOW-UP`.**
+`GAUTH-1` `[x]` Google OAuth sign-in. **Built, unit 14 (2026-09-23); both closing conditions met 2026-09-25, review `APPROVED`.**
 Rulings `D-49` (no auto-link; link only from a signed-in account), `D-50` (no account created through
 Google; passwords stay), `D-51` (`STAFF_GOOGLE_DOMAINS` pin, empty = staff off). Migration `023`, both
 drivers, six routes, 32 e2e through the real `id_token` verifier. Found and fixed F-1 (an OAuth `state`
-worked as a session). **Open, the two closing conditions** (`docs/phases/unit-14/REVIEW_14.md`):
-- `GAUTH-C1` `[ ]` The user checks the staff Account and student Settings Google panels in a browser (LTR and `dir="rtl"`).
-- `GAUTH-C2` `[ ]` Add `GOOGLE_SIGN_IN_REDIRECT_URI=` and `STAFF_GOOGLE_DOMAINS=` to `.env.example` (the session could not read `.env*`).
+worked as a session). **Both closing conditions met 2026-09-25** (`docs/phases/unit-14/REVIEW_14.md`,
+`BROWSER_CHECK_14.md`):
+- `GAUTH-C1` `[x]` The staff Account and student Settings Google panels checked in a browser — unlinked, linked and unavailable, each in LTR and `dir="rtl"`, light and dark, against **real Postgres** so the linked state is a real `user_google_identities` row. No defect in either panel; the RTL linked line's span order was measured, not eyeballed (the unit-8 failure mode). `D-51` confirmed end to end: an empty `STAFF_GOOGLE_DOMAINS` makes the API answer `available:false` for staff and `true` for students, and the panel switches to the reason-free "not available" copy. Driven by the coordinator and confirmed by the user.
+- `GAUTH-C2` `[x]` `GOOGLE_SIGN_IN_REDIRECT_URI=` and `STAFF_GOOGLE_DOMAINS=` added to `.env.example`, each documented with the behaviour it actually has. **The redirect URI is left empty on purpose**: the template defaults `GOOGLE_DRIVER=none`, and a populated redirect URI with a non-`google` driver refuses the boot (`env.ts`), so a verbatim copy of the template would not start. The localhost value is in the comment instead. (The earlier session could not read `.env*` — `.claude/settings.json` denies `Read(./.env.*)`, which catches the committed, secret-free template too.)
 Not performed, and not a condition: a live Google round trip (needs the client's Google Cloud client, `google-forms-setup.md` §A5a).
+
+`F14-1` `[x]` **Found by `GAUTH-C1`'s browser check, fixed on the user's instruction, 2026-09-25.**
+Pre-existing shell defect, not `GAUTH-1`'s. `frontend/components/theme-toggle.tsx` resolved the
+current theme from `prefers-color-scheme` whenever `data-theme` was unset, but `app/tokens/fig-tokens.css`
+carries **no** `prefers-color-scheme` block — `app/layout.tsx` records that as the handoff's decision,
+light being the default and dark an explicit opt-in. So on any machine set to dark with no stored
+choice the page painted light while the control reported dark: its label read "Switch to light theme",
+and the first click stamped `data-theme="light"` — the theme already on screen — changing nothing the
+reader could see. The fallback is now `CSS_DEFAULT = 'light'`, a fact about the stylesheet rather than
+a preference, and `systemTheme()` is gone. **The lesson generalises: a JavaScript default that
+duplicates a CSS default will drift from it, and the drift is invisible to every gate.**
 
 `OPS-1` `[x]` **Redefined by `D-52`:** `frontend/lib/types.ts` typechecked against the backend's own types, both directions, as a CI step (`npm run typecheck:drift`, `backend/test/drift/`). 119 of 139 mirror types checked; the rest listed in the check's header. Four drifts found and fixed on its first run. `lib/api.ts` (route paths) is **not** covered; a path check would need the backend's routes as types, and was not built.
 
