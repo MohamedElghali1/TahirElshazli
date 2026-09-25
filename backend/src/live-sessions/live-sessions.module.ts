@@ -38,6 +38,6 @@ import { EnrollmentsModule } from '../enrollments/enrollments.module.js';
   // the *same* instances. Re-providing them there would build a second
   // in-memory array, and a session scheduled through the admin console would
   // be invisible to the student reading it through this module.
-  exports: [LiveSessionsService, LIVE_SESSION_REPOSITORY, ATTENDANCE_REPOSITORY],
+  exports: [LiveSessionsService, StudentSessionsService, LIVE_SESSION_REPOSITORY, ATTENDANCE_REPOSITORY],
 })
 export class LiveSessionsModule {}

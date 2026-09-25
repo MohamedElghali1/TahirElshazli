@@ -142,14 +142,21 @@ describe('DashboardController', () => {
     });
   });
 
-  it('should compute the four stat tiles', async () => {
+  it('should compute the three stat tiles', async () => {
     const dashboard = await controller.getDashboard('course-1', STUDENT);
     expect(dashboard.stats).toEqual({
       homeworkPending: 1,
       answersAvailable: 5,
       newRecordings: 6,
-      overallReportPercentage: 80.5,
     });
+  });
+
+  // `STU-1`: the grade average was removed from the response, not merely left
+  // unrendered. `toEqual` above already fails on an extra key; this names the
+  // rule so a reader knows the omission is the requirement.
+  it('should not carry a grade average - no mark reaches this screen', async () => {
+    const dashboard = await controller.getDashboard('course-1', STUDENT);
+    expect(dashboard.stats).not.toHaveProperty('overallReportPercentage');
   });
 
   it('should carry a real timestamp and Zoom link on the live-session banner', async () => {

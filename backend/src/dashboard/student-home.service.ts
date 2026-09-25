@@ -7,8 +7,10 @@ import type { AssessmentListItem } from '../assessments/assessments.service.js';
 import { MaterialsService } from '../materials/materials.service.js';
 import type { MaterialCounts } from '../materials/materials.service.js';
 import { RecordingsService } from '../recordings/recordings.service.js';
+import type { RecordingWithProgress } from '../recordings/interfaces/recording-repository.interface.js';
 import { LiveSessionsService } from '../live-sessions/live-sessions.service.js';
-import { ReportsService } from '../reports/reports.service.js';
+import { StudentSessionsService } from '../live-sessions/student-sessions.service.js';
+import type { StudentAttendanceSummary } from '../live-sessions/student-sessions.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import type { NotificationListResponse } from '../notifications/notifications.service.js';
 import type { StudentSessionView } from '../live-sessions/student-session-view.js';
@@ -35,12 +37,25 @@ export interface StudentHomeEntry {
   /** The student allow-list view, never the row - see `LiveSessionsService.getNextSession`. */
   nextLiveSession: StudentSessionView | null;
   assessments: AssessmentListItem[];
+  /**
+   * The continue-watching card's recording (`STU-1`), or `null` when the course
+   * has none left to watch. From the same read `quickAccess`'s unwatched count
+   * comes from - see `RecordingsService.getWatchState`.
+   */
+  continueWatching: RecordingWithProgress | null;
 }
 
 export interface StudentHomeResponse {
   studentName: string;
   entries: StudentHomeEntry[];
   notifications: NotificationListResponse;
+  /**
+   * The student's attendance across every group they sit in (`STU-1`) - one
+   * figure for the student, not one per course, because `getAttendanceSummary`
+   * is keyed on group membership and a group studies exactly one course
+   * (migration `013`). Counts only; the history belongs to `/attendance`.
+   */
+  attendance: StudentAttendanceSummary;
 }
 
 /**
@@ -71,7 +86,7 @@ export class StudentHomeService {
     private readonly materialsService: MaterialsService,
     private readonly recordingsService: RecordingsService,
     private readonly liveSessionsService: LiveSessionsService,
-    private readonly reportsService: ReportsService,
+    private readonly studentSessionsService: StudentSessionsService,
     private readonly notificationsService: NotificationsService,
   ) {}
 
@@ -79,17 +94,18 @@ export class StudentHomeService {
     // The three reads that are per-student rather than per-course. A student
     // with no enrollments still gets a name and a mailbox, which is the empty
     // state the screen draws rather than an error.
-    const [profile, courses, notifications] = await Promise.all([
+    const [profile, courses, notifications, attendance] = await Promise.all([
       this.studentsService.getProfile(studentId),
       this.coursesService.getEnrolledCourses(studentId),
       this.notificationsService.list(studentId, false),
+      this.studentSessionsService.getAttendanceSummary(studentId),
     ]);
 
     const entries = await Promise.all(
       courses.map((course) => this.entryFor(course, studentId)),
     );
 
-    return { studentName: profile.name, entries, notifications };
+    return { studentName: profile.name, entries, notifications, attendance };
   }
 
   /**
@@ -103,23 +119,22 @@ export class StudentHomeService {
     course: CourseListItem,
     studentId: string,
   ): Promise<StudentHomeEntry> {
-    const [assessments, newRecordings, quickAccess, nextLiveSession, performance] =
-      await Promise.all([
-        this.assessmentsService.getAssessmentsForCourse(course.id, studentId),
-        this.recordingsService.countUnwatched(course.id, studentId),
-        this.materialsService.getCounts(course.id, studentId),
-        this.liveSessionsService.getNextSession(course.id, studentId),
-        this.reportsService.getPerformanceFor(course.id, studentId),
-      ]);
+    const [assessments, watch, quickAccess, nextLiveSession] = await Promise.all([
+      this.assessmentsService.getAssessmentsForCourse(course.id, studentId),
+      this.recordingsService.getWatchState(course.id, studentId),
+      this.materialsService.getCounts(course.id, studentId),
+      this.liveSessionsService.getNextSession(course.id, studentId),
+    ]);
 
     return {
       course,
       // Shared with the per-course dashboard rather than re-derived, so the
       // two screens cannot report different counts for the same course.
-      stats: deriveStats(assessments, newRecordings, performance.overallPercentage),
+      stats: deriveStats(assessments, watch.unwatched),
       quickAccess,
       nextLiveSession,
       assessments,
+      continueWatching: watch.resume,
     };
   }
 }

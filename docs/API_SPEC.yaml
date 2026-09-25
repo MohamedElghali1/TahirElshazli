@@ -2934,6 +2934,83 @@ paths:
         '200': { description: OK }
 
   # --- Student surface ----------------------------------------------------
+  /dashboard:
+    get:
+      tags: [student]
+      summary: The whole student Overview in one request
+      description: >
+        `[MODIFY]` — the aggregated Home screen. Exists to spare the browser
+        the `2N + 2` fan-out the screen used to issue (`/courses`, then a
+        dashboard and an assessment list per enrolled course, then
+        `/notifications`); composed server-side through the same services the
+        per-course screens use, so no figure here is a second implementation.
+
+        `STU-1` changed its shape. `stats` **no longer carries
+        `overallReportPercentage`** — it was a grade average, and
+        `PRODUCT_SPEC.md` §6 puts no mark anywhere on the Overview
+        (non-negotiable 02). The field was removed from the response, not
+        merely left unrendered. Two fields were added: `continueWatching` per
+        entry, and `attendance` once for the student.
+
+        `attendance` is the counts from `GET /students/me/attendance` and
+        deliberately omits its `history` — the Overview draws one figure and
+        has no use for a term of session rows.
+      x-roles: [student]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  studentName: { type: string }
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        course: { $ref: '#/components/schemas/Course' }
+                        stats:
+                          type: object
+                          description: >
+                            Three counts. Completion only — no grade average,
+                            by the rule above.
+                          properties:
+                            homeworkPending:  { type: integer }
+                            answersAvailable: { type: integer }
+                            newRecordings:    { type: integer }
+                        quickAccess:
+                          type: object
+                          description: Material counts, keyed by category.
+                          additionalProperties: { type: integer }
+                        nextLiveSession:
+                          oneOf:
+                            - { $ref: '#/components/schemas/StudentSession' }
+                            - { type: 'null' }
+                        assessments: { type: array, items: { type: object } }
+                        continueWatching:
+                          description: >
+                            The recording the continue-watching card offers:
+                            the earliest in course order that is started and
+                            unfinished, else the earliest unfinished at all.
+                            `null` when nothing is left to watch.
+                          oneOf:
+                            - { type: object }
+                            - { type: 'null' }
+                  notifications: { type: object }
+                  attendance:
+                    type: object
+                    description: >
+                      `StudentAttendanceSummary` — the counts of
+                      `/students/me/attendance` without its `history`.
+                    properties:
+                      present:    { type: integer }
+                      late:       { type: integer }
+                      absent:     { type: integer }
+                      expected:   { type: integer }
+                      percentage: { type: integer }
+
   /students/me/timetable:
     get:
       tags: [student]
@@ -2970,7 +3047,8 @@ paths:
         have already ended — computed on every read, never stored. `late`
         counts as neither `present` nor `absent`; `history` lists every
         expected session with the student's own mark, or `null` when never
-        marked.
+        marked. The counts (everything but `history`) are also served on
+        `GET /dashboard` as `attendance`, from the same reads — `STU-1`.
       x-roles: [student]
       responses:
         '200':

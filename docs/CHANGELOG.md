@@ -2343,3 +2343,100 @@ on a fresh load. And **Tailwind's `rtl:`/`ltr:` variants here key off `:lang()`,
 mobile drawer leaves 131px on screen" finding; measured properly with `lang="ar"` the existing
 `max-md:-translate-x-full max-md:rtl:translate-x-full` is correct, and the change I had made to it
 was reverted. **Set `lang` and `dir` together, server-side, and reload.**
+
+### `D-53` — the Overview's grade average is removed from the *response*, not just the render (`STU-1`)
+**Context.** `PRODUCT_SPEC.md` §6: the Overview carries **no mark anywhere**. Two places on
+`dashboard/page.tsx` rendered one — the inbox row for a corrected task (`Scored 88%`) and the Quick
+access "Marks" row, whose count was `DashboardStats.overallReportPercentage`. That field is a grade
+average; its own comment in `dashboard.service.ts` called it *"performance, not completion"*.
+
+**Alternatives.** (a) Stop rendering the two figures and leave the field on the wire. (b) Remove the
+field from `DashboardStats`.
+
+**Chosen.** (b). A number the screen may not show has no business travelling to the browser, and
+leaving it there is an invitation for the next screen to render it — which is exactly how it got onto
+this one. `deriveStats` now takes two arguments, and both `GET /dashboard` and
+`GET /courses/:id/dashboard` drop the field. The per-course dashboard has **no frontend consumer**
+(`api.dashboard.get`'s comment says it serves `/learn/[id]`, which does not exist), so nothing else
+had to change.
+
+**Bonus.** The field was the only reason either dashboard called
+`ReportsService.getPerformanceFor`. Removing it deletes one performance read **per enrolled course**
+from the Home screen — the one endpoint whose whole purpose is to not fan out. `ReportsModule` left
+`DashboardModule`'s imports with it.
+
+**Affected.** `dashboard.service.ts`, `student-home.service.ts`, `dashboard.module.ts`,
+`lib/types.ts`, `dashboard.controller.spec.ts`, `app.e2e-spec.ts`, `API_SPEC.yaml` (which had no
+`/dashboard` entry at all; one was added). The mirror is proved by `npm run typecheck:drift`.
+
+### `D-54` — the "recorded vs live" progress heuristic is deleted, not re-plumbed (`STU-1`)
+**Context.** Two student screens switched between the completion and attendance figures on
+`progress.totalLessons > 0`, both citing *"the enrollment's mode decides what progress means"*.
+**There is no mode.** `D-9` retired `learning_mode` outright in migration `012`: every group now runs
+external-link sessions *and* accumulates uploaded recordings. So the test was true for every real
+course, the attendance branch was dead, and `CourseCard`'s "Recorded"/"Live" tag always read
+"Recorded".
+
+**Chosen.** Delete it. A course card and the Marks page's "Progress" panel measure **completion** —
+that is what a `Meter` means, and mixing an attendance share into the same bar is precisely the merge
+`CLAUDE.md` §11.1.2 forbids. Attendance is its own axis, with its own page and (per `D-55`) its own
+figure on the Overview.
+
+**Root cause, not symptom.** The heuristic was in `dashboard/page.tsx` **and**
+`marks/page.tsx`, character-for-character — the second copy even pointed at the first in a comment.
+Fixing only the one `STU-1` names would have left the identical bug in a sibling caller.
+
+**Also fixed while there, both found in the browser and by no automated gate:** a course card printed
+its percentage twice (the caller's figure plus the `Meter`'s own trailing label — `label={false}`
+now), and a course with no recordings published showed `0%` under a full-width empty bar. `0` is not
+a measurement of nothing; it shows an em-dash and "No recordings published yet" (`CLAUDE.md` §11.1
+copy rules).
+
+### `D-55` — attendance appears on the Overview; `PRODUCT_SPEC.md` §6 was incomplete
+**Document conflict, recorded per `CLAUDE.md` §2.3.** `PHASE_ROADMAP.md` deferred `STU-1` to unit 8
+because *"the Overview composes unit 8's attendance figures"*. `PRODUCT_SPEC.md` §6's Overview row
+names *continue-watching, three action cards, due-today, dismissible announcement* and **never
+mentions attendance**. Two level-2 documents disagreeing is a finding, not a puzzle to solve
+silently.
+
+**Raised, and ruled by the user 2026-09-25:** attendance **does** belong on the Overview.
+`PRODUCT_SPEC.md` §6's row was the incomplete one and has been corrected at source.
+
+It is rendered as the Timetable action card's count, **with its denominator** (`2 of 6 attended`,
+never a bare `82%`), so it reads as a tally rather than a score, and an em-dash when nothing has been
+held yet. It is neither progress nor performance and shares no bar with either.
+
+**Worth recording for the next reader:** the deferral rationale was wrong in a second way. The
+Overview never read unit 8's endpoint — it read `CourseProgress.attendancePercentage` through the
+dead heuristic `D-54` deletes. Unit 8 was never actually a dependency of `STU-1`.
+
+**Shape.** `StudentAttendanceSummary` was split out of `StudentAttendanceResponse` (the counts,
+without `history`) and is served once per student on `GET /dashboard`, not once per course —
+`getAttendanceSummary` is keyed on group membership, and a group studies exactly one course
+(migration `013`). Same reads, one implementation, so the Overview and `/attendance` cannot disagree.
+All three attendance mirror types are now pinned in `mirror-drift.check.ts`; unit 8 had added them to
+`lib/types.ts` without drift lines.
+
+### `D-56` — "three action cards" resolves to dropping the Marks card
+**Context.** `PRODUCT_SPEC.md` §6 says *three* action cards. Quick access had **four** — Recordings,
+Work, Timetable, Marks — and exactly one of them carried the mark the same spec row forbids.
+
+**Chosen (user, 2026-09-25).** Drop Marks. "Three action cards" and "no mark anywhere" resolve to the
+same edit, which is the reading that invents nothing. Marks remains in the rail; only the card goes.
+The design handoff's own `.jsx` is not in this repository, so this is recorded as a reading of the
+spec rather than as a transcription of the design.
+
+### `F13-7` — the Overview's first browser check, and what it caught
+Unit 13 had never been driven in a real browser. Every gate was green before this ran. Under
+`dir="rtl"` the new work is correct — the hero `Meter` fills from the right, and the attendance tally
+stays an LTR island because `AccessRow`'s count already carries `.num`. **Neither file this unit
+touched uses an `rtl:`/`ltr:` variant**, so `dir` alone was a sufficient probe here; the `lang`+`dir`
+caveat recorded above still applies to anything that does.
+
+The two real defects it found were the ones in `D-54`'s last paragraph — a doubled percentage and a
+`0%` that meant "nothing published". Both invisible to `tsc`, `eslint`, the token check and 1,399
+tests. **A third suspicion was investigated and dismissed:** the inbox heading renders as
+`items for you 6` under RTL, which looks like the `F8-1` class. It is not — in an RTL paragraph the
+leading run is placed rightmost, so an RTL reader reads "6 items for you" in the correct order.
+`F8-1` was a value inversion *within* one run. The "fix" was written, tested against the browser,
+and reverted. Recorded so the next reader does not re-report it.

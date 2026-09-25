@@ -165,15 +165,17 @@ function ReportSummary({ courseId }: { courseId: string }) {
 }
 
 function ProgressSummary({ progress }: { progress: CourseProgress }) {
-  // See the matching comment in `app/(app)/dashboard/page.tsx`'s `CourseCard`
-  // - `CourseProgress` carries no mode field, so this is inferred from which
-  // figures the course actually has.
-  const isRecorded = progress.totalLessons > 0 || progress.totalSessions === 0;
-  const value = isRecorded ? progress.completionPercentage : progress.attendancePercentage;
-  const label = isRecorded ? 'Course completion' : 'Attendance';
-  const detail = isRecorded
-    ? `${progress.completedLessons} of ${progress.totalLessons} lessons completed`
-    : `${progress.attendedSessions} of ${progress.totalSessions} sessions attended`;
+  // Removed with `STU-1`'s twin in `dashboard/page.tsx`'s `CourseCard`, and for
+  // the same reason: this switched between the completion and attendance
+  // figures on `progress.totalLessons > 0`, reading that as "the enrollment's
+  // mode". `D-9` retired `learning_mode` outright (migration `012`) - every
+  // group runs sessions and accumulates recordings - so the test was true for
+  // every real course and the attendance branch never ran. This panel is
+  // titled "Progress" and says "This is not a grade": completion is the figure
+  // it means. Attendance has its own page.
+  const value = progress.completionPercentage;
+  const label = 'Course completion';
+  const detail = `${progress.completedLessons} of ${progress.totalLessons} lessons completed`;
 
   return (
     <Panel title="Progress">

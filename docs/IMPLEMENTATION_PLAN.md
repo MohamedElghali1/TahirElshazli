@@ -372,9 +372,17 @@ assistant retarget their draft platform-wide for a teacher to publish unaware).
 
 ## Phases 15–17 — Remaining surfaces
 
-`STU-1` `[ ]` Overview (action-first; **no mark on this page**) — **unblocked 2026-09-24**: unit 8
-landed on `redesign`, so the attendance figures this page composes now exist
-(`GET /students/me/attendance`, migration `026`). It is unit 13's last open item ·
+`STU-1` `[x]` Overview (action-first; **no mark on this page**) — **done 2026-09-25**, unit 13's last
+item. The hero became continue-watching (behind a live session and a now-dismissible urgent
+announcement); Quick access dropped its fourth card, Marks, and its Timetable card carries the
+student's attendance with a denominator (`D-55`, `D-56`). **Two contract changes, not render
+changes:** `DashboardStats.overallReportPercentage` — a grade average — was removed from the response
+(`D-53`), which also deleted one `getPerformanceFor` read per enrolled course; and
+`StudentHomeResponse` gained `attendance` (counts only, no history) plus `continueWatching` per
+entry, derived from the read `countUnwatched` already did rather than a second one
+(`RecordingsService.getWatchState`). The retired-axis heuristic went from **both** screens that had
+it, not just this one (`D-54`). First browser check of the unit: `F13-7`, two real defects, both
+invisible to every gate. No migration. ·
 `STU-2` `[x]` `recordings.thumbnail_url` + library grid/list — migration `023`, both repository
 drivers, DTO guarded like `videoUrl` so the field cannot become a `javascript:` URL. Thumbnails
 default with a `surface-3` + icon fallback, because `thumbnail_url` is null for every recording that

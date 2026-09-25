@@ -85,6 +85,9 @@ import type { SubmissionRevision as B_SubmissionRevision } from '../../src/asses
 import type { SubmissionView as B_SubmissionView } from '../../src/assessments/assessments.service.js';
 import type { AssessmentDetail as B_AssessmentDetail } from '../../src/assessments/assessments.service.js';
 import type { WorkExpectation as B_WorkExpectation } from '../../src/assessments/assessments.service.js';
+import type { StudentAttendanceHistoryItem as B_StudentAttendanceHistoryItem } from '../../src/live-sessions/student-sessions.service.js';
+import type { StudentAttendanceSummary as B_StudentAttendanceSummary } from '../../src/live-sessions/student-sessions.service.js';
+import type { StudentAttendanceResponse as B_StudentAttendanceResponse } from '../../src/live-sessions/student-sessions.service.js';
 import type { DashboardStats as B_DashboardStats } from '../../src/dashboard/dashboard.service.js';
 import type { DashboardResponse as B_DashboardResponse } from '../../src/dashboard/dashboard.service.js';
 import type { StudentHomeEntry as B_StudentHomeEntry } from '../../src/dashboard/student-home.service.js';
@@ -203,6 +206,9 @@ import type {
   SubmissionView as F_SubmissionView,
   AssessmentDetail as F_AssessmentDetail,
   WorkExpectation as F_WorkExpectation,
+  StudentAttendanceHistoryItem as F_StudentAttendanceHistoryItem,
+  StudentAttendanceSummary as F_StudentAttendanceSummary,
+  StudentAttendanceResponse as F_StudentAttendanceResponse,
   DashboardStats as F_DashboardStats,
   DashboardResponse as F_DashboardResponse,
   StudentHomeEntry as F_StudentHomeEntry,
@@ -322,6 +328,12 @@ export type Check_SubmissionRevision = Assert<Same<Wire<B_SubmissionRevision>, F
 export type Check_SubmissionView = Assert<Same<Wire<B_SubmissionView>, F_SubmissionView>>;
 export type Check_AssessmentDetail = Assert<Same<Wire<B_AssessmentDetail>, F_AssessmentDetail>>;
 export type Check_WorkExpectation = Assert<Same<Wire<B_WorkExpectation>, F_WorkExpectation>>;
+// The student attendance trio landed in unit 8 without drift lines; `STU-1`
+// splits `StudentAttendanceSummary` out of the response, so all three get
+// pinned now rather than one of them.
+export type Check_StudentAttendanceHistoryItem = Assert<Same<Wire<B_StudentAttendanceHistoryItem>, F_StudentAttendanceHistoryItem>>;
+export type Check_StudentAttendanceSummary = Assert<Same<Wire<B_StudentAttendanceSummary>, F_StudentAttendanceSummary>>;
+export type Check_StudentAttendanceResponse = Assert<Same<Wire<B_StudentAttendanceResponse>, F_StudentAttendanceResponse>>;
 export type Check_DashboardStats = Assert<Same<Wire<B_DashboardStats>, F_DashboardStats>>;
 export type Check_DashboardResponse = Assert<Same<Wire<B_DashboardResponse>, F_DashboardResponse>>;
 export type Check_StudentHomeEntry = Assert<Same<Wire<B_StudentHomeEntry>, F_StudentHomeEntry>>;

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useSyncExternalStore } from 'react';
+import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
@@ -16,6 +16,8 @@ import type {
   AssessmentListItem,
   CourseListItem,
   MaterialCategory,
+  RecordingWithProgress,
+  StudentAttendanceSummary,
   StudentHomeEntry,
   StudentSessionView,
 } from '@/lib/types';
@@ -30,6 +32,7 @@ import {
   ButtonLink,
   Icon,
   type IconName,
+  cx,
 } from '@/components/ui';
 import { PageActions, PageTitle } from '@/components/shell/page-chrome';
 import { TeacherPortrait } from '@/components/student/teacher-portrait';
@@ -38,21 +41,33 @@ import { PageTransition, StaggerList, StaggerItem, motion } from '@/components/s
 import { CourseLink } from '@/components/student/course-link';
 
 /* ========================================================================
-   Overview (`docs/PRODUCT_SPEC.md` §6 calls the target "action-first:
+   Overview (`STU-1`). `docs/PRODUCT_SPEC.md` §6: "action-first:
    continue-watching, three action cards, due-today, dismissible
-   announcement" — a content redesign out of this unit's scope). This is the
-   existing multi-course home screen, ported off the legacy components; it is
-   also where `lib/roles.ts` sends a signed-in student, so the route stays
-   `/dashboard` even though the rail's nav item reads "Overview".
+   announcement. **No mark anywhere on this page.**" It is also where
+   `lib/roles.ts` sends a signed-in student, so the route stays `/dashboard`
+   even though the rail's nav item reads "Overview".
 
-     left/top     hero      - live session if one is running or imminent,
-                              otherwise an urgent announcement, otherwise a
-                              greeting.
-     left/bottom  quick access - the handful of destinations a student
-                              actually wants, one course scoped via
-                              `CourseLink` (`SHELL-3`).
-     right/top    inbox     - work and announcements that need the student.
+   The spec's four elements map onto the four regions, in that order:
+
+     left/top     hero      - CONTINUE-WATCHING, behind the two things that
+                              outrank it: a session running or imminent, and
+                              an unread urgent ANNOUNCEMENT, which is
+                              DISMISSIBLE here. Greeting only when the
+                              student has nothing left to watch.
+     left/bottom  quick access - the THREE ACTION CARDS. It carried a fourth,
+                              Marks, whose figure was a grade average; the
+                              same spec row forbids a mark on this page, so
+                              the card went with the number (see §1 of this
+                              unit's report).
+     right/top    inbox     - DUE-TODAY: work that is open, overdue or newly
+                              marked, plus unread announcements. A marked
+                              item says *that* it is marked and never what it
+                              scored.
      right/bottom materials - the course's files, one row per category.
+
+   No mark reaches this file. Attendance does (`home.attendance`), as its own
+   axis on the Timetable card - `CLAUDE.md` §11.1.2 separates progress from
+   performance, and attendance is neither.
    ======================================================================== */
 
 /** A session inside this window counts as "starting soon" and takes the hero. */
@@ -159,12 +174,14 @@ function assessmentItem(
     return {
       key: assessment.id,
       href,
+      // The score is deliberately not read here. `PRODUCT_SPEC.md` §6 puts no
+      // mark on this page, so the row says that a result exists and the task's
+      // own page - where the feedback and the denominator are - shows what it
+      // was. `assessment.scorePercentage` is still on the list this reads; the
+      // omission is the requirement, not an oversight.
       title: assessment.title,
       meta: `${kind} · ${courseTitle} · marked`,
-      tagLabel:
-        assessment.scorePercentage === null
-          ? 'Result ready'
-          : `Scored ${formatPercent(assessment.scorePercentage)}`,
+      tagLabel: 'Result ready',
       tagTone: 'green',
       rank: 3,
     };
@@ -212,9 +229,20 @@ function announcementItem(notification: AppNotification): InboxItem {
 
 /* ======================================================================== */
 
+/** What the hero needs to offer "continue watching". */
+interface ResumePoint {
+  recording: RecordingWithProgress;
+  courseTitle: string;
+}
+
 export default function DashboardPage() {
-  const { user } = useSession();
+  const { user, token } = useSession();
   const now = useNow();
+  /* Announcements the student dismissed in this session. `markRead` is the
+     dismissal - there is no separate dismissed flag, and a read announcement
+     is one that has stopped needing them. Held locally as well so the hero
+     and the inbox update without refetching the whole screen. */
+  const [dismissed, setDismissed] = useState<readonly string[]>([]);
 
   /* One request for the whole screen — `GET /dashboard` composes every
      enrolled course's stats, material counts, next session and assessment
@@ -226,9 +254,37 @@ export default function DashboardPage() {
     reload,
   } = useApi((token) => api.dashboard.home(token), []);
 
+  const dismiss = useCallback(
+    async (id: string) => {
+      setDismissed((prev) => (prev.includes(id) ? prev : [...prev, id]));
+      if (!token) return;
+      try {
+        await api.notifications.markRead(token, id);
+      } catch {
+        // Not worth interrupting the screen for, and not worth putting the
+        // card back either: the next load reads the server's answer.
+      }
+    },
+    [token],
+  );
+
   const entries = useMemo(() => home?.entries ?? [], [home]);
   const courses = useMemo(() => (home ? entries.map((e) => e.course) : null), [home, entries]);
   const mailbox = home?.notifications ?? null;
+  const liveNotifications = useMemo(
+    () => (mailbox?.notifications ?? []).filter((n) => !dismissed.includes(n.id)),
+    [mailbox, dismissed],
+  );
+
+  /* --- continue watching ----------------------------------------------
+     The first enrolled course with something left. `continueWatching` is the
+     server's pick (`RecordingsService.getWatchState`): started-but-unfinished
+     first, else next up. */
+  const resume = useMemo(() => {
+    const entry = entries.find((e) => e.continueWatching !== null);
+    const recording = entry?.continueWatching;
+    return recording ? { recording, courseTitle: entry.course.title } : null;
+  }, [entries]);
 
   /* --- the one session the hero and the header both speak about ------- */
   const nextSession = useMemo(() => {
@@ -254,12 +310,12 @@ export default function DashboardPage() {
   const urgentAnnouncement = useMemo(() => {
     if (now === 0) return null;
     return (
-      (mailbox?.notifications ?? []).find(
+      liveNotifications.find(
         (n) =>
           n.type === 'announcement' && !n.read && now - new Date(n.createdAt).getTime() <= URGENT_MS,
       ) ?? null
     );
-  }, [mailbox, now]);
+  }, [liveNotifications, now]);
 
   /* --- inbox ---------------------------------------------------------- */
   const inbox = useMemo(() => {
@@ -272,12 +328,12 @@ export default function DashboardPage() {
       });
     });
 
-    (mailbox?.notifications ?? [])
+    liveNotifications
       .filter((n) => n.type === 'announcement' && !n.read)
       .forEach((n) => items.push(announcementItem(n)));
 
     return items.sort((a, b) => a.rank - b.rank);
-  }, [entries, mailbox, now]);
+  }, [entries, liveNotifications, now]);
 
   const needsAction = inbox.filter((i) => i.rank <= 2).length;
   const courseCount = courses?.length ?? 0;
@@ -318,7 +374,7 @@ export default function DashboardPage() {
           />
         )}
 
-        {courses && courses.length > 0 && (
+        {home && courses && courses.length > 0 && (
           <>
             {/* ---- the two-column board -------------------------------- */}
             <div className="grid items-stretch gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
@@ -329,19 +385,25 @@ export default function DashboardPage() {
                     session={nextSession}
                     phase={sessionPhase}
                     announcement={sessionIsImminent ? null : urgentAnnouncement}
+                    onDismiss={dismiss}
+                    resume={resume}
                     needsAction={needsAction}
                     now={now}
                     primaryCourseId={courses[0].id}
                   />
                 </StaggerItem>
                 <StaggerItem className="flex flex-1 flex-col">
-                  <QuickAccess entries={entries} />
+                  <QuickAccess entries={entries} attendance={home.attendance} />
                 </StaggerItem>
               </StaggerList>
 
               <StaggerList className="flex h-full flex-col gap-4" delay={0.1}>
                 <StaggerItem>
-                  <InboxPanel items={inbox} courseCount={courseCount} unread={mailbox?.unreadCount ?? 0} />
+                  <InboxPanel
+                    items={inbox}
+                    courseCount={courseCount}
+                    unread={Math.max(0, (mailbox?.unreadCount ?? 0) - dismissed.length)}
+                  />
                 </StaggerItem>
                 <StaggerItem className="flex flex-1 flex-col">
                   <MaterialsPanel entries={entries} />
@@ -370,16 +432,21 @@ export default function DashboardPage() {
 }
 
 /* --- hero ---------------------------------------------------------------
-   Three states, in priority order: a session that is running or imminent,
-   else an urgent announcement, else a greeting. The announcement is shown
-   here *and* left in the inbox below - surfacing it is not the same as
-   reading it. */
+   Four states, in priority order: a session that is running or imminent, else
+   an urgent announcement, else continue-watching, else a greeting for a
+   student with nothing left to watch.
+
+   The announcement is shown here *and* left in the inbox below - surfacing it
+   is not the same as reading it - and it is the one the spec calls
+   dismissible: `Dismiss` marks it read, which removes it from both at once. */
 
 function Hero({
   firstName,
   session,
   phase,
   announcement,
+  onDismiss,
+  resume,
   needsAction,
   now,
   primaryCourseId,
@@ -388,6 +455,8 @@ function Hero({
   session: { session: StudentSessionView; courseTitle: string; courseId: string } | null;
   phase: SessionPhase;
   announcement: AppNotification | null;
+  onDismiss: (id: string) => void;
+  resume: ResumePoint | null;
   needsAction: number;
   now: number;
   primaryCourseId: string;
@@ -459,6 +528,53 @@ function Hero({
                 All announcements
               </HeroLinkBody>
             </Link>
+            <button type="button" onClick={() => onDismiss(announcement.id)}>
+              <HeroLinkBody>
+                <Icon name="X" size={12} />
+                Dismiss
+              </HeroLinkBody>
+            </button>
+          </div>
+        </>
+      ) : resume ? (
+        <>
+          <HeroBadge tone="blue">
+            <Icon name="Video" size={24} />
+          </HeroBadge>
+          <Tag tone="blue" className="mt-4">
+            {resume.recording.watchedSeconds > 0 ? 'Continue watching' : 'Up next'}
+          </Tag>
+          <h2 className="mt-3 text-md font-semibold text-fg">{resume.recording.title}</h2>
+          <p className="mt-1 text-base text-fg-3">
+            {resume.courseTitle} · {resume.recording.chapter}
+          </p>
+          {/* A `Meter`, never a `Score`: watched share is completion
+              (`CLAUDE.md` §11.1.2), and it is the same primitive `/lessons`
+              draws for the same number. Hidden before the student has
+              started, where a 0% bar says nothing they do not know. */}
+          {resume.recording.watchedSeconds > 0 && resume.recording.durationSeconds > 0 && (
+            <Meter
+              className="mt-3"
+              name={`${resume.recording.title} watched`}
+              value={
+                (resume.recording.watchedSeconds / resume.recording.durationSeconds) * 100
+              }
+            />
+          )}
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <Link
+              href={`/lessons/${resume.recording.id}`}
+              className="inline-flex h-6 items-center gap-2 rounded-md bg-accent px-3 text-xs font-medium text-fg-invert transition-colors duration-[var(--dur-fast)] ease-[var(--ease)] hover:bg-accent-hover"
+            >
+              {resume.recording.watchedSeconds > 0 ? 'Resume' : 'Start'}
+              <Icon name="ChevronRight" size={12} />
+            </Link>
+            <CourseLink courseId={primaryCourseId} href="/lessons">
+              <HeroLinkBody>
+                <Icon name="Video" size={12} />
+                All recordings
+              </HeroLinkBody>
+            </CourseLink>
           </div>
         </>
       ) : (
@@ -525,13 +641,28 @@ function HeroBadge({ tone, children }: { tone: TagTone; children: React.ReactNod
   );
 }
 
-/* --- quick access -------------------------------------------------------
-   The four places a student goes most, one click from the landing screen.
-   With more than one course the destination is ambiguous, so the sub-label
-   names the course it opens and `CourseLink` scopes the rail's switcher to
-   it before navigating. */
+/* --- the three action cards ---------------------------------------------
+   `PRODUCT_SPEC.md` §6's "three action cards": the three places a student
+   goes most, one click from the landing screen. With more than one course the
+   destination is ambiguous, so the sub-label names the course it opens and
+   `CourseLink` scopes the rail's switcher to it before navigating.
 
-function QuickAccess({ entries }: { entries: StudentHomeEntry[] }) {
+   There was a fourth, Marks, whose count was `overallReportPercentage` - a
+   grade average, on a page the same spec row says carries no mark anywhere.
+   The field is gone from the response too (`deriveStats`), so there is no
+   number left to render even by accident. Marks is still in the rail.
+
+   Timetable's count is the student's attendance, printed with its denominator
+   (`CLAUDE.md` §11.1 copy rules) so it reads as a tally and not as a score.
+   `expected === 0` shows an em-dash, never `0` - nothing has been held yet. */
+
+function QuickAccess({
+  entries,
+  attendance,
+}: {
+  entries: StudentHomeEntry[];
+  attendance: StudentAttendanceSummary;
+}) {
   const primary = entries[0].course;
   const stats = entries[0]?.stats;
   const many = entries.length > 1;
@@ -560,15 +691,10 @@ function QuickAccess({ entries }: { entries: StudentHomeEntry[] }) {
       tone: 'blue' as TagTone,
       label: 'Timetable',
       sub: scope ?? 'Live sessions and attendance',
-      count: null,
-    },
-    {
-      href: '/marks',
-      icon: 'ChartPie' as IconName,
-      tone: 'green' as TagTone,
-      label: 'Marks',
-      sub: scope ?? 'Progress and performance',
-      count: stats?.overallReportPercentage != null ? formatPercent(stats.overallReportPercentage) : null,
+      count:
+        attendance.expected === 0
+          ? null
+          : `${attendance.present} of ${attendance.expected} attended`,
     },
   ];
 
@@ -773,18 +899,25 @@ function MaterialsPanel({ entries }: { entries: StudentHomeEntry[] }) {
 function CourseCard({ course }: { course: CourseListItem }) {
   const { progress } = course;
 
-  // CLAUDE.md §5.2 - the enrollment's mode decides what "progress" means, but
-  // `CourseProgress` (`lib/types.ts`) carries no mode field to read it from -
-  // it always returns both completion and attendance figures. Absent that
-  // discriminant, this infers it from which figures the course actually has:
-  // a course with lessons is treated as recorded, one with none (sessions
-  // only, or neither) as live. Disclosed rather than guessed silently - see
-  // this slice's final report.
-  const isRecorded = progress.totalLessons > 0 || progress.totalSessions === 0;
-  const percentage = isRecorded ? progress.completionPercentage : progress.attendancePercentage;
-  const detail = isRecorded
+  // This used to switch between the completion and attendance figures on
+  // `progress.totalLessons > 0`, reading that as "the enrollment's mode".
+  // There is no mode: `D-9` retired `learning_mode` outright in migration
+  // `012`, and every group now runs sessions *and* accumulates recordings. So
+  // the test was true for every real course and the attendance branch was
+  // dead code that only ever fired on an empty one.
+  //
+  // A course card measures COMPLETION (`CLAUDE.md` §11.1.2) - that is what a
+  // `Meter` means, and mixing an attendance share into the same bar is the
+  // merge that rule forbids. Attendance has its own figure on the Timetable
+  // card above and its own page.
+  // A course with no recordings published yet has nothing to be a share of.
+  // `0%` under a full-width empty bar reads as "you have done none of it";
+  // the em-dash rule (`CLAUDE.md` §11.1 copy) is the honest answer.
+  const hasLessons = progress.totalLessons > 0;
+  const percentage = progress.completionPercentage;
+  const detail = hasLessons
     ? `${progress.completedLessons} of ${progress.totalLessons} lessons done`
-    : `${progress.attendedSessions} of ${progress.totalSessions} sessions attended`;
+    : 'No recordings published yet';
 
   return (
     <motion.div whileHover={{ scale: 1.01 }} transition={{ duration: 0.2, ease: [0.2, 0, 0.2, 1] }}>
@@ -798,19 +931,27 @@ function CourseCard({ course }: { course: CourseListItem }) {
             <h3 className="truncate text-md font-semibold text-fg">{course.title}</h3>
             <p className="mt-1 text-xs text-fg-3">{course.teacherName}</p>
           </div>
-          <Tag tone={isRecorded ? 'violet' : 'blue'}>{isRecorded ? 'Recorded' : 'Live'}</Tag>
+          {/* The "Recorded"/"Live" tag that sat here labelled the same
+              retired axis (`D-9`, migration `012`): every course is both, so
+              the label was always "Recorded" and told the student nothing. */}
         </div>
 
         <p className="mt-3 line-clamp-2 text-base text-fg-2">{course.description}</p>
 
         <div className="mt-4 flex items-baseline justify-between">
-          <span className="text-xs text-fg-3">{isRecorded ? 'Course completion' : 'Attendance'}</span>
-          <span className="num text-md text-fg">{formatPercent(percentage)}</span>
+          <span className="text-xs text-fg-3">Course completion</span>
+          <span className="num text-md text-fg">
+            {hasLessons ? formatPercent(percentage) : '—'}
+          </span>
         </div>
-        <div className="mt-2">
-          <Meter value={percentage} name={isRecorded ? 'Course completion' : 'Attendance'} />
-        </div>
-        <p className="num mt-2 text-xxs text-fg-4">{detail}</p>
+        {hasLessons && (
+          <div className="mt-2">
+            {/* `label={false}`: the figure is already printed above, and the
+                `Meter`'s own trailing percentage made the card say 42% twice. */}
+            <Meter value={percentage} label={false} name={`${course.title} completion`} />
+          </div>
+        )}
+        <p className={cx('mt-2 text-xxs text-fg-4', hasLessons && 'num')}>{detail}</p>
 
         <span className="mt-4 inline-flex items-center gap-2 text-base text-fg-2 transition-colors duration-[var(--dur-fast)] ease-[var(--ease)] group-hover:text-fg">
           Open course

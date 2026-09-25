@@ -206,7 +206,7 @@ accepting / a form response cannot be matched / the week is summarised.
 
 | Feature | Status | Note |
 |---|---|---|
-| Overview | `[CHANGED]` | Action-first: continue-watching, three action cards, due-today, dismissible announcement. **No mark anywhere on this page.** |
+| Overview | `[CHANGED]` | Action-first: continue-watching, three action cards (Recordings / Work / Timetable — the fourth, Marks, went with its grade average, `D-56`), due-today, dismissible announcement. The Timetable card carries the student's **attendance** with its denominator — ruled 2026-09-25, `D-55`; this row previously omitted it and `PHASE_ROADMAP.md` was right that it belongs. **No mark anywhere on this page.** |
 | My lessons | `[CHANGED]` | Recording library, **thumbnails by default**, grid/list toggle, watched bar. Needs `recordings.thumbnail_url` `[NEW]`. |
 | Lesson detail | `[NEW]` | Player, chapters, the work set from it, its material, and a "Next recording" card. |
 | Homework | `[CHANGED]` | **Homework only** — no quiz appears here. Four attempt states. |

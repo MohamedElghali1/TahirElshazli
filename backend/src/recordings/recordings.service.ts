@@ -18,6 +18,25 @@ export interface RecordingListResponse {
   filters: RecordingFilterOptions;
 }
 
+/**
+ * What the Home screen needs about a course's recordings, from one read.
+ *
+ * `resume` is the continue-watching card's recording (`STU-1`): the earliest in
+ * course order that has been started and not finished, else the earliest not
+ * finished at all - "next up" for a student who has watched nothing. `null`
+ * only when every recording is complete or the course has none.
+ *
+ * ponytail: ordered by `order`, not by when the student last watched.
+ * `RecordingWithProgress` carries no progress timestamp - `RecordingProgress`
+ * has `updatedAt` but the joined read does not surface it. Surface it there if
+ * "continue watching" ever needs to mean the genuinely most recent one.
+ */
+export interface CourseWatchState {
+  /** Recordings the student has not started - the "N new" count. */
+  unwatched: number;
+  resume: RecordingWithProgress | null;
+}
+
 /** Course completion, derived from watch progress - never a stored percentage. */
 export interface RecordedCompletion {
   completedLessons: number;
@@ -77,9 +96,19 @@ export class RecordingsService {
     };
   }
 
-  async countUnwatched(courseId: string, studentId: string): Promise<number> {
+  /**
+   * Replaces the old `countUnwatched`: both screens that wanted the count now
+   * also want the resume point, and issuing a second `findByCourse` per course
+   * to get it would put back a read per enrolled course on the one endpoint
+   * that exists to have removed the fan-out (`StudentHomeService`'s header).
+   */
+  async getWatchState(courseId: string, studentId: string): Promise<CourseWatchState> {
     const recordings = await this.recordingRepo.findByCourse(courseId, studentId);
-    return recordings.filter((r) => r.watchedSeconds === 0).length;
+    const started = recordings.find((r) => r.watchedSeconds > 0 && !r.completed);
+    return {
+      unwatched: recordings.filter((r) => r.watchedSeconds === 0).length,
+      resume: started ?? recordings.find((r) => !r.completed) ?? null,
+    };
   }
 
   async updateProgress(

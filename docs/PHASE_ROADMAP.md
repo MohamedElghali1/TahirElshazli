@@ -642,20 +642,24 @@ directions are asserted now; **that guard covers the whole authorization boundar
 
 ---
 
-### Chat unit 13 — Student surface and the public site `[~]`
+### Chat unit 13 — Student surface and the public site `[x]`
 
 **Scope** `STU-1` … `STU-7`, `SITE-1` … `SITE-5`.
 **Depends on** unit 4, and each feature's own backend unit.
 **Care** the Overview is action-first and carries **no mark anywhere**. Marketing typography never
 mixes with the console's 13px. `/catalog` and the student `/achievements` rail entry are `[REMOVED]`.
 
-**State, 2026-09-24: PARTIAL by design, `[~]`.** The session deliberately took a subset while units
-7 and 8 were in flight on other branches.
+**State, 2026-09-25: COMPLETE, `[x]`.** The 2026-09-24 session deliberately took a subset while
+units 7 and 8 were in flight on other branches; `STU-1` closed the remainder the next day.
 
 - **Landed `[x]`:** `SITE-1`…`SITE-5`, `STU-2`, `STU-4`, `STU-5`, `STU-7`.
-- **Unblocked 2026-09-24, was deferred:** `STU-1` — composes unit 8's attendance figures, which
-  landed on `redesign` the same day as migration `026`. The dependency has cleared; the item is
-  open work, not blocked work.
+- **Closed `[x]` 2026-09-25:** `STU-1` — the Overview. Continue-watching hero, three action cards,
+  due-today, a dismissible announcement, attendance on the Timetable card. Two decisions were raised
+  rather than guessed and ruled by the user: `D-55` (attendance *does* belong here — this document
+  was right and `PRODUCT_SPEC.md` §6 was incomplete, now corrected at source) and `D-56` (the
+  "three action cards" are Recordings / Work / Timetable; the fourth went with its grade average).
+  The mark came out of the **response**, not just the render (`D-53`), and the retired-axis
+  heuristic `D-9` orphaned was deleted from both screens carrying it (`D-54`).
 - **Closed `[x]`:** `STU-3` — player, chapters, the work set, **its material**, and the
   next-recording card. The material half was the open one; the client ruled 2026-09-24 to follow the
   design, so migration `025` adds `materials.lesson_id`. No new route and no staff control: the
@@ -670,11 +674,17 @@ mixes with the console's 13px. `/catalog` and the student `/achievements` rail e
 it actually needed was `F13-4` — every Google Form task was rendering on **both** `/homework` and
 `/quizzes`.
 
-**`STU-1` is the last item, and it is now unblocked.** It composes unit 8's attendance figures;
-unit 8 landed on `redesign` 2026-09-24 as migration `026` (`025` being this unit's material
-relation), so `GET /students/me/attendance` exists. Everything else in unit 13 is `[x]`: `F13-2`
-ruled on (no avatars), `STU-3`'s material gap closed (follow the design). §2 condition 9 is unmet
-by exactly one item, and that item is no longer waiting on anything.
+**`STU-1` is done and every item in unit 13 is `[x]`.** A correction worth keeping: the deferral
+rationale above was wrong twice. The Overview never read unit 8's endpoint — it read
+`CourseProgress.attendancePercentage` through a heuristic that could not fire (`D-54`), so unit 8 was
+never actually a dependency. What the unit-8 work *did* give `STU-1` was a correct figure to render
+once the ruling said to render one.
+
+**`F13-7` — the unit's first browser check.** It had never been driven in a real browser; every gate
+was green before it ran, and it still found two defects (a doubled percentage on a course card, and
+a `0%` completion bar on a course with nothing published — an em-dash now). It also produced one
+false alarm that was investigated, disproved and recorded so it is not re-reported: an RTL heading
+that *looks* reordered but reads correctly. Worth the half hour on every unit.
 
 **The finding that dominated the unit (`F13-1`).** `SITE-1`…`SITE-5` were not a redesign. Every
 marketing and auth surface was still written against the token vocabulary `ad238a7` deleted with

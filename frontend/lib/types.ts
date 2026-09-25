@@ -250,11 +250,12 @@ export interface StudentAttendanceHistoryItem {
 }
 
 /**
- * `GET /students/me/attendance` (`SESS-7`). `late` is its own count, folded
- * into neither `present` nor `absent` - attendance, never progress or
- * performance (CLAUDE.md §11.1).
+ * The counts alone. `late` is its own figure, folded into neither `present` nor
+ * `absent` - attendance, never progress or performance (CLAUDE.md §11.1). The
+ * Overview reads this off `StudentHomeResponse`; the history is the
+ * `/attendance` page's.
  */
-export interface StudentAttendanceResponse {
+export interface StudentAttendanceSummary {
   present: number;
   late: number;
   absent: number;
@@ -262,6 +263,10 @@ export interface StudentAttendanceResponse {
   expected: number;
   /** `present / expected`, rounded; `0` when `expected` is `0`. */
   percentage: number;
+}
+
+/** `GET /students/me/attendance` (`SESS-7`). */
+export interface StudentAttendanceResponse extends StudentAttendanceSummary {
   history: StudentAttendanceHistoryItem[];
 }
 
@@ -486,7 +491,6 @@ export interface DashboardStats {
   homeworkPending: number;
   answersAvailable: number;
   newRecordings: number;
-  overallReportPercentage: number | null;
 }
 
 export interface DashboardResponse {
@@ -518,12 +522,16 @@ export interface StudentHomeEntry {
   quickAccess: MaterialCounts;
   nextLiveSession: StudentSessionView | null;
   assessments: AssessmentListItem[];
+  /** The continue-watching card's recording; `null` when nothing is left. */
+  continueWatching: RecordingWithProgress | null;
 }
 
 export interface StudentHomeResponse {
   studentName: string;
   entries: StudentHomeEntry[];
   notifications: NotificationListResponse;
+  /** One figure for the student, across every group they sit in - not per course. */
+  attendance: StudentAttendanceSummary;
 }
 
 /* --- reports (reports/reports.service.ts) --------------------------------- */

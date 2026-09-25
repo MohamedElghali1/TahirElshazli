@@ -9,7 +9,6 @@ import { RecordingsService } from '../recordings/recordings.service.js';
 import { MaterialsService } from '../materials/materials.service.js';
 import type { MaterialCounts } from '../materials/materials.service.js';
 import { LiveSessionsService } from '../live-sessions/live-sessions.service.js';
-import { ReportsService } from '../reports/reports.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import type { StudentSessionView } from '../live-sessions/student-session-view.js';
 
@@ -20,22 +19,25 @@ export interface DashboardStats {
   answersAvailable: number;
   /** Recordings in the course the student has not started watching. */
   newRecordings: number;
-  /** Grade average across marked work - performance, not completion. */
-  overallReportPercentage: number | null;
 }
 
 /**
- * The four headline numbers, derived from a list the caller already holds.
+ * The three headline numbers, derived from a list the caller already holds.
  *
  * A free function rather than a method because two screens need it - the
  * per-course dashboard and the aggregated Home screen - and a second
  * implementation is precisely how the two would come to disagree. `status` is
  * read as the server derived it and never recomputed (§5.10); this only counts.
+ *
+ * It carried a fourth number until `STU-1`: `overallReportPercentage`, a grade
+ * average. `PRODUCT_SPEC.md` §6 forbids a mark anywhere on the Overview and
+ * `CLAUDE.md` §11.1.2 forbids progress and performance sharing a figure, so it
+ * was removed from the response rather than merely left unrendered - a number
+ * the screen may not show has no business travelling to the browser.
  */
 export function deriveStats(
   assessments: readonly AssessmentListItem[],
   newRecordings: number,
-  overallReportPercentage: number | null,
 ): DashboardStats {
   return {
     homeworkPending: assessments.filter(
@@ -43,7 +45,6 @@ export function deriveStats(
     ).length,
     answersAvailable: assessments.filter((a) => a.status === 'corrected').length,
     newRecordings,
-    overallReportPercentage,
   };
 }
 
@@ -72,7 +73,6 @@ export class DashboardService {
     private readonly recordingsService: RecordingsService,
     private readonly materialsService: MaterialsService,
     private readonly liveSessionsService: LiveSessionsService,
-    private readonly reportsService: ReportsService,
     private readonly notificationsService: NotificationsService,
   ) {}
 
@@ -93,25 +93,21 @@ export class DashboardService {
       profile,
       progress,
       assessments,
-      newRecordings,
+      watch,
       quickAccess,
       nextLiveSession,
-      performance,
       unreadNotifications,
     ] = await Promise.all([
       this.studentsService.getProfile(studentId),
       this.coursesService.getProgress(courseId, studentId),
       this.assessmentsService.getAssessmentsForCourse(courseId, studentId),
-      this.recordingsService.countUnwatched(courseId, studentId),
+      this.recordingsService.getWatchState(courseId, studentId),
       this.materialsService.getCounts(courseId, studentId),
       this.liveSessionsService.getNextSession(courseId, studentId),
-      // `getPerformanceFor`, not `getSummary`: the dashboard reads one number
-      // off it, and `getSummary` would re-assert this enrollment and rebuild a
-      // `CourseProgress` - two recording reads - that `progress` above already
-      // holds. Same arithmetic either way; `ReportsService.buildPerformance` is
-      // the single implementation, so the figure cannot drift from the one the
-      // Report screen shows.
-      this.reportsService.getPerformanceFor(courseId, studentId),
+      // The `getPerformanceFor` read that used to sit here went with
+      // `overallReportPercentage` (`STU-1`): the grade average is the Report
+      // screen's, and this screen may not show it. `/marks` reads it from
+      // `ReportsService` directly.
       this.notificationsService.countUnread(studentId),
     ]);
 
@@ -123,11 +119,7 @@ export class DashboardService {
         teacherName: course.teacherName,
       },
       progress,
-      stats: deriveStats(
-        assessments,
-        newRecordings,
-        performance.overallPercentage,
-      ),
+      stats: deriveStats(assessments, watch.unwatched),
       nextLiveSession,
       quickAccess,
       unreadNotifications,

@@ -11,7 +11,6 @@ import { AssessmentsModule } from '../assessments/assessments.module.js';
 import { RecordingsModule } from '../recordings/recordings.module.js';
 import { MaterialsModule } from '../materials/materials.module.js';
 import { LiveSessionsModule } from '../live-sessions/live-sessions.module.js';
-import { ReportsModule } from '../reports/reports.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
 
 @Module({
@@ -24,7 +23,6 @@ import { NotificationsModule } from '../notifications/notifications.module.js';
     RecordingsModule,
     MaterialsModule,
     LiveSessionsModule,
-    ReportsModule,
     NotificationsModule,
   ],
   controllers: [DashboardController, StudentHomeController],

@@ -4246,3 +4246,57 @@ Browser pane does not reliably restyle, and Tailwind's `rtl:` variants key off `
 half-visible and is actually fine) and one phantom all-clear. Both were caught by running a control
 alongside the measurement. Set `lang` and `dir` together, server-side, reload, and always measure a
 control you know the answer for.
+
+---
+
+**`STU-1` — the student Overview, 2026-09-25.** Unit 13's last item, and the last one standing
+between unit 13 and `[x]`. The handoff that preceded it had flagged two live defects on the page and
+one document conflict, and told the next session to verify all three rather than take its word.
+All three held up, and the page turned out to carry a fourth problem the handoff had not seen: the
+mark it forbids was rendered **twice**, not once — in the corrected-task inbox row *and* as the Quick
+access "Marks" card's count.
+
+**The interesting part was deciding what to remove rather than what to add.** The spec says the
+Overview carries no mark anywhere. The lazy reading is "stop rendering two numbers". The honest one
+is that `DashboardStats.overallReportPercentage` is a grade average being served to a screen that may
+not show it, and a field nobody may render should not be on the wire — leaving it there is how it got
+onto this screen in the first place. So it came out of the response (`D-53`). That turned out to pay
+for itself twice over: the field was the only reason either dashboard called `getPerformanceFor`, so
+removing it deleted one performance read **per enrolled course** from the single endpoint whose whole
+existence is about not fanning out. The per-course dashboard that shares the type has no frontend
+consumer at all — its comment points at a `/learn/[id]` route that does not exist.
+
+**Two questions were raised rather than guessed**, and the user ruled on both. `PRODUCT_SPEC.md` §6
+says "three action cards"; the page had four, and exactly one of them carried the forbidden mark —
+so "three cards" and "no mark" turned out to be the same edit (`D-56`). And the §2.3 conflict the
+handoff flagged — the roadmap deferred `STU-1` for attendance figures the spec's Overview row never
+mentions — was ruled in the roadmap's favour: attendance belongs here, and `PRODUCT_SPEC.md` was the
+document in error (`D-55`). It renders as the Timetable card's count with its denominator,
+`2 of 6 attended`, never a bare percentage that could read as a score.
+
+Worth recording that the deferral rationale was still wrong in a way nobody had noticed: the Overview
+never read unit 8's attendance endpoint. It read `CourseProgress.attendancePercentage` through a
+heuristic that inferred "the enrollment's mode" from `totalLessons > 0` — and `D-9` retired
+`learning_mode` outright in migration `012`, so the test was true for every real course and that
+branch had never once executed. Unit 8 was never actually a blocker. The heuristic was deleted, from
+**both** files that had it: `dashboard/page.tsx` and `marks/page.tsx`, character-for-character
+identical, the second even citing the first in a comment (`D-54`). Fixing only the one the task named
+would have left the same bug in a sibling caller — the recurring shape of half the findings in this
+repository.
+
+**The browser check earned its keep again (`F13-7`).** Unit 13 had never been opened in a browser.
+Every gate was green — 804 unit, 404 e2e, 191 integration, both typechecks, the token check — and the
+browser still found two defects in thirty minutes: a course card printing its percentage twice (the
+caller's figure plus the `Meter`'s own trailing label), and a course with no recordings published
+showing `0%` under a full-width empty bar, when `0` is not a measurement of nothing. Both are now
+right; the second shows an em-dash, per the copy rule that has been in `CLAUDE.md` all along.
+
+It also produced a false alarm, which is worth more than the fixes. Under `dir="rtl"` the inbox
+heading renders as `items for you 6`, which has the exact shape of `F8-1` — the reversed score the
+unit-8 check caught the day before. It is not the same thing: in an RTL paragraph the leading run is
+placed rightmost, so an RTL reader reads "6 items for you" in the correct order, whereas `F8-1` was a
+value inversion *within* one run. The fix was written before the reasoning was finished, and then
+reverted. Recorded in the changelog so the next reader does not re-report it — and as a reminder that
+the second half of a browser check is deciding which of the odd-looking things are actually wrong.
+
+Unit 13 is `[x]`. No migration; `027` is still the next free number.

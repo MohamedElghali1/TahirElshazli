@@ -4,7 +4,10 @@ import type {
   LiveSessionRepository,
 } from './interfaces/live-session-repository.interface.js';
 import { LIVE_SESSION_REPOSITORY } from './interfaces/live-session-repository.interface.js';
-import type { AttendanceRepository } from './interfaces/attendance-repository.interface.js';
+import type {
+  Attendance,
+  AttendanceRepository,
+} from './interfaces/attendance-repository.interface.js';
 import { ATTENDANCE_REPOSITORY } from './interfaces/attendance-repository.interface.js';
 import type { GroupRepository } from '../groups/interfaces/group-repository.interface.js';
 import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interface.js';
@@ -33,14 +36,22 @@ export interface StudentAttendanceHistoryItem {
  * `late` is its own count, folded into neither `present` nor `absent`, so the
  * number on screen stays explainable (`CLAUDE.md` §11.1.2 - this is attendance,
  * never progress and never performance).
+ *
+ * Split from the response for `STU-1`: the Overview shows the counts and never
+ * the history, and shipping a term of session rows to draw one figure is the
+ * field minimisation `CLAUDE.md` §8 asks for. Same arithmetic either way -
+ * `collect` below is the single implementation.
  */
-export interface StudentAttendanceResponse {
+export interface StudentAttendanceSummary {
   present: number;
   late: number;
   absent: number;
   expected: number;
   /** `present / expected`, rounded; `0` when `expected` is `0`. */
   percentage: number;
+}
+
+export interface StudentAttendanceResponse extends StudentAttendanceSummary {
   history: StudentAttendanceHistoryItem[];
 }
 
@@ -117,22 +128,23 @@ export class StudentSessionsService {
   }
 
   /**
-   * `GET /students/me/attendance` (`SESS-7`).
+   * The sessions that count towards attendance, with this student's marks.
    *
    * `expected` is `published` sessions of the student's groups that have
    * already ended - `isVisible` plays no part here (`PHASE_PLAN.md` §3.3
    * names only `state = published`, deliberately not the visibility flag that
    * gates the *upcoming* timetable): a session that happened is a fact of
    * record whether or not it is still shown on the timetable.
-   *
-   * `history` lists every one of those sessions with the student's mark, or
-   * `null` when never marked - the same "absence is not absent" rule the
-   * staff sheet uses (`AttendanceSheetItem`), read from the student's own side.
    */
-  async getAttendance(studentId: string): Promise<StudentAttendanceResponse> {
+  private async collect(studentId: string): Promise<{
+    expectedSessions: LiveSession[];
+    markBySession: Map<string, Attendance>;
+    summary: StudentAttendanceSummary;
+  }> {
     const groupIds = await this.groupIdsFor(studentId);
+    const empty = { present: 0, late: 0, absent: 0, expected: 0, percentage: 0 };
     if (groupIds.length === 0) {
-      return { present: 0, late: 0, absent: 0, expected: 0, percentage: 0, history: [] };
+      return { expectedSessions: [], markBySession: new Map(), summary: empty };
     }
 
     const sessions = await this.sessionRepo.findByGroups(groupIds);
@@ -145,12 +157,42 @@ export class StudentSessionsService {
       studentId,
       expectedSessions.map((s) => s.id),
     );
-    const markBySession = new Map(marks.map((m) => [m.sessionId, m]));
 
     const present = marks.filter((m) => m.status === 'present').length;
-    const late = marks.filter((m) => m.status === 'late').length;
-    const absent = marks.filter((m) => m.status === 'absent').length;
     const expected = expectedSessions.length;
+
+    return {
+      expectedSessions,
+      markBySession: new Map(marks.map((m) => [m.sessionId, m])),
+      summary: {
+        present,
+        late: marks.filter((m) => m.status === 'late').length,
+        absent: marks.filter((m) => m.status === 'absent').length,
+        expected,
+        percentage: expected === 0 ? 0 : Math.round((present / expected) * 100),
+      },
+    };
+  }
+
+  /**
+   * The counts alone, for the Overview's attendance figure (`STU-1`). Same
+   * numbers `getAttendance` returns, from the same reads - a second
+   * implementation is how the two screens would come to disagree.
+   */
+  async getAttendanceSummary(studentId: string): Promise<StudentAttendanceSummary> {
+    const { summary } = await this.collect(studentId);
+    return summary;
+  }
+
+  /**
+   * `GET /students/me/attendance` (`SESS-7`).
+   *
+   * `history` lists every expected session with the student's mark, or `null`
+   * when never marked - the same "absence is not absent" rule the staff sheet
+   * uses (`AttendanceSheetItem`), read from the student's own side.
+   */
+  async getAttendance(studentId: string): Promise<StudentAttendanceResponse> {
+    const { expectedSessions, markBySession, summary } = await this.collect(studentId);
 
     const history = expectedSessions
       .slice()
@@ -171,13 +213,6 @@ export class StudentSessionsService {
         };
       });
 
-    return {
-      present,
-      late,
-      absent,
-      expected,
-      percentage: expected === 0 ? 0 : Math.round((present / expected) * 100),
-      history,
-    };
+    return { ...summary, history };
   }
 }

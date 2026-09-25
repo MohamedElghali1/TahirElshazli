@@ -188,17 +188,19 @@ describe('Student API (e2e)', () => {
     await request(app.getHttpServer()).get(path).set(auth()).expect(200);
   });
 
-  it('returns a dashboard whose progress and performance are separate', async () => {
+  // Was "progress and performance are separate", asserting that `stats`
+  // carried a grade average distinct from the completion figure. `STU-1`
+  // removed the average from the response outright, which is the stronger form
+  // of the same rule (`CLAUDE.md` §11.1.2): performance does not reach a
+  // dashboard at all, so there is nothing for completion to be confused with.
+  it('returns a dashboard that carries completion and no grade average', async () => {
     const res = await request(app.getHttpServer())
       .get('/courses/course-1/dashboard')
       .set(auth())
       .expect(200);
     expect(res.body.studentName).toBe('Ali Esam');
     expect(res.body.progress).toHaveProperty('completionPercentage');
-    expect(res.body.stats).toHaveProperty('overallReportPercentage');
-    expect(res.body.progress.completionPercentage).not.toBe(
-      res.body.stats.overallReportPercentage,
-    );
+    expect(res.body.stats).not.toHaveProperty('overallReportPercentage');
   });
 
   /* --- the aggregated Home screen ------------------------------------
@@ -223,6 +225,56 @@ describe('Student API (e2e)', () => {
     expect(res.body.entries.map((e: { course: { id: string } }) => e.course.id))
       .toEqual(courses.body.map((c: { id: string }) => c.id));
     expect(res.body.notifications).toHaveProperty('unreadCount');
+  });
+
+  /* `STU-1` added two things to this response, both for the Overview: the
+     continue-watching recording per course, and the student's attendance
+     counts once for the whole student. Both are pinned against the endpoint
+     that owns them, not against a literal. */
+
+  it('carries the attendance counts /students/me/attendance reports', async () => {
+    const home = await request(app.getHttpServer())
+      .get('/dashboard')
+      .set(auth())
+      .expect(200);
+    const attendance = await request(app.getHttpServer())
+      .get('/students/me/attendance')
+      .set(auth())
+      .expect(200);
+
+    const { history: _history, ...counts } = attendance.body;
+    expect(home.body.attendance).toEqual(counts);
+    // The history is the /attendance page's, never the Overview's.
+    expect(home.body.attendance).not.toHaveProperty('history');
+  });
+
+  it('carries a continue-watching recording the course actually holds', async () => {
+    const home = await request(app.getHttpServer())
+      .get('/dashboard')
+      .set(auth())
+      .expect(200);
+    const recordings = await request(app.getHttpServer())
+      .get('/courses/course-1/recordings')
+      .set(auth())
+      .expect(200);
+
+    const entry = home.body.entries.find(
+      (e: { course: { id: string } }) => e.course.id === 'course-1',
+    );
+    expect(entry).toBeDefined();
+    if (entry.continueWatching === null) {
+      // Only legitimate when nothing is left to watch.
+      expect(
+        recordings.body.recordings.filter((r: { completed: boolean }) => !r.completed),
+      ).toHaveLength(0);
+      return;
+    }
+    expect(entry.continueWatching.completed).toBe(false);
+    expect(
+      recordings.body.recordings.find(
+        (r: { id: string }) => r.id === entry.continueWatching.id,
+      ),
+    ).toEqual(entry.continueWatching);
   });
 
   it('reports the same stats the per-course dashboard does', async () => {
