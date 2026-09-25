@@ -234,7 +234,8 @@ verify against the actual consumer graph before treating either directory as leg
 
 The backend **is** green and must stay green: **803 unit / 48 files, 402 e2e, 191 integration**
 (against real PostgreSQL 15.19, 001–026 from an empty schema) as of unit 8's landing, 2026-09-24
-(`docs/phases/unit-8/`; units 1–8 and 10–13 are `[x]`, unit 14 `[~]`). **Backend `tsc
+(`docs/phases/unit-8/`; units 1–8 and 10–14 are `[x]` — unit 14 closed 2026-09-25 when `GAUTH-C1`
+and `GAUTH-C2` did). **Backend `tsc
 --noEmit` is not a CI gate yet** and specs are excluded from `nest build`; the remote line shipped a
 backend that did not compile because of it (`RC-F1`).
 
@@ -582,6 +583,13 @@ historical only.
 - **Both themes, and both directions.** Define the full light palette, redefine only what changes for
   dark, and check every screen against `dir="rtl"` and a long Arabic name (`ليلى فهمي` is in the
   fixtures for exactly this).
+- **Light is the default and dark is an explicit opt-in** — `fig-tokens.css` carries no
+  `prefers-color-scheme` block at all, by the handoff's decision (`app/layout.tsx` says why). **No
+  script may decide the theme a second time.** `theme-toggle.tsx` resolved the OS preference when
+  `data-theme` was unset, so on a dark-set machine the page painted light while the control reported
+  dark and the first click did nothing visible (`F14-1`). Generally: **a default expressed in both CSS
+  and JavaScript will drift, and no gate can see a disagreement between two artifacts that are each
+  correct alone.** Read the default from the stylesheet's behaviour, in one place.
 
 ### 11.1 Product non-negotiables the design and the client arrived at independently
 
