@@ -106,11 +106,19 @@ Unchanged. Three categories.
   unanswered decisions; refusing is the reversible half. *Assumption, ratified 2026-09-20.*
 - → belongs to one `Course` · has many `GroupMembership` · has many `Session` · is targeted by many
   `Assessment` · receives `Announcement`
-- **Invariant.** A student may belong to several groups, including two on the same course; the
-  longest-standing placement (`assignedAt`) wins wherever a single answer is needed. **That sort key
-  is `GroupMembership.assignedAt`** — it was `GroupCourse.enrolledAt` until the join table
-  collapsed, which is a substitution of the key rather than of the rule, and arguably the better
-  reading of "longest-standing *placement*". A student in no group resolves to `[]`, not an error.
+- **Invariant (`D-65`, 2026-09-27, supersedes the below).** A student holds **at most one group per
+  course.** Moving them to another group on the same course replaces the old membership rather than
+  adding a second, in the same transaction, audited — enforced by `GroupsService` at every membership
+  write (`addMember`, `bulkMove`, and the registration-acceptance placement); a student on two groups
+  of one course is now an invariant violation, not a state. `findStudentGroups(studentId, courseId)`
+  can still return more than one row only transiently mid-write, never after. A student may still
+  belong to several groups **across different courses**. A student in no group resolves to `[]`, not
+  an error.
+  - *Superseded reading, kept for the sort key's provenance:* before `D-65`, two groups on one course
+    were legal and the longest-standing placement (`assignedAt`) won wherever a single answer was
+    needed. **That sort key is `GroupMembership.assignedAt`** — it was `GroupCourse.enrolledAt` until
+    the join table collapsed, a substitution of the key rather than of the rule. It still orders
+    `findStudentGroups`'s result; `D-65` makes that ordering moot in the steady state.
 
 ### `GroupMembership`
 `groupId`, `studentId`, `assignedBy`, `assignedAt`. Placement is a staff act, so `assignedBy` is

@@ -189,6 +189,48 @@ describe('RegistrationApprovalService', () => {
       expect(staffId).toBe(missing);
     });
 
+    it('D-65: replaces a membership the student already held on the group\'s course', async () => {
+      // Placed early, before their registration was decided -
+      // `GroupsService.addMember` checks only that the account is a student,
+      // not its status, so a waiting account can already sit in a group.
+      const student = await waiting();
+      const other = await groups.create({
+        name: 'Early placement',
+        teacherId: 'teacher-1',
+        courseId: 'course-1',
+        assistantId: null,
+        meets: null,
+        room: null,
+      });
+      await groups.addMember({
+        groupId: other.id,
+        studentId: student.id,
+        assignedBy: 'teacher-1',
+      });
+
+      await service.accept(student.id, GROUP, TEACHER);
+
+      expect(
+        (await groups.findMembers(other.id)).map((m) => m.studentId),
+      ).not.toContain(student.id);
+      expect(
+        (await groups.findMembers(GROUP)).map((m) => m.studentId),
+      ).toContain(student.id);
+
+      const removed = (
+        await audit.find({ limit: 50, action: 'group.student_removed' })
+      ).entries.find(
+        (e) =>
+          (e.before as { studentId?: string } | null)?.studentId ===
+          student.id,
+      );
+      expect(removed).toBeDefined();
+      expect(removed?.before).toMatchObject({
+        groupId: other.id,
+        studentId: student.id,
+      });
+    });
+
     it('writes one student.accepted entry naming the group and the course', async () => {
       const student = await waiting();
       await service.accept(student.id, GROUP, FULL_ADMIN);

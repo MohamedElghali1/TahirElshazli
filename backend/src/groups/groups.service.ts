@@ -409,6 +409,54 @@ export class GroupsService {
   }
 
   /**
+   * `D-65`: a student holds at most one group per **course**. Before placing
+   * `studentId` in `targetGroupId` (on `courseId`), remove every OTHER
+   * membership they hold on that same course, in the same transaction the
+   * caller already holds, each removal audited under the same action
+   * `removeMember` uses. A membership on a *different* course is untouched -
+   * `findStudentGroups` is already scoped to `courseId`.
+   *
+   * An assistant must be able to reach a source group exactly as they must
+   * reach the target: an unheld source answers with the same `GROUP_NOT_FOUND`
+   * every other unreachable group does (`D-10`, extended by `D-65`). Teacher
+   * and admin reach every group, so this is a no-op check for them.
+   */
+  private async replaceCourseMembership(
+    courseId: string,
+    targetGroupId: string,
+    studentId: string,
+    actor: StaffActor,
+  ): Promise<void> {
+    const held = await this.groupRepo.findStudentGroups(studentId, courseId);
+    for (const other of held) {
+      if (other.id === targetGroupId) {
+        continue;
+      }
+      if (!(await this.scope.mayReachGroup(other.id, actor))) {
+        throw new NotFoundException(GROUP_NOT_FOUND);
+      }
+      const membership = (await this.groupRepo.findMembers(other.id)).find(
+        (m) => m.studentId === studentId,
+      );
+      if (!membership) {
+        // Raced away between the read above and here; nothing to remove.
+        continue;
+      }
+      await this.groupRepo.removeMember(other.id, studentId);
+      await this.audit.record({
+        actorId: actor.id,
+        actorRole: actorRoleOf(actor),
+        action: 'group.student_removed',
+        targetType: 'group_membership',
+        targetId: membership.id,
+        courseId: null,
+        before: { groupId: other.id, studentId, assignedBy: membership.assignedBy },
+        after: null,
+      });
+    }
+  }
+
+  /**
    * Places a student in a group.
    *
    * **No enrollment precondition, deliberately.** The client's workflow is
@@ -423,6 +471,12 @@ export class GroupsService {
    * What *is* enforced is that the account is a **student**. Placing a TA in a
    * cohort would put them in a classmate list (§5.17) and in a roster count,
    * and there is no reading under which that is intended.
+   *
+   * **`D-65`:** moving a student to another group on the same course replaces
+   * the old membership rather than adding a second - see
+   * `replaceCourseMembership`. Re-adding a student to the group they are
+   * already in stays the no-op it always was: `held` includes `groupId`
+   * itself in that case, which the loop skips.
    */
   async addMember(
     groupId: string,
@@ -430,7 +484,7 @@ export class GroupsService {
     actor: StaffActor,
   ): Promise<void> {
     return this.db.runInTransaction(async () => {
-      await this.requireGroup(groupId, actor);
+      const group = await this.requireGroup(groupId, actor);
       const student = await this.userRepo.findById(studentId);
       if (!student) {
         throw new NotFoundException('Student not found');
@@ -438,6 +492,7 @@ export class GroupsService {
       if (student.role !== Role.Student) {
         throw new BadRequestException('Only students can be placed in a group');
       }
+      await this.replaceCourseMembership(group.courseId, groupId, studentId, actor);
       const membership = await this.groupRepo.addMember({
         groupId,
         studentId,
@@ -515,6 +570,10 @@ export class GroupsService {
    * must not leave the group half-moved. Teacher/admin only
    * (`API_SPEC.yaml`), matching the blast radius of moving up to a hundred
    * students in one call.
+   *
+   * **`D-65`:** each placement replaces any membership the student already
+   * holds on this group's course, same as a single `addMember` - this
+   * endpoint is that call, N times, in one transaction, not a new rule.
    */
   async bulkMove(
     groupId: string,
@@ -522,7 +581,7 @@ export class GroupsService {
     actor: StaffActor,
   ): Promise<{ moved: number }> {
     return this.db.runInTransaction(async () => {
-      await this.requireGroup(groupId, actor);
+      const group = await this.requireGroup(groupId, actor);
       const students = await this.userRepo.findByIds(studentIds);
       const byId = new Map(students.map((s) => [s.id, s]));
       for (const studentId of studentIds) {
@@ -535,6 +594,7 @@ export class GroupsService {
         }
       }
       for (const studentId of studentIds) {
+        await this.replaceCourseMembership(group.courseId, groupId, studentId, actor);
         const membership = await this.groupRepo.addMember({
           groupId,
           studentId,

@@ -1646,7 +1646,13 @@ paths:
       description: >
         Idempotent: placing someone already in the group answers 201 rather than
         409, because two clicks on Add describe one true state. Placement grants
-        no course access — `Enrollment` remains the gate.
+        no course access — `Enrollment` remains the gate. **D-65:** a student
+        holds at most one group per course — if they already hold another group
+        on this one's course, that membership is removed in the same
+        transaction (audited `group.student_removed`) before this one is
+        written. An assistant must be able to reach that other group too; an
+        unheld one answers with the same 404 as an unheld target (D-10).
+        Membership on a different course is untouched.
       x-roles: [assistant, teacher, admin]
       x-audit: group.student_assigned
       requestBody:
@@ -1730,7 +1736,10 @@ paths:
       description: >
         Backs the roster's "Move N to group". The write underneath is per
         student and audited per student; this endpoint exists so the UI is not
-        forced into N requests.
+        forced into N requests. **D-65:** each placement is the same
+        one-group-per-course replacement `POST .../members` makes — a student
+        already holding another group on this one's course is removed from it
+        first, audited `group.student_removed`.
       x-roles: [teacher, admin]
       parameters:
         - { name: groupId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }

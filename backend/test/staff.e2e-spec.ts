@@ -1346,6 +1346,44 @@ describe('Staff and admin API (e2e)', () => {
         ),
       ).toBe(true);
     });
+
+    it('D-65: moving a student to another group on the same course drops them from the old one', async () => {
+      // A known starting point on course-1, independent of what earlier tests
+      // in this describe left behind.
+      await request(app.getHttpServer())
+        .post('/staff/groups/group-1/members')
+        .set(bearer(adminToken))
+        .send({ studentId: 'student-2' })
+        .expect(201);
+
+      const sister = await request(app.getHttpServer())
+        .post('/admin/groups')
+        .set(bearer(adminToken))
+        .send({ name: 'E2E — D-65 sister group', courseId: 'course-1' })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post(`/staff/groups/${sister.body.id}/members`)
+        .set(bearer(adminToken))
+        .send({ studentId: 'student-2' })
+        .expect(201);
+
+      const oldMembers = await request(app.getHttpServer())
+        .get('/staff/groups/group-1/members')
+        .set(bearer(adminToken))
+        .expect(200);
+      expect(
+        oldMembers.body.map((m: { studentId: string }) => m.studentId),
+      ).not.toContain('student-2');
+
+      const newMembers = await request(app.getHttpServer())
+        .get(`/staff/groups/${sister.body.id}/members`)
+        .set(bearer(adminToken))
+        .expect(200);
+      expect(
+        newMembers.body.map((m: { studentId: string }) => m.studentId),
+      ).toContain('student-2');
+    });
   });
 
   describe('authoring: a TA may create both assignments and quizzes (§5.18)', () => {
@@ -3389,12 +3427,14 @@ describe('Staff and admin API (e2e)', () => {
     ).body.id as string;
     await request(server).post(`/staff/groups/${group3}/members`).set(bearer(adminToken))
       .send({ studentId: 'student-2' }).expect(201);
-    // Earlier describes in this file remove both students from group-1 (AUTH-3,
+    // Earlier describes in this file remove student-1 from group-1 (AUTH-3,
     // D-10); placing them back is idempotent, and makes the fixture explicit.
-    for (const studentId of ['student-1', 'student-2']) {
-      await request(server).post('/staff/groups/group-1/members').set(bearer(adminToken))
-        .send({ studentId }).expect(201);
-    }
+    // `student-2` stays out of this loop deliberately (`D-65`): group-1 and
+    // `group3` both study course-1, so re-adding student-2 to group-1 here
+    // would replace the group3 membership `theirs` is about to be submitted
+    // against, one-group-per-course being exactly the point.
+    await request(server).post('/staff/groups/group-1/members').set(bearer(adminToken))
+      .send({ studentId: 'student-1' }).expect(201);
     const g1Task = (
       await request(server).post('/staff/courses/course-1/assessments').set(bearer(adminToken))
         .send({ ...unit7Task, title: `E2E unit 7 group-1 task (${label})`, targets: [{ groupId: 'group-1' }] }).expect(201)
@@ -3825,6 +3865,13 @@ describe('Staff and admin API (e2e)', () => {
     let s1Sub = '';
     beforeAll(async () => {
       await unit7Setup('student marks');
+      // This describe's own task targets group-1 only, and needs student-2 in
+      // it too. `unit7Setup` deliberately leaves student-2 in `group3`
+      // (`D-65`); moving them here is a second, later placement that replaces
+      // it - `unit7.theirs` (targeted at `group3`) is not read again in this
+      // describe, so losing that membership costs nothing here.
+      await request(server()).post('/staff/groups/group-1/members').set(bearer(adminToken))
+        .send({ studentId: 'student-2' }).expect(201);
       shared = (
         await request(server()).post('/staff/courses/course-1/assessments').set(bearer(adminToken))
           .send({ ...unit7Task, title: 'E2E unit 7 student marks', targets: [{ groupId: 'group-1' }] }).expect(201)

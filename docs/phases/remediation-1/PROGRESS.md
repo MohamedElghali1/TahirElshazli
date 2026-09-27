@@ -14,7 +14,7 @@ weekly reports (`REM-031`, post-launch).
 |---|---|---|---|
 | T1 | REM-001 bootstrap-staff CLI | reviewed + committed | 21b4433 |
 | T2 | REM-002 group-grain scope on course-named staff routes (AUTH-6) | reviewed + committed | (this commit) |
-| T2b | D-65 one group per student per course (move replaces membership) | queued | |
+| T2b | D-65 one group per student per course (move replaces membership) | reviewed + committed | (this commit) |
 | T3 | REM-005 announcement publish not all-or-nothing on mail | reviewed + committed | (this commit) |
 | T4 | REM-007 classroom-safe rate limits | queued | |
 | T5 | REM-030 Cloudflare R2 storage driver | queued | |
@@ -79,3 +79,17 @@ models inside agy alike. By the user's choice, remaining tasks go to the `unit-i
 - Lead's live T-14 (production API, `MAIL_DRIVER` unset → `none`, fresh DB): publish to `group:group-1`
   → 200, `publishedAt` set, `delivery {emailed: 0, failed: 2}`, student's notifications 4 → 5, log
   line names the announcement id and counts only. **PASS.**
+
+### T2b — D-65 one group per student per course
+- `unit-implementer`: `GroupsService.replaceCourseMembership` removes a student's other membership on
+  the target's course (audited `group.student_removed`) before `addMember` and each `bulkMove`
+  placement; an assistant must reach the source group (`GROUP_NOT_FOUND` otherwise). The same rule in
+  `RegistrationApprovalService.accept` (found by tracing every write path). Staff e2e fixture that
+  re-created two same-course memberships fixed.
+- Lead's review: acceptance duplicates the small removal loop instead of sharing the private helper;
+  accepted as-is.
+- Lead's gates: lint 0 errors; drift ok; unit 844/50; e2e 411 across 5 files (staff 258 on retry);
+  integration 192/192; both builds; tsc 0.
+- Lead's live check (production API, fresh DB): "Move to group" of student-2 into a new group on
+  course-1 removed their group-1 membership (student-1's course-2 group untouched); audit shows
+  `group.student_removed` + `group.student_assigned`; assistant roster lists student-1 only. **PASS.**

@@ -489,9 +489,11 @@ describe('Groups', () => {
       expect(groups.map((g) => g.groupId)).toEqual(['group-1']);
     });
 
-    it('returns two lists for a student in two groups, never one merged set', async () => {
-      // student-1 already sits in group-1; put them in a second group that also
-      // studies course-1.
+    it('D-65: a second placement on the same course replaces the first, so the list never doubles', async () => {
+      // student-1 already sits in group-1 (course-1). Placing them in `other`,
+      // which studies the same course, replaces the group-1 membership rather
+      // than adding to it - so this still returns exactly one entry, for the
+      // new group.
       const other = await admin.create(
         { name: 'Chemistry — Monday', courseId: 'course-1' },
         ADMIN,
@@ -500,8 +502,8 @@ describe('Groups', () => {
       await staff.addMember(other.id, { studentId: 'student-2' }, ADMIN);
 
       const groups = await classmates.list('course-1', STUDENT_1);
-      expect(groups).toHaveLength(2);
-      expect(groups.map((g) => g.groupName)).not.toContain(undefined);
+      expect(groups).toHaveLength(1);
+      expect(groups[0].groupId).toBe(other.id);
     });
 
     it('is empty, not an error, for an enrolled but unplaced student', async () => {
@@ -644,6 +646,123 @@ describe('Groups', () => {
       await expect(
         admin.bulkMoveMembers('group-2', { studentIds: ['teacher-1'] }, ADMIN),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  /**
+   * `D-65`, 2026-09-27: a student holds at most one group per course. Moving
+   * them to another group on the same course replaces the old membership,
+   * audited both ways, in the same transaction. Both directions per
+   * `CLAUDE.md` §10: the assistant who holds both groups succeeds, the one
+   * who holds only the target is refused exactly like any other unreachable
+   * group (`D-10`).
+   */
+  describe('D-65: a student holds at most one group per course', () => {
+    /** A second group also studying course-1, so student-2 (seeded into group-1 only) can be moved. */
+    let sisterGroup: string;
+
+    beforeEach(async () => {
+      sisterGroup = (
+        await admin.create({ name: 'Chemistry — Sunday', courseId: 'course-1' }, ADMIN)
+      ).id;
+    });
+
+    it('single add: moving to another group on the same course leaves only the new one', async () => {
+      await staff.addMember(sisterGroup, { studentId: 'student-2' }, ADMIN);
+
+      expect(
+        (await staff.members('group-1', ADMIN)).map((m) => m.studentId),
+      ).not.toContain('student-2');
+      expect(
+        (await staff.members(sisterGroup, ADMIN)).map((m) => m.studentId),
+      ).toContain('student-2');
+    });
+
+    it('bulk move: moving from group A to group B on one course leaves only B', async () => {
+      await admin.bulkMoveMembers(sisterGroup, { studentIds: ['student-2'] }, ADMIN);
+
+      expect(
+        (await staff.members('group-1', ADMIN)).map((m) => m.studentId),
+      ).not.toContain('student-2');
+      expect(
+        (await staff.members(sisterGroup, ADMIN)).map((m) => m.studentId),
+      ).toContain('student-2');
+    });
+
+    it('leaves a membership on another course untouched', async () => {
+      // student-1 holds group-1 (course-1) AND group-2 (course-2), per seed.
+      await staff.addMember(sisterGroup, { studentId: 'student-1' }, ADMIN);
+      expect(
+        (await staff.members('group-2', ADMIN)).map((m) => m.studentId),
+      ).toContain('student-1');
+    });
+
+    it('writes an audit entry for the removal and for the placement', async () => {
+      await staff.addMember(sisterGroup, { studentId: 'student-2' }, ADMIN);
+
+      const all = await entries();
+      const removed = all.find(
+        (e) =>
+          e.action === 'group.student_removed' &&
+          (e.before as { groupId?: string; studentId?: string } | null)
+            ?.groupId === 'group-1' &&
+          (e.before as { groupId?: string; studentId?: string } | null)
+            ?.studentId === 'student-2',
+      );
+      const assigned = all.find(
+        (e) =>
+          e.action === 'group.student_assigned' &&
+          e.after?.groupId === sisterGroup &&
+          e.after?.studentId === 'student-2',
+      );
+      expect(removed).toBeDefined();
+      expect(assigned).toBeDefined();
+    });
+
+    it('refuses an assistant who holds only the target group, with the unreachable-group 404, and nothing changes', async () => {
+      // assistant-2 holds nothing by default (UNASSIGNED_TA); grant them the
+      // target only - not group-1, the source.
+      await scopeRepo.assignGroup('assistant-2', sisterGroup, 'teacher-1');
+
+      const message = await staff
+        .addMember(sisterGroup, { studentId: 'student-2' }, UNASSIGNED_TA)
+        .catch((e: Error) => e.message);
+      expect(message).toBe(GROUP_NOT_FOUND);
+
+      expect(
+        (await staff.members('group-1', ADMIN)).map((m) => m.studentId),
+      ).toContain('student-2');
+      expect(
+        (await staff.members(sisterGroup, ADMIN)).map((m) => m.studentId),
+      ).not.toContain('student-2');
+      expect(
+        (await entries()).filter(
+          (e) =>
+            e.action === 'group.student_assigned' &&
+            e.after?.groupId === sisterGroup,
+        ),
+      ).toEqual([]);
+    });
+
+    it('lets an assistant who holds both groups succeed', async () => {
+      // assistant-1 (ASSIGNED_TA) already holds group-1; grant the sister too.
+      await scopeRepo.assignGroup('assistant-1', sisterGroup, 'teacher-1');
+
+      await staff.addMember(sisterGroup, { studentId: 'student-2' }, ASSIGNED_TA);
+
+      expect(
+        (await staff.members(sisterGroup, ADMIN)).map((m) => m.studentId),
+      ).toContain('student-2');
+      expect(
+        (await staff.members('group-1', ADMIN)).map((m) => m.studentId),
+      ).not.toContain('student-2');
+    });
+
+    it('lets the teacher succeed regardless of scope', async () => {
+      await staff.addMember(sisterGroup, { studentId: 'student-2' }, ADMIN);
+      expect(
+        (await staff.members(sisterGroup, ADMIN)).map((m) => m.studentId),
+      ).toContain('student-2');
     });
   });
 

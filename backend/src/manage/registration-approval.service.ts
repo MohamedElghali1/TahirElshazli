@@ -106,6 +106,37 @@ export class RegistrationApprovalService {
         throw new NotFoundException('Group not found');
       }
 
+      // `D-65`: one group per course. A waiting account is not normally
+      // placed anywhere before it is decided, but nothing stops staff placing
+      // one early (`GroupsService.addMember` checks only that the account is
+      // a student) - so if this student already holds a group on the same
+      // course, acceptance replaces it rather than adding a second. Audited
+      // the same way `GroupsService`'s own replacement is; `accept`'s own
+      // placement stays covered by `student.accepted` below, unchanged.
+      const held = await this.groupRepo.findStudentGroups(studentId, group.courseId);
+      for (const other of held) {
+        if (other.id === groupId) {
+          continue;
+        }
+        const membership = (await this.groupRepo.findMembers(other.id)).find(
+          (m) => m.studentId === studentId,
+        );
+        if (!membership) {
+          continue;
+        }
+        await this.groupRepo.removeMember(other.id, studentId);
+        await this.audit.record({
+          actorId: actor.id,
+          actorRole: actorRoleOf(actor),
+          action: 'group.student_removed',
+          targetType: 'group_membership',
+          targetId: membership.id,
+          courseId: null,
+          before: { groupId: other.id, studentId, assignedBy: membership.assignedBy },
+          after: null,
+        });
+      }
+
       await this.userRepo.setStatus(studentId, 'active');
       // `CoursesService.enroll` rather than the enrollment repository: it is
       // the method that owns "may this course be enrolled on at all" (it
