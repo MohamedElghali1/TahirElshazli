@@ -101,6 +101,10 @@ Highest first. A higher entry beats a lower one on the subject it owns.
 | Design handoff ⇄ codebase mapping, token deltas, component map | `docs/redesign-mapping.md` |
 | Google Forms integration setup | `docs/google-forms-setup.md` |
 | Running narrative of how the project got here | `project_log.md` |
+| Production-readiness audit (2026-09-27): findings, feature and test matrices | `docs/PROJECT_AUDIT.md` |
+| Go-live checklist and release status | `docs/PRODUCTION_READINESS.md` |
+| Audit remediation tasks (`REM-nnn`), phased | `docs/REMEDIATION_PLAN.md` |
+| Hostinger VPS architecture, environment, runbook, backups, rollback | `docs/HOSTINGER_DEPLOYMENT.md` |
 
 **Superseded, kept only as historical record:** `docs/frontend-design-system.md` describes the
 retired Twenty-derived system. `docs/redesign-mapping.md` replaces it. Do not build from it; several
@@ -138,9 +142,10 @@ Actual repository versions. Do not substitute generic knowledge for what is writ
 | Database | **PostgreSQL 15** |
 | Data access | **No ORM.** `DatabaseService` + parameterised SQL behind repository interfaces |
 | Migrations | Hand-written SQL in `backend/src/database/migrations/`, run by `MigrationRunner` |
-| Video | **Bunny Stream** — adaptive streaming, signed URLs only |
-| File storage | **Cloudflare R2** (`STORAGE_DRIVER=r2`); `local` in dev, `none` in prod until provisioned |
-| Hosting | **Hostinger VPS**, containerized (`docker-compose.yml`, two Dockerfiles), CI/CD in scope |
+| Video | **None — recordings are plain links** (a validated http(s) `videoUrl`). Bunny Stream is out of scope (`D-57`, 2026-09-27) |
+| File storage | `FileStorage` port with drivers `none` / `local` **only** — `local` in dev, `none` in prod. **No R2 driver exists in code**; whether uploads ship at launch is open (`REM-006`) |
+| Mail | `MailSender` port: `none` / `log` / `smtp` (nodemailer). Prod default `none` — which 503s announcements, student creation, invitations and reset, so **SMTP is required in practice** |
+| Hosting | **Hostinger VPS**, containerized. Two Dockerfiles (**still on `node:20-alpine`, EOL — `REM-011`**); `docker-compose.yml` is **development only**. Target production layout: `docs/HOSTINGER_DEPLOYMENT.md` |
 | Edge | **Cloudflare** — SSL, DNS, CDN, DDoS, WAF, caching |
 | Design system | The Claude Design handoff, reimplemented as TSX + Tailwind v4 (§11) |
 | Orchestration | Ruflo (`ruflo@latest` MCP server, registered as `claude-flow`) + `.claude/agents/` |
@@ -152,8 +157,8 @@ Backend TypeScript is `strict: true`, `module: nodenext`, `target: ES2023`, with
 
 ```
 npm run dev                  # both services, no database needed
-npm test                     # backend unit — 803 tests, 48 files
-npm run test:e2e             # backend e2e — 402 in 5 files, ONE FILE PER PROCESS (OPS-3)
+npm test                     # backend unit — 804 tests, 48 files
+npm run test:e2e             # backend e2e — 404 in 5 files, ONE FILE PER PROCESS (OPS-3)
 npm run test:e2e:combined    # the raw single-process run; dies with no summary on Windows
 npm run test:integration     # backend integration; SKIPS ITSELF without TEST_DATABASE_URL
 npm run lint                 # frontend eslint + token check (OPS-2) + backend oxlint
@@ -232,7 +237,11 @@ destroyed live code (`docs/phases/unit-4/REVIEW_4D.md`). Do not read `SHELL-4`'s
 ("delete `components/app/*`, `components/site/*`") as still describing the directory's contents —
 verify against the actual consumer graph before treating either directory as legacy again.
 
-The backend **is** green and must stay green: **803 unit / 48 files, 402 e2e, 191 integration**
+(Audit 2026-09-27: the page is gone but the admin-only "Assistants" tab in
+`manage/courses/[id]/layout.tsx:54` still links to it — `REM-014`.)
+
+The backend **is** green and must stay green: **804 unit / 48 files, 404 e2e, 191 integration**
+(re-measured by the 2026-09-27 audit; the figures below are the unit 8 landing record)
 (against real PostgreSQL 15.19, 001–026 from an empty schema) as of unit 8's landing, 2026-09-24
 (`docs/phases/unit-8/`; units 1–8 and 10–14 are `[x]` — unit 14 closed 2026-09-25 when `GAUTH-C1`
 and `GAUTH-C2` did). **Backend `tsc
@@ -412,7 +421,10 @@ Non-negotiable, because each failure is silent:
   extension comes from the MIME whitelist, so traversal and double-extension tricks are structurally
   impossible rather than things a sanitiser must keep catching. **No SVG, no HTML, nothing
   executable** while files are served from the API's own origin. Validate server-side, cap size.
-- **Media is served only through signed, expiring URLs.** Course video must not be directly linkable.
+- **Recordings are plain links (`D-57`)** — the signed-URL rule for course video is retired. Every
+  staff-supplied URL a student can click is still validated to http(s) server-side and opened with
+  `noopener noreferrer`. If platform-stored files ever ship (R2), *those* are served through signed,
+  expiring URLs.
 - **Secrets in env vars, never committed.** `.env` is gitignored; commit `.env.example`.
 - **Never log** credentials, tokens, full payment details, student PII, or a rendered mail body.
 - **Unsafe driver combinations are refused in production, not warned about.**

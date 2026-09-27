@@ -4350,3 +4350,41 @@ script — and nothing that inspects one artifact at a time can see a disagreeme
 Gates on closing, re-measured rather than quoted: 804 unit / 48 files, 404 e2e / 5 files, 191
 integration, lint 0 errors and the same 4 pre-existing oxlint warnings, both `tsc --noEmit` at 0,
 drift clean. No migration; `027` is still the next free number.
+
+## 2026-09-27 — Production-readiness audit
+
+A full audit before a Hostinger VPS deployment, run as a coordinated team: six specialist reviewers
+(backend/API, security, DevOps, frontend, performance, and an independent skeptic who re-derived
+every P0/P1 from the code) plus the lead running the software. Raw reports are in
+`docs/phases/audit-2026-09-27/`; the adjudicated result is `docs/PROJECT_AUDIT.md`.
+
+What made this audit different from the unit reviews is that it ran the **production artefacts**,
+not the development stack: both Docker images built from `4687787`, the API booted with
+`NODE_ENV=production` against an empty PostgreSQL, every boot refusal exercised, the migrate CLI run
+from `dist/`, fifteen API journeys scripted across six roles, and the production web image walked in
+headless Chrome (60+ screens, 0 console errors). Every gate was green going in — 804 unit, 404 e2e,
+191 integration, both `tsc` at 0 — and the six most serious findings were all invisible to those gates:
+
+- A fresh production database has **no way to create the first teacher**. Every path that makes staff
+  needs staff; seeding is (correctly) refused. Found by counting `users` after migrating: 0.
+- The `AUTH-6` remainder is not theoretical: an admin created one cohort the assistant did not hold,
+  and the assistant's course roster listed its student while the group routes correctly 404'd.
+- With the production mail default, **a teacher cannot publish an announcement** — `MailService`
+  throws inside the publish transaction and everything, notifications included, rolls back. Nobody
+  had run publish without a mail driver, because development defaults to `log`.
+- The login limiter counts successful sign-ins, keyed by IP: a class on one school network locks
+  itself out.
+- Two static findings were **refuted by running them** (a "malformed UUID → 500" that cannot happen
+  because every id is TEXT, and a "raw driver message on 500" that Nest's default filter already
+  prevents). A third was corrected by the skeptic: the proposed `Promise.all` fix for mail would
+  have sent nearly every email before rolling back.
+
+Mid-audit the user ruled that **recordings are plain links** (`D-57`), which retires the Bunny Stream
+signed-URL rule — the code already worked that way; the documents had not caught up.
+
+Environment notes worth keeping: this machine's session temp directory was wiped twice mid-run, so
+audit working files live in the gitignored `tmp/audit/`. The Chrome extension was not connected; the
+browser walk used headless Chrome over the DevTools protocol with Node 24's built-in `WebSocket`
+(`tmp/audit/ui-walk.mjs`, no dependency added). A two-week-old compose API image, restarted by
+Docker on boot, crash-looped against a database newer migrations had touched — the rollback hazard
+now written into `docs/HOSTINGER_DEPLOYMENT.md` §8.

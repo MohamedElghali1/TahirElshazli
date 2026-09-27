@@ -2440,3 +2440,34 @@ tests. **A third suspicion was investigated and dismissed:** the inbox heading r
 leading run is placed rightmost, so an RTL reader reads "6 items for you" in the correct order.
 `F8-1` was a value inversion *within* one run. The "fix" was written, tested against the browser,
 and reverted. Recorded so the next reader does not re-report it.
+
+---
+
+## 2026-09-27 — Production-readiness audit, and recordings become plain links
+
+### `D-57` — Recordings are plain links; Bunny Stream is out of scope
+**Context.** `CLAUDE.md` §3 named Bunny Stream as the video layer and §8 required course video to be
+served only through signed, expiring URLs. Nothing of that was ever built: a recording has always
+been a validated `videoUrl` (`@IsUrl({ protocols: ['http','https'], require_protocol: true })`),
+handed to the student as-is. The audit found the gap between the rule and the code.
+
+**Chosen (user, 2026-09-27).** "The recordings in this project should be just links." Recordings stay
+stored URLs the student opens (or that the player embeds for known hosts). No Bunny client, no
+signed playback, no `BUNNY_*` configuration.
+
+**Alternatives.** Build the Bunny signed-URL integration (a paid tier the client would have to
+provision, and a direct-link restriction the product does not need at this scale).
+
+**Consequences.** `CLAUDE.md` §3/§8 updated. The staff recording form's hint that playback "is signed
+per request" is now false and must change (`REM-019`); the player's Bunny host detection is dead
+scope; `BUNNY_*` and `NEXT_PUBLIC_VIDEO_CDN` leave `.env.example` (`REM-012`). The same question is
+now open for **file uploads** (no R2 driver exists; `REM-006`).
+
+### Audit outcome (not a decision — recorded for the next reader)
+Full result in `docs/PROJECT_AUDIT.md`; tasks in `docs/REMEDIATION_PLAN.md`. Verdict **NOT READY**:
+no production path to the first staff account (`AUD-01`), the `AUTH-6` remainder confirmed live as a
+cross-cohort read (`AUD-02`), weekly reports unbuilt (`AUD-03`), SMTP required in practice and
+undocumented (`AUD-04`), announcement publish all-or-nothing on mail (`AUD-05`), no production storage
+driver (`AUD-06`), no production compose/nginx, Node 20 EOL in the images. Two specialist findings
+were refuted by running the code and are recorded as such in the audit (§6): "malformed UUID → 500"
+and "raw driver messages on a 500".
