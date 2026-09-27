@@ -2506,3 +2506,36 @@ production is a go-live step. Consequence for `AUD-02`: no scoped assistant will
 IGCSE students are minors, Egypt's PDPL requires a guardian's consent, and registration collects none
 (`REM-081`, P0 legal). It also found the public site still loads placeholder stock photos from
 `picsum.photos` — including as Dr. Tahir's portrait — and a placeholder WhatsApp number (`AUD-16`).
+
+## 2026-09-27 — Remediation run 1 continues: deployment target, weekly-report shape, consent dropped
+
+### `D-62` — Deployment target: Hostinger VPS behind Cloudflare, uploads on R2
+**Chosen (user, 2026-09-27).** The app (web + API) and PostgreSQL run on the Hostinger VPS in
+containers; Cloudflare provides DNS, SSL (Full strict, origin certificate), WAF and CDN in front of it;
+Cloudflare R2 holds uploads. This is the layout `docs/HOSTINGER_DEPLOYMENT.md` already describes, so
+the plan does not change. **Alternatives rejected:** Next.js on Cloudflare Workers/Pages (a second
+pipeline plus Next-on-Workers compatibility work); everything on Cloudflare (a re-architecture of the
+NestJS + PostgreSQL backend).
+
+### `D-63` — Weekly reports: in-app to the student, auto-generated weekly, teacher reviews
+**Chosen (user, 2026-09-27).**
+- *Recipient:* the **student, in the app only**. No parent email. Reports therefore need neither SMTP
+  nor a guardian address, and nothing is emailed irreversibly.
+- *Content:* that week's **attendance + homework completion + marks**, composed from existing data
+  (sessions/attendance, submissions, imported Google Form results). No free-text comment, no
+  per-question weaknesses. Progress and performance stay separate (`CLAUDE.md` §11.1).
+- *Workflow:* drafts are **generated automatically each week**; the teacher (or admin) reviews each
+  group's drafts and **publishes** them to students. Publishing is audited and a published report is
+  never overwritten.
+**Supersedes** the "parent email" and "on-demand only" parts of `D-3` / `REM-031` for weekly reports.
+**Consequence:** automatic generation needs a trigger. `CLAUDE.md` §5 forbids a job framework and a
+queue; one replica makes an in-process timer sufficient (the same reading as `REM-083`). Generation
+must be idempotent per (group, week) so a restart or a double tick cannot duplicate or overwrite.
+Exact mechanism is fixed in the T12 plan.
+
+### `D-64` — Guardian consent is out of scope
+**Chosen (user, 2026-09-27).** Parent/guardian consent at registration is not built and is not open
+work. `REM-081` is deleted from `REMEDIATION_PLAN.md` and `PRODUCTION_READINESS.md`, and the privacy
+policy stops promising that consent is collected; it keeps an honest children's section (minors use
+the platform; a parent or guardian may contact us to exercise the student's rights). Whether this
+satisfies Egypt's PDPL for the client's users is the client's legal responsibility, not a code task.

@@ -4,7 +4,7 @@ Branch `remediation/launch-blockers` (from `audit/production-readiness-2026-09-2
 Antigravity CLI via `/agy-delegate`; the lead writes each brief, re-runs the gates, reviews the diff and
 commits. One task, one commit. Tasks and acceptance criteria: `docs/REMEDIATION_PLAN.md`.
 
-Out of scope by the user's instruction (2026-09-27): guardian consent (`REM-081`); creating the real
+Out of scope by the user's instruction (2026-09-27): guardian consent (`REM-081`, deleted — `D-64`); creating the real
 staff accounts (`D-61`); real site photos and WhatsApp number (`REM-016b`, needs client content);
 weekly reports (`REM-031`, post-launch).
 

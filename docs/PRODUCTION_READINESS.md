@@ -50,7 +50,6 @@ the task that clears every open box is named. Re-run this checklist before `REM-
 - [x] Real staff accounts created last (`D-61`); bootstrap CLI still needed → `REM-001`
 - [?] First staff identity (teacher or admin) → `REM-010`
 - [x] Recordings are plain links (`D-57`)
-- [ ] Guardian consent for under-18 registration → `REM-081`
 - [ ] Privacy policy reviewed, placeholders filled, published → `REM-015` (draft: `docs/legal/privacy-policy.md`)
 - [ ] Real photos and WhatsApp number on the public site → `REM-016b`
 
