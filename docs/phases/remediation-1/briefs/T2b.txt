@@ -1,0 +1,25 @@
+<task>
+Read CLAUDE.md (§5, §7, §9, §10) and decision D-65 at the end of docs/CHANGELOG.md. Implement D-65 in backend/src/groups/ (GroupsService and its repositories), reusing existing code.
+
+Rule: a student holds at most ONE group per course. Every write that places a student in a group — the admin bulk move `POST /admin/groups/:groupId/members/bulk` (GroupsService.bulkMove) and the staff single add `POST /staff/groups/:groupId/members` (find its service method) — must, inside the SAME transaction: find the student's existing membership(s) on the target group's course (groups.course_id), remove them, then add the new one. Audit both the removal and the placement with the existing audit actions for group membership removal/assignment (find them; add a new AuditAction only if none fits, following CLAUDE.md §9 — union entry, the query DTO's exhaustive Record, a spec). Re-adding a student to the group they are already in stays a no-op as today.
+
+Authorization (StaffScopeService, group grain): an assistant moving a student out of a group on the same course must be able to reach that SOURCE group too; if not, refuse with the same 404 message the service already uses for an unreachable group (byte-identical). Teacher/admin unaffected. Do not change who may call which route. Membership in a group on a DIFFERENT course is untouched by a placement (changing course = place on the new course + a teacher/admin removal from the old; the removal route stays teacher/admin-only per AUTH-3 — do not change it).
+
+Repository: if you need a read like "memberships of student X on course Y", add it to the GroupRepository interface with BOTH the InMemory and Postgres implementations (parameterised SQL via DatabaseService), plus an integration case in backend/test/postgres-repositories.integration-spec.ts. Prefer composing existing reads if they suffice. No migration.
+
+Tests, both directions: unit specs next to the service — bulk move from group A to group B on one course leaves only B; single add does the same; the student's membership on another course is untouched; an assistant holding only the target group gets the unreachable-group 404 (asserted identical) and nothing changes; an assistant holding both succeeds; teacher succeeds; audit entries written for removal and placement. e2e: extend backend/test/staff.e2e-spec.ts or app.e2e-spec.ts (existing file only) with one move scenario asserting the old group's members no longer include the student.
+
+Docs: docs/API_SPEC.yaml — describe the move semantics on both routes (no shape change); docs/DOMAIN_MODEL.md — the one-group-per-course invariant; tick nothing else.
+</task>
+
+<verification_loop>
+From the repo root, sequentially: npm run lint:backend; npm test; npm run test:e2e (each file must print a count; re-run a crashed file alone with --reporter=verbose); npm run build:backend; cd backend && npx tsc --noEmit -p tsconfig.json. Integration needs a DB: TEST_DATABASE_URL=postgresql://dev:devpassword@localhost:55433/remed_test npm run test:integration (container remed-pg; `docker start remed-pg` if stopped).
+</verification_loop>
+
+<action_safety>
+No git add/commit/stash/checkout. Do not touch docs/legal/, frontend/, migrations. No stray-file shell redirections.
+</action_safety>
+
+<structured_output_contract>
+1. Changes; 2. files touched; 3. gate outputs with counts; 4. deviations and anything undecided.
+</structured_output_contract>

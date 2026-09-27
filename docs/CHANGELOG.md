@@ -2539,3 +2539,19 @@ work. `REM-081` is deleted from `REMEDIATION_PLAN.md` and `PRODUCTION_READINESS.
 policy stops promising that consent is collected; it keeps an honest children's section (minors use
 the platform; a parent or guardian may contact us to exercise the student's rights). Whether this
 satisfies Egypt's PDPL for the client's users is the client's legal responsibility, not a code task.
+
+### `D-65` — One group per student per course; moving within a course replaces the membership
+**Chosen (user, 2026-09-27).** "For every student there's one group" on a course. Found by the live
+T-13 rerun: `POST /admin/groups/:id/members/bulk` ("Move N to group") only added a membership, so a
+moved student sat in two groups on one course and every assistant holding either saw them.
+- Moving a student to another group **on the same course removes the old membership**, in the same
+  transaction, audited.
+- **Adding** a student to a group when they already hold another group on that course is the same
+  move (not a 409).
+- An assistant moving a student within a course must **hold both groups**; an unheld source answers
+  like any unheld group.
+- Changing a student's **course** is not a move: they are placed on the new course and removed from
+  the old one. An assistant may do the placing; **only teacher/admin remove** (keeps `AUTH-3`'s
+  withheld removal verb).
+**Consequence:** enforced in the service at every membership write (`GroupsService`); a student on two
+groups of one course is now an invariant violation, not a state.

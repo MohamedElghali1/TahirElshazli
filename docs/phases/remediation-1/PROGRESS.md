@@ -14,6 +14,7 @@ weekly reports (`REM-031`, post-launch).
 |---|---|---|---|
 | T1 | REM-001 bootstrap-staff CLI | reviewed + committed | 21b4433 |
 | T2 | REM-002 group-grain scope on course-named staff routes (AUTH-6) | reviewed + committed | (this commit) |
+| T2b | D-65 one group per student per course (move replaces membership) | queued | |
 | T3 | REM-005 announcement publish not all-or-nothing on mail | queued | |
 | T4 | REM-007 classroom-safe rate limits | queued | |
 | T5 | REM-030 Cloudflare R2 storage driver | queued | |
@@ -26,11 +27,8 @@ weekly reports (`REM-031`, post-launch).
 ## Review notes
 
 ## Needs your eyes
-- **`POST /admin/groups/:id/members/bulk` ("Move N to group") only adds.** It never removes the
-  student's existing membership, so a "moved" student ends up in two groups on the same course and
-  every assistant holding either group sees them. Found during the live T-13 rerun (2026-09-27).
-  Pre-existing and out of T2's scope; needs a product ruling (should "move" remove the old
-  same-course membership?) before anyone changes it.
+- **"Move N to group" only added a membership** (found by the live T-13 rerun). Ruled by the user as
+  `D-65` (one group per student per course; move replaces) → queued as T2b.
 - **One unidentified e2e flake in `staff.e2e-spec.ts`** during the T2 gate run (`256 passed, 1
   failed` after a crash-retry; the runner prints no name). Six further solo runs: two clean
   `257 passed`, four died mid-file with the known `0xC0000409` crash and no failing test. Watch for it.
