@@ -591,20 +591,53 @@ export class AssessmentAuthoringService {
     return assessment;
   }
 
+  /**
+   * `AUTH-6`: asserts that a scoped caller may act on a task's audience:
+   * - Unscoped caller (teacher, admin, all_groups assistant): allowed.
+   * - No held group in audience: 404 ASSESSMENT_NOT_FOUND (not on caller's screen).
+   * - Shared between held and unheld groups: 403 RETARGET_UNREACHABLE_AUDIENCE.
+   * - Entirely within held groups: allowed.
+   */
+  private async assertAudienceInReach(
+    audience: readonly AssessmentTarget[],
+    actor: StaffActor,
+  ): Promise<void> {
+    const reach = await this.scope.reachableGroupIds(actor);
+    if (reach === null) {
+      return;
+    }
+    const hasHeld = audience.some((t) => reach.includes(t.groupId));
+    if (!hasHeld) {
+      throw new NotFoundException(ASSESSMENT_NOT_FOUND);
+    }
+    const hasUnheld = audience.some((t) => !reach.includes(t.groupId));
+    if (hasUnheld) {
+      throw new ForbiddenException(RETARGET_UNREACHABLE_AUDIENCE);
+    }
+  }
+
   async list(courseId: string, actor: StaffActor): Promise<AuthoredAssessment[]> {
     await this.scope.assertAssigned(courseId, actor);
+    const reach = await this.scope.reachableGroupIds(actor);
     // The *staff* read: every assessment on the course, targeted or not. A
     // teacher has to be able to see a task they have not finished aiming.
+    // For scoped assistants (AUTH-6), only tasks targeted at at least one held group
+    // are visible; untargeted tasks mirror GET /staff/tasks and are excluded.
     const assessments = await this.assessmentRepo.findByCourse(courseId);
     const targets = await Promise.all(
       assessments.map((assessment) =>
         this.assessmentRepo.findTargets(assessment.id),
       ),
     );
-    return assessments.map((assessment, index) => ({
+    const all = assessments.map((assessment, index) => ({
       ...assessment,
       targets: targets[index],
     }));
+    if (reach === null) {
+      return all;
+    }
+    const held = new Set(reach);
+    return all.filter((a) => a.targets.some((t) => held.has(t.groupId)));
   }
 
   /**
@@ -831,6 +864,10 @@ export class AssessmentAuthoringService {
   ): Promise<AuthoredAssessment> {
     return this.db.runInTransaction(async () => {
       const before = await this.loadInScope(assessmentId, actor);
+      // `AUTH-6`: a scoped assistant may only touch tasks in their held groups.
+      // Fetch current targets once; the visibility/marker checks below reuse `before`.
+      const currentTargets = await this.assessmentRepo.findTargets(assessmentId);
+      await this.assertAudienceInReach(currentTargets, actor);
       if (update.visibility === 'hidden') {
         await this.assertMayHide(assessmentId);
       }
@@ -948,14 +985,17 @@ export class AssessmentAuthoringService {
     return this.db.runInTransaction(async () => {
       const assessment = await this.loadInScope(assessmentId, actor);
       const before = await this.assessmentRepo.findTargets(assessmentId);
-      // `D-33`: refuse, rather than silently drop the groups this caller
-      // cannot see. Checked before the new set, so every group that is then
-      // refused below is one they are trying to ADD.
-      for (const target of before) {
-        if (!(await this.scope.mayReachGroup(target.groupId, actor))) {
-          throw new ForbiddenException(RETARGET_UNREACHABLE_AUDIENCE);
-        }
-      }
+      // `AUTH-6`: extends `D-33`. A scoped caller must see a task on their
+      // screen before they can retarget it:
+      //  - task entirely within unheld groups (or untargeted) → 404
+      //    ASSESSMENT_NOT_FOUND (not on the caller's screen — no oracle).
+      //  - task shared between held and unheld groups → 403
+      //    RETARGET_UNREACHABLE_AUDIENCE (it IS on their screen; dropping
+      //    the unheld side silently would be a silent data loss).
+      //  - task entirely within held groups → proceed.
+      // Unscoped callers (teacher, admin, all_groups): assertAudienceInReach
+      // returns immediately.
+      await this.assertAudienceInReach(before, actor);
       await this.assertTargets(assessment.courseId, targets, actor);
 
       const after = await this.assessmentRepo.setTargets(assessmentId, targets);
@@ -985,6 +1025,9 @@ export class AssessmentAuthoringService {
   async remove(assessmentId: string, actor: StaffActor): Promise<void> {
     return this.db.runInTransaction(async () => {
       const assessment = await this.loadInScope(assessmentId, actor);
+      // `AUTH-6`: a scoped assistant may only delete tasks in their held groups.
+      const currentTargets = await this.assessmentRepo.findTargets(assessmentId);
+      await this.assertAudienceInReach(currentTargets, actor);
       const submissions = await this.assessmentRepo.findSubmissionsForAssessments([
         assessmentId,
       ]);

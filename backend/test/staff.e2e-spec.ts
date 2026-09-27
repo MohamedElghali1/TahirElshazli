@@ -2804,6 +2804,220 @@ describe('Staff and admin API (e2e)', () => {
     });
   });
 
+  /**
+   * `AUTH-6`: the remaining course-named staff routes narrowed to the group
+   * grain - the roster, the analytics roster, the per-student report and the
+   * authoring list, plus the update/delete half `D-33` left open. Its own
+   * group (`groupB`), separate from `D-33`'s `group3` above, and its own
+   * student split so this block does not depend on run order with the other
+   * describes that also move `student-2` around.
+   */
+  describe('AUTH-6: course-named staff routes are group-grain', () => {
+    const server = () => app.getHttpServer();
+    let groupBId: string;
+    let heldOnlyTaskId: string;
+    let unheldOnlyTaskId: string;
+    let sharedTaskId: string;
+    const base = {
+      type: 'homework',
+      availableFrom: '2026-01-01T00:00:00.000Z',
+      availableTo: '2099-01-01T00:00:00.000Z',
+      dueAt: '2098-01-01T00:00:00.000Z',
+      maxScore: 10,
+      allowedFileTypes: ['application/pdf'],
+      maxFileSizeBytes: 1048576,
+    };
+
+    beforeAll(async () => {
+      groupBId = (
+        await request(server())
+          .post('/admin/groups')
+          .set(bearer(adminToken))
+          .send({ name: 'AUTH-6 e2e cohort B', courseId: 'course-1' })
+          .expect(201)
+      ).body.id;
+
+      // student-1 must be IN group-1 for this block's assertions, and earlier
+      // describes in this file remove them from it (`AUTH-3`). Placed back in
+      // first - idempotent, so it is harmless if they are already there.
+      await request(server())
+        .post('/staff/groups/group-1/members')
+        .set(bearer(adminToken))
+        .send({ studentId: 'student-1' })
+        .expect(201);
+      // student-2 moves out of group-1 (held by assistant-1) into groupB
+      // (unheld), so the roster and analytics fixtures are cleanly split one
+      // student per group. Placed back into group-1 first (idempotent: they
+      // are there from the seed, but an earlier describe in this file may
+      // already have removed them) so the removal below is never a 404 on a
+      // membership that is not there to begin with.
+      await request(server())
+        .post('/staff/groups/group-1/members')
+        .set(bearer(adminToken))
+        .send({ studentId: 'student-2' })
+        .expect(201);
+      await request(server())
+        .delete('/staff/groups/group-1/members/student-2')
+        .set(bearer(adminToken))
+        .expect(204);
+      await request(server())
+        .post(`/staff/groups/${groupBId}/members`)
+        .set(bearer(adminToken))
+        .send({ studentId: 'student-2' })
+        .expect(201);
+
+      heldOnlyTaskId = (
+        await request(server())
+          .post('/staff/courses/course-1/assessments')
+          .set(bearer(adminToken))
+          .send({ ...base, title: 'AUTH-6 held-only', targets: [{ groupId: 'group-1' }] })
+          .expect(201)
+      ).body.id;
+      unheldOnlyTaskId = (
+        await request(server())
+          .post('/staff/courses/course-1/assessments')
+          .set(bearer(adminToken))
+          .send({ ...base, title: 'AUTH-6 unheld-only', targets: [{ groupId: groupBId }] })
+          .expect(201)
+      ).body.id;
+      sharedTaskId = (
+        await request(server())
+          .post('/staff/courses/course-1/assessments')
+          .set(bearer(adminToken))
+          .send({
+            ...base,
+            title: 'AUTH-6 shared',
+            targets: [{ groupId: 'group-1' }, { groupId: groupBId }],
+          })
+          .expect(201)
+      ).body.id;
+    });
+
+    it('roster: lists only the held group’s student for a scoped assistant, and both for the teacher', async () => {
+      const ta = await request(server())
+        .get('/staff/courses/course-1/roster')
+        .set(bearer(assignedTaToken))
+        .expect(200);
+      const taIds = ta.body.entries.map((e: { studentId: string }) => e.studentId);
+      expect(taIds).toContain('student-1');
+      expect(taIds).not.toContain('student-2');
+
+      const teacher = await request(server())
+        .get('/staff/courses/course-1/roster')
+        .set(bearer(adminToken))
+        .expect(200);
+      const teacherIds = teacher.body.entries.map((e: { studentId: string }) => e.studentId);
+      expect(teacherIds).toContain('student-1');
+      expect(teacherIds).toContain('student-2');
+    });
+
+    it('results: rows narrow to the held group’s student for a scoped assistant', async () => {
+      const ta = await request(server())
+        .get(`/staff/assessments/${sharedTaskId}/results`)
+        .set(bearer(assignedTaToken))
+        .expect(200);
+      const taIds = ta.body.map((r: { studentId: string }) => r.studentId);
+      expect(taIds).toContain('student-1');
+      expect(taIds).not.toContain('student-2');
+
+      const teacher = await request(server())
+        .get(`/staff/assessments/${sharedTaskId}/results`)
+        .set(bearer(adminToken))
+        .expect(200);
+      const teacherIds = teacher.body.map((r: { studentId: string }) => r.studentId);
+      expect(teacherIds).toContain('student-1');
+      expect(teacherIds).toContain('student-2');
+    });
+
+    it('studentWork: 404s a student in no held group, byte-identical to a random unknown student', async () => {
+      const outOfScope = await request(server())
+        .get('/staff/courses/course-1/students/student-2/work')
+        .set(bearer(assignedTaToken))
+        .expect(404);
+      const unknown = await request(server())
+        .get('/staff/courses/course-1/students/student-does-not-exist/work')
+        .set(bearer(assignedTaToken))
+        .expect(404);
+      expect(outOfScope.body.message).toBe(unknown.body.message);
+
+      // The teacher reaches both.
+      await request(server())
+        .get('/staff/courses/course-1/students/student-1/work')
+        .set(bearer(adminToken))
+        .expect(200);
+      await request(server())
+        .get('/staff/courses/course-1/students/student-2/work')
+        .set(bearer(adminToken))
+        .expect(200);
+    });
+
+    it('list: GET /staff/courses/:id/assessments excludes a group-B-only task for the scoped assistant', async () => {
+      const ta = await request(server())
+        .get('/staff/courses/course-1/assessments')
+        .set(bearer(assignedTaToken))
+        .expect(200);
+      const taIds = ta.body.map((a: { id: string }) => a.id);
+      expect(taIds).toContain(heldOnlyTaskId);
+      expect(taIds).not.toContain(unheldOnlyTaskId);
+      // A shared task is on the caller's screen.
+      expect(taIds).toContain(sharedTaskId);
+
+      const teacher = await request(server())
+        .get('/staff/courses/course-1/assessments')
+        .set(bearer(adminToken))
+        .expect(200);
+      expect(teacher.body.map((a: { id: string }) => a.id)).toContain(unheldOnlyTaskId);
+    });
+
+    it('PATCH and DELETE of a group-B-only task 404 identically to a nonexistent assessment id', async () => {
+      const patchDenied = await request(server())
+        .patch(`/staff/assessments/${unheldOnlyTaskId}`)
+        .set(bearer(assignedTaToken))
+        .send({ title: 'attempted rename' })
+        .expect(404);
+      const patchMissing = await request(server())
+        .patch('/staff/assessments/nope')
+        .set(bearer(assignedTaToken))
+        .send({ title: 'attempted rename' })
+        .expect(404);
+      expect(patchDenied.body.message).toBe(patchMissing.body.message);
+
+      const deleteDenied = await request(server())
+        .delete(`/staff/assessments/${unheldOnlyTaskId}`)
+        .set(bearer(assignedTaToken))
+        .expect(404);
+      const deleteMissing = await request(server())
+        .delete('/staff/assessments/nope')
+        .set(bearer(assignedTaToken))
+        .expect(404);
+      expect(deleteDenied.body.message).toBe(deleteMissing.body.message);
+
+      // Untouched: still there, under its original title, for the teacher.
+      const teacher = await request(server())
+        .get('/staff/courses/course-1/assessments')
+        .set(bearer(adminToken))
+        .expect(200);
+      const survivor = teacher.body.find((a: { id: string }) => a.id === unheldOnlyTaskId);
+      expect(survivor.title).toBe('AUTH-6 unheld-only');
+    });
+
+    it('PATCH of a task shared between the held and the unheld group is 403 for the scoped assistant', async () => {
+      await request(server())
+        .patch(`/staff/assessments/${sharedTaskId}`)
+        .set(bearer(assignedTaToken))
+        .send({ title: 'attempted rename' })
+        .expect(403);
+
+      // Unaffected: the teacher can still update and delete it.
+      const teacherRenamed = await request(server())
+        .patch(`/staff/assessments/${sharedTaskId}`)
+        .set(bearer(adminToken))
+        .send({ title: 'renamed by the teacher' })
+        .expect(200);
+      expect(teacherRenamed.body.title).toBe('renamed by the teacher');
+    });
+  });
+
   describe('attachment audience (D-29) and audio uploads', () => {
     const server = () => app.getHttpServer();
     it('returns only students attachments to the student, and refuses an attachment with no audience', async () => {

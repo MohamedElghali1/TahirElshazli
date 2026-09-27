@@ -37,7 +37,7 @@ an existing pattern in this repository and names it.
     `node dist/database/cli/bootstrap-staff.js`.
   - *Verify:* rerun `PROJECT_AUDIT` P-05/P-08 against a fresh database.
 
-- [ ] **REM-002 — Narrow the course-named staff routes to held groups (`AUTH-6` remainder)** · P0 · `AUD-02`
+- [x] **REM-002 — Narrow the course-named staff routes to held groups (`AUTH-6` remainder)** · P0 · `AUD-02`
   - *Why:* a group-scoped assistant reads other cohorts' roster and analytics (verified live, T-13).
   - *Affected:* `manage/manage.service.ts:182` (`roster`), `manage/work-analytics-gate.service.ts`
     (`assertMayRead`, `studentWork`), `manage/assessment-authoring.service.ts:594` (`list`), and

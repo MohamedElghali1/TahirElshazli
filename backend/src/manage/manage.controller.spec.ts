@@ -83,9 +83,10 @@ describe('Manage surface', () => {
   let audit: AuditService;
   let assessments: InMemoryAssessmentRepository;
   let users: InMemoryUserRepository;
+  let module: TestingModule;
 
   beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
+    module = await Test.createTestingModule({
       controllers: [StaffManageController, AdminManageController],
       providers: [
         // Storage is ON here: `D-48` (b) refuses upload modes without it. A
@@ -247,6 +248,57 @@ describe('Manage surface', () => {
       await expect(staff.roster('course-2', ADMIN)).resolves.toMatchObject({
         courseId: 'course-2',
       });
+    });
+  });
+
+  describe('GET /staff/courses/:id/roster — AUTH-6 group grain', () => {
+    let groups: InMemoryGroupRepository;
+    let groupBId: string;
+
+    beforeEach(async () => {
+      groups = module.get(GROUP_REPOSITORY);
+      // Create a second group on course-1 that assistant-1 does NOT hold.
+      const groupB = await groups.create({
+        name: 'AUTH-6 cohort B',
+        teacherId: 'teacher-1',
+        courseId: 'course-1',
+        assistantId: null,
+        meets: null,
+        room: null,
+      });
+      groupBId = groupB.id;
+      // Place student-2 in groupB too (they are already in group-1 from the seeds).
+      // For the filter to exclude them, we need a student in ONLY groupB.
+      // Use student-2: they are in group-1 (held), so they appear.
+      // Enroll and place a phantom student only in groupB.
+      // Actually, the simplest approach: remove student-2 from group-1,
+      // put them in groupB only, and confirm they are hidden from the scoped TA.
+      await groups.removeMember('group-1', 'student-2');
+      await groups.addMember({ groupId: groupBId, studentId: 'student-2', assignedBy: 'teacher-1' });
+    });
+
+    it('scoped assistant sees only students in their held group', async () => {
+      const roster = await staff.roster('course-1', ASSIGNED_TA);
+      // student-1 is in group-1 (held). student-2 is now in groupB (unheld).
+      const ids = roster.entries.map((e) => e.studentId);
+      expect(ids).toContain('student-1');
+      expect(ids).not.toContain('student-2');
+    });
+
+    it('teacher sees all students regardless of group', async () => {
+      const roster = await staff.roster('course-1', ADMIN);
+      const ids = roster.entries.map((e) => e.studentId);
+      expect(ids).toContain('student-1');
+      expect(ids).toContain('student-2');
+    });
+
+    it('all_groups assistant sees all students', async () => {
+      const scopes = module.get(ASSISTANT_SCOPE_REPOSITORY);
+      await scopes.setScope('assistant-2', 'all_groups');
+      const roster = await staff.roster('course-1', UNASSIGNED_TA);
+      const ids = roster.entries.map((e) => e.studentId);
+      expect(ids).toContain('student-1');
+      expect(ids).toContain('student-2');
     });
   });
 

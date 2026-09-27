@@ -868,6 +868,139 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
     });
   });
 
+  /**
+   * `AUTH-6`: extends `D-33` from the targeting write to `list`, `update` and
+   * `remove`. `group3` here is a course-1 cohort assistant-1 does not hold, in
+   * groups this describe block owns rather than the shared `TASK` fixture's
+   * `group-1`.
+   */
+  describe('AUTH-6: list, update and remove are group-grain', () => {
+    let group3: string;
+    beforeEach(async () => {
+      group3 = (
+        await groups.create({
+          name: 'AUTH-6 unheld cohort',
+          teacherId: 'teacher-1',
+          courseId: 'course-1',
+          assistantId: null,
+          meets: null,
+          room: null,
+        })
+      ).id;
+    });
+
+    describe('list()', () => {
+      it('excludes a task set only for the unheld group', async () => {
+        const held = await authoring.create('course-1', ADMIN, { ...TASK, title: 'Held' });
+        const unheld = await authoring.create('course-1', ADMIN, {
+          ...TASK,
+          title: 'Unheld',
+          targets: [{ groupId: group3 }],
+        });
+        const list = await authoring.list('course-1', TA);
+        expect(list.map((a) => a.id)).toContain(held.id);
+        expect(list.map((a) => a.id)).not.toContain(unheld.id);
+      });
+
+      it('includes a task shared between a held and an unheld group', async () => {
+        const shared = await authoring.create('course-1', ADMIN, {
+          ...TASK,
+          title: 'Shared',
+          targets: [{ groupId: 'group-1' }, { groupId: group3 }],
+        });
+        expect((await authoring.list('course-1', TA)).map((a) => a.id)).toContain(shared.id);
+      });
+
+      it('leaves the teacher and an all_groups assistant with every task', async () => {
+        const unheld = await authoring.create('course-1', ADMIN, {
+          ...TASK,
+          title: 'Unheld 2',
+          targets: [{ groupId: group3 }],
+        });
+        expect((await authoring.list('course-1', ADMIN)).map((a) => a.id)).toContain(unheld.id);
+        await scopes.setScope('assistant-2', 'all_groups');
+        expect((await authoring.list('course-1', OTHER_TA)).map((a) => a.id)).toContain(unheld.id);
+      });
+    });
+
+    describe('update() and remove()', () => {
+      it('404s an update whose CURRENT audience holds no group the caller reaches, byte-identical to a missing id', async () => {
+        const unheld = await authoring.create('course-1', ADMIN, {
+          ...TASK,
+          title: 'Unheld for update',
+          targets: [{ groupId: group3 }],
+        });
+        const denied = await notFoundMessage(authoring.update(unheld.id, TA, { title: 'x' }));
+        const missing = await notFoundMessage(authoring.update('nope', TA, { title: 'x' }));
+        expect(denied).toBe(ASSESSMENT_NOT_FOUND);
+        expect(denied).toBe(missing);
+      });
+
+      it('403s an update of a task shared between a held and an unheld group', async () => {
+        const shared = await authoring.create('course-1', ADMIN, {
+          ...TASK,
+          title: 'Shared for update',
+          targets: [{ groupId: 'group-1' }, { groupId: group3 }],
+        });
+        await expect(
+          authoring.update(shared.id, TA, { title: 'attempted' }),
+        ).rejects.toThrow(RETARGET_UNREACHABLE_AUDIENCE);
+        const after = await authoring.list('course-1', ADMIN);
+        expect(after.find((a) => a.id === shared.id)?.title).toBe('Shared for update');
+      });
+
+      it('allows an update of a task entirely within held groups', async () => {
+        const held = await authoring.create('course-1', ADMIN, { ...TASK, title: 'Held for update' });
+        const updated = await authoring.update(held.id, TA, { title: 'Renamed by the TA' });
+        expect(updated.title).toBe('Renamed by the TA');
+      });
+
+      it('404s a remove whose CURRENT audience holds no group the caller reaches, byte-identical to a missing id', async () => {
+        const unheld = await authoring.create('course-1', ADMIN, {
+          ...TASK,
+          title: 'Unheld for remove',
+          targets: [{ groupId: group3 }],
+        });
+        const denied = await notFoundMessage(authoring.remove(unheld.id, TA));
+        const missing = await notFoundMessage(authoring.remove('nope', TA));
+        expect(denied).toBe(ASSESSMENT_NOT_FOUND);
+        expect(denied).toBe(missing);
+        // Untouched: the 404 happened before any submission/removal work.
+        expect((await authoring.list('course-1', ADMIN)).map((a) => a.id)).toContain(unheld.id);
+      });
+
+      it('403s a remove of a task shared between a held and an unheld group, and does not delete it', async () => {
+        const shared = await authoring.create('course-1', ADMIN, {
+          ...TASK,
+          title: 'Shared for remove',
+          targets: [{ groupId: 'group-1' }, { groupId: group3 }],
+        });
+        await expect(authoring.remove(shared.id, TA)).rejects.toThrow(RETARGET_UNREACHABLE_AUDIENCE);
+        expect((await authoring.list('course-1', ADMIN)).map((a) => a.id)).toContain(shared.id);
+      });
+
+      it('allows a remove of a task entirely within held groups', async () => {
+        const held = await authoring.create('course-1', ADMIN, { ...TASK, title: 'Held for remove' });
+        await authoring.remove(held.id, TA);
+        expect((await authoring.list('course-1', ADMIN)).map((a) => a.id)).not.toContain(held.id);
+      });
+
+      it('leaves the teacher, an admin and an all_groups assistant free to update and remove any task', async () => {
+        const unheld = await authoring.create('course-1', ADMIN, {
+          ...TASK,
+          title: 'Unheld for unscoped callers',
+          targets: [{ groupId: group3 }],
+        });
+        await authoring.update(unheld.id, ADMIN, { title: 'Renamed by the teacher' });
+        await scopes.setScope('assistant-2', 'all_groups');
+        const wide = await authoring.update(unheld.id, OTHER_TA, { title: 'Renamed by all_groups' });
+        expect(wide.title).toBe('Renamed by all_groups');
+        await authoring.remove(unheld.id, OTHER_TA);
+        expect((await authoring.list('course-1', ADMIN)).map((a) => a.id)).not.toContain(unheld.id);
+      });
+    });
+  });
+
   /** `D-29` (B-2 → B): who an attachment is for. */
   describe('attachment audience (D-29)', () => {
     it('the student detail carries only the students attachments', async () => {

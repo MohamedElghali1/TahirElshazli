@@ -17,13 +17,16 @@ import type {
   WorkRepository,
 } from '../assessments/interfaces/work-repository.interface.js';
 import { WORK_REPOSITORY } from '../assessments/interfaces/work-repository.interface.js';
-import type { StaffActor } from '../staff/staff-scope.service.js';
-import { StaffScopeService } from '../staff/staff-scope.service.js';
+import { COURSE_NOT_IN_SCOPE, StaffScopeService, type StaffActor } from '../staff/staff-scope.service.js';
+import { ASSESSMENT_NOT_FOUND } from './assessment-authoring.service.js';
+import type { GroupRepository } from '../groups/interfaces/group-repository.interface.js';
+import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interface.js';
 import { StudentGroupsService } from '../groups/student-groups.service.js';
 import { isVisibleToStudents } from '../assessments/assessments.service.js';
 import {
   WorkAnalyticsService,
   type StudentWorkResult,
+  type StudentWorkRow,
 } from '../assessments/work-analytics.service.js';
 
 /**
@@ -48,6 +51,7 @@ export class WorkAnalyticsGateService {
     private readonly assessments: AssessmentRepository,
     @Inject(WORK_REPOSITORY) private readonly work: WorkRepository,
     @Inject(USER_REPOSITORY) private readonly users: UserRepository,
+    @Inject(GROUP_REPOSITORY) private readonly groupRepo: GroupRepository,
     private readonly scope: StaffScopeService,
     private readonly audit: AuditService,
     private readonly db: DatabaseService,
@@ -60,10 +64,9 @@ export class WorkAnalyticsGateService {
    * Resolves the assessment, proves the caller holds its course, and returns
    * the course id for anything that needs it.
    *
-   * A missing assessment and an assessment in an unheld course both end as the
-   * same 404 - `assertAssigned` already 404s rather than 403s so a TA cannot
-   * enumerate courses, and letting a missing id 404 differently would give back
-   * the existence oracle that rule exists to close.
+   * A missing assessment, an assessment in an unheld course, and an assessment
+   * targeted at no group the caller holds all end as the same 404 (ASSESSMENT_NOT_FOUND)
+   * to close any existence oracle.
    */
   async assertMayRead(
     assessmentId: string,
@@ -71,10 +74,44 @@ export class WorkAnalyticsGateService {
   ): Promise<string> {
     const assessment = await this.assessments.findById(assessmentId);
     if (!assessment) {
-      throw new NotFoundException('Assessment not found');
+      throw new NotFoundException(ASSESSMENT_NOT_FOUND);
     }
-    await this.scope.assertAssigned(assessment.courseId, actor);
+    try {
+      await this.scope.assertAssigned(assessment.courseId, actor);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw new NotFoundException(ASSESSMENT_NOT_FOUND);
+      }
+      throw error;
+    }
+    const reach = await this.scope.reachableGroupIds(actor);
+    if (reach !== null) {
+      const targets = await this.assessments.findTargets(assessmentId);
+      const hasHeld = targets.some((t) => reach.includes(t.groupId));
+      if (!hasHeld) {
+        throw new NotFoundException(ASSESSMENT_NOT_FOUND);
+      }
+    }
     return assessment.courseId;
+  }
+
+  /**
+   * Per-student standing for one piece of work (`GET /staff/assessments/:id/results`).
+   * Rows narrow to held-group students for scoped callers (AUTH-6).
+   */
+  async results(
+    assessmentId: string,
+    actor: StaffActor,
+  ): Promise<StudentWorkRow[]> {
+    await this.assertMayRead(assessmentId, actor);
+    const rows = await this.analytics.rosterForAssessment(assessmentId);
+    const reach = await this.scope.reachableGroupIds(actor);
+    if (reach === null) {
+      return rows;
+    }
+    const members = await this.groupRepo.findMembersForGroups(reach);
+    const heldStudentIds = new Set(members.map((m) => m.studentId));
+    return rows.filter((r) => heldStudentIds.has(r.studentId));
   }
 
   async unmatched(assessmentId: string): Promise<ExternalResult[]> {
@@ -84,16 +121,9 @@ export class WorkAnalyticsGateService {
   /**
    * One student's standing on every piece of work this course set *for them*.
    *
-   * Two filters, and both are load-bearing:
-   *
-   * - The **course** is scoped on, so a TA cannot read a student's record for a
-   *   course they do not hold. That is why the route carries a course id at all
-   *   - a student-only route would have nothing to scope by.
-   * - The work is filtered to the student's **groups** via
-   *   `findByCourseForGroups`, the same read the student's own list uses
-   *   (§5.16). Listing every task on the course would put "not started" against
-   *   work this student was never set, which reads as a failing record rather
-   *   than as work that was never theirs.
+   * If the named student is not a member of any held group on that course,
+   * a scoped assistant gets a 404 whose message is byte-identical to COURSE_NOT_IN_SCOPE
+   * (anti-enumeration, AUTH-6).
    */
   async studentWork(
     courseId: string,
@@ -101,14 +131,22 @@ export class WorkAnalyticsGateService {
     actor: StaffActor,
   ): Promise<StudentWorkResult[]> {
     await this.scope.assertAssigned(courseId, actor);
-    const groupIds = await this.studentGroups.groupIdsFor(courseId, studentId);
-    // An unplaced student has been set nothing, so this is legitimately empty
-    // rather than an error (§7.2) - the same state the student's own screen
-    // shows, and the staff view must agree with it.
-    // Hidden tasks are dropped for the same reason: this view must agree with
-    // the student's own screen, which does not show them (`D-28`).
+    const reach = await this.scope.reachableGroupIds(actor);
+    const studentGroupIds = await this.studentGroups.groupIdsFor(courseId, studentId);
+
+    if (reach !== null) {
+      const heldGroupIds = studentGroupIds.filter((g) => reach.includes(g));
+      if (heldGroupIds.length === 0) {
+        throw new NotFoundException(COURSE_NOT_IN_SCOPE);
+      }
+      const assessments = (
+        await this.assessments.findByCourseForGroups(courseId, heldGroupIds)
+      ).filter(isVisibleToStudents);
+      return this.analytics.forStudent(assessments, studentId);
+    }
+
     const assessments = (
-      await this.assessments.findByCourseForGroups(courseId, groupIds)
+      await this.assessments.findByCourseForGroups(courseId, studentGroupIds)
     ).filter(isVisibleToStudents);
     return this.analytics.forStudent(assessments, studentId);
   }

@@ -72,8 +72,7 @@ export class WorkAnalyticsController {
     @Param('assessmentId') assessmentId: string,
     @Request() req: { user: JwtPayload },
   ): Promise<StudentWorkRow[]> {
-    await this.gate.assertMayRead(assessmentId, this.actor(req));
-    return this.analytics.rosterForAssessment(assessmentId);
+    return this.gate.results(assessmentId, this.actor(req));
   }
 
   /**

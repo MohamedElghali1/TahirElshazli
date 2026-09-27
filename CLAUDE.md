@@ -375,18 +375,18 @@ withheld verbs. The durable rules:
   course grain leaked every cohort on a course. **A missing `assistant_scopes` row is "never
   configured" and refuses** — nothing in the product creates an assistant account yet, so whatever
   gains that ability must write the row.
-- **Enforcement is at the group grain only where the route *names* a group.** `D-10` scoped the
-  `/staff/groups/*` routes; a route naming a **course** still calls `assertAssigned(courseId)`, which
-  after `015` no longer implies group scope — one held cohort reaches the whole course's roster,
-  submission queue and analytics. Pre-existing, ruled on as `D-23` (narrow to held groups) and open as
-  task `AUTH-6`. **Unit 6 (`D-33`) closed the targeting write and the course group list**; **unit 7
-  (`D-44`) closed `POST /staff/submissions/:id/grade` and the items of the course submission queue**
-  (whose per-task averages stay course-wide by ruling). `AUTH-6`'s remainder is the roster, analytics,
-  the per-course assessment list, and `PATCH`/`DELETE` of a task shared with an unheld group. Every
-  route naming a **submission** goes through `SubmissionAccessService` at the group grain. `GET /staff/tasks` and the draft routes were built at the
-  group grain from birth. **Until it lands, do not read a "group scope" statement in
-  `AUTHORIZATION_MODEL.md` as describing the course-named routes**, and do not add a new
-  course-grained staff route without saying which grain it is on.
+- **Every staff route is now group-grain (`AUTH-6`, closed `REM-002`, 2026-09-27).** A route naming a
+  **course** still calls `assertAssigned(courseId)` first for existence and membership, but no longer
+  stops there: `roster` narrows to members of a held group; `list`/`update`/`remove`/`setTargets` on a
+  task and `assertMayRead`/`results`/`studentWork` on the analytics pair all run `reachableGroupIds`
+  against the resource's audience, refusing (`ASSESSMENT_NOT_FOUND`/`COURSE_NOT_IN_SCOPE`, 404, not on
+  the caller's screen) or 403-ing (`RETARGET_UNREACHABLE_AUDIENCE`, on the caller's screen but partly
+  unheld) exactly as `D-33`'s targeting write and `D-44`'s submission queue already did. Every route
+  naming a **submission** goes through `SubmissionAccessService`, and `GET /staff/tasks` and the draft
+  routes were group-grain from birth. **Aggregate figures stay course-wide by ruling (`D-44`):** an
+  assessment's own completion rate/average and the submission queue's per-task averages are not
+  re-derived per viewer, only the rows are. Do not add a new staff route that names a course, a task or
+  a student without saying which grain its numbers are on.
 - **Object-level authorization is not optional.** A role check alone — "is this user an assistant?" —
   is the single easiest way to leak the whole platform through the API. Every request that names a
   resource must prove the caller may reach *that* resource. Enrollment alone is not enough where work

@@ -15,6 +15,8 @@ import type { RecordingRepository } from '../recordings/interfaces/recording-rep
 import { RECORDING_REPOSITORY } from '../recordings/interfaces/recording-repository.interface.js';
 import type { UserRepository } from '../auth/interfaces/user-repository.interface.js';
 import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js';
+import type { GroupRepository } from '../groups/interfaces/group-repository.interface.js';
+import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interface.js';
 
 /**
  * Which courses the numbers on a screen cover. Sent to the UI and rendered,
@@ -99,6 +101,7 @@ export class ManageService {
     @Inject(RECORDING_REPOSITORY)
     private readonly recordingRepo: RecordingRepository,
     @Inject(USER_REPOSITORY) private readonly userRepo: UserRepository,
+    @Inject(GROUP_REPOSITORY) private readonly groupRepo: GroupRepository,
   ) {}
 
   /**
@@ -186,10 +189,21 @@ export class ManageService {
       throw new NotFoundException('Course not found');
     }
 
-    const [enrollments, assessments] = await Promise.all([
+    const [allEnrollments, assessments, reach] = await Promise.all([
       this.enrollmentRepo.findByCourse(courseId),
       this.assessmentRepo.findByCourse(courseId),
+      this.scope.reachableGroupIds(actor),
     ]);
+
+    let enrollments = allEnrollments;
+    if (reach !== null) {
+      const held = (await this.groupRepo.findByIds(reach))
+        .filter((g) => g.courseId === courseId)
+        .map((g) => g.id);
+      const members = await this.groupRepo.findMembersForGroups(held);
+      const heldStudentIds = new Set(members.map((m) => m.studentId));
+      enrollments = allEnrollments.filter((e) => heldStudentIds.has(e.studentId));
+    }
 
     const [users, submissions] = await Promise.all([
       this.userRepo.findByIds(enrollments.map((e) => e.studentId)),
