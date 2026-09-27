@@ -1,0 +1,30 @@
+<task>
+Continue T2 (AUTH-6). Your previous turn ended before the work was finished: you said you were waiting for the unit tests and the run exited. Run every command synchronously and do NOT end your turn until items 1-4 below are done and the report is written.
+
+Already done and reviewed (keep as is): manage.service.ts roster narrowing; work-analytics-gate.service.ts assertMayRead/results/studentWork; work-analytics.controller.ts; assessment-authoring.service.ts list() narrowing and the private assertAudienceInReach helper.
+
+Remaining:
+1. assessment-authoring.service.ts: call assertAudienceInReach (with the task's CURRENT targets from assessmentRepo.findTargets) in update() and remove(), right after the existing existence/assertAssigned checks. In setTargets(), a task whose CURRENT audience holds no group the caller reaches must now throw NotFoundException(ASSESSMENT_NOT_FOUND) instead of the 403; a task that includes at least one held group keeps the existing 403 RETARGET_UNREACHABLE_AUDIENCE. Careful: a task with NO targets yet must stay editable/retargetable by a scoped assistant exactly as today, unless list() hides untargeted tasks from them — list() now hides them, so make update/remove/setTargets consistent with that: an untargeted task is 404 ASSESSMENT_NOT_FOUND for a scoped assistant. BUT first check GET /staff/tasks and the draft routes (task-drafts.service.ts): if a scoped assistant can create a draft and then target it, the creator must still be able to target their own new draft. If making untargeted tasks 404 would break that flow, do NOT 404 untargeted tasks in setTargets; instead say so in the report.
+2. Unit specs next to each changed service (manage.service.spec.ts, the work-analytics gate spec, assessment-authoring.service.spec.ts — find the existing files), both directions for every rule: scoped assistant narrowed/refused; teacher and all_groups assistant unchanged; the 404 messages asserted byte-identical to ASSESSMENT_NOT_FOUND / COURSE_NOT_IN_SCOPE respectively.
+3. backend/test/staff.e2e-spec.ts (existing file only — no new e2e file): one course, groups A and B, a scoped assistant holding only A, a student in each; roster lists only A's student; results rows only A's; studentWork for B's student is 404 with the same body as for a random UUID student; list excludes a B-only task; PATCH and DELETE of a B-only task 404; PATCH of an A+B task 403; teacher sees and can do all of it. Follow the fixture style already in that file.
+4. Docs: docs/AUTHORIZATION_MODEL.md (course-named routes are now group-grain; aggregates on analytics/queue stay course-wide per D-44); docs/IMPLEMENTATION_PLAN.md AUTH-6 row to [x] with a one-line note; CLAUDE.md §7 — replace the paragraph beginning "**Enforcement is at the group grain only where the route *names* a group.**" (through the "Until it lands…" sentence) with a short statement of the new truth. Minimal edits.
+
+Do NOT touch docs/legal/ (the lead is editing it). No frontend, no migrations.
+</task>
+
+<verification_loop>
+From the repo root, run and wait for each to finish:
+  npm run lint:backend
+  npm test
+  npm run test:e2e     (read every file's "Tests N passed" line)
+  npm run build:backend
+  cd backend && npx tsc --noEmit -p tsconfig.json
+</verification_loop>
+
+<action_safety>
+No git add/commit/checkout/stash. No shell redirections that create stray files.
+</action_safety>
+
+<structured_output_contract>
+End with: 1. changes per route; 2. files touched; 3. gate outcomes with counts; 4. what you did about untargeted tasks and the draft flow, and any deviation.
+</structured_output_contract>
