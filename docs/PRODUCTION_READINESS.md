@@ -44,10 +44,15 @@ the task that clears every open box is named. Re-run this checklist before `REM-
 - [ ] Rate limits safe for a shared school IP → `REM-007`
 
 ## Product scope (client decisions)
-- [?] Weekly reports before launch? → `REM-003`
-- [?] File uploads at launch (R2) or links only? → `REM-006`
-- [?] First staff identity → `REM-010`
-- [x] Recordings are plain links (decided 2026-09-27, `D-57`)
+- [x] Weekly reports — after launch (`D-58`); hide the nav item for launch → `REM-021a`
+- [x] File uploads — PDF + DOCX at launch (`D-59`) → build `REM-030`, `REM-082`
+- [x] Google Form homework — CSV import now, API fetch later (`D-60`) → build `REM-080`
+- [x] Real staff accounts created last (`D-61`); bootstrap CLI still needed → `REM-001`
+- [?] First staff identity (teacher or admin) → `REM-010`
+- [x] Recordings are plain links (`D-57`)
+- [ ] Guardian consent for under-18 registration → `REM-081`
+- [ ] Privacy policy reviewed, placeholders filled, published → `REM-015` (draft: `docs/legal/privacy-policy.md`)
+- [ ] Real photos and WhatsApp number on the public site → `REM-016b`
 
 ## Deployment
 - [x] Production build works — images build; production API boots on an empty database

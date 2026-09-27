@@ -105,6 +105,7 @@ Highest first. A higher entry beats a lower one on the subject it owns.
 | Go-live checklist and release status | `docs/PRODUCTION_READINESS.md` |
 | Audit remediation tasks (`REM-nnn`), phased | `docs/REMEDIATION_PLAN.md` |
 | Hostinger VPS architecture, environment, runbook, backups, rollback | `docs/HOSTINGER_DEPLOYMENT.md` |
+| Privacy policy source text, and the product promises it depends on | `docs/legal/` |
 
 **Superseded, kept only as historical record:** `docs/frontend-design-system.md` describes the
 retired Twenty-derived system. `docs/redesign-mapping.md` replaces it. Do not build from it; several
@@ -143,7 +144,7 @@ Actual repository versions. Do not substitute generic knowledge for what is writ
 | Data access | **No ORM.** `DatabaseService` + parameterised SQL behind repository interfaces |
 | Migrations | Hand-written SQL in `backend/src/database/migrations/`, run by `MigrationRunner` |
 | Video | **None — recordings are plain links** (a validated http(s) `videoUrl`). Bunny Stream is out of scope (`D-57`, 2026-09-27) |
-| File storage | `FileStorage` port with drivers `none` / `local` **only** — `local` in dev, `none` in prod. **No R2 driver exists in code**; whether uploads ship at launch is open (`REM-006`) |
+| File storage | `FileStorage` port with drivers `none` / `local` **only** — `local` in dev, `none` in prod. **No R2 driver exists in code yet** — students must upload PDF and DOCX at launch (`D-59`), so an R2 driver with presigned reads is a launch blocker (`REM-030`, `REM-082`) |
 | Mail | `MailSender` port: `none` / `log` / `smtp` (nodemailer). Prod default `none` — which 503s announcements, student creation, invitations and reset, so **SMTP is required in practice** |
 | Hosting | **Hostinger VPS**, containerized. Two Dockerfiles (**still on `node:20-alpine`, EOL — `REM-011`**); `docker-compose.yml` is **development only**. Target production layout: `docs/HOSTINGER_DEPLOYMENT.md` |
 | Edge | **Cloudflare** — SSL, DNS, CDN, DDoS, WAF, caching |

@@ -19,7 +19,7 @@ audit (`docs/PROJECT_AUDIT.md` §5).
 | Reverse proxy | nginx on the host: TLS, two server blocks, body-size limit | not in repo — `REM-021` |
 | Edge | Cloudflare (DNS, proxy, WAF, CDN), SSL mode **Full (strict)** | `CLAUDE.md` §3 |
 | Mail | Any SMTP provider (`MAIL_DRIVER=smtp` + 5 vars). **Required in practice** | `backend/src/common/config/env.ts` `resolveSmtpConfig` — **verified**: with the default `none`, publishing an announcement, creating a student and password reset all return 503 |
-| File storage | **None.** `STORAGE_DRIVER=none` (the only production-legal value; there is no `r2` driver in code) | `env.ts` `resolveStorageDriver` — **verified**: `local` refused in production |
+| File storage | **Cloudflare R2** (private bucket, presigned short-lived reads) for student PDF/DOCX submissions (`D-59`). **The `r2` driver is not built yet** (`REM-030`); until it is, the only production-legal value is `none` | `env.ts` `resolveStorageDriver` — **verified**: `local` refused in production |
 | Video | **None.** Recordings are plain links (user decision 2026-09-27) | `create-recording.dto.ts` `@IsUrl({protocols:['http','https']})` |
 | Process manager | **Docker Compose** (`restart: unless-stopped`) + the Docker systemd unit. **Not PM2** — it would duplicate what Docker already does | |
 | Background jobs / queue / Redis | **None.** One replica; rate limiter and token denylist are in-process by design | `CLAUDE.md` §5, §8 |
@@ -74,7 +74,7 @@ The full inventory with defaults and validation is in `docs/PROJECT_AUDIT.md` §
 | `CORS_ORIGIN` | `https://tahirelshazli.com` | boot refuses unset |
 | `FRONTEND_URL` | `https://tahirelshazli.com` | mail links; boot refuses unset |
 | `TRUSTED_PROXY_HOPS` | `2` | Cloudflare → nginx → app. **Only correct if §6's Cloudflare-only firewall is in place** |
-| `STORAGE_DRIVER` | `none` | the only legal production value today |
+| `STORAGE_DRIVER` | `r2` once `REM-030` lands (`none` until then) | plus the R2 account, bucket and key variables `REM-030` defines |
 | `MAIL_DRIVER` | `smtp` | `none` (the default) breaks announcements, student creation, invitations, password reset |
 | `MAIL_SMTP_HOST` `…_PORT` `…_USER` `…_PASS` `…_FROM` | from the mail provider | all five required when `smtp` |
 | `GOOGLE_DRIVER` | `none` until the client provides a Google Cloud OAuth client | then the four `GOOGLE_*` vars + `GOOGLE_TOKEN_ENCRYPTION_KEY` |
@@ -172,9 +172,9 @@ server {
     server_name api.tahirelshazli.com;
     ssl_certificate     /etc/ssl/cloudflare/origin.pem;
     ssl_certificate_key /etc/ssl/cloudflare/origin.key;
-    # Uploads are off in production (STORAGE_DRIVER=none). Raise to 110m only when a storage
-    # driver exists; Cloudflare's own request-body cap (100 MB on Free/Pro) applies regardless.
-    client_max_body_size 10m;
+    # Student PDF/DOCX uploads (D-59) pass through the API, which caps a submission at 100 MB.
+    # Cloudflare Free/Pro caps a request body at 100 MB regardless; ~25 MB is ample for homework.
+    client_max_body_size 110m;
     proxy_read_timeout 60s;
     location / {
         proxy_pass http://127.0.0.1:3001;
@@ -255,7 +255,9 @@ In order of preference:
 
 ## 9. Backups
 
-The database is the entire state (no uploaded files in production, recordings are links).
+State lives in two places: the database, and the R2 bucket holding submitted files (recordings are
+links). Turn on object versioning for the R2 bucket, or copy it to a second bucket on a schedule: the
+nightly database dump does not cover files.
 
 - Nightly, host cron:
   `docker compose -f /opt/tahirelshazli/docker-compose.prod.yml exec -T postgres pg_dump -U $POSTGRES_USER -Fc tahirelshazli > /var/backups/lms/$(date +%F).dump`
@@ -294,9 +296,7 @@ Then in a browser: sign in as the teacher, open `/manage`, open a group's mark b
 ## 12. Unresolved — needs the client
 
 - SMTP provider and credentials (blocking).
-- Whether file uploads (homework files, avatars, blog images, annotation files) are wanted at launch.
-  If yes, an R2 (or S3-compatible) driver must be built — `REM-030`. If no, confirm "links and typed
-  answers only", as was decided for recordings.
-- Whether weekly reports (the roadmap's "flagship", Unit 9) must ship at launch — `REM-031`.
+- The Cloudflare R2 account and bucket for student uploads (`D-59`, `REM-030`) — a client subscription.
+- Weekly reports ship after launch (`D-58`); nothing extra to provision for them at go-live.
 - Google Cloud OAuth client (only if Google Forms sync or Google sign-in is wanted).
 - Who holds the Cloudflare, Hostinger, mail and domain accounts (`CLAUDE.md` §1: the client's responsibility).

@@ -444,10 +444,21 @@ Docker logs are uncapped (P2, `logging:` in the production compose); tracked 0-b
 
 ## 10. Open questions for the client / user
 
-1. Must weekly reports (Unit 9) ship **before** launch, or can launch be the teaching loop plus
-   announcements, with reports following? (`REM-003`)
-2. File uploads at launch — build an R2 driver, or links and typed answers only, as for recordings?
-   (`REM-006`)
+**Answered 2026-09-27** (`docs/CHANGELOG.md`): weekly reports ship **after** launch (`D-58`); students
+upload **PDF and DOCX**, so R2 storage and a DOCX type are launch blockers (`D-59`); Google Form homework
+via **CSV import** now, with the API fetch at the deadline later on the same ingestion seam (`D-60`);
+real staff accounts are created **last** (`D-61`). New from drafting the privacy policy: guardian
+consent at registration (`REM-081`, P0 legal) and `AUD-16` below.
+
+**AUD-16 · P1 · Placeholder content on the public site.** Seven images load from `picsum.photos`
+(random stock photos, including the "portrait" of Dr. Tahir on the home and About pages) and the
+WhatsApp number is `201000000000` in the footer, contact page and in-app Help
+(`frontend/lib/site-content.ts:20-29`, `next.config.ts:8`). Missed by the frontend pass because the
+code comments mark them as placeholders; it is still what visitors would see → `REM-016b`.
+
+Still open:
+1. ~~Weekly reports before launch?~~ Decided (`D-58`).
+2. ~~File uploads at launch?~~ Decided (`D-59`).
 3. Which SMTP provider, and its credentials? (`REM-004`)
 4. When mail is not configured or fails, should announcements still publish in-app? (Recommended: yes;
    `REM-005`.)

@@ -2471,3 +2471,38 @@ undocumented (`AUD-04`), announcement publish all-or-nothing on mail (`AUD-05`),
 driver (`AUD-06`), no production compose/nginx, Node 20 EOL in the images. Two specialist findings
 were refuted by running the code and are recorded as such in the audit (§6): "malformed UUID → 500"
 and "raw driver messages on a 500".
+
+### `D-58` — Weekly reports ship after launch
+**Chosen (user, 2026-09-27).** "The weekly reports should function well after launch." Launch does
+not wait for Unit 9; the unbuilt "Reports" nav item is hidden until it lands (`REM-021a`), then
+Unit 9 is built properly (`REM-031`). *Reading recorded:* "after launch" is taken as the timing, and
+"function well" as the bar the post-launch unit must meet — not as a request to rush it before launch.
+
+### `D-59` — Students upload PDF and DOCX; uploads are in scope for launch
+**Chosen (user, 2026-09-27).** Students must be able to upload PDF and Word (`.docx`) files. This
+reverses the audit's open question `AUD-06` towards building storage: a Cloudflare R2 driver
+(`REM-030`, private bucket, presigned short-lived reads) and a DOCX submission type (`REM-082`,
+content-sniffed, downloaded by markers because the annotation overlay is PDF-only). Both are launch
+blockers.
+
+### `D-60` — Google Form homework by CSV import now; the Forms API later
+**Chosen (user, 2026-09-27).** Homework may be a Google Form. After the deadline the teacher exports
+the responses CSV from Google and imports it; the web app shows results like Google Forms' own
+summary and per-respondent views. The Google Forms API sync that already exists is **not** the launch
+path — it needs a client OAuth client — but the user expects to automate fetching at the deadline
+later. **Consequence:** the CSV importer and the API sync share one ingestion seam
+(`GoogleFormSyncService.ingest`, extracted from `sync()`), so the later automation is a timer
+calling code that already exists (`REM-080`, `REM-083`). Google's CSV export carries total scores
+but not per-question correctness, so per-question analytics show answer distributions.
+
+### `D-61` — Real staff accounts are created last
+**Chosen (user, 2026-09-27).** The teacher's and assistants' real accounts wait until everything
+else is ready. The bootstrap CLI (`REM-001`) is still built and tested beforehand; running it against
+production is a go-live step. Consequence for `AUD-02`: no scoped assistant will exist before
+`REM-002` lands, so the interim `all_groups` workaround is not needed if the order holds.
+
+### Privacy policy drafted
+`docs/legal/privacy-policy.md`, written from the code, not a template. Drafting it surfaced a gap: most
+IGCSE students are minors, Egypt's PDPL requires a guardian's consent, and registration collects none
+(`REM-081`, P0 legal). It also found the public site still loads placeholder stock photos from
+`picsum.photos` — including as Dr. Tahir's portrait — and a placeholder WhatsApp number (`AUD-16`).
