@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Role } from '../roles.enum.js';
+import { STAFF_ADMIN } from '../staff-roles.js';
 import type {
   PasswordResetToken,
   StoredUser,
@@ -34,6 +35,13 @@ function requireRoles(roles: readonly Role[]): Set<Role> {
 
 @Injectable()
 export class InMemoryUserRepository implements UserRepository {
+  /** Test helper to create an in-memory repository with a custom set of users. */
+  static withUsers(users: StoredUser[] = []): InMemoryUserRepository {
+    const repo = new InMemoryUserRepository();
+    repo.users = [...users];
+    return repo;
+  }
+
   private users: StoredUser[] = [
     {
       id: 'student-1',
@@ -270,5 +278,10 @@ export class InMemoryUserRepository implements UserRepository {
     if (stored) {
       stored.usedAt = new Date().toISOString();
     }
+  }
+
+  async hasStaffAccount(): Promise<boolean> {
+    const staffRoles = new Set<Role>(STAFF_ADMIN);
+    return this.users.some((u) => staffRoles.has(u.role));
   }
 }

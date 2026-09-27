@@ -187,6 +187,12 @@ export interface UserRepository {
   ): Promise<PasswordResetToken>;
   findPasswordResetToken(token: string): Promise<PasswordResetToken | null>;
   markPasswordResetTokenUsed(token: string): Promise<void>;
+  /**
+   * Reports whether any user with role 'teacher' or 'admin' exists.
+   *
+   * Used during staff bootstrap to ensure idempotency without fetching whole rows.
+   */
+  hasStaffAccount(): Promise<boolean>;
 }
 
 export const USER_REPOSITORY = Symbol('USER_REPOSITORY');

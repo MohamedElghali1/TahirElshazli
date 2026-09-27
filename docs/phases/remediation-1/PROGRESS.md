@@ -12,7 +12,7 @@ weekly reports (`REM-031`, post-launch).
 
 | # | Task | Status | Commit |
 |---|---|---|---|
-| T1 | REM-001 bootstrap-staff CLI | at implementer | |
+| T1 | REM-001 bootstrap-staff CLI | reviewed + committed | (this commit) |
 | T2 | REM-002 group-grain scope on course-named staff routes (AUTH-6) | queued | |
 | T3 | REM-005 announcement publish not all-or-nothing on mail | queued | |
 | T4 | REM-007 classroom-safe rate limits | queued | |
@@ -32,3 +32,13 @@ weekly reports (`REM-031`, post-launch).
 - Replay migrations from an empty schema.
 - Re-run the audit's live journeys T-13 and T-14 and the browser walk.
 - Update `REMEDIATION_PLAN.md` boxes, `PRODUCTION_READINESS.md`, `CLAUDE.md` counts, `project_log.md`.
+
+### T1 — REM-001 bootstrap-staff CLI
+- First dispatch auto-denied (headless agy cannot prompt for command permission). The user chose
+  `--dangerously-skip-permissions` per run (2026-09-27); every run is still reviewed and re-gated.
+- Landed: `backend/src/database/cli/bootstrap-staff.ts` (+ spec), `UserRepository.hasStaffAccount()`
+  in both implementations (EXISTS query), integration case, `db:bootstrap-staff` script.
+- Lead's gates: lint 0 errors; unit 812/49; integration 192/192 on real PostgreSQL 15; build; tsc 0.
+- Lead's live check on an empty DB: weak password → exit 1; first run creates one active teacher
+  (email normalised); second run "bootstrap is not needed"; production API login → `/staff/overview` 200.
+- Unasked addition kept: `InMemoryUserRepository.withUsers()` test helper (harmless; spec uses it).

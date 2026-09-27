@@ -22,7 +22,7 @@ an existing pattern in this repository and names it.
 
 ## Phase 1 — Release blockers (P0) and the decisions that gate scope
 
-- [ ] **REM-001 — First staff account on a fresh production database** · P0 · `AUD-01`
+- [x] **REM-001 — First staff account on a fresh production database** · P0 · `AUD-01` — **done** (remediation-1 T1): `node dist/database/cli/bootstrap-staff.js`; verified on an empty DB, login as the created teacher → `/staff/overview` 200, second run no-op, weak password exit 1
   - *Why:* a fresh install has no way to sign in as staff (verified live).
   - *Affected:* new `backend/src/database/cli/bootstrap-staff.ts`; `backend/package.json` script.
   - *Change:* mirror `cli/migrate.ts` (`NestFactory.createApplicationContext`, no HTTP). Read

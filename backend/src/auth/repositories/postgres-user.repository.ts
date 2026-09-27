@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { DatabaseService } from '../../database/database.service.js';
 import { iso, isoOrNull } from '../../database/database.types.js';
 import { Role } from '../roles.enum.js';
+import { STAFF_ADMIN } from '../staff-roles.js';
 import type {
   PasswordResetToken,
   StoredUser,
@@ -268,5 +269,13 @@ export class PostgresUserRepository implements UserRepository {
       'UPDATE password_reset_tokens SET used_at = now() WHERE token = $1 AND used_at IS NULL',
       [token],
     );
+  }
+
+  async hasStaffAccount(): Promise<boolean> {
+    const row = await this.db.queryOne<{ exists: boolean }>(
+      'SELECT EXISTS(SELECT 1 FROM users WHERE role = ANY($1::text[])) AS exists',
+      [[...STAFF_ADMIN]],
+    );
+    return row?.exists ?? false;
   }
 }

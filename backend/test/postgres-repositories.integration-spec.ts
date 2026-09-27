@@ -29,6 +29,7 @@ import { PostgresSubmissionAnnotationRepository } from '../src/assessments/repos
 import { PostgresNotificationPreferencesRepository } from '../src/settings/repositories/postgres-notification-preferences.repository.js';
 import type { NewAssessment } from '../src/assessments/interfaces/assessment-repository.interface.js';
 import { Role } from '../src/auth/roles.enum.js';
+import { STAFF_ADMIN } from '../src/auth/staff-roles.js';
 import { PostgresGoogleIdentityRepository } from '../src/auth/google/repositories/postgres-google-identity.repository.js';
 import { GoogleIdentityConflictError } from '../src/auth/google/interfaces/google-identity-repository.interface.js';
 
@@ -420,6 +421,27 @@ describeIfDb('Postgres repositories', () => {
       await r.markPasswordResetTokenUsed('token-single-use');
       const second = await r.findPasswordResetToken('token-single-use');
       expect(second?.usedAt).toBe(first?.usedAt);
+    });
+
+    it('reports whether any staff account exists', async () => {
+      const r = repo();
+      expect(await r.hasStaffAccount()).toBe(true);
+
+      await db
+        .runInTransaction(async () => {
+          await db.query(
+            `UPDATE users SET role = 'student' WHERE role = ANY($1::text[])`,
+            [[...STAFF_ADMIN]],
+          );
+          expect(await r.hasStaffAccount()).toBe(false);
+          throw new Error('rollback');
+        })
+        .catch((err: unknown) => {
+          if (err instanceof Error && err.message === 'rollback') return;
+          throw err;
+        });
+
+      expect(await r.hasStaffAccount()).toBe(true);
     });
   });
 
