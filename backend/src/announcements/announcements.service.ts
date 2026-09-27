@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { StaffScopeService, type StaffActor } from '../staff/staff-scope.service.js';
@@ -43,8 +44,19 @@ export interface AnnouncementContent {
 export const MAX_ANNOUNCEMENT_PAGE_SIZE = 100;
 export const DEFAULT_ANNOUNCEMENT_PAGE_SIZE = 25;
 
+/** How many recipients got the email that announcement.posted also sent. */
+export interface AnnouncementDelivery {
+  emailed: number;
+  failed: number;
+}
+
+/** publish()'s response: the announcement plus how the mail fan-out went. */
+export type PublishedAnnouncement = Announcement & { delivery: AnnouncementDelivery };
+
 @Injectable()
 export class AnnouncementsService {
+  private readonly logger = new Logger(AnnouncementsService.name);
+
   constructor(
     private readonly scope: StaffScopeService,
     @Inject(ANNOUNCEMENT_REPOSITORY) private readonly announcementRepo: AnnouncementRepository,
@@ -198,7 +210,7 @@ export class AnnouncementsService {
     });
   }
 
-  async publish(id: string, actor: StaffActor): Promise<Announcement> {
+  async publish(id: string, actor: StaffActor): Promise<PublishedAnnouncement> {
     return this.db.runInTransaction(async () => {
       const announcement = await this.announcementRepo.findById(id);
       if (!announcement) throw new NotFoundException('Announcement not found');
@@ -231,15 +243,29 @@ export class AnnouncementsService {
         link: audience.courseId ? `/learn/${audience.courseId}` : null,
       });
 
+      // Publishing must not be all-or-nothing on mail (REM-005): a recipient
+      // whose send fails - or every recipient, when MAIL_DRIVER=none - must
+      // not roll back the publish or the in-app notifications already fanned
+      // out above. Sequential, not Promise.all: a single failure partway
+      // through must not surface only after almost every mail already sent.
       const users = await this.userRepo.findByIds(recipientIds);
+      let emailed = 0;
+      let failed = 0;
       for (const user of users) {
-        if (user.email) {
+        if (!user.email) continue;
+        try {
           await this.mail.send({
             to: user.email,
             template: 'announcement',
             data: { title: published.title, body: published.body },
           });
+          emailed++;
+        } catch {
+          failed++;
         }
+      }
+      if (failed > 0) {
+        this.logger.warn(`announcement ${published.id}: ${failed} of ${emailed + failed} emails failed`);
       }
 
       await this.audit.record({
@@ -257,7 +283,7 @@ export class AnnouncementsService {
         },
       });
 
-      return published;
+      return { ...published, delivery: { emailed, failed } };
     });
   }
 

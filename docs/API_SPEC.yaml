@@ -174,6 +174,23 @@ components:
         - createdAt
         - recipientCount
 
+    # REM-005: publish is not all-or-nothing on mail. A recipient's send
+    # failing - or every recipient failing, when MAIL_DRIVER=none - still
+    # commits the publish and the in-app notifications; this is how the
+    # caller learns how the mail fan-out went.
+    PublishedAnnouncement:
+      allOf:
+        - $ref: '#/components/schemas/Announcement'
+        - type: object
+          properties:
+            delivery:
+              type: object
+              properties:
+                emailed: { type: integer, description: Recipients the email was sent to. }
+                failed: { type: integer, description: Recipients whose email could not be sent (or every recipient, if mail is unconfigured). }
+              required: [emailed, failed]
+          required: [delivery]
+
     Error:
       type: object
       required: [statusCode, message]
@@ -2816,13 +2833,20 @@ paths:
       tags: [announcements]
       summary: Publish a draft announcement
       description: >
-        Appears in the LMS immediately and emails every recipient exactly once.
-        The email cannot be recalled; editing afterwards does not re-send.
+        Appears in the LMS immediately and emails every recipient at most once.
+        The email cannot be recalled; editing afterwards does not re-send. A
+        recipient's email failing to send - or every recipient's, when mail is
+        unconfigured - does not fail the publish; `delivery` reports the count
+        (REM-005).
       x-roles: [teacher, admin]
       parameters:
         - { name: announcementId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
       responses:
-        '200': { description: Published }
+        '200':
+          description: Published
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublishedAnnouncement' }
         '409': { $ref: '#/components/responses/Conflict' }
       x-audit: announcement.posted
 

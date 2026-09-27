@@ -1,5 +1,6 @@
 import type {
   Announcement,
+  PublishedAnnouncement,
   AssessmentDetail,
   AssessmentListItem,
   AssessmentTargetInput,
@@ -1535,7 +1536,7 @@ export const api = {
       }),
 
     publishAnnouncement: (token: string, id: string) =>
-      request<Announcement>(`/admin/announcements/${id}/publish`, {
+      request<PublishedAnnouncement>(`/admin/announcements/${id}/publish`, {
         method: 'POST',
         token,
       }),

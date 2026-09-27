@@ -17,6 +17,7 @@ import type { JwtPayload } from '../auth/jwt.strategy.js';
 import {
   AnnouncementsService,
   DEFAULT_ANNOUNCEMENT_PAGE_SIZE,
+  type PublishedAnnouncement,
 } from './announcements.service.js';
 import type { Announcement } from './interfaces/announcement-repository.interface.js';
 import {
@@ -82,7 +83,7 @@ export class AdminAnnouncementsController {
   async publish(
     @Param('id') id: string,
     @Request() req: { user: JwtPayload },
-  ): Promise<Announcement> {
+  ): Promise<PublishedAnnouncement> {
     return this.announcements.publish(id, this.actor(req));
   }
 }

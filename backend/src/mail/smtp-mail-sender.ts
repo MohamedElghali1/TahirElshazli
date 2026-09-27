@@ -31,6 +31,9 @@ export class SmtpMailSender implements MailSender {
       port: config.port,
       secure: config.port === 465,
       auth: { user: config.user, pass: config.pass },
+      pool: true,
+      maxConnections: 5,
+      maxMessages: 100,
     });
     this.from = config.from;
   }

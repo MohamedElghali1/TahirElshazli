@@ -65,7 +65,7 @@ an existing pattern in this repository and names it.
     email arrives and its link works; `mail_deliveries` gets a row.
   - *Depends on:* client.
 
-- [ ] **REM-005 — Announcement publish must not be all-or-nothing on mail** · P1 · `AUD-05`
+- [x] **REM-005 — Announcement publish must not be all-or-nothing on mail** · P1 · `AUD-05`
   - *Affected:* `announcements/announcements.service.ts:201-243`; `mail/smtp-mail-sender.ts`.
   - *Change:* keep publish + notification fan-out + audit in the transaction; per recipient, try
     `mail.send` and collect failures instead of throwing (a 503 from `MAIL_DRIVER=none` counts as

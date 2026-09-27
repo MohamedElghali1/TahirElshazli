@@ -15,7 +15,7 @@ weekly reports (`REM-031`, post-launch).
 | T1 | REM-001 bootstrap-staff CLI | reviewed + committed | 21b4433 |
 | T2 | REM-002 group-grain scope on course-named staff routes (AUTH-6) | reviewed + committed | (this commit) |
 | T2b | D-65 one group per student per course (move replaces membership) | queued | |
-| T3 | REM-005 announcement publish not all-or-nothing on mail | queued | |
+| T3 | REM-005 announcement publish not all-or-nothing on mail | reviewed + committed | (this commit) |
 | T4 | REM-007 classroom-safe rate limits | queued | |
 | T5 | REM-030 Cloudflare R2 storage driver | queued | |
 | T6 | REM-082 DOCX submissions | queued | |
@@ -68,3 +68,14 @@ models inside agy alike. By the user's choice, remaining tasks go to the `unit-i
 - Lead's live T-13 (production API, fresh DB, fixtures): after removing student-2 from group-1 and
   placing them only in a new unheld group, `assistant-1`'s roster lists student-1 only, and
   student-2's work is a 404 byte-identical to an unknown student's; the teacher sees both. **PASS.**
+
+### T3 — REM-005 announcement publish survives mail failure
+- `unit-implementer`: per-recipient try/catch in `publish()` (sequential), `delivery: {emailed, failed}`
+  on the response, SMTP transport pooling, mirror type + drift check, status line on the page.
+- Lead's fix: the page said "0 emails could not be sent" when no recipient had an email; now
+  "Published.", and a partial failure reads "N of M emails could not be sent."
+- Lead's gates: lint 0 errors; drift ok; unit 836/50; e2e 4 files 153 + staff 257 on a solo rerun
+  (the runner's three attempts all hit the 0xC0000409 crash); integration 192/192; both builds; tsc 0.
+- Lead's live T-14 (production API, `MAIL_DRIVER` unset → `none`, fresh DB): publish to `group:group-1`
+  → 200, `publishedAt` set, `delivery {emailed: 0, failed: 2}`, student's notifications 4 → 5, log
+  line names the announcement id and counts only. **PASS.**

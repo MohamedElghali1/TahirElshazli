@@ -73,6 +73,7 @@ export default function AnnouncementsPage() {
   const [composing, setComposing] = useState(false);
   const [editingAnnouncement, setEditingAnnouncement] = useState<Announcement | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionStatus, setActionStatus] = useState<{ tone: 'green' | 'amber'; message: string } | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
 
   const [audienceFilter, setAudienceFilter] = useState('');
@@ -155,8 +156,24 @@ export default function AnnouncementsPage() {
     if (!token) return;
     setActionBusy(true);
     setActionError(null);
+    setActionStatus(null);
     try {
-      await api.admin.publishAnnouncement(token, a.id);
+      const { delivery } = await api.admin.publishAnnouncement(token, a.id);
+      if (delivery.failed === 0 && delivery.emailed > 0) {
+        setActionStatus({ tone: 'green', message: `Published and emailed to ${delivery.emailed} students.` });
+      } else if (delivery.emailed === 0 && delivery.failed > 0) {
+        setActionStatus({
+          tone: 'amber',
+          message: 'Published. Email is not available, so students will only see it in the app.',
+        });
+      } else if (delivery.failed > 0) {
+        setActionStatus({
+          tone: 'amber',
+          message: `Published. ${delivery.failed} of ${delivery.emailed + delivery.failed} emails could not be sent.`,
+        });
+      } else {
+        setActionStatus({ tone: 'green', message: 'Published.' });
+      }
       reload();
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : 'Could not publish announcement.');
@@ -169,6 +186,7 @@ export default function AnnouncementsPage() {
     if (!token) return;
     setActionBusy(true);
     setActionError(null);
+    setActionStatus(null);
     try {
       if (admin) {
         await api.admin.deleteAnnouncement(token, a.id);
@@ -295,6 +313,7 @@ export default function AnnouncementsPage() {
         </div>
 
         {actionError && <InlineBanner tone="danger">{actionError}</InlineBanner>}
+        {actionStatus && <InlineBanner tone={actionStatus.tone}>{actionStatus.message}</InlineBanner>}
 
         {(composing || editingAnnouncement) && (
           <Panel

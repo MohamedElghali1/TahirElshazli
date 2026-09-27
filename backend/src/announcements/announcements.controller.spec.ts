@@ -26,6 +26,8 @@ import { DatabaseService } from '../database/database.service.js';
 import { DATABASE_POOL } from '../database/database.tokens.js';
 import { Role } from '../auth/roles.enum.js';
 import { MailService } from '../mail/mail.service.js';
+import { MAIL_SENDER, type MailSender } from '../mail/mail-sender.interface.js';
+import { MAIL_DELIVERY_REPOSITORY, type MailDeliveryRepository } from '../mail/mail-delivery.repository.js';
 import { parseAudience, encodeAudience, AUDIENCE_PATTERN } from './announcement-audience.js';
 import type { PostCourseAnnouncementDto } from './dto/post-announcement.dto.js';
 
@@ -175,12 +177,14 @@ describe('Announcements Unit & Integration', () => {
     ).rejects.toThrow(ForbiddenException);
   });
 
-  it('publish with MAIL_DRIVER=none -> propagates error (we simulate by making mail throw)', async () => {
+  it('a failing send no longer rolls back the publish (REM-005): it commits and counts the failure', async () => {
     const draft = await admin.createDraft({ ...MESSAGE, audience: 'course:course-1' }, ADMIN);
     vi.mocked(mail.send).mockRejectedValueOnce(new Error('mail failed'));
-    
-    await expect(admin.publish(draft.id, ADMIN)).rejects.toThrow('mail failed');
-    // Ensure it remains a draft
+
+    const published = await admin.publish(draft.id, ADMIN);
+    expect(published.publishedAt).not.toBeNull();
+    expect(published.delivery).toEqual({ emailed: 1, failed: 1 });
+
     const stillDraft = await service.listAll(10, 0, 'draft');
     expect(stillDraft).toHaveLength(0);
   });
@@ -446,6 +450,93 @@ describe('Announcements Unit & Integration', () => {
         'second',
         'first',
       ]);
+    });
+  });
+
+  describe('REM-005: publish is not all-or-nothing on mail', () => {
+    // These tests wire the real MailService (not the `{ send: vi.fn() }`
+    // mock used above) against a fake sender/delivery repo, because the
+    // point is MailService's own 503-on-null-sender and its per-recipient
+    // delivery row - the mock hides both.
+    async function buildModule(sender: MailSender | null) {
+      const recorded: { recipient: string; template: string }[] = [];
+      const deliveryRepo: MailDeliveryRepository = {
+        record: async (d) => {
+          recorded.push({ recipient: d.recipient, template: d.template });
+          return { id: d.id, recipient: d.recipient, template: d.template, createdAt: d.created_at.toISOString() };
+        },
+      };
+      const module: TestingModule = await Test.createTestingModule({
+        controllers: [AdminAnnouncementsController],
+        providers: [
+          AnnouncementsService,
+          StaffScopeService,
+          NotificationsService,
+          AuditService,
+          DatabaseService,
+          MailService,
+          { provide: DATABASE_POOL, useValue: null },
+          { provide: MAIL_SENDER, useValue: sender },
+          { provide: MAIL_DELIVERY_REPOSITORY, useValue: deliveryRepo },
+          { provide: ANNOUNCEMENT_REPOSITORY, useClass: InMemoryAnnouncementRepository },
+          { provide: ASSISTANT_SCOPE_REPOSITORY, useClass: InMemoryAssistantScopeRepository },
+          { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },
+          { provide: COURSE_REPOSITORY, useClass: InMemoryCourseRepository },
+          { provide: ENROLLMENT_REPOSITORY, useClass: InMemoryEnrollmentRepository },
+          { provide: USER_REPOSITORY, useClass: InMemoryUserRepository },
+          { provide: NOTIFICATION_REPOSITORY, useClass: InMemoryNotificationRepository },
+          { provide: AUDIT_LOG_REPOSITORY, useClass: InMemoryAuditLogRepository },
+        ],
+      }).compile();
+      return {
+        admin: module.get(AdminAnnouncementsController),
+        auditService: module.get(AuditService),
+        notificationsService: module.get(NotificationsService),
+        recorded,
+      };
+    }
+
+    it('MAIL_DRIVER=none: publish still commits, notifies everyone, and counts every recipient as failed', async () => {
+      const { admin: adminCtrl, notificationsService, auditService } = await buildModule(null);
+      const draft = await adminCtrl.createDraft({ ...MESSAGE, audience: 'course:course-1' }, ADMIN);
+
+      const published = await adminCtrl.publish(draft.id, ADMIN);
+
+      expect(published.publishedAt).not.toBeNull();
+      expect(published.delivery).toEqual({ emailed: 0, failed: 2 });
+
+      const one = await notificationsService.list('student-1', false);
+      const two = await notificationsService.list('student-2', false);
+      expect(one.notifications.filter((n) => n.type === 'announcement')).toHaveLength(1);
+      expect(two.notifications.filter((n) => n.type === 'announcement')).toHaveLength(1);
+
+      const page = await auditService.find({ limit: 10 });
+      expect(page.entries.find((e) => e.action === 'announcement.posted')).toMatchObject({
+        targetId: published.id,
+      });
+    });
+
+    it('one failing recipient: publish commits, delivery is emailed N-1/failed 1, and only the successes get a delivery row', async () => {
+      let calls = 0;
+      const sender: MailSender = {
+        send: async () => {
+          calls += 1;
+          if (calls === 1) throw new Error('smtp rejected this address');
+        },
+      };
+      const { admin: adminCtrl, recorded, auditService } = await buildModule(sender);
+      const draft = await adminCtrl.createDraft({ ...MESSAGE, audience: 'course:course-1' }, ADMIN);
+
+      const published = await adminCtrl.publish(draft.id, ADMIN);
+
+      expect(published.publishedAt).not.toBeNull();
+      expect(published.delivery).toEqual({ emailed: 1, failed: 1 });
+      expect(recorded).toHaveLength(1);
+
+      const page = await auditService.find({ limit: 10 });
+      expect(page.entries.find((e) => e.action === 'announcement.posted')).toMatchObject({
+        targetId: published.id,
+      });
     });
   });
 });

@@ -1444,6 +1444,11 @@ export interface Announcement {
   recipientCount: number;
 }
 
+/** publish()'s response: the announcement plus how the mail fan-out went. */
+export interface PublishedAnnouncement extends Announcement {
+  delivery: { emailed: number; failed: number };
+}
+
 /* ------------------------------------------------------------------------
    The blog (CLAUDE.md §5.19) - Dr. Tahir's achievements, authored by the
    teacher or an assistant and read by students and visitors alike.

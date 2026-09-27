@@ -155,6 +155,7 @@ import type { StaffTask as B_StaffTask } from '../../src/manage/assessment-autho
 import type { Attachment as B_Attachment } from '../../src/assessments/interfaces/assessment-repository.interface.js';
 import type { AttachmentAudience as B_AttachmentAudience } from '../../src/assessments/interfaces/assessment-repository.interface.js';
 import type { Announcement as B_Announcement } from '../../src/announcements/interfaces/announcement-repository.interface.js';
+import type { PublishedAnnouncement as B_PublishedAnnouncement } from '../../src/announcements/announcements.service.js';
 import type { BlogCategory as B_BlogCategory } from '../../src/blog/interfaces/blog-repository.interface.js';
 import type { BlogPostStatus as B_BlogPostStatus } from '../../src/blog/interfaces/blog-repository.interface.js';
 import type { BlogMediaKind as B_BlogMediaKind } from '../../src/blog/interfaces/blog-repository.interface.js';
@@ -276,6 +277,7 @@ import type {
   Attachment as F_Attachment,
   AttachmentAudience as F_AttachmentAudience,
   Announcement as F_Announcement,
+  PublishedAnnouncement as F_PublishedAnnouncement,
   BlogCategory as F_BlogCategory,
   BlogPostStatus as F_BlogPostStatus,
   BlogMediaKind as F_BlogMediaKind,
@@ -401,6 +403,7 @@ export type Check_StaffTask = Assert<Same<Wire<B_StaffTask>, F_StaffTask>>;
 export type Check_Attachment = Assert<Same<Wire<B_Attachment>, F_Attachment>>;
 export type Check_AttachmentAudience = Assert<Same<Wire<B_AttachmentAudience>, F_AttachmentAudience>>;
 export type Check_Announcement = Assert<Same<Wire<B_Announcement>, F_Announcement>>;
+export type Check_PublishedAnnouncement = Assert<Same<Wire<B_PublishedAnnouncement>, F_PublishedAnnouncement>>;
 export type Check_BlogCategory = Assert<Same<Wire<B_BlogCategory>, F_BlogCategory>>;
 export type Check_BlogPostStatus = Assert<Same<Wire<B_BlogPostStatus>, F_BlogPostStatus>>;
 export type Check_BlogMediaKind = Assert<Same<Wire<B_BlogMediaKind>, F_BlogMediaKind>>;
