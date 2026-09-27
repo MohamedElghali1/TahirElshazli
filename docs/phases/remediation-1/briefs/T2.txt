@@ -1,0 +1,51 @@
+<task>
+Repository: npm-workspaces monorepo, NestJS 12 backend in backend/. Read CLAUDE.md §7 (authorization) first; its rules are binding. Also read the `AUTH-6` row in docs/IMPLEMENTATION_PLAN.md (line ~101) and decisions D-23, D-33, D-44 in docs/CHANGELOG.md — this task completes AUTH-6.
+
+Problem (confirmed live): an assistant whose scope is `assigned_groups` and who holds one group on a course can read students from OTHER groups on that course through course-named staff routes, because these services only call `this.scope.assertAssigned(courseId, actor)` (course grain). Group-named routes are already correct.
+
+Fix exactly these four places, reusing the existing pattern — do not invent a new scope mechanism:
+  1. backend/src/manage/manage.service.ts `roster()` (GET /staff/courses/:courseId/roster)
+  2. backend/src/manage/work-analytics-gate.service.ts `assertMayRead()` + its callers (GET /staff/assessments/:assessmentId/analytics and related reads) and `studentWork()` (GET /staff/courses/:courseId/students/:studentId/work)
+  3. backend/src/manage/assessment-authoring.service.ts `list()` (GET /staff/courses/:courseId/assessments)
+  4. backend/src/manage/assessment-authoring.service.ts `update()` and `remove()` (PATCH/DELETE /staff/assessments/:assessmentId) for a task whose audience includes a group the caller does not hold.
+
+The pattern to reuse: `StaffScopeService.reachableGroupIds(actor)` returns `null` for unscoped callers (teacher, admin, all_groups assistant) and the held group ids otherwise. See backend/src/manage/grading.service.ts `queue()` and its private `submissionsInReach()` (lines ~143-200), and `GET /staff/tasks`, which were built at the group grain. Keep `assertAssigned(courseId, actor)` as the first existence/membership check exactly where it is now.
+
+Rules (from CLAUDE.md §7 and the decisions above):
+- roster: a scoped assistant sees only students who are members of a held group on that course. Per-student figures are about that student and do not change.
+- studentWork: if the named student is not a member of any held group on that course, a scoped assistant gets a 404 whose message is BYTE-IDENTICAL to the existing not-found for a missing student/course (anti-enumeration). Find the existing message constant and reuse it.
+- analytics: per-student rows narrow to held-group students. Aggregate figures (averages, completion rates) stay course-wide, following the D-44 precedent for the submission queue ("items narrow, per-task averages stay course-wide by ruling"). Do NOT change any response field names or types.
+- list: a scoped assistant sees tasks targeted at at least one held group. For tasks with NO targets yet (drafts being aimed), mirror exactly what GET /staff/tasks does today for a scoped assistant — find it and apply the same rule; state in your report which rule that was.
+- The AUTH-6 row requires: once the list narrows, the `setTargets` 403 `RETARGET_UNREACHABLE_AUDIENCE` for a task set ONLY for groups the caller cannot reach must become the byte-identical ASSESSMENT_NOT_FOUND 404. A task that includes at least one held group AND an unheld group stays a 403 for re-targeting (it is on the caller's own screen).
+- update/remove: same split — task with no held group in its audience → ASSESSMENT_NOT_FOUND 404; task shared between a held and an unheld group → 403 with the existing RETARGET_UNREACHABLE_AUDIENCE-style message (reuse, don't add a new one unless none fits); task entirely within held groups → allowed as today. Teacher/admin/all_groups unchanged.
+
+Tests — both directions for every rule, in the EXISTING files only (do NOT add a sixth e2e file; CLAUDE.md §10):
+- unit specs next to each service (manage.service.spec.ts, work-analytics*.spec.ts, assessment-authoring.service.spec.ts — find the existing ones).
+- backend/test/staff.e2e-spec.ts: a scenario with one course, two groups, a scoped assistant holding only group A, a student in each group: roster lists only A's student; analytics rows only A's; studentWork for B's student is 404 with the same body as an unknown student; list excludes a task set only for B; PATCH/DELETE of B-only task 404; PATCH of an A+B task 403; the teacher and an all_groups assistant see and can do everything. Look at how existing e2e cases in that file build fixtures and follow them.
+
+Docs, same change: docs/AUTHORIZATION_MODEL.md — mark the course-named routes as group-grain; docs/IMPLEMENTATION_PLAN.md — the AUTH-6 row to [x] with a one-line note; CLAUDE.md §7 — replace the paragraph that says enforcement is at the group grain only where the route names a group, and the "Until it lands…" sentence, with the new truth (all staff routes are group-grain; aggregates on the analytics/queue screens stay course-wide by D-44). Keep the edits minimal.
+
+Leave untouched: frontend/ (response shapes do not change), migrations, grading.service.ts, groups.service.ts (already correct), unrelated services.
+</task>
+
+<verification_loop>
+Run from the repo root and make green before finishing:
+  npm run lint:backend
+  npm test
+  npm run test:e2e        (runs one e2e file per process; read the printed counts — every file must print "passed")
+  npm run build:backend
+  cd backend && npx tsc --noEmit -p tsconfig.json
+The integration suite needs a database and skips itself here; that is expected. Confirm with git status that only intended files changed.
+</verification_loop>
+
+<action_safety>
+Scoped strictly to AUTH-6. No unrelated refactors or renames. Do NOT git add/commit/checkout/stash; leave the work uncommitted. Do not write shell redirections that could create stray files.
+</action_safety>
+
+<structured_output_contract>
+End with:
+  1. What changed and why (per route)
+  2. Files touched
+  3. Gate outcomes with counts (unit "Tests N passed", each e2e file's count, lint, build, tsc)
+  4. The rule you applied to untargeted tasks in list(), and anything else you deviated on or want decided
+</structured_output_contract>

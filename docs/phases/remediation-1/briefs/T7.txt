@@ -1,0 +1,53 @@
+<task>
+Repository: npm-workspaces monorepo; NestJS 12 backend in backend/. Read CLAUDE.md first (§5 layers, §6 API + frontend mirror + drift check, §7 scope and 404 rules, §8 security, §9 audit + transactions + two repository impls, §10 tests). Binding.
+
+Goal (user decision D-60): homework can be a Google Form WITHOUT the Google Forms API. After the deadline the teacher downloads the responses CSV from Google Forms ("Responses → Download responses (.csv)") and imports it; the app shows results like Google Forms' Summary and Individual views. Later the user will automate fetching at the deadline via the existing API sync, so the CSV import and the API sync MUST share one ingestion path.
+
+What already exists (reuse, do not duplicate):
+- backend/src/assessments/google-form-sync.service.ts `sync(assessmentId)`: fetches `GoogleFormResponse[]` (type in backend/src/integrations/google/google-forms.client.ts: { responseId, respondentEmail, submittedAt, totalScore, answers: { questionId, values: string[], score, correct }[] }), maps them to `NewExternalResult` (email → student via an email index incl. users.google_email; `raw: { answers }`), stores them with the idempotent `work.replaceResults(assessmentId, 'google_form', results)` (backend/src/assessments/interfaces/work-repository.interface.ts ~line 156; preserves row identity by externalId), then `work.markSynced(assessmentId, error|null)`.
+- Analytics: backend/src/assessments/work-analytics.service.ts (`forAssessment` → WorkAnalytics; `rosterForAssessment` → StudentWorkRow[]), controller backend/src/manage/work-analytics.controller.ts (GET /staff/assessments/:assessmentId/analytics, /results, /unmatched, POST /sync, GET /staff/results/:resultId, POST /staff/results/:resultId/attach), gate backend/src/manage/work-analytics-gate.service.ts (scope checks — use it for the new route exactly like its siblings).
+
+Change:
+1. Extract the mapping + store part of `sync()` into `ingest(assessmentId: string, responses: readonly GoogleFormResponse[], totalPoints: number | null): Promise<SyncOutcome>` on the same service. `sync()` fetches then calls `ingest()`; its behaviour and existing specs are unchanged. Document `ingest()` as THE seam a future deadline automation calls.
+2. CSV mode must work with GOOGLE_DRIVER=none. Find how a `google_form` task is created today (assessment-authoring.service.ts / its DTO / the `assessment_google_forms` binding). If creating or keeping a google_form task currently requires an API binding (formId from the API), allow a google_form task whose only form data is its responder link (the URL students open) when there is no binding; importing must not require a binding. If a DB change is needed for that, add migration backend/src/database/migrations/027_google_form_csv_mode.sql (or the next free number — check the folder; another task may have taken 027) and update BOTH repository implementations. Explain what you found and did.
+3. CSV parser: backend/src/common/csv/parse-csv.ts — RFC 4180 (quoted fields, "" escapes, commas and CR/LF newlines inside quotes, optional UTF-8 BOM, trailing newline), returns string[][]. No new dependency. Own spec with edge cases incl. Arabic text.
+4. Google Forms CSV → GoogleFormResponse[] in backend/src/assessments/google-form-csv.ts:
+   - Header detection is by column NAME, tolerant of case/whitespace: timestamp ("Timestamp"), email ("Email Address" / "Email address" / "Username"), score ("Score"). All other columns are questions in order. If the form's UI language produced non-English headers, allow the teacher to pass nothing extra — instead detect the timestamp column as the first column and the score column by the value pattern `^\s*\d+(\.\d+)?\s*/\s*\d+(\.\d+)?\s*$` on the data rows; say in your report exactly how detection works.
+   - Score "7 / 10" → totalScore 7, and the max 10 becomes totalPoints (all rows must agree, else error). No score column → totalScore null.
+   - Timestamps: Google exports local-time strings like "2026/09/27 3:45:12 PM GMT+3" or "9/27/2026 15:45:12"; parse the common forms to ISO; if a row's timestamp cannot be parsed, reject the file with the row number (don't guess).
+   - responseId (stable externalId): sha256 of timestamp + normalised email + the row's cells, hex — so re-importing the same file is a no-op and an updated export replaces the set through replaceResults.
+   - answers: one per question column, questionId `q${index}` (1-based) and ALSO keep the header text: store `raw: { answers, questions: [{ id, title }] , source: 'csv' }` (extend what is stored in raw; keep `answers` shaped as today so existing readers work). Multi-select answers in Google CSV are joined by ", " — split them into values only when the same column's cells contain ", " AND the column is a checkbox-style question is not knowable; therefore keep the cell as a single value string unless empty. Say so in the report.
+   - Caps: ≤ 2 MB, ≤ 2000 rows, ≤ 200 columns; blank rows skipped.
+5. Route: POST /staff/assessments/:assessmentId/results/import (multipart, field `file`, text/csv or application/vnd.ms-excel as browsers send for .csv; size cap enforced by the interceptor AND re-checked). Query `dryRun=true` returns { rows, matched, unmatched, errors: [] , questions: n } without storing. Otherwise ingests and returns SyncOutcome plus `questions`. Only for tasks whose workType is 'google_form' (400 otherwise). Scope: through the gate at the group grain like POST /sync (assistants only for tasks targeted at held groups — read how sync is gated and mirror it; teacher/admin always). Wrap store + audit in one transaction; add a new AuditAction (e.g. 'work.results_imported', follow the naming of existing ones) with the union entry, the query DTO's exhaustive Record<AuditAction, true> entry, and a spec asserting the entry (CLAUDE.md §9). Record the import time where sync records it (markSynced) so "last updated" shows.
+6. Per-question analytics: extend GET /staff/assessments/:assessmentId/analytics's WorkAnalytics with `questions: Array<{ id: string; title: string; answered: number; distribution: Array<{ value: string; count: number }> }>` computed over matched results in the caller's reach (reuse how analytics rows are narrowed), sorted by count desc, top 20 values per question plus an `other` bucket count if more. Empty array when there are no stored questions (API-synced data without titles: use questionId as title). Aggregate completion/average figures keep their current semantics.
+   Per-student view already exists (GET /staff/results/:resultId returns the ExternalResult incl. raw) — make sure raw.questions is included so the UI can label answers.
+7. Security: every cell is data. Nothing from the CSV is ever evaluated or rendered as HTML. Where results can be exported again (mark book CSV: find backend/src/**/markbook csv), prefix cells beginning with = + - @ with a single quote (formula-injection defence) — only if that export includes any imported text; if it exports only numbers and names, say so and change nothing.
+8. Frontend mirror only (the UI is a separate task): frontend/lib/types.ts gains the WorkAnalytics.questions field and an import result type; frontend/lib/api.ts gains `importResults(token, assessmentId, file, { dryRun })` (multipart, follow how existing uploads are sent in api.ts); drift-check lines in backend/test/drift/mirror-drift.check.ts for new/changed types. docs/API_SPEC.yaml: the new route and the extended analytics schema.
+
+Tests: parse-csv.spec.ts; google-form-csv.spec.ts using a realistic fixture file committed at backend/test/fixtures/google-forms-sample.csv (English headers, a quoted multi-line answer, an Arabic answer, a score column, 30 rows) and a second small fixture with Arabic headers; ingest() spec (sync still passes its old specs; import twice → same rows; changed file → replaced set; unmatched rows appear in /unmatched and can be attached); controller/e2e in the EXISTING backend/test/staff.e2e-spec.ts: teacher imports the fixture → analytics.completed and questions[].distribution match a hand count you assert explicitly; dryRun stores nothing; a non-google_form task → 400; an assistant for an unheld group → 404 byte-identical; oversized file → 413/400.
+</task>
+
+<verification_loop>
+From the repo root, make green before finishing:
+  npm run lint
+  npm run typecheck:drift
+  npm test
+  npm run test:e2e          (each file prints a "passed" count)
+  npm run build:backend
+  npm run build:frontend
+  cd backend && npx tsc --noEmit -p tsconfig.json
+Integration tests skip without a database; the orchestrator runs them. Confirm git status shows only intended files.
+</verification_loop>
+
+<action_safety>
+Backend + mirror only; no UI screens (next task). No unrelated refactors. Do NOT git add/commit/checkout/stash. Leave work uncommitted. Avoid shell redirections that could create stray files.
+</action_safety>
+
+<structured_output_contract>
+End with:
+  1. What changed and why
+  2. Files touched (and any migration, with why)
+  3. How header, score and timestamp detection works; what you did about multi-select cells
+  4. Gate outcomes with counts
+  5. Deviations, open points, decisions wanted
+</structured_output_contract>

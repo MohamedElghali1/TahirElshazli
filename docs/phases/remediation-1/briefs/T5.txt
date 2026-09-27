@@ -1,0 +1,51 @@
+<task>
+Repository: npm-workspaces monorepo; NestJS 12 backend in backend/, Next.js frontend in frontend/. Read CLAUDE.md first (§5 external integrations behind a port, config selects the driver once, boot validation, refuse unsafe combos; §7 object-level authorization; §8 uploads; §9 two repository impls; §10 tests). Binding.
+
+Goal: add a Cloudflare R2 driver for file storage so students can upload files in production. Today `STORAGE_DRIVER` is `'none' | 'local'` (backend/src/common/config/env.ts `resolveStorageDriver`, ~line 353); `local` is refused in production, so production has no uploads.
+
+The port: backend/src/common/storage/file-storage.interface.ts (`FileStorage { save(input): Promise<StoredFile>; remove(url): Promise<boolean> }`, token FILE_STORAGE, null when no driver). Local driver: local-disk-storage.service.ts. Wiring: storage.module.ts. Upload entry points: uploads.service.ts / uploads.controller.ts, and the student submission upload in backend/src/assessments (POST /assessments/:id/files). Stored URLs look like `${UPLOAD_URL_PREFIX}/<uuid>.<ext>` (upload-types.ts) and are validated by the `IsMediaUrl` validator; DB rows store that string.
+
+DESIGN (decided — follow it):
+1. The stored value does NOT change: R2 objects are keyed `<uuid>.<ext>` and `save()` returns the same `${UPLOAD_URL_PREFIX}/<uuid>.<ext>` string as the local driver. No migration, no validator change, no DB rewrite.
+2. Add one method to the port: `readUrl(storedUrl: string): Promise<string>` — the URL a browser should use to fetch the file. Local driver: return the stored URL unchanged (it is served statically, as today). R2 driver: return a presigned GET URL for the object, expiring in 15 minutes (constant with a comment), with `ResponseContentDisposition` = `inline` for PDFs/images and `attachment` for everything else (e.g. DOCX). Anything not under UPLOAD_URL_PREFIX (an external https link) is returned unchanged by both drivers.
+3. Object-level authorization is ALREADY done by the services that return these URLs (a student reads only their own submission; staff only within scope). So convert stored → read URLs at the point where those services build responses: every place a stored upload URL leaves the API (submission files and fileUrl, annotation files, annotated file, student avatar, blog post media and cover, any other upload-backed field). Find them all: grep the backend for fields fed by uploads (fileUrl, files, avatarUrl, mediaUrl, annotatedFileUrl, image/cover fields on blog, attachments) and list every one you converted in your report. Do this with one small shared helper (e.g. `FileUrls.forRead(storedUrls)` in common/storage, injectable, a no-op when storage is null), not ad-hoc code per service. Inbound payloads keep sending the STORED url (the upload response's `url`); also return `readUrl` alongside `url` in the upload response so the client can preview immediately.
+4. The R2 bucket is PRIVATE. No public bucket, no public custom domain in this task.
+5. Frontend: every screen that renders an upload-backed URL must use the field the API now returns (it already renders whatever URL it gets; check the PDF viewer (pdfjs, components/marking/), images, avatar, blog, submission file links, and the upload→preview flow use `readUrl` where they preview a just-uploaded file). Because presigned URLs expire, anything cached longer than 15 minutes must not rely on them — note specifically how the public blog pages (ISR, revalidate 5 min) behave and make the expiry at least 2× the revalidate window for blog media if needed (a named constant, e.g. 60 min for public blog media only). Keep frontend changes minimal.
+6. Config (env.ts, same style as the GOOGLE_* resolvers): STORAGE_DRIVER gains 'r2'. Required when 'r2' (all-or-nothing, boot fails listing the missing ones): R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET. Endpoint = `https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com`, region `auto`. 'r2' is allowed in production; 'local' stays refused in production. Never log the secret.
+7. Dependency: add `@aws-sdk/client-s3` and `@aws-sdk/s3-request-presigner` to backend/package.json (install with `npm install <pkgs> --workspace=backend` from the repo root so the single root lockfile updates). Use PutObjectCommand (with ContentType and the server-minted key), DeleteObjectCommand, GetObjectCommand + getSignedUrl. Nothing else from the SDK.
+8. .env.example: add the four R2_* vars with one-line comments under a STORAGE section alongside STORAGE_DRIVER, and remove the old unread CLOUDFLARE_R2_* lines. Note: .env.example may be blocked from your file tools; if so, edit it with a shell command carefully and say so.
+
+Tests:
+- R2 driver unit spec with the S3 client mocked (vi.mock or an injected client): save puts the right key/content type and returns the stored-form URL; remove deletes; readUrl returns a presigned URL for platform keys and passes external URLs through; disposition inline for pdf, attachment for docx.
+- env.spec.ts: 'r2' with all four vars resolves; missing any → throws naming it; 'local' in production still throws; 'r2' in production allowed.
+- A service-level spec proving a submission response returns read URLs (local driver: identity) and that a student cannot obtain another student's file URL through any route (the existing 404s still hold — add one assertion, not a new suite).
+- Existing tests must stay green.
+
+Leave untouched: upload validation rules (MIME whitelist, UUID naming, size caps), the IsMediaUrl validator, migrations, unrelated modules. DOCX support is a SEPARATE later task — do not add DOCX to the whitelist here.
+</task>
+
+<verification_loop>
+From the repo root, make green before finishing:
+  npm run lint
+  npm run typecheck:drift
+  npm test
+  npm run test:e2e          (each file prints a "passed" count)
+  npm run build:backend
+  npm run build:frontend
+  cd frontend && npx tsc --noEmit
+  cd backend && npx tsc --noEmit -p tsconfig.json
+Integration tests skip without a database; expected. You cannot reach a real R2 bucket; do not try. Confirm git status shows only intended files (package.json/package-lock.json changes are expected).
+</verification_loop>
+
+<action_safety>
+Scoped to the R2 driver and read-URL conversion. No unrelated refactors. Do NOT git add/commit/checkout/stash. Leave work uncommitted. Avoid shell redirections that could create stray files.
+</action_safety>
+
+<structured_output_contract>
+End with:
+  1. What changed and why
+  2. Files touched
+  3. Every response field you converted to a read URL (service + field), and every frontend site you changed
+  4. Gate outcomes with counts
+  5. Deviations, open points, decisions wanted
+</structured_output_contract>

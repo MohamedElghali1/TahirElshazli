@@ -1,0 +1,52 @@
+<task>
+Repository: npm-workspaces monorepo; NestJS 12 backend in backend/, Next.js frontend in frontend/. Read CLAUDE.md first (§8 uploads, §9 migrations and two repository impls, §11 design system). Binding.
+
+Goal: students can hand in Word documents (.docx) as well as PDFs.
+
+Current state:
+- Submission modes: `SubmissionMode = 'pdf_upload' | 'photo_upload' | 'doc_link'` (backend/src/assessments/interfaces/assessment-repository.interface.ts) with rules in backend/src/assessments/submission-rules.ts (`mimeTypesForModes`, `hasUploadMode`, `HAND_IN`, `checkSubmission`).
+- The upload whitelist is backend/src/common/storage/upload-types.ts `ALLOWED_UPLOAD_TYPES` (no DOCX). UploadsService (backend/src/common/storage/uploads.service.ts ~line 89) trusts the client's MIME type and says so in a comment ("does not sniff magic bytes").
+- Staff choose modes in the task form (frontend/app/(app)/manage/tasks/task-form.tsx); students hand in on frontend/app/(app)/homework/[assessmentId]/page.tsx; staff mark in the grading/submission screens, where PDFs open in an annotation overlay (frontend/components/marking/).
+
+Change:
+1. Add a `docx_upload` submission mode end to end: the union, `mimeTypesForModes` (DOCX MIME `application/vnd.openxmlformats-officedocument.wordprocessingml.document`), `hasUploadMode`, `HAND_IN` ('a Word document'), `checkSubmission`, DTO validation of modes (find where modes are validated, e.g. an @IsIn list), and the frontend mirror type in frontend/lib/types.ts (+ the drift check in backend/test/drift/mirror-drift.check.ts if the union is checked there). If submission modes are constrained in the database (search the migrations for the column holding them, likely migration 018, for a CHECK or enum), add migration backend/src/database/migrations/027_docx_submission_mode.sql that widens it; if they are not constrained, add no migration and say so.
+2. Add DOCX to ALLOWED_UPLOAD_TYPES: `{ extension: 'docx', kind: 'file' }`.
+3. Content sniffing in UploadsService (replace the "known limitation" with the check; keep the comment honest about what is and isn't checked): for a declared type that has a known signature, the buffer must match it or the upload is refused with the existing 400 style:
+     application/pdf → starts with `%PDF-`
+     DOCX → starts with `PK\x03\x04` AND the ZIP contains an entry named `word/document.xml` (scan the ZIP central directory / local headers for that filename bytes; no new dependency — a bounded byte search of the buffer for the entry name within a valid ZIP is acceptable; explain your approach)
+     image/png → `\x89PNG\r\n\x1a\n`; image/jpeg → `\xFF\xD8\xFF`; image/webp → `RIFF....WEBP`
+   Types without a listed signature keep today's behaviour. Put the signature table in upload-types.ts next to the whitelist.
+4. Frontend:
+   - Task form: the mode picker offers "Word document" next to PDF (reuse the existing Checkbox + visible label pattern in task-form.tsx).
+   - Student hand-in: the file input's `accept` includes .docx when the mode allows it; copy says "PDF or Word document" as appropriate.
+   - Staff marking: a DOCX file shows a clear "Download" action (the file's URL, opened with rel="noopener noreferrer") and a one-line note that annotation is available for PDFs only; it must NOT try to load a DOCX into the PDF viewer. Find where the viewer decides what to render and branch on the file's MIME type/extension.
+   - Tokens only, no raw hex, no text-[var(...)]; sentence case (CLAUDE.md §11).
+5. Tests: submission-rules.spec.ts (docx mode accepts a stored .docx, rejects it when the mode is off, HAND_IN text), upload-types.spec.ts / uploads.service.spec.ts (a real minimal DOCX buffer — build one in the test with the right ZIP headers and a word/document.xml entry — is accepted; a PDF labelled as DOCX, a ZIP without word/document.xml, and an arbitrary binary labelled application/pdf are refused; PNG/JPEG signatures), and extend one e2e case in backend/test/app.e2e-spec.ts for a DOCX hand-in if the existing PDF hand-in e2e case makes that a small copy.
+6. docs/API_SPEC.yaml: add docx_upload to the submission-mode enum wherever it is listed.
+
+Leave untouched: size limits, UUID naming, the IsMediaUrl validator, the storage drivers, unrelated screens.
+</task>
+
+<verification_loop>
+From the repo root, make green before finishing:
+  npm run lint
+  npm run typecheck:drift
+  npm test
+  npm run test:e2e          (each file prints a "passed" count)
+  npm run build:backend
+  npm run build:frontend
+  cd frontend && npx tsc --noEmit
+Integration tests skip without a database (the orchestrator will run any new migration against real PostgreSQL). Confirm git status shows only intended files.
+</verification_loop>
+
+<action_safety>
+Scoped to DOCX hand-in and content sniffing. Do NOT git add/commit/checkout/stash. Leave work uncommitted. Avoid shell redirections that could create stray files.
+</action_safety>
+
+<structured_output_contract>
+End with:
+  1. What changed and why
+  2. Files touched (and whether a migration was needed, with the evidence)
+  3. Gate outcomes with counts
+  4. Deviations, open points, decisions wanted
+</structured_output_contract>

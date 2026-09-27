@@ -13,7 +13,7 @@ weekly reports (`REM-031`, post-launch).
 | # | Task | Status | Commit |
 |---|---|---|---|
 | T1 | REM-001 bootstrap-staff CLI | reviewed + committed | (this commit) |
-| T2 | REM-002 group-grain scope on course-named staff routes (AUTH-6) | queued | |
+| T2 | REM-002 group-grain scope on course-named staff routes (AUTH-6) | queued (first run reaped: host low on memory; no edits landed) | |
 | T3 | REM-005 announcement publish not all-or-nothing on mail | queued | |
 | T4 | REM-007 classroom-safe rate limits | queued | |
 | T5 | REM-030 Cloudflare R2 storage driver | queued | |

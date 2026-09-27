@@ -1,0 +1,40 @@
+<task>
+Repository: npm-workspaces monorepo; NestJS 12 backend in backend/. Read CLAUDE.md first (§8: per-process security state is a known limitation — do NOT add a new store, Redis, or a fourth per-process structure; extend the existing one).
+
+Problem (confirmed live): the rate limiter keys every rule by `route + client IP` (backend/src/common/rate-limit/rate-limit.guard.ts `buildKey`, ~line 100) and counts every request, successful or not. Limits (backend/src/common/rate-limit/limits.ts): AUTH_ATTEMPT_LIMIT 5/min (login and others), AUTH_ENUMERATION_LIMIT 3 per 5 min (register, password-reset request). A class of 30 students on one school Wi-Fi (one NAT IP) signing in or registering together gets 429s after the 5th login / 3rd registration.
+
+Change, reusing the existing guard, decorator and in-memory store:
+1. Let a rule choose its key: add an optional field to RateLimitRule (backend/src/common/rate-limit/rate-limit.interface.ts), e.g. `by?: 'ip' | 'ip+email'` (default 'ip' — every existing rule keeps its exact behaviour). For 'ip+email', the key is route + IP + the request body's `email` normalised exactly as the auth code normalises emails (find and reuse that helper; if the body has no string email, fall back to IP-only for that request).
+2. Let a route carry more than one rule: `@RateLimit(...)` accepts one rule or an array; the guard checks every rule and refuses (429, existing message and Retry-After/X-RateLimit-* headers) when any is exhausted. Headers report the most restrictive remaining rule. Keep the existing single-rule call sites compiling unchanged.
+3. Apply in backend/src/auth/auth.controller.ts (and the Google sign-in controller only if it uses the same login limit for a credential route — read it and decide; say what you did):
+   - login: [{ limit: 5, windowMs: 60_000, by: 'ip+email' }, { limit: 60, windowMs: 60_000, by: 'ip' }]  — per-account brute force stays at 5/min, while 30+ classmates behind one IP all get in.
+   - password-reset request: [{ limit: 3, windowMs: 300_000, by: 'ip+email' }, { limit: 30, windowMs: 300_000, by: 'ip' }]
+   - register: [{ limit: 30, windowMs: 600_000, by: 'ip' }]  — a class can register together; still bounded.
+   Name these as constants in limits.ts next to the existing ones with a one-line comment each on the classroom/NAT reasoning. Leave every other route's limit unchanged.
+4. Tests: extend backend/src/common/rate-limit/*.spec.ts and/or the guard spec: 30 distinct emails from one IP can each log in within a minute; the 6th attempt for ONE email in a minute is 429; the 61st login from one IP in a minute is 429; a rule without `by` behaves exactly as before; register allows 30 per 10 minutes per IP. Add/adjust e2e cases in backend/test/app.e2e-spec.ts ONLY if existing e2e cases assert the old limits (update them to the new numbers) — do not add a new e2e file.
+5. docs/SECURITY.md: update the rate-limit description to the new keys and numbers (a few lines, not a rewrite).
+
+Leave untouched: the store implementation's algorithm (only extend what it's asked to key), TRUSTED_PROXY_HOPS handling, unrelated controllers, frontend/.
+</task>
+
+<verification_loop>
+From the repo root, make green before finishing:
+  npm run lint:backend
+  npm test
+  npm run test:e2e        (each file must print a "passed" count)
+  npm run build:backend
+  cd backend && npx tsc --noEmit -p tsconfig.json
+Confirm git status shows only intended files.
+</verification_loop>
+
+<action_safety>
+Scoped to rate limiting. Do NOT git add/commit/checkout/stash. Leave work uncommitted. Avoid shell redirections that could create stray files.
+</action_safety>
+
+<structured_output_contract>
+End with:
+  1. What changed and why
+  2. Files touched
+  3. Gate outcomes with counts
+  4. Deviations, open points (incl. what you did about the Google sign-in controller)
+</structured_output_contract>

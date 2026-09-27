@@ -1,0 +1,47 @@
+<task>
+Repository: npm-workspaces monorepo; NestJS 12 backend in backend/, Next.js frontend in frontend/. Read CLAUDE.md first (§6 API rules incl. the frontend mirror + drift check, §9 transactions/audit, §11 design system); its rules are binding.
+
+Problem (confirmed live): POST /admin/announcements/:id/publish is all-or-nothing on email. `AnnouncementsService.publish()` (backend/src/announcements/announcements.service.ts ~lines 201-260) runs in one transaction: marks the announcement published, fans out in-app notifications, then loops `await this.mail.send(...)` per recipient. `MailService.send` (backend/src/mail/mail.service.ts) throws a 503 when MAIL_DRIVER=none (the production default) and rethrows SMTP errors, so:
+ - with no mail configured a teacher cannot publish at all (503, everything rolled back, no in-app notification);
+ - with SMTP, one failing address rolls back the announcement after earlier recipients were already emailed, so a retry double-mails;
+ - the transaction holds a pool connection for N sequential SMTP round trips.
+
+Fix:
+1. In publish(): keep the publish, the notification fan-out and the audit entry inside the transaction exactly as now. For the mail loop, send per recipient and CATCH each failure instead of throwing (a ServiceUnavailableException from the null sender counts as "not emailed"). Count `emailed` and `failed`. Do NOT use Promise.all over the whole audience (a single failure would surface after almost every mail was already sent). Sending sequentially inside the loop is fine; concurrency is bounded by the transporter pool (step 2). Log failures with the announcement id and the count only — never recipient emails or message bodies (CLAUDE.md §8: no student PII in logs).
+   MailService.send records a delivery row only after a successful send; that invariant stays. Do not change MailService's transaction requirement.
+2. backend/src/mail/smtp-mail-sender.ts: enable nodemailer pooling on the transport (`pool: true`, `maxConnections: 5`, `maxMessages: 100`). Nothing else in that file.
+3. Response: publish returns the announcement plus `delivery: { emailed: number; failed: number }`. Add an exported type for it in the announcements module (e.g. `PublishedAnnouncement = Announcement & { delivery: { emailed: number; failed: number } }`), return it from the controller (backend/src/announcements/admin-announcements.controller.ts ~line 80). Other routes returning Announcement are unchanged.
+4. Frontend mirror (CLAUDE.md §6): add the matching type to frontend/lib/types.ts, change `api.admin.publishAnnouncement` in frontend/lib/api.ts (~line 1538) to return it, and add a `Check_` line for it in backend/test/drift/mirror-drift.check.ts following the existing lines there.
+5. frontend/app/(app)/manage/announcements/page.tsx (~line 159): after a successful publish, show a status line: when failed === 0 and emailed > 0 "Published and emailed to N students."; when emailed === 0 and failed > 0 "Published. Email is not available, so students will only see it in the app." if every send failed, else "Published. N emails could not be sent." Use the page's existing status/feedback pattern and existing UI primitives (no new component, no raw hex, no text-[var(...)] — CLAUDE.md §11). Sentence case, numbers with their denominators where natural.
+6. docs/API_SPEC.yaml: update the publish route's 200 response schema to include `delivery`.
+
+Tests (existing files, extend them):
+- backend/src/announcements/announcements.service.spec.ts (or the existing spec for publish): (a) with the mail sender null (MAIL_DRIVER=none), publish commits, the announcement has publishedAt set, notifications are created for every recipient, delivery = { emailed: 0, failed: N }; (b) with a fake sender that fails for exactly one recipient, publish commits, delivery = { emailed: N-1, failed: 1 }, and mail delivery rows exist only for the N-1; (c) the audit entry is still written.
+- Keep all existing publish tests passing (adjust expectations only where the response now carries `delivery`).
+
+Leave untouched: other mail templates and callers (password reset, invitations, student creation keep their current strict behaviour — a user explicitly waiting for that one email must see the failure), migrations, unrelated services and pages.
+</task>
+
+<verification_loop>
+From the repo root, make green before finishing:
+  npm run lint
+  npm run typecheck:drift
+  npm test
+  npm run test:e2e          (one file per process; each file must print a "passed" count)
+  npm run build:backend
+  npm run build:frontend
+  cd frontend && npx tsc --noEmit
+Integration tests skip without a database; expected. Confirm git status shows only intended files.
+</verification_loop>
+
+<action_safety>
+Scoped to this fix. No unrelated refactors. Do NOT git add/commit/checkout/stash. Leave work uncommitted. Avoid shell redirections that could create stray files in the repo.
+</action_safety>
+
+<structured_output_contract>
+End with:
+  1. What changed and why
+  2. Files touched
+  3. Gate outcomes with counts
+  4. Deviations, open points, decisions wanted
+</structured_output_contract>

@@ -1,0 +1,47 @@
+<task>
+Repository: npm-workspaces monorepo; Next.js 16 frontend in frontend/ (App Router, React 19, Tailwind v4 over tokens in frontend/app/tokens/*.css, primitives in frontend/components/ui/), NestJS backend in backend/. Read CLAUDE.md §4, §11 (design system: tokens only, never text-[var(...)], one utility per property, no card inside a card, focus via global :focus-visible, both themes, RTL, sentence case, no emoji) and §6 (lib/api.ts is the only HTTP boundary). Binding.
+
+Nine small, independent fixes found by a production audit (each verified in a real browser). Do all of them; keep each change minimal and reuse existing components/patterns named here.
+
+1. REM-009 — frontend/app/(app)/manage/assistants/page.tsx ~lines 186-203 (`ReachFields`): the group-scope `Checkbox`es render with NO visible label (the `Checkbox` primitive's `label` prop is aria-only). Pair each with visible text exactly as frontend/app/(app)/manage/tasks/task-form.tsx ~lines 499-506 does.
+
+2. REM-013 — frontend/app/(app)/manage/courses/[id]/grading/page.tsx ~lines 301-386 (`GradeDialog`) declares role="dialog" aria-modal="true" but has no focus trap, no Escape, no focus return. Copy the working behaviour from `CurriculumDrawer` in frontend/app/(app)/lessons/page.tsx ~lines 430-468 (initial focus, Tab/Shift+Tab cycle, Escape closes, focus restored to the opener). Do not create a new shared Dialog primitive in this task.
+
+3. REM-014 — frontend/app/(app)/manage/courses/[id]/layout.tsx ~line 54 adds an admin-only "Assistants" tab linking to `${base}/staff`; that page was deleted and 404s. Remove the tab (assistants are managed at /manage/assistants).
+
+4. REM-021a — frontend/components/shell/console-shell.tsx ~line 96 has a "Reports" nav item to /manage/reports, which does not exist yet (weekly reports ship after launch). Remove the item, leaving a one-line comment that it returns with Unit 9 (REM-031).
+
+5. REM-017 — the staff sidebar shows an assistant admin-only items (Students, Assistants, Activity log, Groups admin) whose pages call /admin/* and render raw "Forbidden resource". Hide those items for the assistant role using the EXISTING role/capability helpers in frontend/lib/roles.ts (find how the shell already decides admin-only items, e.g. for Settings, and extend the same mechanism — no new rule system). Also make those pages, if reached directly by an assistant, show a sentence-case "You don't have access to this page." state instead of the raw API message (find the shared error rendering they use; if a 403 path already exists in lib/api.ts error handling, reuse it).
+
+6. REM-018 — add app-level boundaries using existing UI primitives and tokens: frontend/app/not-found.tsx (branded, sentence case, a link home), frontend/app/error.tsx (client component, "Something went wrong" + retry via reset()), frontend/app/global-error.tsx (minimal, must render its own <html><body>). No raw hex. Works in both themes.
+
+7. REM-016 — backend/src/announcements/announcements.service.ts ~line 231 builds notification links `/learn/${courseId}`, a route that does not exist (clicking an announcement notification 404s). Link to `/dashboard` (where announcements render) instead; null stays null. Also fix the in-memory notification fixtures in backend/src/notifications/repositories/in-memory-notification.repository.ts (lines ~18-58) whose links start with /learn: map them to real student routes (/timetable, /homework/<assessmentId>, /lessons). Update any spec asserting the old link.
+
+8. REM-019 — recordings are plain links (decision D-57). frontend/app/(app)/manage/courses/[id]/recordings/page.tsx: the Video URL field hint (~line 291) claims "Playback is signed per request, so this is never handed to a student directly" — false. Replace with: "A link to the video (for example YouTube, Vimeo or a shared file). Students open this link." and fix the component doc comment (~lines 30-33) that describes Bunny Stream/signed URLs. frontend/components/student/recording-player.tsx: remove the 'bunny' VideoKind and its host detection branch (iframe.mediadelivery.net / *.b-cdn.net) and the "future Bunny integration" comment; keep file/youtube/vimeo/link behaviour. backend/src/manage/dto/create-recording.dto.ts ~lines 53-56: replace the Bunny/signed-URL comment with one saying the value is a plain http(s) link handed to students as-is.
+
+9. REM-045 — the staff overview greets "Welcome back, Dr." because it takes the first word of the name. Find the greeting (frontend/app/(app)/manage/page.tsx or its components) and skip a leading honorific (Dr., Mr., Mrs., Ms., Prof.) when deriving the first name, so "Dr. Tahir Elshazli" → "Welcome back, Tahir". Keep it a tiny local helper.
+
+Leave untouched: everything else. No new dependencies. No token or layout redesign.
+</task>
+
+<verification_loop>
+From the repo root, make green before finishing:
+  npm run lint              (includes the token checker)
+  npm run typecheck:drift
+  npm test
+  npm run build:frontend
+  npm run build:backend
+  cd frontend && npx tsc --noEmit
+Confirm git status shows only intended files.
+</verification_loop>
+
+<action_safety>
+Scoped to the nine items. Do NOT git add/commit/checkout/stash. Leave work uncommitted. Avoid shell redirections that could create stray files.
+</action_safety>
+
+<structured_output_contract>
+End with:
+  1. Per item (1-9): what changed, files
+  2. Gate outcomes with counts
+  3. Deviations, open points, decisions wanted
+</structured_output_contract>

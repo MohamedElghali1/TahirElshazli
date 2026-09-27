@@ -1,0 +1,43 @@
+<task>
+Repository: an npm-workspaces monorepo (NestJS 12 backend in backend/, Next.js frontend in frontend/). Read CLAUDE.md at the repo root first; its rules are binding (parameterised SQL only, business rules in services, repositories behind interfaces with BOTH an InMemory* and a Postgres* implementation, strict TypeScript).
+
+Job: add a one-off CLI that creates the FIRST staff account on a fresh production database. Today there is no way to do this: /auth/register creates students only, invitations need an existing admin, and seeding is refused in production (correctly — fixtures carry a published password hash).
+
+Create backend/src/database/cli/bootstrap-staff.ts, mirroring backend/src/database/cli/seed.ts and migrate.ts exactly in shape (NestFactory.createApplicationContext with no HTTP server, a Logger, try/finally app.close(), top-level try/catch setting process.exitCode = 1).
+
+Behaviour:
+- Reads env: BOOTSTRAP_EMAIL, BOOTSTRAP_NAME, BOOTSTRAP_PASSWORD, BOOTSTRAP_ROLE (optional; 'teacher' or 'admin'; default 'teacher'). Missing/invalid values -> clear error, exit code 1. Normalise email the same way the app does for registration (trim + lowercase — find the existing normalisation in backend/src/auth and reuse it, do not re-invent it).
+- Password rules: at least 12 characters, at least one letter and one number (stricter than registration on purpose). Never log the password or its hash.
+- Requires the postgres driver and a configured database (like seed.ts: fail clearly if not configured). Runs pending migrations first, like seed.ts does.
+- Idempotent: if ANY user with role 'teacher' or 'admin' already exists, log that bootstrap is not needed and exit 0 WITHOUT creating anything. If the email is already taken by any user, exit 1 with a clear message.
+- Otherwise creates exactly one user with status 'active' and the chosen role, hashing the password with the app's existing PASSWORD_HASHER provider / BcryptPasswordHasher (backend/src/auth/interfaces/password-hasher.interface.ts, backend/src/auth/bcrypt-password-hasher.ts) and persisting through the existing user repository (backend/src/auth/interfaces/user-repository.interface.ts `create`, Postgres implementation backend/src/auth/repositories/postgres-user.repository.ts). Wire only what the CLI needs into the application context (a tiny module in the CLI file or providers passed alongside DatabaseModule) — do not import AppModule.
+- If the user repository has no way to ask "does any teacher/admin exist", add ONE method to the interface (e.g. `hasStaffAccount(): Promise<boolean>`) with BOTH implementations (in-memory and postgres, parameterised SQL, select an existence test not whole rows) and cover the postgres one in backend/test/postgres-repositories.integration-spec.ts next to the other user-repository cases.
+- No audit-log entry (there is no actor yet); log one line "Created <role> account for <email>".
+
+Also:
+- Add to backend/package.json scripts: "db:bootstrap-staff": "nest build && node dist/database/cli/bootstrap-staff.js" (same pattern as db:seed).
+- Unit spec backend/src/database/cli/bootstrap-staff.spec.ts, or — if the CLI's main() is not testable as written — extract the decision logic into a small exported function (e.g. `bootstrapStaff(deps, input)`) and unit-test it against the in-memory user repository: (a) creates one active teacher when none exists and the hash verifies with the hasher, (b) refuses to create when a teacher or admin exists, (c) rejects a weak password, (d) rejects an invalid role, (e) rejects an email already in use.
+
+Leave untouched: auth.service.ts, controllers, the seed and migrate CLIs, migrations (no migration is needed), frontend/, docs/.
+</task>
+
+<verification_loop>
+Run from the repo root and make green before finishing (fix, don't just report):
+  npm run lint:backend
+  npm test
+  npm run build:backend
+  cd backend && npx tsc --noEmit -p tsconfig.json
+The integration suite needs a real database and will SKIP itself here; that is expected — do not try to start a database. Confirm with git status that only the intended files changed.
+</verification_loop>
+
+<action_safety>
+Keep changes scoped to this task. No unrelated refactors, renames or formatting. Do NOT run git add, git commit, git checkout or git stash — the orchestrator reviews and commits. Leave the work uncommitted in the working tree. Do not create files outside backend/. Do not write shell redirections that could create stray files in the repo.
+</action_safety>
+
+<structured_output_contract>
+End with a report in exactly this shape:
+  1. What changed and why
+  2. Files touched
+  3. Gate outcomes (paste lint result, unit test counts "Tests N passed", build and tsc results)
+  4. Anything you deviated on, left open, or want a decision on
+</structured_output_contract>
