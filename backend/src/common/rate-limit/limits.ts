@@ -4,21 +4,12 @@ import type { RateLimitRule } from './rate-limit.interface.js';
  * Limits for the endpoints worth attacking. CLAUDE.md §8 requires brute-force
  * protection on auth specifically; everything else runs on DEFAULT_RATE_LIMIT.
  *
- * All limits are per client IP per route.
+ * All limits are per client IP per route, unless a rule's `by: 'ip+email'`
+ * says otherwise (`LOGIN_LIMIT`, `PASSWORD_RESET_REQUEST_LIMIT`).
  */
 
 /** Login, reset-confirm, password change: slow enough to make guessing pointless. */
 export const AUTH_ATTEMPT_LIMIT: RateLimitRule = { limit: 5, windowMs: 60_000 };
-
-/**
- * Registration and reset *requests*. Both reveal or mail something about an
- * address that may not belong to the caller, so they get a harder limit over a
- * longer window than a login attempt.
- */
-export const AUTH_ENUMERATION_LIMIT: RateLimitRule = {
-  limit: 3,
-  windowMs: 300_000,
-};
 
 /**
  * The anonymous catalog. Looser than the auth limits - browsing is the point,
@@ -65,3 +56,32 @@ export const OAUTH_CALLBACK_LIMIT: RateLimitRule = {
   limit: 10,
   windowMs: 60_000,
 };
+
+/**
+ * `REM-007`: a class of ~30 students behind one school-Wi-Fi NAT address must
+ * not share a single bucket. Keeps `AUTH_ATTEMPT_LIMIT`'s 5/min as the
+ * per-account brute-force ceiling, and adds a looser per-IP ceiling wide
+ * enough for the whole class to sign in within the same minute.
+ */
+export const LOGIN_LIMIT: RateLimitRule[] = [
+  { limit: 5, windowMs: 60_000, by: 'ip+email' },
+  { limit: 60, windowMs: 60_000, by: 'ip' },
+];
+
+/**
+ * `REM-007`: same reasoning as `LOGIN_LIMIT`, applied to the enumeration-prone
+ * password-reset request - 3 per account per 5 minutes stays the enumeration
+ * ceiling, widened per-IP so a classroom requesting resets together is not
+ * bounced.
+ */
+export const PASSWORD_RESET_REQUEST_LIMIT: RateLimitRule[] = [
+  { limit: 3, windowMs: 300_000, by: 'ip+email' },
+  { limit: 30, windowMs: 300_000, by: 'ip' },
+];
+
+/**
+ * `REM-007`: registration has no existing account to key by, so it stays
+ * IP-only - loosened from the old 3-per-5-minutes so a class can register
+ * together, still bounded against a scripted flood.
+ */
+export const REGISTER_LIMIT: RateLimitRule = { limit: 30, windowMs: 600_000 };

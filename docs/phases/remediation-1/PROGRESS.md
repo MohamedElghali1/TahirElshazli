@@ -16,7 +16,7 @@ weekly reports (`REM-031`, post-launch).
 | T2 | REM-002 group-grain scope on course-named staff routes (AUTH-6) | reviewed + committed | (this commit) |
 | T2b | D-65 one group per student per course (move replaces membership) | reviewed + committed | (this commit) |
 | T3 | REM-005 announcement publish not all-or-nothing on mail | reviewed + committed | (this commit) |
-| T4 | REM-007 classroom-safe rate limits | queued | |
+| T4 | REM-007 classroom-safe rate limits | reviewed + committed | (this commit) |
 | T5 | REM-030 Cloudflare R2 storage driver | queued | |
 | T6 | REM-082 DOCX submissions | queued | |
 | T7 | REM-080a Google Form CSV import + analytics (backend) | queued | |
@@ -93,3 +93,15 @@ models inside agy alike. By the user's choice, remaining tasks go to the `unit-i
 - Lead's live check (production API, fresh DB): "Move to group" of student-2 into a new group on
   course-1 removed their group-1 membership (student-1's course-2 group untouched); audit shows
   `group.student_removed` + `group.student_assigned`; assistant roster lists student-1 only. **PASS.**
+
+### T4 — REM-007 classroom-safe rate limits
+- `unit-implementer`: `RateLimitRule.by` (`ip` | `ip+email`), `@RateLimit` takes an array, every rule
+  must pass. login 5/min per account + 60/min per IP; reset request 3/5min per account + 30 per IP;
+  register 30/10min per IP. Found and fixed a key collision (rule index now in the key).
+  `AUTH_ENUMERATION_LIMIT` removed as dead. Google sign-in routes unchanged (no email in body).
+- Needs your eyes: every request counts, including successful sign-ins (the plan's original
+  "failed only" idea needs a change in `AuthService.login`); recorded as a possible follow-up.
+- Lead's gates: lint 0 errors; drift ok; unit 850/51; e2e 411 across 5 files, all first-try;
+  integration 192/192; both builds; tsc 0. (The first gate run was reaped for low memory.)
+- Lead's live check (production API): 30 distinct emails from one IP → 30×401, no 429; a real
+  login right after → 200; 6 wrong attempts on one account → 401×5 then 429. **PASS.**

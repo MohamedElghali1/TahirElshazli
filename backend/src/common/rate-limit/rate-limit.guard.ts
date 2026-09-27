@@ -18,8 +18,12 @@ import { RATE_LIMIT_STORE } from './rate-limit.interface.js';
 export const RATE_LIMIT_KEY = 'rate_limit_rule';
 export const SKIP_RATE_LIMIT_KEY = 'skip_rate_limit';
 
-/** Tightens (or loosens) the limit for one route or controller. */
-export const RateLimit = (rule: RateLimitRule) =>
+/**
+ * Tightens (or loosens) the limit for one route or controller. Pass an array
+ * to enforce several rules at once (e.g. a tight per-account limit alongside
+ * a looser per-IP one) - every rule must pass.
+ */
+export const RateLimit = (rule: RateLimitRule | RateLimitRule[]) =>
   SetMetadata(RATE_LIMIT_KEY, rule);
 
 /** Opts a route out entirely. Use sparingly and say why at the call site. */
@@ -51,28 +55,44 @@ export class RateLimitGuard implements CanActivate {
       return true;
     }
 
-    const rule =
-      this.reflector.getAllAndOverride<RateLimitRule | undefined>(
-        RATE_LIMIT_KEY,
-        [context.getHandler(), context.getClass()],
-      ) ?? DEFAULT_RATE_LIMIT;
+    const configured =
+      this.reflector.getAllAndOverride<
+        RateLimitRule | RateLimitRule[] | undefined
+      >(RATE_LIMIT_KEY, [context.getHandler(), context.getClass()]) ??
+      DEFAULT_RATE_LIMIT;
+    const rules = Array.isArray(configured) ? configured : [configured];
 
     const http = context.switchToHttp();
     const request = http.getRequest<Request>();
-    const decision = this.store.hit(this.buildKey(context, request), rule);
+    const results = rules.map((rule, index) => ({
+      rule,
+      decision: this.store.hit(
+        this.buildKey(context, request, rule, index),
+        rule,
+      ),
+    }));
+
+    // Every rule must pass. Headers report whichever rule is closest to (or
+    // past) its limit, so a caller sees the constraint that actually bites.
+    const blocked = results.find((r) => !r.decision.allowed);
+    const reported =
+      blocked ??
+      results.reduce((most, r) =>
+        r.decision.remaining < most.decision.remaining ? r : most,
+      );
 
     const response = http.getResponse<Response>();
-    response.setHeader('X-RateLimit-Limit', rule.limit);
-    response.setHeader('X-RateLimit-Remaining', decision.remaining);
+    response.setHeader('X-RateLimit-Limit', reported.rule.limit);
+    response.setHeader('X-RateLimit-Remaining', reported.decision.remaining);
     response.setHeader(
       'X-RateLimit-Reset',
-      Math.ceil(decision.resetAt / 1000),
+      Math.ceil(reported.decision.resetAt / 1000),
     );
 
-    if (!decision.allowed) {
+    if (blocked) {
       const retryAfter = Math.max(
         1,
-        Math.ceil((decision.resetAt - Date.now()) / 1000),
+        Math.ceil((blocked.decision.resetAt - Date.now()) / 1000),
       );
       response.setHeader('Retry-After', retryAfter);
       throw new HttpException(
@@ -92,13 +112,40 @@ export class RateLimitGuard implements CanActivate {
    * main.ts defaults that to 0 so a client-supplied header is ignored. Set the
    * hop count to match the real deployment or this is spoofable.
    *
+   * A rule marked `by: 'ip+email'` additionally keys on the body's `email`
+   * (normalised exactly as the auth repositories do - trimmed, lower-cased),
+   * so a shared address does not exhaust one shared bucket: each account gets
+   * its own allowance, and a request with no string `email` in its body falls
+   * back to IP-only for that rule. The rule's position in its route's list is
+   * folded into the key too - otherwise that fallback would land in the same
+   * bucket as a sibling plain `'ip'` rule on the same route and the two would
+   * silently share (and corrupt) one counter.
+   *
    * Not keyed on the authenticated user: this runs as a global guard, and Nest
    * runs those before the route-level JwtAuthGuard, so `request.user` is not
    * populated yet. Per-account limiting needs a second guard downstream of
    * authentication.
    */
-  private buildKey(context: ExecutionContext, request: Request): string {
-    const route = `${context.getClass().name}.${context.getHandler().name}`;
-    return `${route}:ip:${request.ip ?? 'unknown'}`;
+  private buildKey(
+    context: ExecutionContext,
+    request: Request,
+    rule: RateLimitRule,
+    ruleIndex: number,
+  ): string {
+    const route = `${context.getClass().name}.${context.getHandler().name}:${ruleIndex}`;
+    const ip = request.ip ?? 'unknown';
+    if (rule.by === 'ip+email') {
+      const email = this.emailFromBody(request);
+      if (email) {
+        return `${route}:ip+email:${ip}:${email}`;
+      }
+    }
+    return `${route}:ip:${ip}`;
+  }
+
+  private emailFromBody(request: Request): string | null {
+    const email = (request.body as Record<string, unknown> | undefined)
+      ?.email;
+    return typeof email === 'string' ? email.trim().toLowerCase() : null;
   }
 }

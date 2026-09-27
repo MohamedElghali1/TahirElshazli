@@ -11,7 +11,9 @@ import {
 import { RateLimit } from '../common/rate-limit/rate-limit.guard.js';
 import {
   AUTH_ATTEMPT_LIMIT,
-  AUTH_ENUMERATION_LIMIT,
+  LOGIN_LIMIT,
+  PASSWORD_RESET_REQUEST_LIMIT,
+  REGISTER_LIMIT,
 } from '../common/rate-limit/limits.js';
 import {
   AuthService,
@@ -36,14 +38,14 @@ export class AuthController {
   // needs to report it. Throttling is what stops it being enumerable in bulk.
   @Post('register')
   @Public()
-  @RateLimit(AUTH_ENUMERATION_LIMIT)
+  @RateLimit(REGISTER_LIMIT)
   async register(@Body() dto: RegisterDto): Promise<RegistrationResult> {
     return this.authService.register(dto.email, dto.password, dto.name);
   }
 
   @Post('login')
   @Public()
-  @RateLimit(AUTH_ATTEMPT_LIMIT)
+  @RateLimit(LOGIN_LIMIT)
   @HttpCode(HttpStatus.OK)
   async login(@Body() dto: LoginDto): Promise<AuthResult> {
     return this.authService.login(dto.email, dto.password);
@@ -63,7 +65,7 @@ export class AuthController {
   // is both a spam vector and the softest target for probing addresses.
   @Post('password-reset/request')
   @Public()
-  @RateLimit(AUTH_ENUMERATION_LIMIT)
+  @RateLimit(PASSWORD_RESET_REQUEST_LIMIT)
   @HttpCode(HttpStatus.OK)
   async requestPasswordReset(
     @Body() dto: RequestPasswordResetDto,

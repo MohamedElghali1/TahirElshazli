@@ -105,13 +105,20 @@ an existing pattern in this repository and names it.
   - *Acceptance:* specs: a renamed `.exe` claiming DOCX is refused; a real DOCX and a real PDF are
     accepted; a DOCX submission shows a download action (no annotation canvas) in grading.
 
-- [ ] **REM-007 — Rate limits that survive a classroom** · P1 · `AUD-07`
-  - *Affected:* `common/rate-limit/rate-limit.guard.ts` (`buildKey`), `limits.ts`, `auth.controller.ts`.
-  - *Change:* for login and password-reset request, key on `IP + normalised email` and count only
-    failed attempts (reset on success); raise the register ceiling (e.g. 30 per 10 min per IP) while
-    keeping the per-IP global limit. No new store — reuse the in-memory store.
-  - *Acceptance:* unit specs: 30 different accounts succeed from one IP within a minute; the 6th
-    failed attempt for one email is 429; a success resets that email's counter.
+- [x] **REM-007 — Rate limits that survive a classroom** · P1 · `AUD-07`
+  - *Affected:* `common/rate-limit/rate-limit.interface.ts` (`RateLimitRule.by`), `rate-limit.guard.ts`
+    (`RateLimit` accepts a rule or an array; `buildKey` keys `ip+email` when asked), `limits.ts`
+    (`LOGIN_LIMIT`, `PASSWORD_RESET_REQUEST_LIMIT`, `REGISTER_LIMIT`), `auth.controller.ts`.
+  - *Change, as actually built (brief `docs/phases/remediation-1/briefs/T4.txt`, which superseded this
+    entry's original "reset on success" design):* login and password-reset request each carry two
+    rules — 5/min (login) or 3/5min (reset) keyed `ip+email`, plus a looser 60/min or 30/5min keyed
+    `ip` — every request counts, success or failure, same as every other rule in this file. Register
+    raised to 30 per 10 min per IP (no account exists yet to key by). No new store — the existing
+    in-memory counter is reused unchanged; only its key varies now.
+  - *Acceptance:* `rate-limit.guard.spec.ts` — 30 distinct emails from one IP each log in within a
+    minute; the 6th attempt for one email in a minute is 429; the 61st login from one IP in a minute
+    is 429 even across distinct emails; a rule without `by` behaves exactly as before; a body with no
+    string `email` falls back to IP-only; register allows 30 per 10 minutes per IP.
 
 - [ ] **REM-008 — Patch vulnerable dependencies** · P1 · `AUD-08`
   - *Change:* `npm audit fix` (lockfile only; no major bumps). If multer cannot move without a Nest

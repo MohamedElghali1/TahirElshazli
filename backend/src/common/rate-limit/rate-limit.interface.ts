@@ -3,6 +3,15 @@ export interface RateLimitRule {
   limit: number;
   /** Window length in milliseconds. */
   windowMs: number;
+  /**
+   * How to key this rule. `'ip'` (the default, and every rule's behaviour
+   * before this field existed) counts every request from an address against
+   * one route. `'ip+email'` additionally keys on the request body's `email`,
+   * so a shared address (a classroom on one NAT IP) does not exhaust one
+   * shared bucket - each account gets its own. Falls back to IP-only for a
+   * request whose body has no string `email`.
+   */
+  by?: 'ip' | 'ip+email';
 }
 
 export interface RateLimitDecision {
