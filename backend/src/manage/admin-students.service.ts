@@ -16,6 +16,7 @@ import { STUDENT_REPOSITORY } from '../students/interfaces/student-repository.in
 import { MailService } from '../mail/mail.service.js';
 import { resolveFrontendUrl, resolveNodeEnv } from '../common/config/env.js';
 import type { StaffActor } from '../staff/staff-scope.service.js';
+import { FileUrls } from '../common/storage/file-urls.service.js';
 
 /** Byte-identical to `RegistrationApprovalService`'s, for the same reason. */
 export const STUDENT_NOT_FOUND = 'Student not found';
@@ -84,14 +85,25 @@ export class AdminStudentsService {
     private readonly mail: MailService,
     private readonly audit: AuditService,
     private readonly db: DatabaseService,
+    private readonly fileUrls: FileUrls,
   ) {}
+
+  /**
+   * The read-URL conversion (`REM-030`), applied only where a detail actually
+   * leaves the API - never to what feeds an audit snapshot. `snapshotOf` reads
+   * straight off the un-converted `toDetail()` result, so `student.updated`
+   * records the stable stored URL rather than a presigned one that expires.
+   */
+  private async withReadAvatar(detail: StudentDetail): Promise<StudentDetail> {
+    return { ...detail, avatarUrl: await this.fileUrls.forRead(detail.avatarUrl) };
+  }
 
   async detail(userId: string): Promise<StudentDetail> {
     const detail = await toDetail(this.userRepo, this.studentRepo, userId);
     if (!detail) {
       throw new NotFoundException(STUDENT_NOT_FOUND);
     }
-    return detail;
+    return this.withReadAvatar(detail);
   }
 
   async update(
@@ -119,7 +131,7 @@ export class AdminStudentsService {
         before: snapshotOf(before, update),
         after: snapshotOf(after!, update),
       });
-      return after!;
+      return this.withReadAvatar(after!);
     });
   }
 
@@ -178,7 +190,7 @@ export class AdminStudentsService {
       });
 
       const detail = await toDetail(this.userRepo, this.studentRepo, user.id);
-      return detail!;
+      return this.withReadAvatar(detail!);
     });
   }
 }

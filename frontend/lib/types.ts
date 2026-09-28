@@ -413,6 +413,15 @@ export interface SubmissionFile {
   mimeType: string;
 }
 
+/**
+ * A submission file as the current submission carries it: the stored form
+ * (`url`, resent verbatim on "edit before the deadline") plus where to
+ * actually fetch or preview it (`REM-030`).
+ */
+export interface SubmissionFileView extends SubmissionFile {
+  readUrl: string;
+}
+
 export interface SubmissionRevision {
   id: string;
   submissionId: string;
@@ -428,7 +437,10 @@ export interface SubmissionRevision {
 
 export interface SubmissionView {
   id: string;
+  /** The stored form - resent verbatim on "edit before the deadline" (`D-48` (c)). */
   fileUrl: string | null;
+  /** Where to actually open/fetch `fileUrl` from, right now (`REM-030`). */
+  fileReadUrl: string | null;
   answerText: string | null;
   submittedAt: string;
   lastSubmittedAt: string;
@@ -447,7 +459,7 @@ export interface SubmissionView {
   /** When the marked work came back (`MARK-2`). The key for showing a mark. */
   returnedAt: string | null;
   /** The uploaded files, in order (`D-47`, `D-48`). Empty for a link or legacy submission. */
-  files: SubmissionFile[];
+  files: SubmissionFileView[];
   /** Marks on the paper (`MARK-5`): empty until returned, never with an author. */
   annotations: StudentAnnotation[];
   revisions: SubmissionRevision[];
@@ -816,9 +828,16 @@ export type SubmissionStatus = 'not_submitted' | 'submitted' | 'marked' | 'retur
  * shown as "Open original" and graded without mark-up.
  */
 export interface SubmissionDocument {
+  /**
+   * The stored form - the identity a mark anchors on and what creating one
+   * sends back (`REM-030`). Never fetch bytes from this directly against a
+   * private R2 bucket; use `readUrl`.
+   */
   url: string;
   kind: 'image' | 'pdf' | 'file' | 'link';
   annotatable: boolean;
+  /** The URL to actually fetch or open the file from, right now. */
+  readUrl: string;
 }
 
 export interface TaskSubmissionRow {
@@ -1436,7 +1455,10 @@ export interface Announcement {
   title: string;
   body: string;
   mediaKind: 'image' | 'video' | 'youtube' | 'file' | null;
+  /** The stored form - resubmitted verbatim by the composer when unchanged. */
   mediaUrl: string | null;
+  /** Where to actually preview/fetch `mediaUrl` from, right now (`REM-030`). */
+  mediaReadUrl: string | null;
   postedBy: string;
   createdAt: string;
   publishedAt: string | null;
@@ -1527,6 +1549,12 @@ export type UploadKind = 'image' | 'video' | 'audio' | 'file';
 /** What `POST /staff/uploads` answers with. */
 export interface UploadResult {
   url: string;
+  /**
+   * The URL to fetch the file back from, right now (`REM-030`). Behind a
+   * private R2 bucket `url` itself is not fetchable - use this one to preview
+   * what was just uploaded.
+   */
+  readUrl: string;
   sizeBytes: number;
   mimeType: string;
   kind: UploadKind;

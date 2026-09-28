@@ -25,6 +25,7 @@ import type {
   CreateBlogPostDto,
   UpdateBlogPostDto,
 } from './dto/blog.dto.js';
+import { FileUrls } from '../common/storage/file-urls.service.js';
 
 /** Bounded, so neither the public feed nor the staff list drains the table. */
 export const MAX_BLOG_PAGE_SIZE = 50;
@@ -32,6 +33,16 @@ export const DEFAULT_BLOG_PAGE_SIZE = 12;
 
 /** How much of `body` stands in for a missing excerpt. */
 const EXCERPT_FALLBACK_CHARS = 200;
+
+/**
+ * `REM-030`: the public feed is behind ISR with a 5 minute revalidate
+ * (`frontend/app/(site)/blog`), so a presigned media URL baked into a cached
+ * page must outlive the page, not just the request that rendered it. At least
+ * 2x the revalidate window, named rather than left as an unexplained "60" at
+ * the call site. Staff reads are never cached and keep the driver's default
+ * (15 minutes).
+ */
+const PUBLIC_BLOG_MEDIA_TTL_SECONDS = 60 * 60;
 
 /**
  * An emptied optional text field means "no value", and has to be stored as
@@ -90,6 +101,8 @@ export class BlogService {
     private readonly audit: AuditService,
     /** `DatabaseModule` is `@Global()`; this needs no import edge. */
     private readonly db: DatabaseService,
+    /** Stored → read URLs (`REM-030`), applied where a response leaves the API. */
+    private readonly fileUrls: FileUrls,
   ) {}
 
   /* ----------------------------------------------------------------------
@@ -108,7 +121,7 @@ export class BlogService {
    */
   async listPublic(limit: number, offset: number): Promise<PublicBlogPostView[]> {
     const posts = await this.blogRepo.findLive(limit, offset);
-    const views = await this.decorate(posts);
+    const views = await this.decorate(posts, { longLived: true });
     return views.map((view) => this.toPublic(view));
   }
 
@@ -120,7 +133,7 @@ export class BlogService {
       // course. The 404 must not confirm that a draft is sitting there.
       throw new NotFoundException('Post not found');
     }
-    const [view] = await this.decorate([post]);
+    const [view] = await this.decorate([post], { longLived: true });
     return this.toPublic(view as BlogPostView);
   }
 
@@ -448,8 +461,22 @@ export class BlogService {
    * there rather than a non-null assertion: a missing byline is a smaller
    * failure than a crashed feed.
    */
+  /**
+   * `longLived` (`REM-030`) is set on the two **public** reads only, and
+   * `media[].url` converts to a read URL **only then**.
+   *
+   * The staff reads (`getForStaff`, `listForStaff`) deliberately return the
+   * **stored** form: the gallery editor (`manage/blog/[id]/page.tsx`) reads an
+   * existing post's media into the exact array it `PATCH`es back verbatim
+   * whenever a caption changes and the file does not - converting here would
+   * save a presigned URL as the new stored value and it would expire. Nothing
+   * on the staff screen renders the media as an image; a public read is where
+   * a browser actually fetches the bytes, and sits behind ISR, so its
+   * presigned URL has to outlive the cached page too.
+   */
   private async decorate(
     posts: BlogPostWithMedia[],
+    options?: { longLived?: boolean },
   ): Promise<BlogPostView[]> {
     if (posts.length === 0) {
       return [];
@@ -459,9 +486,18 @@ export class BlogService {
     ]);
     const nameById = new Map(authors.map((a) => [a.id, a.name]));
     const now = Date.now();
+    const readUrlOf = options?.longLived
+      ? await this.fileUrls.mapping(
+          posts.flatMap((p) => p.media.map((m) => m.url)),
+          PUBLIC_BLOG_MEDIA_TTL_SECONDS,
+        )
+      : null;
 
     return posts.map((post) => ({
       ...post,
+      media: readUrlOf
+        ? post.media.map((m) => ({ ...m, url: readUrlOf.get(m.url) ?? m.url }))
+        : post.media,
       authorName: nameById.get(post.authorId) ?? 'English Team',
       isLive:
         post.status === 'published' ||

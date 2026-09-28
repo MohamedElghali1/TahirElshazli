@@ -19,13 +19,17 @@ import { useFileBytes } from './use-file-bytes';
  */
 export function MarkedCopy({
   fileUrl,
+  readUrl,
   annotations,
 }: {
+  /** The stored form - the identity a mark anchors on (`REM-030`). */
   fileUrl: string;
+  /** Where to actually fetch the bytes from, right now. */
+  readUrl: string;
   annotations: readonly StudentAnnotation[];
 }) {
   const isPdf = /\.pdf$/i.test(fileUrl);
-  const file = useFileBytes(fileUrl);
+  const file = useFileBytes(readUrl);
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [failed, setFailed] = useState(false);
 

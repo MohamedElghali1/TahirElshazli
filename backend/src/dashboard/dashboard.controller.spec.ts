@@ -44,6 +44,8 @@ import { InMemoryEnrollmentRepository } from '../enrollments/repositories/in-mem
 import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interface.js';
 import { InMemoryGroupRepository } from '../groups/repositories/in-memory-group.repository.js';
 import { StudentGroupsService } from '../groups/student-groups.service.js';
+import { FileUrls } from '../common/storage/file-urls.service.js';
+import { FILE_STORAGE } from '../common/storage/file-storage.interface.js';
 
 const STUDENT = {
   user: { sub: 'student-1', email: 'student@example.com', role: 'student', jti: 'j1' },
@@ -93,6 +95,8 @@ describe('DashboardController', () => {
         { provide: LIVE_SESSION_REPOSITORY, useClass: InMemoryLiveSessionRepository },
         { provide: ATTENDANCE_REPOSITORY, useClass: InMemoryAttendanceRepository },
         { provide: NOTIFICATION_REPOSITORY, useClass: InMemoryNotificationRepository },
+        { provide: FILE_STORAGE, useValue: null },
+        FileUrls,
       ],
     })
       .overrideGuard(JwtAuthGuard)

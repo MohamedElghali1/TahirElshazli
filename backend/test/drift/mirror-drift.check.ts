@@ -81,6 +81,7 @@ import type { SubmissionMode as B_SubmissionMode } from '../../src/assessments/i
 import type { AssessmentStatus as B_AssessmentStatus } from '../../src/assessments/interfaces/assessment-repository.interface.js';
 import type { AssessmentListItem as B_AssessmentListItem } from '../../src/assessments/assessments.service.js';
 import type { SubmissionFile as B_SubmissionFile } from '../../src/assessments/interfaces/assessment-repository.interface.js';
+import type { SubmissionFileView as B_SubmissionFileView } from '../../src/assessments/assessments.service.js';
 import type { SubmissionRevision as B_SubmissionRevision } from '../../src/assessments/interfaces/assessment-repository.interface.js';
 import type { SubmissionView as B_SubmissionView } from '../../src/assessments/assessments.service.js';
 import type { AssessmentDetail as B_AssessmentDetail } from '../../src/assessments/assessments.service.js';
@@ -154,7 +155,9 @@ import type { StaffTaskTarget as B_StaffTaskTarget } from '../../src/manage/asse
 import type { StaffTask as B_StaffTask } from '../../src/manage/assessment-authoring.service.js';
 import type { Attachment as B_Attachment } from '../../src/assessments/interfaces/assessment-repository.interface.js';
 import type { AttachmentAudience as B_AttachmentAudience } from '../../src/assessments/interfaces/assessment-repository.interface.js';
-import type { Announcement as B_Announcement } from '../../src/announcements/interfaces/announcement-repository.interface.js';
+// The wire shape is `AnnouncementView` (`mediaUrl` stays stored, `mediaReadUrl`
+// added, REM-030) - not the bare repository row, which no controller returns.
+import type { AnnouncementView as B_Announcement } from '../../src/announcements/announcements.service.js';
 import type { PublishedAnnouncement as B_PublishedAnnouncement } from '../../src/announcements/announcements.service.js';
 import type { BlogCategory as B_BlogCategory } from '../../src/blog/interfaces/blog-repository.interface.js';
 import type { BlogPostStatus as B_BlogPostStatus } from '../../src/blog/interfaces/blog-repository.interface.js';
@@ -203,6 +206,7 @@ import type {
   AssessmentStatus as F_AssessmentStatus,
   AssessmentListItem as F_AssessmentListItem,
   SubmissionFile as F_SubmissionFile,
+  SubmissionFileView as F_SubmissionFileView,
   SubmissionRevision as F_SubmissionRevision,
   SubmissionView as F_SubmissionView,
   AssessmentDetail as F_AssessmentDetail,
@@ -326,6 +330,7 @@ export type Check_SubmissionMode = Assert<Same<Wire<B_SubmissionMode>, F_Submiss
 export type Check_AssessmentStatus = Assert<Same<Wire<B_AssessmentStatus>, F_AssessmentStatus>>;
 export type Check_AssessmentListItem = Assert<Same<Wire<B_AssessmentListItem>, F_AssessmentListItem>>;
 export type Check_SubmissionFile = Assert<Same<Wire<B_SubmissionFile>, F_SubmissionFile>>;
+export type Check_SubmissionFileView = Assert<Same<Wire<B_SubmissionFileView>, F_SubmissionFileView>>;
 export type Check_SubmissionRevision = Assert<Same<Wire<B_SubmissionRevision>, F_SubmissionRevision>>;
 export type Check_SubmissionView = Assert<Same<Wire<B_SubmissionView>, F_SubmissionView>>;
 export type Check_AssessmentDetail = Assert<Same<Wire<B_AssessmentDetail>, F_AssessmentDetail>>;

@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'node:crypto';
 import { UploadsService } from '../common/storage/uploads.service.js';
+import { FileUrls } from '../common/storage/file-urls.service.js';
 import { FILE_STORAGE } from '../common/storage/file-storage.interface.js';
 import { SUBMISSION_ANNOTATION_REPOSITORY } from './interfaces/submission-annotation-repository.interface.js';
 import { InMemorySubmissionAnnotationRepository } from './repositories/in-memory-submission-annotation.repository.js';
@@ -43,6 +44,7 @@ describe('AssessmentsController', () => {
         // Storage is ON here: `D-48` (b) refuses upload modes without it. A
         // double of the port, so nothing touches disk.
         UploadsService,
+        FileUrls,
         {
           provide: FILE_STORAGE,
           useValue: {
@@ -52,6 +54,9 @@ describe('AssessmentsController', () => {
               mimeType: i.mimeType,
             }),
             remove: async () => true,
+            // Identity, like the local driver - so a stored URL still equals
+            // its read URL in every assertion this suite makes.
+            readUrl: async (url: string) => url,
           },
         },
         EnrollmentsService,

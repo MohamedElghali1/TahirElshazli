@@ -346,11 +346,15 @@ export function resolveCorsOrigins(
  * `PERSISTENCE_DRIVER=memory` is. The failure would be quiet rather than loud:
  * `blog_post_media` rows outlive the files they point at, so the gallery
  * becomes broken images with no error anywhere, and with a second replica half
- * the reads 404 regardless. `r2` is the value this grows to.
+ * the reads 404 regardless.
+ *
+ * `r2` is Cloudflare R2 (`REM-030`): a private bucket, reached through the S3
+ * API. Unlike `local` it is **allowed in production** - it is the value
+ * production is meant to run - and requires `resolveR2Config` to resolve.
  */
-export type StorageDriver = 'none' | 'local';
+export type StorageDriver = 'none' | 'local' | 'r2';
 
-const VALID_STORAGE_DRIVERS: StorageDriver[] = ['none', 'local'];
+const VALID_STORAGE_DRIVERS: StorageDriver[] = ['none', 'local', 'r2'];
 
 export function resolveStorageDriver(
   nodeEnv: NodeEnv,
@@ -391,6 +395,59 @@ export function resolveUploadDir(raw = process.env.UPLOAD_DIR): string {
     return 'var/uploads';
   }
   return value;
+}
+
+export interface R2Config {
+  accountId: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  bucket: string;
+  /** `https://<accountId>.r2.cloudflarestorage.com` - never a public domain. */
+  endpoint: string;
+}
+
+/**
+ * The R2 credentials, required only when `STORAGE_DRIVER=r2`. All-or-nothing,
+ * like `resolveGoogleOAuthConfig`: a driver half-configured at boot is worse
+ * than one refused outright, because it fails on the first upload instead.
+ *
+ * Returns null for every other driver, so `R2Storage` is never constructed and
+ * the secret is never read, let alone logged.
+ */
+export function resolveR2Config(
+  driver: StorageDriver,
+  env = process.env,
+): R2Config | null {
+  if (driver !== 'r2') {
+    return null;
+  }
+  const accountId = env.R2_ACCOUNT_ID?.trim();
+  const accessKeyId = env.R2_ACCESS_KEY_ID?.trim();
+  const secretAccessKey = env.R2_SECRET_ACCESS_KEY?.trim();
+  const bucket = env.R2_BUCKET?.trim();
+
+  const missing = [
+    !accountId && 'R2_ACCOUNT_ID',
+    !accessKeyId && 'R2_ACCESS_KEY_ID',
+    !secretAccessKey && 'R2_SECRET_ACCESS_KEY',
+    !bucket && 'R2_BUCKET',
+  ].filter(Boolean);
+
+  if (missing.length) {
+    throw new Error(
+      `STORAGE_DRIVER=r2 requires ${missing.join(', ')}. Create an R2 API ` +
+        'token with object read/write on the bucket at ' +
+        'https://dash.cloudflare.com and copy the values across.',
+    );
+  }
+
+  return {
+    accountId: accountId!,
+    accessKeyId: accessKeyId!,
+    secretAccessKey: secretAccessKey!,
+    bucket: bucket!,
+    endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+  };
 }
 
 /**

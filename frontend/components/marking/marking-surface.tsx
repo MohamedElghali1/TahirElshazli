@@ -67,7 +67,10 @@ export function MarkingSurface({
   numberOf?: (id: string) => number | undefined;
   highlightId?: string | null;
 }) {
-  const file = useFileBytes(doc.annotatable ? doc.url : null);
+  // `doc.url` is the stored form - the identity a mark anchors on (`D-41`) and
+  // what creating one sends back. It is never itself fetchable behind a
+  // private R2 bucket; `readUrl` is (`REM-030`).
+  const file = useFileBytes(doc.annotatable ? doc.readUrl : null);
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [pdfError, setPdfError] = useState<string | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -109,7 +112,7 @@ export function MarkingSurface({
         tone="neutral"
         title={doc.kind === 'link' ? 'This work is a link' : 'This file cannot be marked up here'}
         action={
-          <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-accent underline-offset-4 hover:underline">
+          <a href={doc.readUrl} target="_blank" rel="noopener noreferrer" className="text-accent underline-offset-4 hover:underline">
             Open original
           </a>
         }

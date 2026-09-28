@@ -6,6 +6,7 @@ import type {
 } from './interfaces/material-repository.interface.js';
 import { MATERIAL_REPOSITORY } from './interfaces/material-repository.interface.js';
 import { EnrollmentsService } from '../enrollments/enrollments.service.js';
+import { FileUrls } from '../common/storage/file-urls.service.js';
 
 export type MaterialsByCategory = Record<MaterialCategory, Material[]>;
 export type MaterialCounts = Record<MaterialCategory, number>;
@@ -16,6 +17,7 @@ export class MaterialsService {
     @Inject(MATERIAL_REPOSITORY)
     private readonly materialRepo: MaterialRepository,
     private readonly enrollmentsService: EnrollmentsService,
+    private readonly fileUrls: FileUrls,
   ) {}
 
   private empty(): MaterialsByCategory {
@@ -34,9 +36,15 @@ export class MaterialsService {
   ): Promise<MaterialsByCategory> {
     await this.enrollmentsService.assertEnrolled(courseId, studentId);
     const materials = await this.materialRepo.findByCourse(courseId, category);
+    // `REM-030`: `fileUrl` is upload-backed - a private R2 bucket needs a
+    // presigned read, never the stored form a DB row keeps.
+    const readUrlOf = await this.fileUrls.mapping(materials.map((m) => m.fileUrl));
     const grouped = this.empty();
     for (const material of materials) {
-      grouped[material.category].push(material);
+      grouped[material.category].push({
+        ...material,
+        fileUrl: readUrlOf.get(material.fileUrl) ?? material.fileUrl,
+      });
     }
     return grouped;
   }

@@ -2,9 +2,11 @@ import { Module, Logger } from '@nestjs/common';
 import { UploadsController } from './uploads.controller.js';
 import { UploadsService } from './uploads.service.js';
 import { LocalDiskStorage } from './local-disk-storage.service.js';
+import { R2Storage } from './r2-storage.service.js';
+import { FileUrls } from './file-urls.service.js';
 import { FILE_STORAGE } from './file-storage.interface.js';
 import { AuthModule } from '../../auth/auth.module.js';
-import { resolveNodeEnv, resolveStorageDriver } from '../config/env.js';
+import { resolveNodeEnv, resolveR2Config, resolveStorageDriver } from '../config/env.js';
 
 /**
  * File storage and the one endpoint that writes to it.
@@ -25,11 +27,13 @@ import { resolveNodeEnv, resolveStorageDriver } from '../config/env.js';
   providers: [
     UploadsService,
     LocalDiskStorage,
+    FileUrls,
     {
       provide: FILE_STORAGE,
       inject: [LocalDiskStorage],
       useFactory: (local: LocalDiskStorage) => {
-        const driver = resolveStorageDriver(resolveNodeEnv());
+        const nodeEnv = resolveNodeEnv();
+        const driver = resolveStorageDriver(nodeEnv);
         if (driver === 'local') {
           new Logger('StorageModule').warn(
             `STORAGE_DRIVER=local: uploads are written to ${local.directory} ` +
@@ -37,10 +41,16 @@ import { resolveNodeEnv, resolveStorageDriver } from '../config/env.js';
           );
           return local;
         }
+        if (driver === 'r2') {
+          // Boot fails here, listing whatever is missing, rather than on the
+          // first upload - the same shape as every other `resolve*Config`.
+          const config = resolveR2Config(driver);
+          return new R2Storage(config!);
+        }
         return null;
       },
     },
   ],
-  exports: [UploadsService],
+  exports: [UploadsService, FileUrls],
 })
 export class StorageModule {}

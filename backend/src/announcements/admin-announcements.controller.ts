@@ -17,9 +17,9 @@ import type { JwtPayload } from '../auth/jwt.strategy.js';
 import {
   AnnouncementsService,
   DEFAULT_ANNOUNCEMENT_PAGE_SIZE,
+  type AnnouncementView,
   type PublishedAnnouncement,
 } from './announcements.service.js';
-import type { Announcement } from './interfaces/announcement-repository.interface.js';
 import {
   ListAnnouncementsQueryDto,
   PostAnnouncementDto,
@@ -38,7 +38,7 @@ export class AdminAnnouncementsController {
   @Get('announcements')
   async list(
     @Query() query: ListAnnouncementsQueryDto,
-  ): Promise<Announcement[]> {
+  ): Promise<AnnouncementView[]> {
     return this.announcements.listAll(
       query.limit ?? DEFAULT_ANNOUNCEMENT_PAGE_SIZE,
       query.offset ?? 0,
@@ -51,7 +51,7 @@ export class AdminAnnouncementsController {
   async createDraft(
     @Body() body: PostAnnouncementDto,
     @Request() req: { user: JwtPayload },
-  ): Promise<Announcement> {
+  ): Promise<AnnouncementView> {
     return this.announcements.post(this.actor(req), body.audience, {
       title: body.title,
       body: body.body,
@@ -65,7 +65,7 @@ export class AdminAnnouncementsController {
     @Param('id') id: string,
     @Body() body: PatchAdminAnnouncementDraftDto,
     @Request() req: { user: JwtPayload },
-  ): Promise<Announcement> {
+  ): Promise<AnnouncementView> {
     return this.announcements.updateDraft(id, this.actor(req), body);
   }
 

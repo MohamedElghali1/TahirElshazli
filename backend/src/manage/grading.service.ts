@@ -21,6 +21,7 @@ import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js
 import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import { actorRoleOf } from '../auth/actor-role.js';
+import { FileUrls } from '../common/storage/file-urls.service.js';
 
 /** A submission is awaiting marking exactly while nobody has corrected it. */
 export type GradingStatus = 'awaiting' | 'graded';
@@ -116,6 +117,28 @@ export interface GradeInput {
   annotatedFileUrl?: string;
 }
 
+/**
+ * `toGradingQueueItem.fileUrl`, converted to a read URL (`REM-030`), in one
+ * pass across every item passed in - so the course queue's whole page shares
+ * one presign per distinct stored URL rather than one per item.
+ *
+ * `annotatedFileUrl` deliberately does NOT convert. The grading form
+ * (`grading/page.tsx`) pre-fills an editable text input with the current
+ * value and resubmits it unchanged whenever a re-grade does not touch it -
+ * a presigned URL saved back as the stored value would expire and the link
+ * would break permanently. It stays the stored form, exactly as written.
+ */
+export async function withReadUrls(
+  items: readonly GradingQueueItem[],
+  fileUrls: FileUrls,
+): Promise<GradingQueueItem[]> {
+  const readUrlOf = await fileUrls.mapping(items.map((i) => i.fileUrl));
+  return items.map((i) => ({
+    ...i,
+    fileUrl: i.fileUrl === null ? null : (readUrlOf.get(i.fileUrl) ?? i.fileUrl),
+  }));
+}
+
 @Injectable()
 export class GradingService {
   constructor(
@@ -130,6 +153,8 @@ export class GradingService {
     private readonly audit: AuditService,
     /** `DatabaseModule` is `@Global()`; this needs no import edge. */
     private readonly db: DatabaseService,
+    /** Stored → read URLs (`REM-030`), applied where a response leaves the API. */
+    private readonly fileUrls: FileUrls,
   ) {}
 
   /**
@@ -214,13 +239,14 @@ export class GradingService {
       return [item];
     });
 
+    const sorted = items.sort(
+      (a, b) =>
+        new Date(b.lastSubmittedAt).getTime() - new Date(a.lastSubmittedAt).getTime(),
+    );
     return {
       courseId,
       // Newest work first - the queue is worked from the top.
-      items: items.sort(
-        (a, b) =>
-          new Date(b.lastSubmittedAt).getTime() - new Date(a.lastSubmittedAt).getTime(),
-      ),
+      items: await withReadUrls(sorted, this.fileUrls),
       // Course-wide on purpose - see the method comment.
       assessments: assessments.map((assessment) =>
         averageFor(assessment, everyone),
@@ -294,7 +320,7 @@ export class GradingService {
       await this.claimIfUnmarked(assessment, actor);
 
       const student = await this.userRepo.findById(graded.studentId);
-      return toGradingQueueItem(graded, assessment, student);
+      return (await withReadUrls([toGradingQueueItem(graded, assessment, student)], this.fileUrls))[0]!;
     });
   }
 

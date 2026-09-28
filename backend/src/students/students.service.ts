@@ -16,6 +16,7 @@ import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js
 import type { PasswordHasher } from '../auth/interfaces/password-hasher.interface.js';
 import { PASSWORD_HASHER } from '../auth/interfaces/password-hasher.interface.js';
 import { TokenDenylistService } from '../auth/token-denylist.service.js';
+import { FileUrls } from '../common/storage/file-urls.service.js';
 
 /**
  * The student's own profile, as the student may see it.
@@ -41,14 +42,20 @@ export interface StudentProfileView {
   updatedAt: string;
 }
 
-function toStudentView(profile: StudentProfile): StudentProfileView {
+async function toStudentView(
+  profile: StudentProfile,
+  fileUrls: FileUrls,
+): Promise<StudentProfileView> {
   return {
     id: profile.id,
     userId: profile.userId,
     name: profile.name,
     email: profile.email,
     phone: profile.phone,
-    avatarUrl: profile.avatarUrl,
+    // `REM-030`: the avatar is upload-backed, so what left `save` is the
+    // stored form, never the URL a browser can actually fetch from a private
+    // R2 bucket.
+    avatarUrl: await fileUrls.forRead(profile.avatarUrl),
     enrolledCourseCount: profile.enrolledCourseCount,
     createdAt: profile.createdAt,
     updatedAt: profile.updatedAt,
@@ -65,6 +72,7 @@ export class StudentsService {
     @Inject(PASSWORD_HASHER)
     private readonly hasher: PasswordHasher,
     private readonly denylist: TokenDenylistService,
+    private readonly fileUrls: FileUrls,
   ) {}
 
   async getProfile(userId: string): Promise<StudentProfileView> {
@@ -72,7 +80,7 @@ export class StudentsService {
     if (!profile) {
       throw new NotFoundException('Student profile not found');
     }
-    return toStudentView(profile);
+    return toStudentView(profile, this.fileUrls);
   }
 
   async updateProfile(
@@ -86,7 +94,7 @@ export class StudentsService {
     if (!profile) {
       throw new NotFoundException('Student profile not found');
     }
-    return toStudentView(profile);
+    return toStudentView(profile, this.fileUrls);
   }
 
   async changePassword(

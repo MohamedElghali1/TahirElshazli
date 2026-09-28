@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'node:crypto';
 import { UploadsService } from '../common/storage/uploads.service.js';
+import { FileUrls } from '../common/storage/file-urls.service.js';
 import { FILE_STORAGE } from '../common/storage/file-storage.interface.js';
 import { SUBMISSION_ANNOTATION_REPOSITORY } from '../assessments/interfaces/submission-annotation-repository.interface.js';
 import { InMemorySubmissionAnnotationRepository } from '../assessments/repositories/in-memory-submission-annotation.repository.js';
@@ -94,6 +95,7 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
         // Storage is ON here: `D-48` (b) refuses upload modes without it. A
         // double of the port, so nothing touches disk.
         UploadsService,
+        FileUrls,
         {
           provide: FILE_STORAGE,
           useValue: {
@@ -103,6 +105,7 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
               mimeType: i.mimeType,
             }),
             remove: async () => true,
+            readUrl: async (url: string) => url,
           },
         },
         AssessmentAuthoringService,

@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'node:crypto';
 import { UploadsService } from '../common/storage/uploads.service.js';
+import { FileUrls } from '../common/storage/file-urls.service.js';
 import { FILE_STORAGE } from '../common/storage/file-storage.interface.js';
 import { TASK_DRAFT_REPOSITORY } from './interfaces/task-draft-repository.interface.js';
 import { InMemoryTaskDraftRepository } from './repositories/in-memory-task-draft.repository.js';
@@ -92,6 +93,7 @@ describe('Manage surface', () => {
         // Storage is ON here: `D-48` (b) refuses upload modes without it. A
         // double of the port, so nothing touches disk.
         UploadsService,
+        FileUrls,
         {
           provide: FILE_STORAGE,
           useValue: {
@@ -101,6 +103,9 @@ describe('Manage surface', () => {
               mimeType: i.mimeType,
             }),
             remove: async () => true,
+            // Identity, like the local driver - a stored URL still equals its
+            // read URL in every assertion this suite makes.
+            readUrl: async (url: string) => url,
           },
         },
         ManageService,

@@ -17,6 +17,8 @@ import { RolesGuard } from '../auth/roles.guard.js';
 import { Role } from '../auth/roles.enum.js';
 import { slugify, uniqueSlug } from './slug.js';
 import { isMediaUrl } from '../common/validators/is-media-url.validator.js';
+import { FileUrls } from '../common/storage/file-urls.service.js';
+import { FILE_STORAGE } from '../common/storage/file-storage.interface.js';
 
 const ADMIN = {
   user: { sub: 'teacher-1', email: 't@example.com', role: 'teacher', jti: 'j1' },
@@ -51,6 +53,8 @@ describe('Blog', () => {
         { provide: BLOG_REPOSITORY, useClass: InMemoryBlogRepository },
         { provide: USER_REPOSITORY, useClass: InMemoryUserRepository },
         { provide: AUDIT_LOG_REPOSITORY, useClass: InMemoryAuditLogRepository },
+        { provide: FILE_STORAGE, useValue: null },
+        FileUrls,
       ],
     })
       .overrideGuard(JwtAuthGuard)

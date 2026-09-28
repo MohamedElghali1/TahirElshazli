@@ -144,7 +144,7 @@ Actual repository versions. Do not substitute generic knowledge for what is writ
 | Data access | **No ORM.** `DatabaseService` + parameterised SQL behind repository interfaces |
 | Migrations | Hand-written SQL in `backend/src/database/migrations/`, run by `MigrationRunner` |
 | Video | **None — recordings are plain links** (a validated http(s) `videoUrl`). Bunny Stream is out of scope (`D-57`, 2026-09-27) |
-| File storage | `FileStorage` port with drivers `none` / `local` **only** — `local` in dev, `none` in prod. **No R2 driver exists in code yet** — students must upload PDF and DOCX at launch (`D-59`), so an R2 driver with presigned reads is a launch blocker (`REM-030`, `REM-082`) |
+| File storage | `FileStorage` port with drivers `none` / `local` / `r2` — `local` in dev, `none` or `r2` in prod (`local` stays refused in prod). `r2` is Cloudflare R2 via `@aws-sdk/client-s3`, a private bucket, presigned `readUrl` reads (`REM-030`, done). `.env.example` still needs its four `R2_*` vars added (`T10`). DOCX submissions remain a launch blocker (`REM-082`, open) |
 | Mail | `MailSender` port: `none` / `log` / `smtp` (nodemailer). Prod default `none` — which 503s announcements, student creation, invitations and reset, so **SMTP is required in practice** |
 | Hosting | **Hostinger VPS**, containerized. Two Dockerfiles (**still on `node:20-alpine`, EOL — `REM-011`**); `docker-compose.yml` is **development only**. Target production layout: `docs/HOSTINGER_DEPLOYMENT.md` |
 | Edge | **Cloudflare** — SSL, DNS, CDN, DDoS, WAF, caching |

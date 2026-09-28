@@ -82,17 +82,40 @@ an existing pattern in this repository and names it.
   - **Decided 2026-09-27 (`D-59`): yes — students upload PDF and DOCX.** REM-030 and REM-082 become
     launch blockers (P0).
 
-- [ ] **REM-030 — S3-compatible (Cloudflare R2) storage driver** · **P0** · `AUD-06`, `D-59`
+- [x] **REM-030 — S3-compatible (Cloudflare R2) storage driver** · **P0** · `AUD-06`, `D-59`
   - *Affected:* new `common/storage/r2-storage.service.ts` implementing the existing `FileStorage`
-    port; `env.ts` `StorageDriver` gains `'r2'` with boot-time validation of its variables (all-or-
-    nothing, like `GOOGLE_*`); `app.module`/storage module wiring; `.env.example`.
-  - *Change:* use the S3 API R2 speaks. Adding `@aws-sdk/client-s3` + `s3-request-presigner` is
-    justified (signing SigV4 by hand is the riskier choice). Private bucket; reads go through
-    **short-lived presigned GET URLs** issued only after the existing object-level check (the privacy
-    policy promises this). Keep server-minted UUID names and the MIME whitelist.
-  - *Acceptance:* unit specs on the driver against a fake; boot refuses a half-configured R2; an
-    e2e upload → submit → staff download round trip under the memory driver; one manual round trip
-    against a real R2 bucket before go-live. `CLAUDE.md` §3 storage row updated.
+    port (which grew one method, `readUrl`); `env.ts` `StorageDriver` gains `'r2'` with boot-time
+    validation of its four variables (all-or-nothing, `resolveR2Config`, like `GOOGLE_*`); `r2` is
+    allowed in production, `local` stays refused; `storage.module.ts` wiring; new
+    `common/storage/file-urls.service.ts` (`FileUrls`) converts a stored URL to a read URL at every
+    response that returns one. `.env.example` still needs the four `R2_*` vars added by hand
+    (blocked by permissions in this unit; left for `T10`).
+  - *Change:* used the S3 API R2 speaks via `@aws-sdk/client-s3` + `@aws-sdk/s3-request-presigner`
+    (the two dependencies the brief named; nothing else added). Private bucket; reads go through
+    **presigned GET URLs, 15 minutes by default** (60 for public blog media, which sits behind a
+    5-minute ISR revalidate), issued only after the existing object-level check - no new
+    authorization surface, purely a URL transform. Kept server-minted UUID names and the MIME
+    whitelist untouched.
+  - **A real constraint found while implementing, not anticipated by the plan above, and revised once
+    more after the reviewer's first pass:** a field that is both *rendered* and *echoed back verbatim
+    in a later write* (a mark's `fileUrl`, matched against `documents[].url` and resent when creating
+    one; an in-progress submission's own `fileUrl`/`files`, re-sent whole on "edit before the
+    deadline"; the announcement composer's and blog gallery editor's media; the grading form's
+    `annotatedFileUrl` text input) must keep the **stored** value under its existing name - converting
+    it in place would either break the match (a presigned URL never equals a second one signed later)
+    or silently corrupt the stored value into an expiring link the day it is resaved. But under
+    `STORAGE_DRIVER=r2` nothing serves `/uploads/*` at all (`main.ts` only mounts static for `local`),
+    so a stored-form field that is *also rendered* needs somewhere to actually fetch from. The fix
+    used throughout: keep the stored field exactly as it was and add a **companion** read field beside
+    it - `SubmissionDocument.readUrl`, `SubmissionView.fileReadUrl` / `files[].readUrl`,
+    `AnnouncementView.mediaReadUrl` - and render from the companion while still submitting the stored
+    one. The one screen with no companion at all is the blog gallery editor's staff read
+    (`getForStaff`/`listForStaff`): confirmed by reading it that it renders no image or link from
+    `media[].url` anywhere, so `mediaUrl` there stays untouched with nothing added.
+  - *Acceptance:* unit specs on the driver against a mocked S3 client (save/remove/readUrl,
+    disposition, TTL); `env.spec.ts` covers `resolveR2Config`; `FileUrls` unit spec; existing suites
+    stay green with the driver mocked as identity. No e2e or manual round trip against a real R2
+    bucket was run - the client has not provisioned one yet; do that before go-live.
 
 - [ ] **REM-082 — DOCX as a submission type** · **P0** · `D-59`
   - *Affected:* `common/storage/upload-types.ts` (add

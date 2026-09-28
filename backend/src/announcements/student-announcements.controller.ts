@@ -5,8 +5,8 @@ import type { JwtPayload } from '../auth/jwt.strategy.js';
 import {
   AnnouncementsService,
   DEFAULT_ANNOUNCEMENT_PAGE_SIZE,
+  type AnnouncementView,
 } from './announcements.service.js';
-import type { Announcement } from './interfaces/announcement-repository.interface.js';
 import { ListAnnouncementsQueryDto } from './dto/post-announcement.dto.js';
 
 /**
@@ -33,7 +33,7 @@ export class StudentAnnouncementsController {
     @Param('courseId') courseId: string,
     @Query() query: ListAnnouncementsQueryDto,
     @Request() req: { user: JwtPayload },
-  ): Promise<Announcement[]> {
+  ): Promise<AnnouncementView[]> {
     return this.announcements.listForStudent(
       courseId,
       req.user.sub,

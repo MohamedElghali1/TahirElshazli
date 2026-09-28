@@ -15,6 +15,7 @@ import { EnrollmentsModule } from '../enrollments/enrollments.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
 import { GroupsModule } from '../groups/groups.module.js';
 import { MailModule } from '../mail/mail.module.js';
+import { StorageModule } from '../common/storage/storage.module.js';
 
 /**
  * Announcements: the "make announcements" half of the client's ask.
@@ -38,6 +39,7 @@ import { MailModule } from '../mail/mail.module.js';
     NotificationsModule,
     GroupsModule,
     MailModule,
+    StorageModule,
   ],
   controllers: [
     StaffAnnouncementsController,

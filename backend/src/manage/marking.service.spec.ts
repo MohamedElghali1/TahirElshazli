@@ -32,6 +32,8 @@ import { InMemoryAuditLogRepository } from '../audit/repositories/in-memory-audi
 import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import { DATABASE_POOL } from '../database/database.tokens.js';
+import { FileUrls } from '../common/storage/file-urls.service.js';
+import { FILE_STORAGE } from '../common/storage/file-storage.interface.js';
 
 const TEACHER = { id: 'teacher-1', role: 'teacher' };
 const ADMIN = { id: 'admin-1', role: 'admin' };
@@ -105,6 +107,10 @@ describe('MarkingService', () => {
         { provide: SUBMISSION_ANNOTATION_REPOSITORY, useClass: InMemorySubmissionAnnotationRepository },
         { provide: USER_REPOSITORY, useClass: InMemoryUserRepository },
         { provide: AUDIT_LOG_REPOSITORY, useClass: InMemoryAuditLogRepository },
+        // No driver configured (`STORAGE_DRIVER=none`): `FileUrls` is then a
+        // no-op, so every assertion below keeps comparing stored URLs.
+        { provide: FILE_STORAGE, useValue: null },
+        FileUrls,
       ],
     }).compile();
     marking = module.get(MarkingService);
@@ -317,23 +323,23 @@ describe('MarkingService', () => {
       await annotations.create({ submissionId: sub.id, fileUrl: '/uploads/new.pdf', page: 2, kind: 'cross', xPercent: 1, yPercent: 1, text: '', path: null, createdBy: 'teacher-1' });
       const row = (await marking.queue(task.id, TEACHER)).rows.find((r) => r.studentId === 'student-1')!;
       expect(row).toMatchObject({ annotationCount: 1, staleAnnotationCount: 1 });
-      expect(row.documents).toEqual([{ url: '/uploads/new.pdf', kind: 'pdf', annotatable: true }]);
+      expect(row.documents).toEqual([{ url: '/uploads/new.pdf', kind: 'pdf', annotatable: true, readUrl: '/uploads/new.pdf' }]);
     });
   });
 
   describe('documentsOf', () => {
     it('marks a pasted link unannotatable and a stored image or PDF annotatable', () => {
       expect(documentsOf({ fileUrl: 'https://docs.google.com/x', files: [] })).toEqual([
-        { url: 'https://docs.google.com/x', kind: 'link', annotatable: false },
+        { url: 'https://docs.google.com/x', kind: 'link', annotatable: false, readUrl: 'https://docs.google.com/x' },
       ]);
       expect(documentsOf({ fileUrl: '/uploads/a.jpg', files: [] })).toEqual([
-        { url: '/uploads/a.jpg', kind: 'image', annotatable: true },
+        { url: '/uploads/a.jpg', kind: 'image', annotatable: true, readUrl: '/uploads/a.jpg' },
       ]);
       expect(documentsOf({ fileUrl: '/uploads/b.pdf', files: [] })).toEqual([
-        { url: '/uploads/b.pdf', kind: 'pdf', annotatable: true },
+        { url: '/uploads/b.pdf', kind: 'pdf', annotatable: true, readUrl: '/uploads/b.pdf' },
       ]);
       expect(documentsOf({ fileUrl: '/uploads/b.txt', files: [] })).toEqual([
-        { url: '/uploads/b.txt', kind: 'file', annotatable: false },
+        { url: '/uploads/b.txt', kind: 'file', annotatable: false, readUrl: '/uploads/b.txt' },
       ]);
       expect(documentsOf({ fileUrl: null, files: [] })).toEqual([]);
     });
@@ -348,8 +354,8 @@ describe('MarkingService', () => {
           ],
         }),
       ).toEqual([
-        { url: '/uploads/a.jpg', kind: 'image', annotatable: true },
-        { url: '/uploads/b.png', kind: 'image', annotatable: true },
+        { url: '/uploads/a.jpg', kind: 'image', annotatable: true, readUrl: '/uploads/a.jpg' },
+        { url: '/uploads/b.png', kind: 'image', annotatable: true, readUrl: '/uploads/b.png' },
       ]);
     });
   });

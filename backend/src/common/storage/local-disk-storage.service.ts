@@ -83,6 +83,14 @@ export class LocalDiskStorage implements FileStorage {
     }
   }
 
+  /**
+   * Already served statically from the same origin (`main.ts`), so the stored
+   * URL is already the one a browser fetches. See `FileStorage.readUrl`.
+   */
+  async readUrl(storedUrl: string): Promise<string> {
+    return storedUrl;
+  }
+
   /** Where the files live, so `main.ts` can serve them from the same path. */
   get directory(): string {
     return this.root;

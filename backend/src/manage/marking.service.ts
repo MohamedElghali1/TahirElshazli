@@ -33,8 +33,9 @@ import { DatabaseService } from '../database/database.service.js';
 import { actorRoleOf } from '../auth/actor-role.js';
 import { StaffScopeService, type StaffActor } from '../staff/staff-scope.service.js';
 import { isPlatformStored, storedMimeTypeOf } from '../common/storage/upload-types.js';
+import { FileUrls } from '../common/storage/file-urls.service.js';
 import { SubmissionAccessService, SUBMISSION_NOT_FOUND } from './submission-access.service.js';
-import { GradingService, toGradingQueueItem, type GradingQueueItem } from './grading.service.js';
+import { GradingService, toGradingQueueItem, withReadUrls, type GradingQueueItem } from './grading.service.js';
 import { ASSESSMENT_NOT_FOUND } from './assessment-authoring.service.js';
 import { submissionStatusOf, type SubmissionStatus } from '../assessments/assessments.service.js';
 
@@ -59,9 +60,18 @@ export { submissionStatusOf, type SubmissionStatus };
  * graded with a mark and feedback only.
  */
 export interface SubmissionDocument {
+  /**
+   * The **stored** form, never converted (`REM-030`). This is the identity a
+   * mark anchors on (`A-11`) and the value `createAnnotation` compares against
+   * `documentsOf` computed fresh from the stored submission - a presigned R2
+   * URL rotates every call, so using one here would make "which file is this
+   * mark on" stop matching within minutes of being drawn.
+   */
   url: string;
   kind: 'image' | 'pdf' | 'file' | 'link';
   annotatable: boolean;
+  /** The URL to actually fetch the bytes from, right now (`REM-030`). */
+  readUrl: string;
 }
 
 /**
@@ -73,12 +83,16 @@ export interface SubmissionDocument {
 export function documentsOf(s: Pick<StoredSubmission, 'fileUrl' | 'files'>): SubmissionDocument[] {
   const urls = [...s.files.map((f) => f.url), ...(s.fileUrl ? [s.fileUrl] : [])];
   return urls.map((url) => {
+    // `readUrl` defaults to the stored form here - this function has no access
+    // to `FileUrls` and is called both as a pure predicate (matching an
+    // annotation's `fileUrl`, unit tests) and to build a response. `queue()`
+    // overwrites it with the real read URL once it has one.
     if (!isPlatformStored(url)) {
-      return { url, kind: 'link', annotatable: false };
+      return { url, kind: 'link', annotatable: false, readUrl: url };
     }
     const mime = storedMimeTypeOf(url);
     const kind = mime === 'application/pdf' ? 'pdf' : mime?.startsWith('image/') ? 'image' : 'file';
-    return { url, kind, annotatable: kind !== 'file' };
+    return { url, kind, annotatable: kind !== 'file', readUrl: url };
   });
 }
 
@@ -230,6 +244,8 @@ export class MarkingService {
     private readonly audit: AuditService,
     /** `DatabaseModule` is `@Global()`; this needs no import edge. */
     private readonly db: DatabaseService,
+    /** Stored → read URLs (`REM-030`), applied where a response leaves the API. */
+    private readonly fileUrls: FileUrls,
   ) {}
 
   /**
@@ -329,6 +345,21 @@ export class MarkingService {
         staleAnnotationCount,
       };
     });
+
+    // Stored → read URLs (`REM-030`), for the whole page in one pass.
+    // `row.fileUrl` is a plain display link and converts outright. A
+    // `document.url` does NOT convert - it is the identity a mark anchors on
+    // and what `createAnnotation` compares against a fresh `documentsOf`
+    // (stored form); a presigned URL rotates every call, so converting it here
+    // would make that comparison fail within minutes. Its bytes are still
+    // fetchable, through the new `readUrl` alongside it.
+    const readUrlOf = await this.fileUrls.mapping(
+      rows.flatMap((r) => [r.fileUrl, ...r.documents.map((d) => d.url)]),
+    );
+    for (const row of rows) {
+      row.fileUrl = row.fileUrl === null ? null : (readUrlOf.get(row.fileUrl) ?? row.fileUrl);
+      row.documents = row.documents.map((d) => ({ ...d, readUrl: readUrlOf.get(d.url) ?? d.url }));
+    }
     // Arabic-safe ordering: by group, then by name.
     rows.sort(
       (a, b) => a.groupName.localeCompare(b.groupName) || a.studentName.localeCompare(b.studentName),
@@ -520,7 +551,15 @@ export class MarkingService {
     });
   }
 
-  /** One batch read for the authors' names (never a read per mark). */
+  /**
+   * One batch read for the authors' names (never a read per mark).
+   *
+   * `fileUrl` deliberately stays the **stored** form (`REM-030`) - it is the
+   * identity the marking UI matches against `documents[].url` (also stored),
+   * never a URL the client fetches bytes from directly. Converting it would
+   * make that match fail the moment an R2 signature is more than a few
+   * minutes old.
+   */
   private async withNames(annotations: StoredAnnotation[]): Promise<AnnotationView[]> {
     const authors = await this.userRepo.findByIds([...new Set(annotations.map((a) => a.createdBy))]);
     const nameOf = new Map(authors.map((u) => [u.id, u.name]));
@@ -545,7 +584,7 @@ export class MarkingService {
       }
       const student = await this.userRepo.findById(submission.studentId);
       if (submission.returnedAt !== null) {
-        return toGradingQueueItem(submission, assessment, student);
+        return (await withReadUrls([toGradingQueueItem(submission, assessment, student)], this.fileUrls))[0]!;
       }
       const returned = await this.assessmentRepo.returnSubmission(submissionId);
       if (!returned) {
@@ -562,7 +601,7 @@ export class MarkingService {
         before: { returnedAt: null },
         after: { returnedAt: returned.returnedAt, score: returned.score },
       });
-      return toGradingQueueItem(returned, assessment, student);
+      return (await withReadUrls([toGradingQueueItem(returned, assessment, student)], this.fileUrls))[0]!;
     });
   }
 }

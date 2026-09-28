@@ -16,6 +16,8 @@ import { InMemoryAuditLogRepository } from '../audit/repositories/in-memory-audi
 import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import { DATABASE_POOL } from '../database/database.tokens.js';
+import { FileUrls } from '../common/storage/file-urls.service.js';
+import { FILE_STORAGE } from '../common/storage/file-storage.interface.js';
 
 const TEACHER = { id: 'teacher-1', role: 'teacher' };
 
@@ -41,6 +43,8 @@ describe('AdminStudentsService', () => {
         { provide: MAIL_SENDER, useValue: { send: mailSend } },
         { provide: MAIL_DELIVERY_REPOSITORY, useClass: InMemoryMailDeliveryRepository },
         { provide: AUDIT_LOG_REPOSITORY, useClass: InMemoryAuditLogRepository },
+        { provide: FILE_STORAGE, useValue: null },
+        FileUrls,
       ],
     }).compile();
 

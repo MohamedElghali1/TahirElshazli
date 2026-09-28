@@ -3,6 +3,7 @@ import {
   resolveGoogleSignInConfig,
   resolveAutoSeed,
   resolveMailDriver,
+  resolveR2Config,
   resolveSmtpConfig,
   resolveStorageDriver,
 } from './env.js';
@@ -68,9 +69,49 @@ describe('resolveStorageDriver', () => {
   });
 
   it('rejects an unknown driver', () => {
-    expect(() => resolveStorageDriver('development', 'r2')).toThrow(
+    expect(() => resolveStorageDriver('development', 'dropbox')).toThrow(
       /STORAGE_DRIVER must be one of/,
     );
+  });
+
+  it('allows r2 in production, unlike local', () => {
+    expect(resolveStorageDriver('production', 'r2')).toBe('r2');
+  });
+});
+
+describe('resolveR2Config', () => {
+  const vars = {
+    R2_ACCOUNT_ID: 'acct123',
+    R2_ACCESS_KEY_ID: 'key123',
+    R2_SECRET_ACCESS_KEY: 'secret123',
+    R2_BUCKET: 'uploads',
+  };
+
+  it('returns null for a non-r2 driver, without reading any variable', () => {
+    expect(resolveR2Config('none', vars)).toBeNull();
+    expect(resolveR2Config('local', vars)).toBeNull();
+  });
+
+  it('resolves the endpoint from the account id when all four are set', () => {
+    expect(resolveR2Config('r2', vars)).toEqual({
+      accountId: 'acct123',
+      accessKeyId: 'key123',
+      secretAccessKey: 'secret123',
+      bucket: 'uploads',
+      endpoint: 'https://acct123.r2.cloudflarestorage.com',
+    });
+  });
+
+  it('throws naming every missing variable', () => {
+    expect(() => resolveR2Config('r2', {})).toThrow(
+      /R2_ACCOUNT_ID.*R2_ACCESS_KEY_ID.*R2_SECRET_ACCESS_KEY.*R2_BUCKET/,
+    );
+  });
+
+  it('throws naming only what is missing', () => {
+    expect(() =>
+      resolveR2Config('r2', { R2_ACCOUNT_ID: 'a', R2_BUCKET: 'b' }),
+    ).toThrow(/R2_ACCESS_KEY_ID.*R2_SECRET_ACCESS_KEY/);
   });
 });
 

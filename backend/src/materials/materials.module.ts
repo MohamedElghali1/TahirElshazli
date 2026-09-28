@@ -8,9 +8,10 @@ import { PostgresMaterialRepository } from './repositories/postgres-material.rep
 import { repositoryProvider } from '../database/repository.provider.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { EnrollmentsModule } from '../enrollments/enrollments.module.js';
+import { StorageModule } from '../common/storage/storage.module.js';
 
 @Module({
-  imports: [AuthModule, EnrollmentsModule],
+  imports: [AuthModule, EnrollmentsModule, StorageModule],
   controllers: [MaterialsController],
   providers: [
     MaterialsService,

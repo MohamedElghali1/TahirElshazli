@@ -40,6 +40,7 @@ import type {
   SubmissionAnnotationRepository,
 } from './interfaces/submission-annotation-repository.interface.js';
 import { SUBMISSION_ANNOTATION_REPOSITORY } from './interfaces/submission-annotation-repository.interface.js';
+import { FileUrls } from '../common/storage/file-urls.service.js';
 
 /**
  * Whether a student may see this task at all (`D-28`).
@@ -105,11 +106,20 @@ export interface AssessmentListItem {
   scorePercentage: number | null;
 }
 
+/** A submission file as the response carries it: the stored form, plus where to actually fetch it. */
+export interface SubmissionFileView extends SubmissionFile {
+  /** The URL to fetch or open the file from, right now (`REM-030`). */
+  readUrl: string;
+}
+
 export interface SubmissionView {
   id: string;
+  /** The stored form - resent verbatim on "edit before the deadline" (`D-48` (c)). */
   fileUrl: string | null;
+  /** Where to actually open/fetch `fileUrl` from, right now (`REM-030`). */
+  fileReadUrl: string | null;
   /** The uploaded files, in the student's order (`D-47`, `D-48`). */
-  files: SubmissionFile[];
+  files: SubmissionFileView[];
   answerText: string | null;
   submittedAt: string;
   lastSubmittedAt: string;
@@ -243,6 +253,8 @@ export class AssessmentsService {
     /** The marks on a returned paper (`MARK-5`). Same module (A-13). */
     @Inject(SUBMISSION_ANNOTATION_REPOSITORY)
     private readonly annotations: SubmissionAnnotationRepository,
+    /** Stored → read URLs (`REM-030`), applied where a response leaves the API. */
+    private readonly fileUrls: FileUrls,
   ) {}
 
   /**
@@ -487,19 +499,50 @@ export class AssessmentsService {
     const work = await this.describeWork(assessment, studentId);
     const hasExternalResult =
       work.kind === 'google_form' ? work.completed : false;
+    const studentAttachments = assessment.attachments.filter(
+      (a) => a.audience === 'students',
+    );
+    const returned = submission !== null && isReturnedToStudent(submission);
+    const annotations = returned
+      ? await this.annotations.findBySubmission(submission!.id)
+      : [];
+    const revisions = submission
+      ? await this.assessmentRepo.findRevisions(submission.id, studentId)
+      : [];
+
+    // Stored → read URLs (`REM-030`), one presign per distinct stored URL for
+    // the whole response.
+    //
+    // `submission.fileUrl` / `.files[].url` keep the **stored** field as-is
+    // (it is what "edit before the deadline", `D-48` (c), reads back into the
+    // resubmission form and resends unchanged - saving a presigned URL back as
+    // the stored value would expire and the file would be gone) and carry a
+    // companion `fileReadUrl` / `files[].readUrl` alongside for whatever
+    // actually renders or fetches them before the submission is returned.
+    // `annotations[].fileUrl` also stays the stored form - it is the identity
+    // `MarkedCopy` matches against `fileUrl` / `files[].url`, never a URL
+    // fetched directly - so it is not in this mapping at all.
+    const readUrlOf = await this.fileUrls.mapping([
+      submission?.fileUrl ?? null,
+      ...(submission?.files.map((f) => f.url) ?? []),
+      returned ? (submission?.annotatedFileUrl ?? null) : null,
+      ...studentAttachments.map((a) => a.url),
+      ...revisions.flatMap((r) => [r.fileUrl, ...r.files.map((f) => f.url)]),
+    ]);
+    const readUrl = (url: string | null): string | null =>
+      url === null ? null : (readUrlOf.get(url) ?? url);
+
     return {
       ...this.toListItem(assessment, submission, now, hasExternalResult),
       instructions: assessment.instructions,
       // Filtered here, on the only student read that carries attachments, and
       // mapped field by field so nothing else on the stored element travels.
-      attachments: assessment.attachments
-        .filter((a) => a.audience === 'students')
-        .map((a) => ({
-          url: a.url,
-          name: a.name,
-          mimeType: a.mimeType,
-          sizeBytes: a.sizeBytes,
-        })),
+      attachments: studentAttachments.map((a) => ({
+        url: readUrl(a.url) ?? a.url,
+        name: a.name,
+        mimeType: a.mimeType,
+        sizeBytes: a.sizeBytes,
+      })),
       availableTo: assessment.availableTo,
       allowedFileTypes: assessment.allowedFileTypes,
       maxFileSizeBytes: assessment.maxFileSizeBytes,
@@ -514,8 +557,13 @@ export class AssessmentsService {
       submission: submission
         ? {
             id: submission.id,
+            // Stored form, resent verbatim on resubmission; see `readUrlOf`.
             fileUrl: submission.fileUrl,
-            files: submission.files,
+            fileReadUrl: readUrl(submission.fileUrl),
+            files: submission.files.map((f) => ({
+              ...f,
+              readUrl: readUrl(f.url) ?? f.url,
+            })),
             answerText: submission.answerText,
             submittedAt: submission.submittedAt,
             lastSubmittedAt: submission.lastSubmittedAt,
@@ -527,28 +575,33 @@ export class AssessmentsService {
             correctedAt: submission.correctedAt,
             feedback: isReturnedToStudent(submission) ? submission.feedback : null,
             annotatedFileUrl: isReturnedToStudent(submission)
-              ? submission.annotatedFileUrl
+              ? readUrl(submission.annotatedFileUrl)
               : null,
             returnedAt: submission.returnedAt,
             // Only this student's own submission (resolved from the token,
             // never from a submission id), and only once returned. Mapped
             // field by field so `createdBy` can never travel.
-            annotations: isReturnedToStudent(submission)
-              ? (await this.annotations.findBySubmission(submission.id)).map((a) => ({
-                  id: a.id,
-                  fileUrl: a.fileUrl,
-                  page: a.page,
-                  kind: a.kind,
-                  xPercent: a.xPercent,
-                  yPercent: a.yPercent,
-                  text: a.text,
-                  path: a.path,
-                }))
-              : [],
-            revisions: await this.assessmentRepo.findRevisions(
-              submission.id,
-              studentId,
-            ),
+            //
+            // `fileUrl` stays the **stored** form (`REM-030`) - it is the
+            // identity `MarkedCopy` matches against `submission.fileUrl` /
+            // `.files[].url` (also stored), never a URL fetched directly.
+            annotations: annotations.map((a) => ({
+              id: a.id,
+              fileUrl: a.fileUrl,
+              page: a.page,
+              kind: a.kind,
+              xPercent: a.xPercent,
+              yPercent: a.yPercent,
+              text: a.text,
+              path: a.path,
+            })),
+            // Superseded content, immutable and never resubmitted - safe to
+            // convert unconditionally, unlike the current `fileUrl`/`files`.
+            revisions: revisions.map((r) => ({
+              ...r,
+              fileUrl: readUrl(r.fileUrl),
+              files: r.files.map((f) => ({ ...f, url: readUrl(f.url) ?? f.url })),
+            })),
           }
         : null,
     };

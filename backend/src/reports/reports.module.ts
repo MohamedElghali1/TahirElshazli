@@ -10,9 +10,10 @@ import { AssessmentsModule } from '../assessments/assessments.module.js';
 import { CoursesModule } from '../courses/courses.module.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { EnrollmentsModule } from '../enrollments/enrollments.module.js';
+import { StorageModule } from '../common/storage/storage.module.js';
 
 @Module({
-  imports: [AuthModule, EnrollmentsModule, AssessmentsModule, CoursesModule],
+  imports: [AuthModule, EnrollmentsModule, AssessmentsModule, CoursesModule, StorageModule],
   controllers: [ReportsController],
   providers: [
     ReportsService,

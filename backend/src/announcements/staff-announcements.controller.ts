@@ -17,8 +17,8 @@ import type { JwtPayload } from '../auth/jwt.strategy.js';
 import {
   AnnouncementsService,
   DEFAULT_ANNOUNCEMENT_PAGE_SIZE,
+  type AnnouncementView,
 } from './announcements.service.js';
-import type { Announcement } from './interfaces/announcement-repository.interface.js';
 import {
   ListAnnouncementsQueryDto,
   PostCourseAnnouncementDto,
@@ -47,7 +47,7 @@ export class StaffAnnouncementsController {
     @Param('courseId') courseId: string,
     @Query() query: ListAnnouncementsQueryDto,
     @Request() req: { user: JwtPayload },
-  ): Promise<Announcement[]> {
+  ): Promise<AnnouncementView[]> {
     return this.announcements.listForCourse(
       courseId,
       this.actor(req),
@@ -63,7 +63,7 @@ export class StaffAnnouncementsController {
     @Param('courseId') courseId: string,
     @Body() body: PostCourseAnnouncementDto,
     @Request() req: { user: JwtPayload },
-  ): Promise<Announcement> {
+  ): Promise<AnnouncementView> {
     return this.announcements.postToCourse(courseId, this.actor(req), {
       title: body.title,
       body: body.body,
@@ -77,7 +77,7 @@ export class StaffAnnouncementsController {
     @Param('id') id: string,
     @Body() body: PatchAnnouncementDraftDto,
     @Request() req: { user: JwtPayload },
-  ): Promise<Announcement> {
+  ): Promise<AnnouncementView> {
     return this.announcements.updateDraft(id, this.actor(req), body);
   }
 
@@ -97,7 +97,7 @@ export class StaffAnnouncementsController {
     @Param('groupId') groupId: string,
     @Query() query: ListAnnouncementsQueryDto,
     @Request() req: { user: JwtPayload },
-  ): Promise<Announcement[]> {
+  ): Promise<AnnouncementView[]> {
     return this.announcements.listForGroup(
       groupId,
       this.actor(req),
@@ -113,7 +113,7 @@ export class StaffAnnouncementsController {
     @Param('groupId') groupId: string,
     @Body() body: PostCourseAnnouncementDto,
     @Request() req: { user: JwtPayload },
-  ): Promise<Announcement> {
+  ): Promise<AnnouncementView> {
     return this.announcements.postToGroup(groupId, this.actor(req), {
       title: body.title,
       body: body.body,
@@ -127,7 +127,7 @@ export class StaffAnnouncementsController {
     @Param('id') id: string,
     @Body() body: PatchAnnouncementDraftDto,
     @Request() req: { user: JwtPayload },
-  ): Promise<Announcement> {
+  ): Promise<AnnouncementView> {
     return this.announcements.updateDraft(id, this.actor(req), body);
   }
 

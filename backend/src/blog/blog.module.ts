@@ -8,6 +8,7 @@ import { InMemoryBlogRepository } from './repositories/in-memory-blog.repository
 import { PostgresBlogRepository } from './repositories/postgres-blog.repository.js';
 import { repositoryProvider } from '../database/repository.provider.js';
 import { AuthModule } from '../auth/auth.module.js';
+import { StorageModule } from '../common/storage/storage.module.js';
 
 /**
  * The blog: Dr. Tahir's achievements, authored by staff and read by students
@@ -27,7 +28,7 @@ import { AuthModule } from '../auth/auth.module.js';
  * via the global `DatabaseModule`.
  */
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, StorageModule],
   controllers: [StaffBlogController, PublicBlogController],
   providers: [
     BlogService,

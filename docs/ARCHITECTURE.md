@@ -119,9 +119,31 @@ behaviour must not change** — the nine callers and the anti-enumeration proper
 them, and `staff-scope.service.spec.ts` is the contract.
 
 ### 2.5 Config ports with honest degradation
-`FileStorage` (`STORAGE_DRIVER=none|local`) and the Google integration (`GOOGLE_DRIVER=none|google`)
-both: resolve once at wiring time, validate at boot, **refuse unsafe combinations in production**,
-and degrade to an explicit 503 with a usable alternative rather than silently doing nothing.
+`FileStorage` (`STORAGE_DRIVER=none|local|r2` — `r2` is Cloudflare R2, `REM-030`) and the Google
+integration (`GOOGLE_DRIVER=none|google`) both: resolve once at wiring time, validate at boot,
+**refuse unsafe combinations in production**, and degrade to an explicit 503 with a usable
+alternative rather than silently doing nothing.
+
+`FileStorage.readUrl(storedUrl, ttlSeconds?)` is the one method added for R2: the stored form a
+`save()` returns and a DB row keeps never changes, but a private bucket's object is not itself
+fetchable, so every service that returns a stored URL in a response converts it through
+`common/storage/file-urls.service.ts` (`FileUrls`, injectable, a no-op when storage is null) at the
+point the response is built — never ad hoc per call site.
+
+The one thing that conversion must not do: overwrite a field a client reads back and resubmits
+unchanged (a mark's `fileUrl`, matched against `documents[].url` and resent when creating one; an
+in-progress submission's own `fileUrl`/`files`, re-sent whole on "edit before the deadline"; the
+announcement composer's and the blog gallery editor's media, resubmitted verbatim on every save; the
+grading form's `annotatedFileUrl`) — a presigned URL saved back as the stored value expires and the
+file is gone. Those fields keep the **stored** value under their existing name and carry a **companion** read
+field alongside it for whatever actually renders or fetches the bytes: `SubmissionDocument.readUrl`,
+`SubmissionView.fileReadUrl` / `files[].readUrl`, `AnnouncementView.mediaReadUrl` (present on every
+announcement read, staff and student alike — the composer previews an existing draft's media from
+it). The blog gallery editor's staff reads (`getForStaff`/`listForStaff`) are the one exception that
+stay fully unconverted with **no** companion field at all, because that screen renders no image or
+link from `media[].url` anywhere - confirmed by reading it, not assumed. Check the actual render
+before deciding a field needs a companion or can stay bare, and re-check if a screen gains a preview
+later.
 
 `MailSender` is built to this exact shape. Nothing else.
 

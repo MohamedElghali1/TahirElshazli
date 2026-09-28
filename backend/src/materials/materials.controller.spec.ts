@@ -8,6 +8,8 @@ import { RolesGuard } from '../auth/roles.guard.js';
 import { EnrollmentsService } from '../enrollments/enrollments.service.js';
 import { ENROLLMENT_REPOSITORY } from '../enrollments/interfaces/enrollment-repository.interface.js';
 import { InMemoryEnrollmentRepository } from '../enrollments/repositories/in-memory-enrollment.repository.js';
+import { FileUrls } from '../common/storage/file-urls.service.js';
+import { FILE_STORAGE } from '../common/storage/file-storage.interface.js';
 
 const STUDENT = {
   user: { sub: 'student-1', email: 'student@example.com', role: 'student', jti: 'j1' },
@@ -24,6 +26,8 @@ describe('MaterialsController', () => {
         { provide: ENROLLMENT_REPOSITORY, useClass: InMemoryEnrollmentRepository },
         MaterialsService,
         { provide: MATERIAL_REPOSITORY, useClass: InMemoryMaterialRepository },
+        { provide: FILE_STORAGE, useValue: null },
+        FileUrls,
       ],
     })
       .overrideGuard(JwtAuthGuard)

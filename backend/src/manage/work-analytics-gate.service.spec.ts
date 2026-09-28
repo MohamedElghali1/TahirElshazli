@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'node:crypto';
 import { NotFoundException } from '@nestjs/common';
 import { UploadsService } from '../common/storage/uploads.service.js';
+import { FileUrls } from '../common/storage/file-urls.service.js';
 import { FILE_STORAGE } from '../common/storage/file-storage.interface.js';
 import { TASK_DRAFT_REPOSITORY } from './interfaces/task-draft-repository.interface.js';
 import { InMemoryTaskDraftRepository } from './repositories/in-memory-task-draft.repository.js';
@@ -64,6 +65,7 @@ describe('WorkAnalyticsGateService (AUTH-6)', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UploadsService,
+        FileUrls,
         {
           provide: FILE_STORAGE,
           useValue: {
@@ -73,6 +75,7 @@ describe('WorkAnalyticsGateService (AUTH-6)', () => {
               mimeType: i.mimeType,
             }),
             remove: async () => true,
+            readUrl: async (url: string) => url,
           },
         },
         AssessmentAuthoringService,

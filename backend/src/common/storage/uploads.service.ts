@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import type { FileStorage, StoredFile } from './file-storage.interface.js';
 import { FILE_STORAGE } from './file-storage.interface.js';
+import { FileUrls } from './file-urls.service.js';
 import {
   ALLOWED_UPLOAD_MIME_TYPES,
   ALLOWED_UPLOAD_TYPES,
@@ -42,6 +43,13 @@ export interface UploadRules {
 export interface UploadResult extends StoredFile {
   /** What it is, decided from the validated MIME type - see `UploadKind`. */
   kind: UploadKind;
+  /**
+   * The URL to fetch the file back from, right now (`REM-030`). Alongside
+   * `url` - the stored form every DTO and DB row keeps - so the authoring UI
+   * can preview what it just uploaded without a second round trip, even
+   * behind a private R2 bucket where `url` itself is not fetchable.
+   */
+  readUrl: string;
 }
 
 /**
@@ -57,6 +65,7 @@ export interface UploadResult extends StoredFile {
 export class UploadsService {
   constructor(
     @Inject(FILE_STORAGE) private readonly storage: FileStorage | null,
+    private readonly fileUrls: FileUrls,
   ) {}
 
   async store(file: UploadedFileLike | undefined, rules?: UploadRules): Promise<UploadResult> {
@@ -109,7 +118,11 @@ export class UploadsService {
       mimeType: file.mimetype.toLowerCase(),
       extension: type.extension,
     });
-    return { ...stored, kind: type.kind };
+    return {
+      ...stored,
+      kind: type.kind,
+      readUrl: await this.fileUrls.forRead(stored.url),
+    };
   }
 
   /**

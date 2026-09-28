@@ -3621,7 +3621,7 @@ describe('Staff and admin API (e2e)', () => {
         .send({ files: [c] }).expect(201);
       const detail = await request(server()).get(`/assessments/${photoTask}`).set(bearer(studentToken)).expect(200);
       expect(detail.body.work.submissionModes).toEqual(['photo_upload']);
-      expect(detail.body.submission.files).toEqual([{ url: c, mimeType: 'image/png' }]);
+      expect(detail.body.submission.files).toEqual([{ url: c, mimeType: 'image/png', readUrl: c }]);
       expect(detail.body.submission.revisions.at(-1).files).toHaveLength(2);
     });
 

@@ -508,12 +508,19 @@ function Marking({ assessment }: { assessment: AssessmentDetail }) {
         </p>
       )}
 
-      {/* Each file of the hand-in that carries marks, in order (`D-47`). */}
-      {[...submission.files.map((f) => f.url), ...(submission.fileUrl ? [submission.fileUrl] : [])]
-        .filter((url) => submission.annotations.some((a) => a.fileUrl === url))
-        .map((url) => (
-          <div key={url} className="mt-4 border-t border-border-light pt-4">
-            <MarkedCopy fileUrl={url} annotations={submission.annotations} />
+      {/* Each file of the hand-in that carries marks, in order (`D-47`). `url`
+          is the stored form marks anchor on; `readUrl` is where to actually
+          fetch it from (`REM-030`). */}
+      {[
+        ...submission.files.map((f) => ({ url: f.url, readUrl: f.readUrl })),
+        ...(submission.fileUrl
+          ? [{ url: submission.fileUrl, readUrl: submission.fileReadUrl ?? submission.fileUrl }]
+          : []),
+      ]
+        .filter((doc) => submission.annotations.some((a) => a.fileUrl === doc.url))
+        .map((doc) => (
+          <div key={doc.url} className="mt-4 border-t border-border-light pt-4">
+            <MarkedCopy fileUrl={doc.url} readUrl={doc.readUrl} annotations={submission.annotations} />
           </div>
         ))}
 

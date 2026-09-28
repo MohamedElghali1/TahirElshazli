@@ -1,5 +1,6 @@
 import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { UploadsService } from './uploads.service.js';
+import { FileUrls } from './file-urls.service.js';
 import type { FileStorage, SaveFileInput } from './file-storage.interface.js';
 import { ALLOWED_UPLOAD_TYPES } from './upload-types.js';
 
@@ -16,6 +17,7 @@ describe('UploadsService: the whitelist', () => {
       return { url: `/uploads/x.${input.extension}`, sizeBytes: input.bytes.byteLength, mimeType: input.mimeType };
     },
     remove: async () => true,
+    readUrl: async (url) => url,
   };
   const file = (mimetype: string) => ({ buffer: Buffer.from('abc'), mimetype, size: 3 });
 
@@ -23,7 +25,7 @@ describe('UploadsService: the whitelist', () => {
     ['audio/mpeg', 'mp3'],
     ['audio/mp4', 'm4a'],
   ])('accepts %s as audio, stored under a server-chosen .%s', async (mime, extension) => {
-    const result = await new UploadsService(storage).store(file(mime));
+    const result = await new UploadsService(storage, new FileUrls(storage)).store(file(mime));
     expect(result.kind).toBe('audio');
     expect(saved.at(-1)?.extension).toBe(extension);
     expect(result.url.endsWith(`.${extension}`)).toBe(true);
@@ -32,7 +34,7 @@ describe('UploadsService: the whitelist', () => {
   it.each(['image/svg+xml', 'text/html', 'application/javascript', 'audio/x-wav', 'application/octet-stream'])(
     'still refuses %s',
     async (mime) => {
-      await expect(new UploadsService(storage).store(file(mime))).rejects.toBeInstanceOf(
+      await expect(new UploadsService(storage, new FileUrls(storage)).store(file(mime))).rejects.toBeInstanceOf(
         BadRequestException,
       );
     },
@@ -45,7 +47,7 @@ describe('UploadsService: the whitelist', () => {
   });
 
   it('is an honest 503 when no storage driver is configured', async () => {
-    await expect(new UploadsService(null).store(file('audio/mpeg'))).rejects.toBeInstanceOf(
+    await expect(new UploadsService(null, new FileUrls(null)).store(file('audio/mpeg'))).rejects.toBeInstanceOf(
       ServiceUnavailableException,
     );
   });

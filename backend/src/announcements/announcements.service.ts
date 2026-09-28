@@ -33,6 +33,7 @@ import {
   type AnnouncementAudience,
 } from './announcement-audience.js';
 import { isUnscopedStaffRole } from '../auth/staff-roles.js';
+import { FileUrls } from '../common/storage/file-urls.service.js';
 
 export interface AnnouncementContent {
   title: string;
@@ -50,8 +51,23 @@ export interface AnnouncementDelivery {
   failed: number;
 }
 
+/**
+ * An announcement as every response actually carries it (`REM-030`).
+ *
+ * `mediaUrl` stays the **stored** form on every read, staff and student alike:
+ * the composer (`announcements/page.tsx`) reads an existing draft's `mediaUrl`
+ * into the same field it resubmits on save, unchanged, whenever the media
+ * itself was not touched - a presigned URL saved back as the stored value
+ * would expire and break the attachment permanently. `mediaReadUrl` is the
+ * companion for whatever actually renders it (the composer's own preview, the
+ * published view a student sees).
+ */
+export interface AnnouncementView extends Announcement {
+  mediaReadUrl: string | null;
+}
+
 /** publish()'s response: the announcement plus how the mail fan-out went. */
-export type PublishedAnnouncement = Announcement & { delivery: AnnouncementDelivery };
+export type PublishedAnnouncement = AnnouncementView & { delivery: AnnouncementDelivery };
 
 @Injectable()
 export class AnnouncementsService {
@@ -68,13 +84,28 @@ export class AnnouncementsService {
     private readonly mail: MailService,
     private readonly audit: AuditService,
     private readonly db: DatabaseService,
+    /** Stored → read URLs (`REM-030`), applied where a response leaves the API. */
+    private readonly fileUrls: FileUrls,
   ) {}
+
+  /** See `AnnouncementView`: `mediaUrl` untouched, `mediaReadUrl` added. */
+  private async withReadMedia(a: Announcement): Promise<AnnouncementView> {
+    return { ...a, mediaReadUrl: await this.fileUrls.forRead(a.mediaUrl) };
+  }
+
+  private async withReadMediaAll(list: Announcement[]): Promise<AnnouncementView[]> {
+    const readUrlOf = await this.fileUrls.mapping(list.map((a) => a.mediaUrl));
+    return list.map((a) => ({
+      ...a,
+      mediaReadUrl: a.mediaUrl === null ? null : (readUrlOf.get(a.mediaUrl) ?? a.mediaUrl),
+    }));
+  }
 
   async createDraft(
     audience: AnnouncementAudience,
     actor: StaffActor,
     content: AnnouncementContent,
-  ): Promise<Announcement> {
+  ): Promise<AnnouncementView> {
     return this.db.runInTransaction(async () => {
       const announcement = await this.announcementRepo.create({
         audienceType: audience.type,
@@ -102,28 +133,28 @@ export class AnnouncementsService {
         },
       });
 
-      return announcement;
+      return this.withReadMedia(announcement);
     });
   }
 
-  async postToCourse(courseId: string, actor: StaffActor, content: AnnouncementContent): Promise<Announcement> {
+  async postToCourse(courseId: string, actor: StaffActor, content: AnnouncementContent): Promise<AnnouncementView> {
     await this.scope.assertAssigned(courseId, actor);
     return this.createDraft({ type: 'course', courseId, groupId: null }, actor, content);
   }
 
-  async postToGroup(groupId: string, actor: StaffActor, content: AnnouncementContent): Promise<Announcement> {
+  async postToGroup(groupId: string, actor: StaffActor, content: AnnouncementContent): Promise<AnnouncementView> {
     const canReach = await this.scope.mayReachGroup(groupId, actor);
     if (!canReach) throw new NotFoundException(GROUP_NOT_FOUND);
     return this.createDraft({ type: 'group', courseId: null, groupId }, actor, content);
   }
 
-  async post(actor: StaffActor, rawAudience: string, content: AnnouncementContent): Promise<Announcement> {
+  async post(actor: StaffActor, rawAudience: string, content: AnnouncementContent): Promise<AnnouncementView> {
     const audience = parseAudience(rawAudience);
     if (!audience) throw new BadRequestException('Unrecognised audience');
     return this.createDraft(audience, actor, content);
   }
 
-  async updateDraft(id: string, actor: StaffActor, patch: Partial<AnnouncementContent> & { audience?: string }): Promise<Announcement> {
+  async updateDraft(id: string, actor: StaffActor, patch: Partial<AnnouncementContent> & { audience?: string }): Promise<AnnouncementView> {
     return this.db.runInTransaction(async () => {
       const existing = await this.announcementRepo.findById(id);
       if (!existing) throw new NotFoundException('Announcement not found');
@@ -177,7 +208,7 @@ export class AnnouncementsService {
         after: { title: updated.title, audience: updated.audience },
       });
 
-      return updated;
+      return this.withReadMedia(updated);
     });
   }
 
@@ -283,7 +314,8 @@ export class AnnouncementsService {
         },
       });
 
-      return { ...published, delivery: { emailed, failed } };
+      const withMedia = await this.withReadMedia(published);
+      return { ...withMedia, delivery: { emailed, failed } };
     });
   }
 
@@ -325,24 +357,24 @@ export class AnnouncementsService {
     return { reach: recipientIds.length };
   }
 
-  async listForCourse(courseId: string, actor: StaffActor, limit: number, offset: number, status?: 'draft' | 'published'): Promise<Announcement[]> {
+  async listForCourse(courseId: string, actor: StaffActor, limit: number, offset: number, status?: 'draft' | 'published'): Promise<AnnouncementView[]> {
     await this.scope.assertAssigned(courseId, actor);
-    return this.announcementRepo.findByCourse(courseId, limit, offset, status);
+    return this.withReadMediaAll(await this.announcementRepo.findByCourse(courseId, limit, offset, status));
   }
 
-  async listForGroup(groupId: string, actor: StaffActor, limit: number, offset: number, status?: 'draft' | 'published'): Promise<Announcement[]> {
+  async listForGroup(groupId: string, actor: StaffActor, limit: number, offset: number, status?: 'draft' | 'published'): Promise<AnnouncementView[]> {
     const canReach = await this.scope.mayReachGroup(groupId, actor);
     if (!canReach) throw new NotFoundException(GROUP_NOT_FOUND);
-    return this.announcementRepo.findByGroup(groupId, limit, offset, status);
+    return this.withReadMediaAll(await this.announcementRepo.findByGroup(groupId, limit, offset, status));
   }
 
-  async listAll(limit: number, offset: number, status?: 'draft' | 'published'): Promise<Announcement[]> {
-    return this.announcementRepo.findAll(limit, offset, status);
+  async listAll(limit: number, offset: number, status?: 'draft' | 'published'): Promise<AnnouncementView[]> {
+    return this.withReadMediaAll(await this.announcementRepo.findAll(limit, offset, status));
   }
 
-  async listForStudent(courseId: string, studentId: string, limit: number, offset: number): Promise<Announcement[]> {
+  async listForStudent(courseId: string, studentId: string, limit: number, offset: number): Promise<AnnouncementView[]> {
     const enrollment = await this.enrollmentRepo.find(courseId, studentId);
     if (!enrollment) throw new NotFoundException('Course not found or student not enrolled');
-    return this.announcementRepo.findByCourse(courseId, limit, offset, 'published');
+    return this.withReadMediaAll(await this.announcementRepo.findByCourse(courseId, limit, offset, 'published'));
   }
 }

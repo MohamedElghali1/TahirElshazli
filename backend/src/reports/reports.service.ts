@@ -9,6 +9,7 @@ import type { AssessmentPerformanceEntry } from '../assessments/assessments.serv
 import { CoursesService } from '../courses/courses.service.js';
 import type { CourseProgress } from '../courses/courses.service.js';
 import { EnrollmentsService } from '../enrollments/enrollments.service.js';
+import { FileUrls } from '../common/storage/file-urls.service.js';
 
 /** At or above this percentage a topic counts as a strong area. */
 const STRONG_AREA_THRESHOLD = 75;
@@ -54,6 +55,7 @@ export class ReportsService {
     private readonly assessmentsService: AssessmentsService,
     private readonly coursesService: CoursesService,
     private readonly enrollmentsService: EnrollmentsService,
+    private readonly fileUrls: FileUrls,
   ) {}
 
   private averagePercentage(
@@ -179,12 +181,20 @@ export class ReportsService {
     };
   }
 
+  /**
+   * `fileUrl` is upload-backed, like everything else on this platform that
+   * names a file, and converts to a read URL (`REM-030`) - always safe here:
+   * a report document has no authoring flow yet, so nothing ever reads it
+   * back and resubmits it.
+   */
   async getDocuments(
     courseId: string,
     studentId: string,
   ): Promise<ReportDocument[]> {
     await this.enrollmentsService.assertEnrolled(courseId, studentId);
-    return this.reportRepo.findDocuments(courseId, studentId);
+    const documents = await this.reportRepo.findDocuments(courseId, studentId);
+    const readUrlOf = await this.fileUrls.mapping(documents.map((d) => d.fileUrl));
+    return documents.map((d) => ({ ...d, fileUrl: readUrlOf.get(d.fileUrl) ?? d.fileUrl }));
   }
 
   async getDocument(
@@ -201,6 +211,6 @@ export class ReportsService {
     // The report is the student's own, but the course it covers still has to be
     // one they hold - an enrollment can be revoked after a report is generated.
     await this.enrollmentsService.assertEnrolled(document.courseId, studentId);
-    return document;
+    return { ...document, fileUrl: await this.fileUrls.forRead(document.fileUrl) };
   }
 }

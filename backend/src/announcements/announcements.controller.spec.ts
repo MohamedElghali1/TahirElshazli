@@ -30,6 +30,8 @@ import { MAIL_SENDER, type MailSender } from '../mail/mail-sender.interface.js';
 import { MAIL_DELIVERY_REPOSITORY, type MailDeliveryRepository } from '../mail/mail-delivery.repository.js';
 import { parseAudience, encodeAudience, AUDIENCE_PATTERN } from './announcement-audience.js';
 import type { PostCourseAnnouncementDto } from './dto/post-announcement.dto.js';
+import { FileUrls } from '../common/storage/file-urls.service.js';
+import { FILE_STORAGE } from '../common/storage/file-storage.interface.js';
 
 const ASSIGNED_TA = { user: { sub: 'assistant-1', email: 'a1@example.com', role: 'assistant', jti: 'j1' } };
 const UNASSIGNED_TA = { user: { sub: 'assistant-2', email: 'a2@example.com', role: 'assistant', jti: 'j2' } };
@@ -66,6 +68,8 @@ describe('Announcements Unit & Integration', () => {
         { provide: NOTIFICATION_REPOSITORY, useClass: InMemoryNotificationRepository },
         { provide: AUDIT_LOG_REPOSITORY, useClass: InMemoryAuditLogRepository },
         { provide: MailService, useValue: { send: vi.fn() } },
+        { provide: FILE_STORAGE, useValue: null },
+        FileUrls,
       ],
     }).compile();
 
@@ -486,6 +490,8 @@ describe('Announcements Unit & Integration', () => {
           { provide: USER_REPOSITORY, useClass: InMemoryUserRepository },
           { provide: NOTIFICATION_REPOSITORY, useClass: InMemoryNotificationRepository },
           { provide: AUDIT_LOG_REPOSITORY, useClass: InMemoryAuditLogRepository },
+          { provide: FILE_STORAGE, useValue: null },
+          FileUrls,
         ],
       }).compile();
       return {

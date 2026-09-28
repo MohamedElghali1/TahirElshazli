@@ -463,6 +463,13 @@ function ComposeAnnouncementForm({
     initialAnnouncement?.mediaKind ?? ''
   );
   const [mediaUrl, setMediaUrl] = useState(initialAnnouncement?.mediaUrl ?? '');
+  // The stored form's preview - `readUrl` where it can differ (platform-stored
+  // media behind a private R2 bucket, `REM-030`), the same value otherwise
+  // (an external link is already fetchable). Never sent to the API: only
+  // `mediaUrl` is submitted.
+  const [mediaReadUrl, setMediaReadUrl] = useState(
+    initialAnnouncement?.mediaReadUrl ?? initialAnnouncement?.mediaUrl ?? '',
+  );
 
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -486,6 +493,7 @@ function ComposeAnnouncementForm({
     try {
       const res = await api.staff.upload(token, file);
       setMediaUrl(res.url);
+      setMediaReadUrl(res.readUrl);
       if (!mediaKind || mediaKind === 'youtube') {
         if (res.kind === 'image') setMediaKind('image');
         else if (res.kind === 'video') setMediaKind('video');
@@ -667,7 +675,10 @@ function ComposeAnnouncementForm({
             onChange={(e) => {
               const k = e.target.value as 'image' | 'video' | 'youtube' | 'file' | '';
               setMediaKind(k);
-              if (!k) setMediaUrl('');
+              if (!k) {
+                setMediaUrl('');
+                setMediaReadUrl('');
+              }
             }}
             options={[
               { value: '', label: 'None' },
@@ -682,7 +693,12 @@ function ComposeAnnouncementForm({
             <TextInput
               label="YouTube video URL"
               value={mediaUrl}
-              onChange={(e) => setMediaUrl(e.target.value)}
+              onChange={(e) => {
+                // A pasted URL is always external - already fetchable, so the
+                // preview reads it directly (never platform-stored).
+                setMediaUrl(e.target.value);
+                setMediaReadUrl(e.target.value);
+              }}
               placeholder="https://www.youtube.com/watch?v=..."
               hint="Paste a public YouTube video URL"
             />
@@ -695,7 +711,13 @@ function ComposeAnnouncementForm({
                   <TextInput
                     label="Media URL or path"
                     value={mediaUrl}
-                    onChange={(e) => setMediaUrl(e.target.value)}
+                    onChange={(e) => {
+                      // A hand-typed value is an external link, already
+                      // fetchable - unlike a stored `/uploads/...` path, which
+                      // only ever arrives via upload or an existing draft.
+                      setMediaUrl(e.target.value);
+                      setMediaReadUrl(e.target.value);
+                    }}
                     placeholder="Upload a file or enter URL"
                     hint="Upload a file or enter an http(s) URL"
                   />
@@ -798,7 +820,7 @@ function ComposeAnnouncementForm({
               {mediaKind === 'image' && (
                 /* eslint-disable-next-line @next/next/no-img-element */
                 <img
-                  src={mediaSrc(mediaUrl.trim())}
+                  src={mediaSrc(mediaReadUrl.trim() || mediaUrl.trim())}
                   alt={title || 'Announcement media'}
                   className="max-h-[320px] w-full rounded-lg border border-border object-cover"
                 />
@@ -806,7 +828,7 @@ function ComposeAnnouncementForm({
               {mediaKind === 'video' && (
                 <video
                   controls
-                  src={mediaSrc(mediaUrl.trim())}
+                  src={mediaSrc(mediaReadUrl.trim() || mediaUrl.trim())}
                   className="max-h-[320px] w-full rounded-lg border border-border"
                 />
               )}
@@ -842,7 +864,7 @@ function ComposeAnnouncementForm({
                     </span>
                   </div>
                   <a
-                    href={mediaSrc(mediaUrl.trim())}
+                    href={mediaSrc(mediaReadUrl.trim() || mediaUrl.trim())}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="font-medium text-accent hover:underline"

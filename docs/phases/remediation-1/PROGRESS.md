@@ -17,7 +17,7 @@ weekly reports (`REM-031`, post-launch).
 | T2b | D-65 one group per student per course (move replaces membership) | reviewed + committed | (this commit) |
 | T3 | REM-005 announcement publish not all-or-nothing on mail | reviewed + committed | (this commit) |
 | T4 | REM-007 classroom-safe rate limits | reviewed + committed | (this commit) |
-| T5 | REM-030 Cloudflare R2 storage driver | queued | |
+| T5 | REM-030 Cloudflare R2 storage driver | reviewed + committed | (this commit) |
 | T6 | REM-082 DOCX submissions | queued | |
 | T7 | REM-080a Google Form CSV import + analytics (backend) | queued | |
 | T8 | REM-080b CSV import + analytics (frontend) | queued | |
@@ -105,3 +105,24 @@ models inside agy alike. By the user's choice, remaining tasks go to the `unit-i
   integration 192/192; both builds; tsc 0. (The first gate run was reaped for low memory.)
 - Lead's live check (production API): 30 distinct emails from one IP → 30×401, no 429; a real
   login right after → 200; 6 wrong attempts on one account → 401×5 then 429. **PASS.**
+
+### T5 — REM-030 Cloudflare R2 storage driver
+- `unit-implementer`: `R2Storage` (private bucket, `@aws-sdk/client-s3` + `s3-request-presigner`, the
+  only new dependencies); port gains `readUrl`; `FileUrls` helper converts stored → presigned (15 min,
+  60 min for public blog media ≥ 2× the ISR window). Stored values unchanged — no migration.
+- Lead's review sent it back once: under `r2` nothing serves `/uploads/*`, so any screen rendering a
+  stored-form URL breaks. Fixed with companion read fields where the stored form must be echoed back
+  (`SubmissionDocument.readUrl`, `SubmissionView.fileReadUrl` + `files[].readUrl`,
+  `AnnouncementView.mediaReadUrl`); report documents were a further gap, converted. The minute-rounded
+  signing trick was removed.
+- **For T10 / `CLOUDFLARE_SETUP.md`:** the browser fetches presigned URLs by script in one place,
+  `components/marking/use-file-bytes.ts` (pdf.js/canvas on the marking and marked-copy views) → the
+  bucket needs a CORS rule allowing GET from the site origin. CSP must allow the R2 endpoint in
+  `connect-src`, `img-src`, `media-src`. `.env.example` could not be edited by the subagent (permission
+  block) — add `R2_*` in T10.
+- Lead's gates: lint 0 errors; drift ok; unit 866/53; e2e 411 across 5 files first try; integration
+  192/192; both builds (the frontend build was reaped for low memory once, re-run alone: compiled);
+  both tsc 0.
+- Lead's live boot check (production mode): `r2` missing two vars → refuses naming both; `local` →
+  refused; `r2` with all four → boots, health 200, secret absent from the log. No real bucket
+  reachable, so a real upload/presigned-read round trip is still owed (go-live step).
