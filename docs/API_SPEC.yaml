@@ -236,7 +236,7 @@ components:
     # `GET /staff/tasks`.
     StaffTaskStatus:  { type: string, enum: [open, marking, marked, closed] }
     # How a student may hand the work in (`D-31`). Multi-file is unit 7's.
-    SubmissionMode:   { type: string, enum: [pdf_upload, doc_link, photo_upload] }
+    SubmissionMode:   { type: string, enum: [pdf_upload, docx_upload, doc_link, photo_upload] }
     WorkType:         { type: string, enum: [file_upload, link, google_form] }
     AssessmentType:   { type: string, enum: [homework, assignment, quiz] }
     ReportStatus:     { type: string, enum: [new, under_review, reviewed, sent] }
@@ -659,7 +659,7 @@ components:
         availableTo:   { type: string, format: date-time }
         dueAt:         { type: string, format: date-time }
         maxScore:      { type: integer, minimum: 1, maximum: 1000 }
-        allowedFileTypes: { type: array, minItems: 1, maxItems: 20, items: { type: string }, description: 'Kept as sent only when no `submissionModes` are stated. With modes it is DERIVED (`D-47`): pdf_upload -> application/pdf; photo_upload -> image/jpeg, image/png, image/webp; doc_link alone -> []. An upload mode is refused (400) while the server stores no files (`D-48` (b)).' }
+        allowedFileTypes: { type: array, minItems: 1, maxItems: 20, items: { type: string }, description: 'Kept as sent only when no `submissionModes` are stated. With modes it is DERIVED (`D-47`): pdf_upload -> application/pdf; docx_upload -> application/vnd.openxmlformats-officedocument.wordprocessingml.document; photo_upload -> image/jpeg, image/png, image/webp; doc_link alone -> []. An upload mode is refused (400) while the server stores no files (`D-48` (b)).' }
         maxFileSizeBytes: { type: integer, minimum: 1, maximum: 104857600 }
         workType:    { $ref: '#/components/schemas/WorkType' }
         externalUrl: { type: string, maxLength: 2048 }
@@ -700,7 +700,7 @@ components:
         availableTo:   { type: string, format: date-time }
         dueAt:         { type: string, format: date-time }
         maxScore:      { type: integer, minimum: 1, maximum: 1000 }
-        allowedFileTypes: { type: array, minItems: 1, maxItems: 20, items: { type: string }, description: 'Kept as sent only when no `submissionModes` are stated. With modes it is DERIVED (`D-47`): pdf_upload -> application/pdf; photo_upload -> image/jpeg, image/png, image/webp; doc_link alone -> []. An upload mode is refused (400) while the server stores no files (`D-48` (b)).' }
+        allowedFileTypes: { type: array, minItems: 1, maxItems: 20, items: { type: string }, description: 'Kept as sent only when no `submissionModes` are stated. With modes it is DERIVED (`D-47`): pdf_upload -> application/pdf; docx_upload -> application/vnd.openxmlformats-officedocument.wordprocessingml.document; photo_upload -> image/jpeg, image/png, image/webp; doc_link alone -> []. An upload mode is refused (400) while the server stores no files (`D-48` (b)).' }
         maxFileSizeBytes: { type: integer, minimum: 1, maximum: 104857600 }
         workType:    { $ref: '#/components/schemas/WorkType' }
         externalUrl: { type: string, maxLength: 2048 }

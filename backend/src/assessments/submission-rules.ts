@@ -5,6 +5,8 @@ import type { SubmissionFile, SubmissionMode } from './interfaces/assessment-rep
 /** `D-47`: what a photo may be. No HEIC (`D-48` (d)), no GIF/AVIF. */
 export const PHOTO_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
 export const PDF_MIME_TYPE = 'application/pdf';
+export const DOCX_MIME_TYPE =
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 /**
  * Exactly what the storage driver mints: `/uploads/<uuid>.<ext>` (review R-8).
  * A prefix check alone would accept `/uploads/../x.pdf`; nothing is exposed by
@@ -24,12 +26,13 @@ export const MAX_PHOTOS = 5;
 export function mimeTypesForModes(modes: readonly SubmissionMode[]): string[] {
   return [
     ...(modes.includes('pdf_upload') ? [PDF_MIME_TYPE] : []),
+    ...(modes.includes('docx_upload') ? [DOCX_MIME_TYPE] : []),
     ...(modes.includes('photo_upload') ? [...PHOTO_MIME_TYPES] : []),
   ];
 }
 
 export function hasUploadMode(modes: readonly SubmissionMode[]): boolean {
-  return modes.includes('pdf_upload') || modes.includes('photo_upload');
+  return modes.includes('pdf_upload') || modes.includes('docx_upload') || modes.includes('photo_upload');
 }
 
 export interface SubmissionInput {
@@ -53,6 +56,7 @@ export interface SubmissionWrite {
 
 const HAND_IN: Record<SubmissionMode, string> = {
   pdf_upload: 'a PDF',
+  docx_upload: 'a Word document',
   photo_upload: 'photos of your work',
   doc_link: 'a Google Doc link',
 };
@@ -128,6 +132,7 @@ export function checkSubmission(
   }
 
   const allPdf = typed.every((f) => f.mimeType === PDF_MIME_TYPE);
+  const allDocx = typed.every((f) => f.mimeType === DOCX_MIME_TYPE);
   const allPhotos = typed.every((f) => (PHOTO_MIME_TYPES as readonly string[]).includes(f.mimeType));
   if (allPdf) {
     if (!modes.includes('pdf_upload')) {
@@ -135,6 +140,13 @@ export function checkSubmission(
     }
     if (typed.length !== 1) {
       throw new BadRequestException('Hand in one PDF.');
+    }
+  } else if (allDocx) {
+    if (!modes.includes('docx_upload')) {
+      throw new BadRequestException(`This task asks for ${list(modes)}, not a Word document.`);
+    }
+    if (typed.length !== 1) {
+      throw new BadRequestException('Hand in one Word document.');
     }
   } else if (allPhotos) {
     if (!modes.includes('photo_upload')) {
@@ -145,7 +157,7 @@ export function checkSubmission(
     }
   } else {
     throw new BadRequestException(
-      'Hand in one kind of file: a PDF, or photos (JPEG, PNG or WebP).',
+      'Hand in one kind of file: a PDF, a Word document, or photos (JPEG, PNG or WebP).',
     );
   }
   return { fileUrl: null, files: typed, answerText: input.answerText ?? null };

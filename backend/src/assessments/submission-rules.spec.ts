@@ -7,6 +7,7 @@ const PNG = '/uploads/33333333-3333-4333-8333-333333333333.png';
 const WEBP = '/uploads/44444444-4444-4444-8444-444444444444.webp';
 const GIF = '/uploads/55555555-5555-4555-8555-555555555555.gif';
 const TXT = '/uploads/66666666-6666-4666-8666-666666666666.txt';
+const DOCX = '/uploads/77777777-7777-4777-8777-777777777777.docx';
 const DOC = 'https://docs.google.com/document/d/abc';
 
 function refused(fn: () => unknown): string {
@@ -44,6 +45,26 @@ describe('D-47: what a hand-in may be', () => {
       expect(refused(() => checkSubmission(['pdf_upload'], { files: [JPG] }))).toMatch(/not photos/);
       expect(refused(() => checkSubmission(['pdf_upload'], { fileUrl: DOC }))).toMatch(/not a link/);
       expect(refused(() => checkSubmission(['pdf_upload'], { answerText: 'only words' }))).toMatch(/note on its own/);
+    });
+  });
+
+  describe('docx_upload', () => {
+    it('takes exactly one uploaded Word document, a note alongside, and clears any link', () => {
+      expect(checkSubmission(['docx_upload'], { files: [DOCX], answerText: 'note' })).toEqual({
+        fileUrl: null,
+        files: [{ url: DOCX, mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }],
+        answerText: 'note',
+      });
+    });
+    it('refuses it when the mode is off, two docs, and a mixed set', () => {
+      expect(refused(() => checkSubmission(['pdf_upload'], { files: [DOCX] }))).toMatch(/not a Word document/);
+      expect(refused(() => checkSubmission(['docx_upload'], { files: [DOCX, DOCX.replace('7777-4777', '7778-4777')] }))).toMatch(
+        /one Word document/,
+      );
+      expect(refused(() => checkSubmission(['docx_upload', 'pdf_upload'], { files: [DOCX, PDF] }))).toMatch(/one kind of file/);
+    });
+    it("HAND_IN names it 'a Word document'", () => {
+      expect(refused(() => checkSubmission(['docx_upload'], { answerText: 'only words' }))).toMatch(/a Word document/);
     });
   });
 
@@ -98,9 +119,13 @@ describe('D-47: what a hand-in may be', () => {
 
   it('derives the file types from the modes, and says when a mode is an upload', () => {
     expect(mimeTypesForModes(['pdf_upload'])).toEqual(['application/pdf']);
+    expect(mimeTypesForModes(['docx_upload'])).toEqual([
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ]);
     expect(mimeTypesForModes(['photo_upload', 'doc_link'])).toEqual(['image/jpeg', 'image/png', 'image/webp']);
     expect(mimeTypesForModes(['doc_link'])).toEqual([]);
     expect(hasUploadMode(['doc_link'])).toBe(false);
     expect(hasUploadMode(['doc_link', 'photo_upload'])).toBe(true);
+    expect(hasUploadMode(['docx_upload'])).toBe(true);
   });
 });

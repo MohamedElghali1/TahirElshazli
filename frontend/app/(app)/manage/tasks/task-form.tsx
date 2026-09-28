@@ -122,6 +122,7 @@ function describeOverride(target: StaffTaskTarget | undefined): string | null {
 
 const MODES: { value: SubmissionMode; label: string }[] = [
   { value: 'pdf_upload', label: 'PDF upload' },
+  { value: 'docx_upload', label: 'Word document' },
   { value: 'doc_link', label: 'Google Doc link' },
   { value: 'photo_upload', label: 'Photo of written work' },
 ];

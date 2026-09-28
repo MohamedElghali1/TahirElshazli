@@ -18,7 +18,7 @@ export type TaskVisibility = 'published' | 'hidden';
  * How a student may hand the work in (`D-31`). Recorded per task; the
  * multi-file model behind `photo_upload` (up to five photos) is unit 7's.
  */
-export type SubmissionMode = 'pdf_upload' | 'doc_link' | 'photo_upload';
+export type SubmissionMode = 'pdf_upload' | 'docx_upload' | 'doc_link' | 'photo_upload';
 
 /**
  * Who an attachment is for (`D-29`). A passage or a recording is for

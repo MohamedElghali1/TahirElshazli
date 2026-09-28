@@ -273,8 +273,11 @@ function SubmitPanel({
   );
 }
 
+const DOCX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
 const MODE_LABEL: Record<SubmissionMode, string> = {
   pdf_upload: 'Upload a PDF',
+  docx_upload: 'Upload a Word document',
   photo_upload: 'Photos of your work',
   doc_link: 'Google Doc link',
 };
@@ -282,8 +285,9 @@ const MODE_LABEL: Record<SubmissionMode, string> = {
 /** `D-47`: which mode an existing hand-in was, so a revision starts there. */
 function modeOf(existing: SubmissionView | null, modes: readonly SubmissionMode[]): SubmissionMode {
   if (existing?.files.length) {
-    const pdf = existing.files[0]!.mimeType === 'application/pdf';
-    const m: SubmissionMode = pdf ? 'pdf_upload' : 'photo_upload';
+    const mime = existing.files[0]!.mimeType;
+    const m: SubmissionMode =
+      mime === 'application/pdf' ? 'pdf_upload' : mime === DOCX_MIME_TYPE ? 'docx_upload' : 'photo_upload';
     if (modes.includes(m)) return m;
   }
   if (existing?.fileUrl && modes.includes('doc_link')) return 'doc_link';
@@ -322,15 +326,27 @@ function ModedSubmit({
   const [error, setError] = useState<string | null>(null);
 
   const photoCap = 5;
-  const accept = mode === 'pdf_upload' ? 'application/pdf' : 'image/jpeg,image/png,image/webp';
+  const singleFile = mode === 'pdf_upload' || mode === 'docx_upload';
+  const accept =
+    mode === 'pdf_upload'
+      ? 'application/pdf'
+      : mode === 'docx_upload'
+        ? '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        : 'image/jpeg,image/png,image/webp';
 
   async function choose(event: React.ChangeEvent<HTMLInputElement>) {
     const chosen = Array.from(event.target.files ?? []);
     event.target.value = '';
     if (!token || chosen.length === 0) return;
-    const room = mode === 'pdf_upload' ? 1 : photoCap - files.length;
+    const room = singleFile ? 1 : photoCap - files.length;
     if (chosen.length > room) {
-      setError(mode === 'pdf_upload' ? 'Hand in one PDF.' : `You can add ${room} more photo${room === 1 ? '' : 's'}.`);
+      setError(
+        mode === 'pdf_upload'
+          ? 'Hand in one PDF.'
+          : mode === 'docx_upload'
+            ? 'Hand in one Word document.'
+            : `You can add ${room} more photo${room === 1 ? '' : 's'}.`,
+      );
       return;
     }
     setError(null);
@@ -341,7 +357,7 @@ function ModedSubmit({
         // One at a time, so a refusal names the file it was about.
         stored.push(await api.assessments.uploadFile(token, assessment.id, file));
       }
-      setFiles((f) => (mode === 'pdf_upload' ? stored : [...f, ...stored]));
+      setFiles((f) => (singleFile ? stored : [...f, ...stored]));
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : 'That file could not be uploaded. Please try again.');
     } finally {
@@ -407,7 +423,11 @@ function ModedSubmit({
         ) : (
           <div className="flex flex-col gap-2">
             <label className="flex flex-col gap-1 text-xs text-fg-3">
-              {mode === 'pdf_upload' ? 'Your PDF' : `Photos of your work (up to ${photoCap})`}
+              {mode === 'pdf_upload'
+                ? 'Your PDF'
+                : mode === 'docx_upload'
+                  ? 'Your Word document'
+                  : `Photos of your work (up to ${photoCap})`}
               <input
                 type="file"
                 accept={accept}
@@ -418,7 +438,11 @@ function ModedSubmit({
               />
             </label>
             <p className="text-xxs text-fg-4">
-              {mode === 'pdf_upload' ? 'PDF' : 'JPEG, PNG or WebP (iPhone HEIC photos: choose "Most compatible" in camera settings)'}
+              {mode === 'pdf_upload'
+                ? 'PDF'
+                : mode === 'docx_upload'
+                  ? 'Word document (.docx)'
+                  : 'JPEG, PNG or WebP (iPhone HEIC photos: choose "Most compatible" in camera settings)'}
               , up to {formatFileSize(Math.min(maxBytes, 20 * 1024 * 1024))} each.
             </p>
             {uploading && <Loader size={3} label="Uploading" />}
@@ -427,7 +451,7 @@ function ModedSubmit({
                 {files.map((f, i) => (
                   <li key={f.url} className="flex items-center justify-between gap-2 text-base text-fg-2">
                     <span>
-                      {mode === 'pdf_upload' ? 'PDF' : `Photo ${i + 1}`}
+                      {mode === 'pdf_upload' ? 'PDF' : mode === 'docx_upload' ? 'Word document' : `Photo ${i + 1}`}
                       <span className="text-fg-4"> · uploaded</span>
                     </span>
                     <Button size="small" variant="tertiary" onClick={() => setFiles((all) => all.filter((x) => x.url !== f.url))}>

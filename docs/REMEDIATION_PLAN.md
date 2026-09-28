@@ -117,16 +117,32 @@ an existing pattern in this repository and names it.
     stay green with the driver mocked as identity. No e2e or manual round trip against a real R2
     bucket was run - the client has not provisioned one yet; do that before go-live.
 
-- [ ] **REM-082 — DOCX as a submission type** · **P0** · `D-59`
-  - *Affected:* `common/storage/upload-types.ts` (add
-    `application/vnd.openxmlformats-officedocument.wordprocessingml.document` → `docx`),
-    `assessments/submission-rules.ts` (a `docx_upload` mode, or a `document_upload` mode covering PDF
-    + DOCX — pick one and say which), task form mode picker, student hand-in screen.
-  - *Change:* validate content server-side (DOCX = ZIP magic `PK\x03\x04` plus a
-    `word/document.xml` entry; PDF = `%PDF-`), never the client's MIME. Marking: a DOCX is downloaded
-    by the marker; the PDF annotation overlay stays PDF-only — say so in the grading UI.
-  - *Acceptance:* specs: a renamed `.exe` claiming DOCX is refused; a real DOCX and a real PDF are
-    accepted; a DOCX submission shows a download action (no annotation canvas) in grading.
+- [x] **REM-082 — DOCX as a submission type** · **P0** · `D-59`
+  - *Affected:* `common/storage/upload-types.ts` (added
+    `application/vnd.openxmlformats-officedocument.wordprocessingml.document` → `docx`, plus a
+    `UPLOAD_SIGNATURES` table), `common/storage/uploads.service.ts` (sniffs the buffer against the
+    signature for a claimed type that has one), `assessments/submission-rules.ts` (a distinct
+    `docx_upload` mode alongside `pdf_upload`, not merged — the two stay separately toggleable per
+    task and separately named in the hand-in copy), `assessments/interfaces/assessment-repository.
+    interface.ts`, `manage/dto/assessment.dto.ts` (`SUBMISSION_MODES`), migration
+    `027_docx_submission_mode.sql` (widens the `assessments.submission_modes` CHECK), task form mode
+    picker, student hand-in screen, `frontend/lib/types.ts`, `docs/API_SPEC.yaml`.
+  - *Change, as built:* content sniffing covers every declared type with a well-known signature (PDF
+    `%PDF-`; DOCX = ZIP magic `PK\x03\x04` plus a `word/document.xml` entry, found by a bounded byte
+    search rather than a ZIP parser; PNG/JPEG/WebP), refusing a mismatch with the existing 400 style.
+    A type with no listed signature (audio, video, `text/plain`) keeps trusting the client's claim, as
+    before. Marking already computed `SubmissionDocument.kind` from the stored file's server-derived
+    MIME type (`'file'` for anything that is neither PDF nor an image) and already withheld the
+    annotation canvas and fetched no bytes for a non-annotatable document, showing an "Open original"
+    link on the read URL instead — DOCX simply becomes another `'file'`-kind document and needed no
+    change there.
+  - *Acceptance:* `submission-rules.spec.ts` (docx accepted/refused by mode, `HAND_IN` text, one
+    Word document per hand-in); `uploads.service.spec.ts` (a minimal DOCX built in-test from a ZIP
+    local file header passes; a PDF labelled DOCX, a ZIP without `word/document.xml`, an arbitrary
+    binary labelled `application/pdf`, and a JPEG/PNG cross-labelling are all refused; PNG/JPEG/WebP
+    signatures checked); one e2e case in `staff.e2e-spec.ts`'s existing MARK-6 block hands in a real
+    minimal DOCX end to end (the brief named `app.e2e-spec.ts`, which has no PDF hand-in case to copy
+    - the actual hand-in suite lives in `staff.e2e-spec.ts`).
 
 - [x] **REM-007 — Rate limits that survive a classroom** · P1 · `AUD-07`
   - *Affected:* `common/rate-limit/rate-limit.interface.ts` (`RateLimitRule.by`), `rate-limit.guard.ts`

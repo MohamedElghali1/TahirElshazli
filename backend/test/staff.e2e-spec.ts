@@ -3556,12 +3556,22 @@ describe('Staff and admin API (e2e)', () => {
 
   describe('unit 7: MARK-6 - submission modes and student uploads (D-47, D-48)', () => {
     const server = () => app.getHttpServer();
-    // A 1x1 PNG and the smallest PDF header: the whitelist reads the declared
-    // type (SECURITY.md §3.4), so the bytes only need to be non-empty.
+    // A 1x1 PNG, the smallest PDF header, and a minimal DOCX (a ZIP local file
+    // header naming the one entry `word/document.xml`): `UploadsService` now
+    // sniffs a declared type against its magic bytes (`REM-082`), so these
+    // have to be real, not merely non-empty.
     const png = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da6364f8ff0f0003030200f7d3f6b40000000049454e44ae426082', 'hex');
     const pdf = Buffer.from('%PDF-1.4\n%%EOF\n');
+    const docx = (() => {
+      const name = Buffer.from('word/document.xml', 'ascii');
+      const header = Buffer.alloc(30);
+      header.writeUInt32LE(0x04034b50, 0);
+      header.writeUInt16LE(name.length, 26);
+      return Buffer.concat([header, name]);
+    })();
     let photoTask = '';
     let pdfTask = '';
+    let docxTask = '';
     let linkTask = '';
 
     const make = async (title: string, submissionModes: string[]) =>
@@ -3578,6 +3588,7 @@ describe('Staff and admin API (e2e)', () => {
       expect(photos.allowedFileTypes).toEqual(['image/jpeg', 'image/png', 'image/webp']);
       photoTask = photos.id;
       pdfTask = (await make('E2E pdf', ['pdf_upload'])).id;
+      docxTask = (await make('E2E docx', ['docx_upload'])).id;
       linkTask = (await make('E2E link', ['doc_link'])).id;
     });
 
@@ -3631,6 +3642,23 @@ describe('Staff and admin API (e2e)', () => {
         .send({ files: [p] }).expect(201);
       await request(server()).post(`/assessments/${linkTask}/submissions`).set(bearer(studentToken))
         .send({ fileUrl: 'https://docs.google.com/document/d/abc' }).expect(201);
+    });
+
+    it('takes one Word document on a docx task (REM-082)', async () => {
+      const d = (
+        await upload(
+          docxTask,
+          studentToken,
+          docx,
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'essay.docx',
+        ).expect(201)
+      ).body.url as string;
+      const submitted = await request(server()).post(`/assessments/${docxTask}/submissions`).set(bearer(studentToken))
+        .send({ files: [d] }).expect(201);
+      expect(submitted.body.files).toEqual([
+        { url: d, mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+      ]);
     });
 
     it('R-7: refuses an upload once the hand-in is marked - it could never be submitted', async () => {

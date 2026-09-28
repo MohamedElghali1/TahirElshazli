@@ -61,6 +61,42 @@ export const ALLOWED_UPLOAD_TYPES: Readonly<Record<string, UploadType>> = {
   'audio/mp4': { extension: 'm4a', kind: 'audio' },
   'application/pdf': { extension: 'pdf', kind: 'file' },
   'text/plain': { extension: 'txt', kind: 'file' },
+  // Word hand-ins (`REM-082`, `D-47`). A `.docx` is a ZIP; served the same
+  // non-executable way as every other `file` kind.
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': {
+    extension: 'docx',
+    kind: 'file',
+  },
+};
+
+/**
+ * Magic-byte signatures for the declared types that have a well-known one
+ * (`REM-082`). A declared type absent here keeps today's behaviour - the
+ * claimed MIME type is trusted once it is in the whitelist. Where a
+ * signature exists, the buffer must match it or the upload is refused: this
+ * closes the gap the module used to document as a known limitation ("a PHP
+ * script sent as `image/png` is stored as a .png").
+ *
+ * DOCX is a ZIP (`PK\x03\x04`) whose central directory is not worth parsing
+ * for one entry name: a plain byte search of the whole buffer for
+ * `word/document.xml` is bounded (at most `MAX_UPLOAD_BYTES`) and cannot
+ * false-positive on a file that is not actually a ZIP, because the ZIP magic
+ * is checked first.
+ */
+const PDF_SIGNATURE = Buffer.from('%PDF-', 'ascii');
+const ZIP_SIGNATURE = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+const DOCX_ENTRY_NAME = Buffer.from('word/document.xml', 'ascii');
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const JPEG_SIGNATURE = Buffer.from([0xff, 0xd8, 0xff]);
+
+export const UPLOAD_SIGNATURES: Readonly<Record<string, (buffer: Buffer) => boolean>> = {
+  'application/pdf': (buffer) => buffer.subarray(0, PDF_SIGNATURE.length).equals(PDF_SIGNATURE),
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': (buffer) =>
+    buffer.subarray(0, ZIP_SIGNATURE.length).equals(ZIP_SIGNATURE) && buffer.includes(DOCX_ENTRY_NAME),
+  'image/png': (buffer) => buffer.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE),
+  'image/jpeg': (buffer) => buffer.subarray(0, JPEG_SIGNATURE.length).equals(JPEG_SIGNATURE),
+  'image/webp': (buffer) =>
+    buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP',
 };
 
 /**

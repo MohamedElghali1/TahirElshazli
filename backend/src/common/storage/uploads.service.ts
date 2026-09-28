@@ -11,6 +11,7 @@ import { FileUrls } from './file-urls.service.js';
 import {
   ALLOWED_UPLOAD_MIME_TYPES,
   ALLOWED_UPLOAD_TYPES,
+  UPLOAD_SIGNATURES,
   type UploadKind,
   MAX_UPLOAD_BYTES,
 } from './upload-types.js';
@@ -95,12 +96,15 @@ export class UploadsService {
     // used only to *look up* an entry in a fixed table. An unrecognised claim
     // is refused, and a recognised one still cannot choose its own extension.
     //
-    // Known limitation, stated rather than implied: this does not sniff magic
-    // bytes, so a PHP script sent as `image/png` is stored as a .png. That is
-    // acceptable here because the file is served as a static asset with
+    // Content sniffing (`REM-082`): for a claimed type with a known magic-byte
+    // signature (`UPLOAD_SIGNATURES`), the buffer must match it, so a PHP
+    // script sent as `image/png` no longer stores as one. A claimed type with
+    // no listed signature (`text/plain`, audio, video) keeps trusting the
+    // claim - those cannot be verified this cheaply. That gap is bounded the
+    // same way as before: the file is served as a static asset with
     // `X-Content-Type-Options: nosniff` (helmet, globally) from a server that
-    // executes nothing, and because §8's "virus scan where feasible" is the
-    // real answer and belongs with R2.
+    // executes nothing, and §8's "virus scan where feasible" is the real
+    // answer and belongs with R2.
     const allowed = rules
       ? ALLOWED_UPLOAD_MIME_TYPES.filter((m) => rules.allowedMimeTypes.includes(m))
       : ALLOWED_UPLOAD_MIME_TYPES;
@@ -110,6 +114,12 @@ export class UploadsService {
       throw new BadRequestException(
         `Files of type "${file.mimetype}" are not accepted here. Allowed: ` +
           `${allowed.join(', ')}.`,
+      );
+    }
+    const signature = UPLOAD_SIGNATURES[claimed];
+    if (signature && !signature(file.buffer)) {
+      throw new BadRequestException(
+        `That file does not look like a "${file.mimetype}" file.`,
       );
     }
 

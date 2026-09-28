@@ -18,7 +18,7 @@ weekly reports (`REM-031`, post-launch).
 | T3 | REM-005 announcement publish not all-or-nothing on mail | reviewed + committed | (this commit) |
 | T4 | REM-007 classroom-safe rate limits | reviewed + committed | (this commit) |
 | T5 | REM-030 Cloudflare R2 storage driver | reviewed + committed | (this commit) |
-| T6 | REM-082 DOCX submissions | queued | |
+| T6 | REM-082 DOCX submissions | reviewed + committed | (this commit) |
 | T7 | REM-080a Google Form CSV import + analytics (backend) | queued | |
 | T8 | REM-080b CSV import + analytics (frontend) | queued | |
 | T9 | Frontend fixes: REM-009, 013, 014, 016, 017, 018, 019, 021a | queued | |
@@ -126,3 +126,14 @@ models inside agy alike. By the user's choice, remaining tasks go to the `unit-i
 - Lead's live boot check (production mode): `r2` missing two vars → refuses naming both; `local` →
   refused; `r2` with all four → boots, health 200, secret absent from the log. No real bucket
   reachable, so a real upload/presigned-read round trip is still owed (go-live step).
+
+### T6 — REM-082 DOCX submissions + content sniffing
+- `unit-implementer`: a separate `docx_upload` mode end to end (union, rules, DTO, mirror, task form,
+  hand-in page); DOCX in the upload whitelist; magic-byte sniffing for PDF, DOCX (`PK` +
+  `word/document.xml` entry), PNG, JPEG, WebP before anything is stored; migration **027** widens 018's
+  CHECK. Staff marking already routes a non-PDF/non-image to an "Open original" link on the read URL
+  and never into pdf.js (T5's `SubmissionDocument.kind`), so no marking change was needed.
+- Lead's gates: lint 0 errors; drift ok; unit 875/53; e2e 412 across 5 files (staff 259 on retry);
+  integration 192/192; both builds; both tsc 0.
+- Lead's migration check: fresh DB, `migrate.js` applied 001–027; the CHECK now lists `docx_upload`;
+  an update to `{pdf_upload,docx_upload}` succeeds and `{exe_upload}` is refused by the constraint.

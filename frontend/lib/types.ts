@@ -385,7 +385,7 @@ export type VisibilityState = TaskVisibility | 'scheduled';
 export type StaffTaskStatus = 'open' | 'marking' | 'marked' | 'closed';
 
 /** How a student may hand the work in (`D-31`). */
-export type SubmissionMode = 'pdf_upload' | 'doc_link' | 'photo_upload';
+export type SubmissionMode = 'pdf_upload' | 'docx_upload' | 'doc_link' | 'photo_upload';
 export type AssessmentStatus = 'locked' | 'available' | 'submitted' | 'corrected';
 
 export interface AssessmentListItem {

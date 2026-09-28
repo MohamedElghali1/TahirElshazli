@@ -35,8 +35,8 @@ const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 /** `D-28`. `scheduled` is derived, never accepted. */
 const TASK_VISIBILITIES = ['published', 'hidden'] as const;
 
-/** `D-31`. PDF upload, a Google Doc link, a photo of written work. */
-const SUBMISSION_MODES = ['pdf_upload', 'doc_link', 'photo_upload'] as const;
+/** `D-31`, `REM-082`. PDF or Word upload, a Google Doc link, a photo of written work. */
+const SUBMISSION_MODES = ['pdf_upload', 'docx_upload', 'doc_link', 'photo_upload'] as const;
 
 /**
  * One targeted group, with an optional window override.
@@ -238,7 +238,7 @@ export class CreateAssessmentDto {
   @ArrayUnique()
   @IsIn(SUBMISSION_MODES, {
     each: true,
-    message: 'each submission mode must be pdf_upload, doc_link or photo_upload',
+    message: 'each submission mode must be pdf_upload, docx_upload, doc_link or photo_upload',
   })
   submissionModes?: (typeof SUBMISSION_MODES)[number][];
 }
@@ -366,7 +366,7 @@ export class UpdateAssessmentDto {
   @ArrayUnique()
   @IsIn(SUBMISSION_MODES, {
     each: true,
-    message: 'each submission mode must be pdf_upload, doc_link or photo_upload',
+    message: 'each submission mode must be pdf_upload, docx_upload, doc_link or photo_upload',
   })
   submissionModes?: (typeof SUBMISSION_MODES)[number][];
 
