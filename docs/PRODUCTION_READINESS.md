@@ -17,10 +17,10 @@ the task that clears every open box is named. Re-run this checklist before `REM-
 - [x] Main pages verified — 60+ screens walked in a real browser, 0 console errors
 - [x] Main workflows verified — sign-in, homework, marking and return, groups, public site
 - [x] API integrations verified — no mocked data; contract drift check green
-- [ ] Navigation complete — "Reports" and course "Assistants" 404; assistant sees admin-only items → `REM-021a`, `REM-014`, `REM-017`
-- [ ] Error states — per-screen states good; no app-level `not-found`/`error` boundaries → `REM-018`
+- [x] Navigation complete — "Reports" hidden, course "Assistants" tab removed, admin-only items hidden from assistants (T9: `REM-021a`, `REM-014`, `REM-017`)
+- [x] Error states — per-screen states plus app-level `not-found`, `error`, `global-error` (T9: `REM-018`)
 - [x] Responsive — student pages at 375 px, no horizontal scroll
-- [ ] Accessibility — grading dialog focus trap, unlabelled scope checkboxes → `REM-013`, `REM-009`
+- [x] Accessibility — grading dialog focus trap, visible scope-checkbox labels (T9: `REM-013`, `REM-009`)
 - [ ] RTL reachable in the product → `REM-041`
 - [ ] Legal pages exist → `REM-015`
 

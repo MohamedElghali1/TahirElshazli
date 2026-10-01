@@ -6,13 +6,12 @@ import type { RecordingWithProgress } from '@/lib/types';
 import { Button, Tag, Loader, Icon } from '@/components/ui';
 
 /**
- * What a recording's `videoUrl` actually is has never been decided (CLAUDE.md
- * §3, §8) - Bunny Stream's signed-URL delivery is unbuilt, so today the field
- * is whatever URL the teacher pasted at upload. This is the one place that
- * branches on its shape, so a future Bunny integration is one case added
- * here rather than a rewrite of the page.
+ * Recordings are plain links (D-57) - whatever http(s) URL the teacher
+ * pasted at upload. This is the one place that branches on its shape, to
+ * give a recognized provider (YouTube, Vimeo) an embedded player while
+ * anything else gets an honest "opens in its own tab" link.
  */
-export type VideoKind = 'file' | 'youtube' | 'vimeo' | 'bunny' | 'link';
+export type VideoKind = 'file' | 'youtube' | 'vimeo' | 'link';
 
 export function classifyVideoUrl(url: string): { kind: VideoKind; embedUrl?: string } {
   let parsed: URL;
@@ -42,13 +41,6 @@ export function classifyVideoUrl(url: string): { kind: VideoKind; embedUrl?: str
       return { kind: 'vimeo', embedUrl: `https://player.vimeo.com/video/${id}` };
     }
   }
-  // Bunny Stream's iframe embed host. Not wired up anywhere yet - §3/§8 leave
-  // signed playback URLs unbuilt - but recognizing the shape means the day
-  // uploads switch to it, this branch is already correct.
-  if (host === 'iframe.mediadelivery.net' || host.endsWith('.b-cdn.net')) {
-    return { kind: 'bunny', embedUrl: url };
-  }
-
   return { kind: 'link' };
 }
 
@@ -83,7 +75,7 @@ export function RecordingPlayer({
     );
   }
 
-  if (kind === 'youtube' || kind === 'vimeo' || kind === 'bunny') {
+  if (kind === 'youtube' || kind === 'vimeo') {
     return (
       <EmbedPlayer key={recording.id} recording={recording} embedUrl={embedUrl!} onProgress={onProgress} />
     );

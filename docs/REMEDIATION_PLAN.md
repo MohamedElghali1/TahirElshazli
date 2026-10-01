@@ -164,7 +164,7 @@ an existing pattern in this repository and names it.
     major, pin via `overrides` in the root `package.json`.
   - *Acceptance:* `npm audit` reports 0 high; all suites green.
 
-- [ ] **REM-009 — Visible labels on assistant scope checkboxes** · P1 · `AUD-09`
+- [x] **REM-009 — Visible labels on assistant scope checkboxes** · P1 · `AUD-09`
   - *Affected:* `frontend/app/(app)/manage/assistants/page.tsx:186-203`.
   - *Change:* pair each `Checkbox` with a visible label exactly as `manage/tasks/task-form.tsx:499-506`.
   - *Acceptance:* the Invite/Edit panels show each group's name next to its box; lint and tsc clean.

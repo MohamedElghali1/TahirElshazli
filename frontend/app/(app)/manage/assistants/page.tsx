@@ -135,8 +135,8 @@ export default function AssistantsPage() {
         {error && (
           <EmptyState
             icon="AlertTriangle"
-            title={error.message}
-            action={<Button onClick={reload}>Try again</Button>}
+            title={error.isAuth ? "You don't have access to this page." : error.message}
+            action={error.isAuth ? undefined : <Button onClick={reload}>Try again</Button>}
           />
         )}
         {data && data.length === 0 && (
@@ -185,16 +185,18 @@ function ReachFields({
           <p className="text-base text-fg-3">Groups</p>
           <div className="flex flex-wrap gap-3">
             {groups.map((g) => (
-              <Checkbox
-                key={g.id}
-                label={g.name}
-                checked={groupIds.includes(g.id)}
-                onChange={(checked) =>
-                  setGroupIds(
-                    checked ? [...groupIds, g.id] : groupIds.filter((id) => id !== g.id),
-                  )
-                }
-              />
+              <div key={g.id} className="flex items-center gap-2">
+                <Checkbox
+                  label={g.name}
+                  checked={groupIds.includes(g.id)}
+                  onChange={(checked) =>
+                    setGroupIds(
+                      checked ? [...groupIds, g.id] : groupIds.filter((id) => id !== g.id),
+                    )
+                  }
+                />
+                <span className="text-base text-fg">{g.name}</span>
+              </div>
             ))}
           </div>
         </div>

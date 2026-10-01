@@ -64,12 +64,15 @@ interface NavGroup {
  * as the closest fit until a later unit's own IA work resolves this for real.
  */
 function sectionsFor(admin: boolean, studentCount: number | null): NavGroup[] {
-  const people: NavLeaf[] = [
-    { href: '/manage/students', label: 'Students', icon: 'Users', count: studentCount ?? undefined },
-    { href: '/manage/groups', label: 'Groups', icon: 'Hierarchy2' },
-  ];
+  // All four of these are admin-only pages that call /admin/* — an assistant
+  // hitting one of them gets a raw "Forbidden resource" (REM-017), so the
+  // nav item is gated the same way the courtesy already gates Assistants and
+  // Assistant activity below.
+  const people: NavLeaf[] = [];
   if (admin) {
     people.push(
+      { href: '/manage/students', label: 'Students', icon: 'Users', count: studentCount ?? undefined },
+      { href: '/manage/groups', label: 'Groups', icon: 'Hierarchy2' },
       { href: '/manage/assistants', label: 'Assistants', icon: 'Briefcase' },
       { href: '/manage/activity', label: 'Assistant activity', icon: 'History' },
     );
@@ -86,14 +89,17 @@ function sectionsFor(admin: boolean, studentCount: number | null): NavGroup[] {
         { href: '/manage/courses', label: 'Courses', icon: 'Book' },
       ],
     },
-    { title: 'People', items: people },
+    // Omitted for an assistant: `people` is empty when `admin` is false, and
+    // a titled section with no items would render a bare heading.
+    ...(people.length > 0 ? [{ title: 'People', items: people }] : []),
     {
       title: 'Teaching',
       items: [
         { href: '/manage/tasks', label: 'Tasks', icon: 'ListDetails' },
         { href: '/manage/tasks/drafts', label: 'Draft tasks', icon: 'FileText', indent: 1 },
         { href: '/manage/marks', label: 'Marks', icon: 'ListNumbers' },
-        { href: '/manage/reports', label: 'Reports', icon: 'ChartPie' },
+        // Weekly reports return with Unit 9 (REM-031); /manage/reports does
+        // not exist yet (REM-021a).
       ],
     },
     {

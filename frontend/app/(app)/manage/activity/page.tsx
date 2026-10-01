@@ -225,8 +225,8 @@ export default function ActivityLogPage() {
         {error && (
           <EmptyState
             icon="AlertTriangle"
-            title={error.message}
-            action={<Button onClick={reload}>Try again</Button>}
+            title={error.isAuth ? "You don't have access to this page." : error.message}
+            action={error.isAuth ? undefined : <Button onClick={reload}>Try again</Button>}
           />
         )}
         {!loading && !error && entries.length === 0 && (

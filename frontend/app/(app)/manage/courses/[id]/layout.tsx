@@ -3,8 +3,7 @@
 import { use } from 'react';
 import { usePathname } from 'next/navigation';
 import { api } from '@/lib/api';
-import { useApi, useSession } from '@/lib/session';
-import { isAdminRole } from '@/lib/roles';
+import { useApi } from '@/lib/session';
 import { TabList, type TabItem } from '@/components/ui';
 import { PageTitle } from '@/components/shell/page-chrome';
 
@@ -32,8 +31,6 @@ export default function ManageCourseLayout({
 }) {
   const { id } = use(params);
   const pathname = usePathname();
-  const { user } = useSession();
-  const admin = isAdminRole(user?.role);
 
   const { data, error } = useApi((token) => api.staff.roster(token, id), [id]);
 
@@ -47,11 +44,8 @@ export default function ManageCourseLayout({
     { href: `${base}/assessments`, label: 'Work' },
     { href: `${base}/grading`, label: 'Grading' },
     { href: `${base}/recordings`, label: 'Recordings' },
-    // `staff` and `recordings`-write are both omitted for a teaching
-    // assistant: CLAUDE.md section 2.2 gives a TA no account management. That
-    // is presentation only - `/admin/*` is `@Roles(Role.Teacher)` on the
-    // server, and hiding a tab has never been what stops anyone (section 8).
-    ...(admin ? [{ href: `${base}/staff`, label: 'Assistants' }] : []),
+    // Assistant management lives at /manage/assistants, not a per-course tab
+    // (REM-014; the old `/staff` sub-page was deleted and this tab 404'd).
   ];
 
   return (

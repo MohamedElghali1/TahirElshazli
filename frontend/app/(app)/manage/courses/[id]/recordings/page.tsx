@@ -27,10 +27,9 @@ import {
  * and `/admin/*` refuses them server-side regardless (§8) - the hiding is
  * courtesy, the 403 is the control.
  *
- * "Upload" is a URL today, not a file picker. The video lives in Bunny Stream
- * (§3) and playback must go through a signed, expiring URL (§8); neither the
- * Bunny integration nor R2 exists yet, so this records the reference the
- * student player already reads rather than pretending to host the file.
+ * "Upload" is a URL, not a file picker — recordings are plain links (D-57):
+ * a YouTube, Vimeo or shared-file URL the student opens directly. There is
+ * no video hosting integration to go through.
  */
 export default function CourseRecordingsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -288,7 +287,7 @@ function NewRecordingForm({
           inputMode="url"
           required
           placeholder="https://"
-          hint="The Bunny Stream link. Playback is signed per request, so this is never handed to a student directly."
+          hint="A link to the video (for example YouTube, Vimeo or a shared file). Students open this link."
         />
 
         <div className="grid gap-4 sm:grid-cols-3">

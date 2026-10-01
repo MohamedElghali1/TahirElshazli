@@ -851,7 +851,7 @@ describe('Staff and admin API (e2e)', () => {
       expect(announcements[0]).toMatchObject({
         title: 'Sunday session moved',
         message: 'It now starts at 19:00.',
-        link: '/learn/course-1',
+        link: '/dashboard',
         read: false,
       });
     });

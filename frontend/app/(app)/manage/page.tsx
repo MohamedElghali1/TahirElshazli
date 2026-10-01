@@ -21,13 +21,23 @@ import { PageTitle } from '@/components/shell/page-chrome';
  * There is no revenue figure anywhere on this screen and there must not be -
  * CLAUDE.md §1: the client removed the earnings widget from the dashboard.
  */
+// Honorifics a name may lead with ("Dr. Tahir Elshazli") that are not the
+// first name (REM-045: the greeting read "Welcome back, Dr.").
+const HONORIFICS = new Set(['dr', 'dr.', 'mr', 'mr.', 'mrs', 'mrs.', 'ms', 'ms.', 'prof', 'prof.']);
+
+function firstNameOf(name: string): string {
+  const words = name.trim().split(/\s+/);
+  const first = words.find((w) => !HONORIFICS.has(w.toLowerCase()));
+  return first ?? '';
+}
+
 export default function ManageOverviewPage() {
   const router = useRouter();
   const { user } = useSession();
   const admin = isAdminRole(user?.role);
   const { data, error, loading, reload } = useApi((token) => api.staff.overview(token), []);
 
-  const firstName = user?.name.split(' ')[0] ?? '';
+  const firstName = user ? firstNameOf(user.name) : '';
   const scopeNote =
     data?.scope === 'platform'
       ? 'Everything across the platform.'

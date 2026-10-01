@@ -184,9 +184,9 @@ INSERT INTO report_documents (id, course_id, student_id, title, period, file_url
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO notifications (id, user_id, type, title, message, link, read, created_at) VALUES
-  ('notif-1', 'student-1', 'live_session_soon', 'Live session today',                    'Organic Chemistry Q&A starts at 18:00.',                        '/learn/course-1/sessions', false, '2026-08-27T09:00:00Z'),
-  ('notif-2', 'student-1', 'grade_posted',      'Mid-term Assignment marked',            'You scored 35/40. Feedback and an annotated copy are available.', '/learn/course-1/assessments/assess-3',          false, '2026-08-22T10:05:00Z'),
-  ('notif-3', 'student-1', 'grade_posted',      'Organic Synthesis Assignment marked',   'You scored 34/40.',                                             '/learn/course-1/assessments/assess-7',          true,  '2026-08-12T13:05:00Z'),
-  ('notif-4', 'student-1', 'new_recording',     'New recording: Halogenoalkanes',        'Chapter 3 - Halogenoalkanes is now available to watch.',         '/learn/course-1/recordings',   true,  '2026-04-28T19:30:00Z'),
-  ('notif-5', 'student-2', 'new_recording',     'New recording: Alkenes',                'Chapter 3 - Alkenes is now available to watch.',                 '/learn/course-1/recordings',   false, '2026-04-14T19:30:00Z')
+  ('notif-1', 'student-1', 'live_session_soon', 'Live session today',                    'Organic Chemistry Q&A starts at 18:00.',                        '/timetable', false, '2026-08-27T09:00:00Z'),
+  ('notif-2', 'student-1', 'grade_posted',      'Mid-term Assignment marked',            'You scored 35/40. Feedback and an annotated copy are available.', '/homework/assess-3',          false, '2026-08-22T10:05:00Z'),
+  ('notif-3', 'student-1', 'grade_posted',      'Organic Synthesis Assignment marked',   'You scored 34/40.',                                             '/homework/assess-7',          true,  '2026-08-12T13:05:00Z'),
+  ('notif-4', 'student-1', 'new_recording',     'New recording: Halogenoalkanes',        'Chapter 3 - Halogenoalkanes is now available to watch.',         '/lessons',   true,  '2026-04-28T19:30:00Z'),
+  ('notif-5', 'student-2', 'new_recording',     'New recording: Alkenes',                'Chapter 3 - Alkenes is now available to watch.',                 '/lessons',   false, '2026-04-14T19:30:00Z')
 ON CONFLICT (id) DO NOTHING;

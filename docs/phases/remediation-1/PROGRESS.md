@@ -21,7 +21,7 @@ weekly reports (`REM-031`, post-launch).
 | T6 | REM-082 DOCX submissions | reviewed + committed | (this commit) |
 | T7 | REM-080a Google Form CSV import + analytics (backend) | reviewed + committed | (this commit) |
 | T8 | REM-080b CSV import + analytics (frontend) | reviewed + committed | (this commit) |
-| T9 | Frontend fixes: REM-009, 013, 014, 016, 017, 018, 019, 021a | queued | |
+| T9 | Frontend fixes: REM-009, 013, 014, 016, 017, 018, 019, 021a, 045 | reviewed + committed | (this commit) |
 | T10 | Deploy prep: REM-008, 011, 012, 020, 021, 050 | queued | |
 
 ## Review notes
@@ -186,3 +186,35 @@ models inside agy alike. By the user's choice, remaining tasks go to the `unit-i
 - **Not done:** no real Google export was available (user, 2026-10-02: "use the fixture, I'll add it
   later"). The zoneless-timestamp rule therefore stays **UTC (display-only)** and is still open —
   check it when `tmp/audit/google-forms-real.csv` arrives; Cairo time is the likely right reading.
+
+### Implementer attempt (2026-10-02)
+The user asked to try Antigravity first for T9. The dispatch (with `--dangerously-skip-permissions`,
+as on T1) was refused by Claude Code's permission classifier before it ran, so T9 went to the
+`unit-implementer` fallback the user had approved. agy needs a permission rule from the user to be used again.
+
+### T9 — nine frontend fixes (REM-009/013/014/016/017/018/019/021a/045)
+- `unit-implementer`: visible scope-checkbox labels; grading dialog focus trap / Escape / focus
+  return; course "Assistants" tab and the "Reports" nav item removed; Students/Groups/Assistants/
+  Assistant activity shown to admins only (the "People" heading omitted when empty) and those pages
+  say "You don't have access to this page." on a 401/403; app-level `not-found`, `error`,
+  `global-error`; announcement notifications link to `/dashboard` and the in-memory fixtures to real
+  routes; recordings copy and player no longer mention Bunny/signed playback; the greeting skips an
+  honorific.
+- Lead's fixes: (1) `global-error.tsx` repeated the root layout's theme script via
+  `dangerouslySetInnerHTML`, which is a second place deciding the theme (§11, F14-1) → removed; the
+  last-resort page is light-only. (2) The grading dialog **did not return focus**: found live
+  (headless Chrome) — the score input's `autoFocus` fired before the effect, so the effect "restored"
+  focus to the input it had just captured. Removed `autoFocus` (the effect sets initial focus),
+  mounted the effect once with `onClose` read through a ref. Re-tested live: initial focus inside,
+  Tab wraps, Escape closes, focus returns to the opener. (3) The same stale `/learn/...` links in
+  `seeds/001_development_fixtures.sql` (flagged by the subagent) → real routes. (4) `error.tsx`'s
+  component renamed so it no longer shadows the global `Error`.
+- Lead's gates: lint 0 errors; drift ok; unit 925/56; e2e 412 across 5 files; integration 192/192;
+  both builds; both tsc 0.
+- Lead's live check (production API, fresh DB, `next start`): assistant sidebar has no People
+  section and no Reports; `/manage/students` and `/manage/groups` reached directly show "You don't
+  have access to this page."; teacher greeting "Welcome back, Tahir"; course tabs without
+  "Assistants"; `/no-such-page` renders the branded 404. **PASS.**
+- Follow-ups (not in the brief): the admin pages still render their create forms above the
+  no-access message when an assistant reaches them by URL (server refuses every write); the 404
+  page has no `h1`.

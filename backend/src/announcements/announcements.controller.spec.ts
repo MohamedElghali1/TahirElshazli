@@ -283,10 +283,11 @@ describe('Announcements Unit & Integration', () => {
       expect(
         two.notifications.filter((n) => n.type === 'announcement'),
       ).toHaveLength(1);
-      // The link is a page route, not an API route.
+      // The link is a page route, not an API route — announcements render
+      // on the student dashboard (REM-016).
       expect(
         one.notifications.find((n) => n.type === 'announcement')?.link,
-      ).toBe('/learn/course-1');
+      ).toBe('/dashboard');
     });
 
     it('carries the whole body, since there is no detail page to click through to', async () => {

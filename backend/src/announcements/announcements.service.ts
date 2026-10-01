@@ -271,7 +271,9 @@ export class AnnouncementsService {
         type: 'announcement',
         title: published.title,
         message: published.body,
-        link: audience.courseId ? `/learn/${audience.courseId}` : null,
+        // Announcements render on the student dashboard, not at a per-course
+        // route (`/learn/*` does not exist; REM-016).
+        link: audience.courseId ? '/dashboard' : null,
       });
 
       // Publishing must not be all-or-nothing on mail (REM-005): a recipient

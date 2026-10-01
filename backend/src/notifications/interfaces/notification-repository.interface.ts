@@ -25,9 +25,9 @@ export interface Notification {
    * open-redirect.
    *
    * It must be a *page* route, not an API route. The two do not match: the
-   * assessments API lives at /assessments/:id while the page lives at
-   * /learn/:courseId/assessments/:id. Writing the API shape here produces a
-   * notification that 404s when clicked.
+   * assessments API lives at /assessments/:id while the student-facing page
+   * lives at /homework/:assessmentId. Writing the API shape here produces a
+   * notification that 404s when clicked (REM-016).
    */
   link: string | null;
   read: boolean;

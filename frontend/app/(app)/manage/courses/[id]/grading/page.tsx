@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useState } from 'react';
+import { use, useEffect, useRef, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
 import { ASSESSMENT_TYPE_LABEL, formatDateTime, formatPercent } from '@/lib/format';
@@ -261,6 +261,51 @@ function GradeDialog({
   const { token } = useSession();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+  // The parent passes a fresh `onClose` every render; reading it through a ref
+  // keeps the effect below mounted once, so focus is captured and restored once.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  // Focus trap, Escape to close, focus returned to the opener — the same
+  // behaviour as `CurriculumDrawer` in app/(app)/lessons/page.tsx.
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    panelRef.current?.querySelector<HTMLElement>('input, select, textarea, button')?.focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const focusable = panelRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable || focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+
+      if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      previouslyFocused?.focus?.();
+    };
+  }, []);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -305,7 +350,10 @@ function GradeDialog({
       aria-labelledby="grade-title"
       className="fixed inset-0 z-50 flex items-end justify-center bg-surface-overlay p-4 sm:items-center"
     >
-      <div className="w-full max-w-[520px] overflow-hidden rounded-md border border-border-medium bg-surface">
+      <div
+        ref={panelRef}
+        className="w-full max-w-[520px] overflow-hidden rounded-md border border-border-medium bg-surface"
+      >
         <header className="flex items-start justify-between gap-4 border-b border-border-light px-4 py-3">
           <div className="min-w-0">
             <h2 id="grade-title" className="truncate text-base font-semibold text-fg">
@@ -334,7 +382,6 @@ function GradeDialog({
             max={item.maxScore}
             step={1}
             required
-            autoFocus
             defaultValue={item.score ?? ''}
             hint={`0 to ${item.maxScore}`}
           />

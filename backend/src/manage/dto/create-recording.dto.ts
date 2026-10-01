@@ -51,9 +51,9 @@ export class CreateRecordingDto {
   topics?: string[];
 
   /**
-   * Where the video lives. A Bunny Stream id or URL today (CLAUDE.md §3);
-   * §8 requires the *playback* URL to be signed and minted per request, which
-   * is a delivery concern and not stored here.
+   * A plain http(s) link to the video (for example YouTube, Vimeo or a
+   * shared file) - handed to students as-is (D-57, recordings are plain
+   * links; no signed playback URL).
    *
    * URL-validated so this cannot become a `javascript:` string that a player or
    * an anchor would happily accept.
