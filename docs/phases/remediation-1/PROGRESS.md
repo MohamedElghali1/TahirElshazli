@@ -20,7 +20,7 @@ weekly reports (`REM-031`, post-launch).
 | T5 | REM-030 Cloudflare R2 storage driver | reviewed + committed | (this commit) |
 | T6 | REM-082 DOCX submissions | reviewed + committed | (this commit) |
 | T7 | REM-080a Google Form CSV import + analytics (backend) | reviewed + committed | (this commit) |
-| T8 | REM-080b CSV import + analytics (frontend) | queued | |
+| T8 | REM-080b CSV import + analytics (frontend) | implemented, uncommitted — lead gates + browser check owed (see HANDOFF.md) | |
 | T9 | Frontend fixes: REM-009, 013, 014, 016, 017, 018, 019, 021a | queued | |
 | T10 | Deploy prep: REM-008, 011, 012, 020, 021, 050 | queued | |
 
