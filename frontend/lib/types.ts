@@ -1331,7 +1331,12 @@ export interface AuthoredAssessment {
   allowedFileTypes: string[];
   maxFileSizeBytes: number;
   workType: WorkType;
-  /** Where a `link` task points; null for every other work type. */
+  /**
+   * Where a `link` task points, or a CSV-only `google_form` task's responder
+   * link (`D-60`, no live `googleForm` binding). Null for every other work
+   * type, including a live-bound Google Form (its address lives in the
+   * binding instead).
+   */
   externalUrl: string | null;
   visibility: TaskVisibility;
   /** Who marks it. Null is "whoever opens it first" (`D-32`). */
@@ -1639,6 +1644,8 @@ export interface StudentWorkRow {
   score: number | null;
   maxScore: number | null;
   submittedAt: string | null;
+  /** The matched `ExternalResult` id, for the Individual view (`D-60`/`T8`); null when unanswered. */
+  resultId: string | null;
 }
 
 /**

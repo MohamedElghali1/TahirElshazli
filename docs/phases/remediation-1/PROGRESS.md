@@ -20,7 +20,7 @@ weekly reports (`REM-031`, post-launch).
 | T5 | REM-030 Cloudflare R2 storage driver | reviewed + committed | (this commit) |
 | T6 | REM-082 DOCX submissions | reviewed + committed | (this commit) |
 | T7 | REM-080a Google Form CSV import + analytics (backend) | reviewed + committed | (this commit) |
-| T8 | REM-080b CSV import + analytics (frontend) | implemented, uncommitted — lead gates + browser check owed (see HANDOFF.md) | |
+| T8 | REM-080b CSV import + analytics (frontend) | reviewed + committed | (this commit) |
 | T9 | Frontend fixes: REM-009, 013, 014, 016, 017, 018, 019, 021a | queued | |
 | T10 | Deploy prep: REM-008, 011, 012, 020, 021, 050 | queued | |
 
@@ -163,3 +163,26 @@ models inside agy alike. By the user's choice, remaining tasks go to the `unit-i
   restarted by the lead at the user's request.
 - Live check with a **real** Google export: owed, in T8 (the user is providing
   `tmp/audit/google-forms-real.csv`).
+
+### T8 — REM-080b CSV import + results UI (frontend)
+- `unit-implementer`: "Import responses (CSV)" with a dry-run preview (rows / matched / unmatched /
+  questions + parser errors) then Import/Cancel; "Responses by question" (neutral bars, `n of answered`
+  label, `dir="auto"` values); per-student Individual view from the Results table via the new
+  `StudentWorkRow.resultId` and from the Unmatched panel; "Sync now" only when the task has a live
+  API binding (`externalUrl === null` on a `google_form` task); `update()` clears `externalUrl` when a
+  CSV-only form gains a live binding (spec added).
+- Lead's fix: the import preview was a bordered box inside the `Panel` (card in a card, §11) → a
+  divided section like its neighbours.
+- Lead's gates: lint 0 errors; drift ok; unit 925/56; e2e 412 across 5 files first try; integration
+  192/192; both builds; both tsc 0.
+- Lead's live check (production API on a fresh DB, `next start`, headless Chrome): CSV-only task on
+  group-1; the committed fixture with row 1's email changed to `student@example.com` → dry run and
+  import both `30 rows, 2 matched, 28 unmatched, 3 questions`. Hand-checked against the two matched
+  rows: capital Cairo 1 / Alexandria 1, book 2, «نعم» 2, average 1.5/10 — exactly what the page
+  shows. Distributions cover the caller's matched reach only (T7's design, `D-44`); unmatched rows
+  are excluded and the existing "understated" banner says so. Light, dark and `dir="rtl"` checked
+  with an Arabic task title and the long Arabic answer expanded: no horizontal scroll, no console
+  error. The only failed request is the `/manage/reports` prefetch (REM-021a, T9). **PASS.**
+- **Not done:** no real Google export was available (user, 2026-10-02: "use the fixture, I'll add it
+  later"). The zoneless-timestamp rule therefore stays **UTC (display-only)** and is still open —
+  check it when `tmp/audit/google-forms-real.csv` arrives; Cairo time is the likely right reading.

@@ -124,6 +124,13 @@ export interface StudentWorkRow {
   score: number | null;
   maxScore: number | null;
   submittedAt: string | null;
+  /**
+   * The matched `ExternalResult` id, for `GET /staff/results/:resultId`'s
+   * Individual view (`D-60`/`T8`). Null when the student has no response -
+   * no new exposure, since the row this sits on is already inside the
+   * caller's reach and that route re-checks `assertMayRead` itself.
+   */
+  resultId: string | null;
 }
 
 /**
@@ -275,6 +282,7 @@ export class WorkAnalyticsService {
           score: result?.score ?? null,
           maxScore: result?.maxScore ?? null,
           submittedAt: result?.submittedAt ?? null,
+          resultId: result?.id ?? null,
         };
       })
       .sort((a, b) => a.studentName.localeCompare(b.studentName));

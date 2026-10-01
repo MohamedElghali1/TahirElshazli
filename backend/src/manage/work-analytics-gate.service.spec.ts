@@ -171,6 +171,9 @@ describe('WorkAnalyticsGateService (AUTH-6)', () => {
       const rows = await gate.results(created.id, TA);
       expect(rows.map((r) => r.studentId)).toContain('student-1');
       expect(rows.map((r) => r.studentId)).not.toContain('student-2');
+      // `D-60`/`T8`: no response stored yet - a non-respondent's resultId is
+      // null, not a dangling id the Individual view could fetch.
+      expect(rows.find((r) => r.studentId === 'student-1')?.resultId).toBeNull();
     });
 
     it('leaves the teacher and an all_groups assistant with the whole roster', async () => {
@@ -280,6 +283,9 @@ describe('WorkAnalyticsGateService (AUTH-6)', () => {
 
       const rows = await gate.results(created.id, ADMIN);
       expect(rows.find((r) => r.studentId === 'student-1')?.score).toBe(4);
+      // `D-60`/`T8`: a matched respondent's row carries its `ExternalResult`
+      // id, for `GET /staff/results/:resultId`'s Individual view.
+      expect(typeof rows.find((r) => r.studentId === 'student-1')?.resultId).toBe('string');
 
       const entries = (await audit.find({ limit: 50 })).entries;
       const entry = entries.find((e) => e.action === 'work.results_imported');

@@ -244,6 +244,22 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
         'https://docs.google.com/forms/d/e/abc/viewform',
       );
     });
+
+    it('clears the stored responder link when the task gains a live googleForm binding (T8)', async () => {
+      const created = await authoring.create('course-1', ADMIN, {
+        ...TASK,
+        workType: 'google_form',
+        externalUrl: 'https://docs.google.com/forms/d/e/abc/viewform',
+      });
+      // A frontend client infers "bound live, API available" from
+      // `externalUrl === null` on a `google_form` task (T8's "Sync now"
+      // visibility). Leaving the old responder link behind after a live
+      // binding is added would make that read wrong.
+      const updated = await authoring.update(created.id, ADMIN, {
+        googleForm: 'https://docs.google.com/forms/d/e/xyz/edit',
+      });
+      expect(updated.externalUrl).toBeNull();
+    });
   });
 
   describe('the window has to be coherent before it is stored (§5.10)', () => {

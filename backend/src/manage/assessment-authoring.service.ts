@@ -949,11 +949,15 @@ export class AssessmentAuthoringService {
         // Clearing the URL when a task stops being a link (or a CSV-only
         // form, `D-60`): leaving it behind is harmless to the read path
         // (which selects on `work_type`) but it makes the row say something
-        // untrue about itself.
+        // untrue about itself. Same reasoning when a CSV-only form instead
+        // *gains* a live `googleForm` binding below (`T8`): the stale
+        // responder link would otherwise keep reading as "no API binding" to
+        // a client that infers one from `externalUrl === null`.
         externalUrl:
-          update.workType !== undefined &&
-          update.workType !== 'link' &&
-          update.workType !== 'google_form'
+          (update.workType !== undefined &&
+            update.workType !== 'link' &&
+            update.workType !== 'google_form') ||
+          (workType === 'google_form' && Boolean(googleForm))
             ? null
             : columns.externalUrl,
       });

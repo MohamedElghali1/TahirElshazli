@@ -67,10 +67,13 @@ export interface StoredAssessment {
    */
   workType: WorkType;
   /**
-   * Where a `link` task points; null for every other work type.
+   * Where a `link` task points, or a CSV-only `google_form` task's responder
+   * link (`D-60`): one with no `googleForm` binding, so there is nowhere else
+   * to hold the address students open. Null for every other work type.
    *
-   * A Google Form's URL deliberately does **not** live here - it needs an id, a
-   * responder URI, a quiz flag and sync state, which is `GoogleFormBinding`.
+   * A **live-bound** Google Form's URL deliberately does not live here - it
+   * needs an id, a responder URI, a quiz flag and sync state, which is
+   * `GoogleFormBinding`.
    */
   externalUrl: string | null;
   topics: string[];
