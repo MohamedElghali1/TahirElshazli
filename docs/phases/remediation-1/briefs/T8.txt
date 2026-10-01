@@ -1,0 +1,45 @@
+<task>
+Repository: npm-workspaces monorepo; Next.js 16 frontend in frontend/ (read frontend/AGENTS.md: this Next.js has breaking changes — check node_modules/next/dist/docs/ before using an API you are unsure of). Read CLAUDE.md first, especially §6 (lib/api.ts is the only thing that knows the API), §11 (design system: tokens only, no raw hex, never text-[var(--x)], one utility per property, no card inside a card, both themes, RTL, console 13px scale, copy rules) and §11.1 (progress and performance never merge; a missing mark is an em-dash; numbers with their denominator).
+
+Goal (REM-080b, decision D-60): the UI for importing Google Form responses from a CSV and reading the results like Google Forms' Summary and Individual views. The backend landed in commit 0da1d7d (T7) — read `git show --stat 0da1d7d` and the files below. Frontend only; no backend change unless you find a backend bug (then stop that part and report it).
+
+The contract (already in frontend/lib/types.ts and frontend/lib/api.ts — use these, do not redeclare):
+- `api.staff.importResults(token, assessmentId, file: File, options?: { dryRun?: boolean }, signal?)` → `POST /staff/assessments/:assessmentId/results/import?dryRun=…`, multipart field `file`, ≤ 2 MB, `text/csv` or `application/vnd.ms-excel`.
+  - dryRun=true → `ImportResultsPreview` `{ rows, matched, unmatched, errors: string[], questions }` — nothing stored.
+  - dryRun=false → `ImportResultsOutcome` `{ fetched, matched, unmatched, syncedAt, questions }`.
+  - Errors: 400 (bad CSV / not a google_form task — message is human-readable, show it), 404 (not in reach), 413 (too large).
+- `api.staff.workAnalytics(token, id)` → `WorkAnalytics`, now with `questions: QuestionAnalytics[]` = `{ id, title, answered, distribution: QuestionDistributionEntry[] }`, `QuestionDistributionEntry = { value, count }` (top 20 values + an `other` bucket; already narrowed to the caller's groups server-side).
+- Per student: the existing results list (`api.staff.workResults`) and `GET /staff/results/:resultId` (find its api.ts method) return an `ExternalResult` whose `raw` holds `{ answers: [{ questionId, values, score, correct }], questions?: [{ id, title }], source?: 'csv' }`.
+- Unmatched responses + attach: `api.staff.workUnmatched`, `api.staff.attachResult` — the screen already has `UnmatchedPanel`/`MatchRow`; reuse them as they are.
+
+The screen: frontend/app/(app)/manage/tasks/[id]/results/page.tsx (`GoogleFormResults`, ~330 lines). Change:
+1. "Import responses (CSV)" action in the Summary panel: a file input (accept `.csv,text/csv`) → immediately call importResults with dryRun=true and show a preview (rows, matched, unmatched, questions, and every error line) with "Import" and "Cancel". "Import" re-sends the same File with dryRun=false, then reloads analytics, results and unmatched. Errors from either call render in the page's existing error/banner pattern. Show a one-line hint where to get the file: "In Google Forms: Responses → Download responses (.csv)." Disable the button while a request is in flight.
+2. "Sync now" calls the Forms API, which answers 503 when the Google integration is not configured (GOOGLE_DRIVER=none, the launch configuration). Find what the task/analytics tell you about an API binding (look at StaffTask / WorkAnalytics / the google_form fields, and how T7's assessment-authoring change represents a CSV-only form). Show "Sync now" only when the task has an API binding; otherwise show only Import. If nothing in the data distinguishes them, keep Sync but render its 503 as the page's normal error, and say so in your report.
+3. Summary view (like Google Forms "Summary"): below the existing figures, one block per question in `analytics.questions`: the title, "N responses" (answered), and the distribution as rows of value → count with a horizontal bar sized by count/answered (reuse an existing bar/meter primitive from components/ui if one fits a count-of-total; this is an answer distribution, NOT a completion meter and NOT a score — label it plainly). Values are user text: render as text, wrap long and Arabic values, `dir="auto"` on the value cell. Empty state when there are no questions: "No per-question data yet. Import the responses CSV to see answers by question."
+4. Individual view (like Google Forms "Individual"): from the results list, opening one student's response shows their answers labelled with the question titles from `raw.questions` (fall back to the questionId when a title is missing), each answer's values joined for display, and the student's total as score over its denominator (use the existing Score primitive / formatting; a missing score is an em-dash, never 0). This replaces the raw JSON view (`RawDataView`) for responses that have `raw.answers`; keep RawDataView only as the fallback for anything else.
+5. Both themes, `dir="rtl"`, and the long Arabic name fixture (`ليلى فهمي`) must render correctly. Tokens only.
+
+Tests: there is no frontend unit-test harness — do not add one. The gates are typecheck, lint (incl. the token check) and the build. The lead verifies the screen in a real browser against a real Google export.
+</task>
+
+<verification_loop>
+From the repo root, sequentially (8 GB RAM — one at a time):
+  npm run lint
+  npm run typecheck:drift
+  npm run build:frontend
+  cd frontend && npx tsc --noEmit
+Confirm git status shows only intended files.
+</verification_loop>
+
+<action_safety>
+Frontend only. No unrelated refactors. Do NOT git add/commit/checkout/stash. Do not touch docs/legal/ or docs/phases/remediation-1/PROGRESS.md. Use the Edit/Write tools; no shell redirections or heredocs that can create stray files. Never delete a tracked file: before deleting any 0-byte file, run `git ls-files <name>` — the repo root has tracked 0-byte files (`0`, `1036`, `and`) that must stay until T10.
+</action_safety>
+
+<structured_output_contract>
+End with:
+  1. What changed and why (per numbered item)
+  2. Files touched
+  3. How you decided whether to show Sync now
+  4. Gate outcomes with real summary lines
+  5. Deviations, open points
+</structured_output_contract>
