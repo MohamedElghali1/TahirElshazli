@@ -1,16 +1,26 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
   HttpCode,
   HttpStatus,
   Param,
+  PayloadTooLargeException,
   Post,
+  Query,
   Request,
+  UnsupportedMediaTypeException,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Roles } from '../auth/roles.decorator.js';
 import { STAFF_ALL } from '../auth/staff-roles.js';
 import type { JwtPayload } from '../auth/jwt.strategy.js';
+import { RateLimit } from '../common/rate-limit/rate-limit.guard.js';
+import { UPLOAD_LIMIT } from '../common/rate-limit/limits.js';
+import type { UploadedFileLike } from '../common/storage/uploads.service.js';
 import {
   WorkAnalyticsService,
   type StudentWorkResult,
@@ -21,9 +31,17 @@ import {
   GoogleFormSyncService,
   type SyncOutcome,
 } from '../assessments/google-form-sync.service.js';
-import { WorkAnalyticsGateService } from './work-analytics-gate.service.js';
+import { CSV_MAX_BYTES } from '../assessments/google-form-csv.js';
+import {
+  WorkAnalyticsGateService,
+  type ImportResultsOutcome,
+  type ImportResultsPreview,
+} from './work-analytics-gate.service.js';
 import { AttachResultDto } from './dto/work-analytics.dto.js';
 import type { ExternalResult } from '../assessments/interfaces/work-repository.interface.js';
+
+/** What a browser sends for a `.csv` attachment - never trusted, only looked up. */
+const ALLOWED_CSV_MIME_TYPES = ['text/csv', 'application/vnd.ms-excel'];
 
 /**
  * `/staff/assessments/:id/*` - how a piece of work went, and who has not done it.
@@ -53,14 +71,17 @@ export class WorkAnalyticsController {
     return { id: req.user.sub, role: req.user.role };
   }
 
-  /** Completion, averages, and the unmatched count. */
+  /**
+   * Completion, averages, the unmatched count, and per-question answer
+   * distributions (`D-60`). The gate narrows `questions` to the caller's
+   * reach; the other figures stay course-wide (`D-44`).
+   */
   @Get('assessments/:assessmentId/analytics')
   async analyticsFor(
     @Param('assessmentId') assessmentId: string,
     @Request() req: { user: JwtPayload },
   ): Promise<WorkAnalytics> {
-    await this.gate.assertMayRead(assessmentId, this.actor(req));
-    return this.analytics.forAssessment(assessmentId);
+    return this.gate.analyticsFor(assessmentId, this.actor(req));
   }
 
   /**
@@ -112,6 +133,52 @@ export class WorkAnalyticsController {
   ): Promise<SyncOutcome> {
     await this.gate.assertMayRead(assessmentId, this.actor(req));
     return this.formSync.sync(assessmentId);
+  }
+
+  /**
+   * Imports a Google Forms "Download responses (.csv)" export (`D-60`,
+   * `REM-080a`) - the launch path, since the live API sync needs an OAuth
+   * client this platform does not have yet.
+   *
+   * `dryRun=true` parses and matches without writing. The file is parsed from
+   * the multipart buffer and never stored anywhere - CLAUDE.md's storage
+   * rules do not apply because there is nothing to keep: once the rows are in
+   * `external_results`, the export itself has no further use.
+   */
+  @Post('assessments/:assessmentId/results/import')
+  @HttpCode(HttpStatus.OK)
+  @RateLimit(UPLOAD_LIMIT)
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: CSV_MAX_BYTES, files: 1 } }),
+  )
+  async importResults(
+    @Param('assessmentId') assessmentId: string,
+    @UploadedFile() file: UploadedFileLike | undefined,
+    @Query('dryRun') dryRun: string | undefined,
+    @Request() req: { user: JwtPayload },
+  ): Promise<ImportResultsPreview | ImportResultsOutcome> {
+    if (!file || file.size === 0) {
+      throw new BadRequestException('No file was uploaded.');
+    }
+    if (!ALLOWED_CSV_MIME_TYPES.includes(file.mimetype?.toLowerCase())) {
+      throw new UnsupportedMediaTypeException(
+        `Files of type "${file.mimetype}" are not accepted. Allowed: ${ALLOWED_CSV_MIME_TYPES.join(', ')}.`,
+      );
+    }
+    // Re-checked against the buffer actually held, same discipline
+    // `UploadsService.store` uses: a limit enforced only in the interceptor
+    // config is a limit that depends on that config having been wired right.
+    if (file.buffer.byteLength > CSV_MAX_BYTES) {
+      throw new PayloadTooLargeException(
+        `That file is larger than the ${Math.floor(CSV_MAX_BYTES / (1024 * 1024))} MB limit.`,
+      );
+    }
+    return this.gate.importCsv(
+      assessmentId,
+      this.actor(req),
+      file.buffer.toString('utf8'),
+      dryRun === 'true',
+    );
   }
 
   /**

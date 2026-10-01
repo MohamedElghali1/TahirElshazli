@@ -53,6 +53,31 @@ export interface StudentWorkResult {
   hasDetail: boolean;
 }
 
+/** One value's share of the answers to one question - the Summary bar chart. */
+export interface QuestionDistributionEntry {
+  value: string;
+  count: number;
+}
+
+/**
+ * One question's answer distribution across every matched response the
+ * caller may see (`D-60`, `REM-080a`).
+ *
+ * Google's CSV export carries a total score but not per-question
+ * correctness, so this is a distribution of what was answered rather than a
+ * right/wrong breakdown - the same information Google Forms' own Summary view
+ * shows for a non-quiz question. `title` falls back to `id` for a response
+ * synced through the live API, whose `raw` never carried question titles.
+ */
+export interface QuestionAnalytics {
+  id: string;
+  title: string;
+  /** Non-blank answers to this question, among the responses counted. */
+  answered: number;
+  /** Sorted by count desc, capped at 20 entries plus a trailing "Other". */
+  distribution: QuestionDistributionEntry[];
+}
+
 /** The teacher's view of one piece of work across everyone it was set for. */
 export interface WorkAnalytics {
   assessmentId: string;
@@ -81,6 +106,15 @@ export interface WorkAnalytics {
   lastSyncError: string | null;
   /** Null when the form does not collect emails, or it could not be determined. */
   collectsEmail: boolean | null;
+  /**
+   * Per-question answer distributions (`D-60`). Empty when no stored response
+   * carries question detail - never populated for `forAssessment`'s own
+   * return, which is `Omit<WorkAnalytics, 'questions'>`; the gate
+   * (`WorkAnalyticsGateService.analytics`) fills it in, narrowed to the
+   * caller's reach, because the aggregate figures above stay course-wide
+   * (`D-44`) while this must not leak an unheld group's answers.
+   */
+  questions: QuestionAnalytics[];
 }
 
 export interface StudentWorkRow {
@@ -148,8 +182,13 @@ export class WorkAnalyticsService {
     return ids;
   }
 
-  /** The teacher's per-assessment analytics. */
-  async forAssessment(assessmentId: string): Promise<WorkAnalytics> {
+  /**
+   * The teacher's per-assessment analytics, minus `questions` - the gate adds
+   * that, narrowed to the caller's reach (see `WorkAnalytics.questions`).
+   */
+  async forAssessment(
+    assessmentId: string,
+  ): Promise<Omit<WorkAnalytics, 'questions'>> {
     const assessment = await this.assessments.findById(assessmentId);
     if (!assessment) {
       throw new NotFoundException('Assessment not found');
@@ -239,6 +278,112 @@ export class WorkAnalyticsService {
         };
       })
       .sort((a, b) => a.studentName.localeCompare(b.studentName));
+  }
+
+  /**
+   * Per-question answer distributions for one piece of work (`D-60`).
+   *
+   * Computed over **matched** results only - an unmatched response has not
+   * been attributed to anyone the caller may see, and counting it would let
+   * an answer distribution leak content from a response nobody has vetted.
+   * `allowedStudentIds`, when given, narrows further to a scoped caller's
+   * held groups - the same set `WorkAnalyticsGateService.results` builds -
+   * so an assistant cannot read another cohort's answers through this route
+   * even though the aggregate completion/average figures stay course-wide
+   * (`D-44`; only this per-question read narrows).
+   *
+   * Reads `raw.answers` (every provider writes this) and `raw.questions`
+   * (only the CSV path does, since Google's live API returns no question
+   * titles) - a response with neither is silently skipped rather than
+   * throwing, because `raw` is a third-party-shaped payload CLAUDE.md §7 does
+   * not trust structurally.
+   */
+  async questionsForAssessment(
+    assessmentId: string,
+    allowedStudentIds: Set<string> | null,
+  ): Promise<QuestionAnalytics[]> {
+    const results = await this.work.findResults(assessmentId);
+    const scoped = results.filter(
+      (r) =>
+        r.studentId !== null &&
+        (allowedStudentIds === null || allowedStudentIds.has(r.studentId)),
+    );
+
+    interface Agg {
+      title: string;
+      /** True once a real title (not the questionId placeholder) is seen. */
+      titled: boolean;
+      counts: Map<string, number>;
+      answered: number;
+      order: number;
+    }
+    const byId = new Map<string, Agg>();
+    let order = 0;
+
+    for (const result of scoped) {
+      const raw = result.raw as
+        | {
+            answers?: Array<{ questionId?: unknown; values?: unknown }>;
+            questions?: Array<{ id?: unknown; title?: unknown }>;
+          }
+        | null
+        | undefined;
+      if (!raw || !Array.isArray(raw.answers)) continue;
+      const titleById = new Map(
+        (Array.isArray(raw.questions) ? raw.questions : [])
+          .filter(
+            (q): q is { id: string; title: string } =>
+              typeof q?.id === 'string' && typeof q?.title === 'string',
+          )
+          .map((q) => [q.id, q.title]),
+      );
+
+      for (const answer of raw.answers) {
+        if (typeof answer?.questionId !== 'string') continue;
+        const questionId = answer.questionId;
+        const title = titleById.get(questionId);
+        let agg = byId.get(questionId);
+        if (!agg) {
+          agg = {
+            title: title ?? questionId,
+            titled: title !== undefined,
+            counts: new Map(),
+            answered: 0,
+            order: order++,
+          };
+          byId.set(questionId, agg);
+        } else if (!agg.titled && title !== undefined) {
+          agg.title = title;
+          agg.titled = true;
+        }
+
+        const values = Array.isArray(answer.values)
+          ? answer.values.filter((v): v is string => typeof v === 'string')
+          : [];
+        const value = values.join(', ').trim();
+        if (value === '') continue;
+        agg.answered += 1;
+        agg.counts.set(value, (agg.counts.get(value) ?? 0) + 1);
+      }
+    }
+
+    const DISTRIBUTION_CAP = 20;
+    return [...byId.entries()]
+      .sort((a, b) => a[1].order - b[1].order)
+      .map(([id, agg]) => {
+        const sorted = [...agg.counts.entries()].sort((a, b) => b[1] - a[1]);
+        const top = sorted.slice(0, DISTRIBUTION_CAP);
+        const otherCount = sorted
+          .slice(DISTRIBUTION_CAP)
+          .reduce((sum, [, count]) => sum + count, 0);
+        const distribution: QuestionDistributionEntry[] = top.map(
+          ([value, count]) => ({ value, count }),
+        );
+        if (otherCount > 0) {
+          distribution.push({ value: 'Other', count: otherCount });
+        }
+        return { id, title: agg.title, answered: agg.answered, distribution };
+      });
   }
 
   /**

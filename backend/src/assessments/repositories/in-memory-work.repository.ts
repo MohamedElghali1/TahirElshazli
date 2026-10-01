@@ -70,14 +70,30 @@ export class InMemoryWorkRepository implements WorkRepository {
   }
 
   async markSynced(assessmentId: string, error: string | null): Promise<void> {
-    const binding = this.bindings.get(assessmentId);
-    if (binding) {
-      binding.lastSyncError = error;
-      // Only stamped on success. A failed attempt must not make the screen say
-      // "last synced just now" next to stale numbers.
-      if (!error) {
-        binding.lastSyncedAt = new Date().toISOString();
-      }
+    let binding = this.bindings.get(assessmentId);
+    if (!binding) {
+      // A CSV-only `google_form` task (`D-60`) has no API binding, but "last
+      // updated" still needs somewhere to live - a stub row with no form
+      // identity, mirroring `PostgresWorkRepository.markSynced`.
+      binding = {
+        assessmentId,
+        formId: '',
+        responderUri: '',
+        title: '',
+        isQuiz: false,
+        totalPoints: null,
+        collectsEmail: null,
+        boundAt: new Date().toISOString(),
+        lastSyncedAt: null,
+        lastSyncError: null,
+      };
+      this.bindings.set(assessmentId, binding);
+    }
+    binding.lastSyncError = error;
+    // Only stamped on success. A failed attempt must not make the screen say
+    // "last synced just now" next to stale numbers.
+    if (!error) {
+      binding.lastSyncedAt = new Date().toISOString();
     }
   }
 

@@ -9,6 +9,9 @@ import { InMemoryTaskDraftRepository } from './repositories/in-memory-task-draft
 import { AssessmentAuthoringService } from './assessment-authoring.service.js';
 import { WorkAnalyticsGateService } from './work-analytics-gate.service.js';
 import { WorkAnalyticsService } from '../assessments/work-analytics.service.js';
+import { GoogleFormSyncService } from '../assessments/google-form-sync.service.js';
+import { GoogleIntegrationService } from '../integrations/google/google-integration.service.js';
+import { GoogleFormsClient } from '../integrations/google/google-forms.client.js';
 import { ASSESSMENT_REPOSITORY } from '../assessments/interfaces/assessment-repository.interface.js';
 import { WORK_REPOSITORY, EXTERNAL_WORK_BINDER } from '../assessments/interfaces/work-repository.interface.js';
 import { InMemoryWorkRepository } from '../assessments/repositories/in-memory-work.repository.js';
@@ -60,6 +63,7 @@ describe('WorkAnalyticsGateService (AUTH-6)', () => {
   let groups: InMemoryGroupRepository;
   let scopes: InMemoryAssistantScopeRepository;
   let groupBId: string;
+  let audit: AuditService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -81,6 +85,12 @@ describe('WorkAnalyticsGateService (AUTH-6)', () => {
         AssessmentAuthoringService,
         WorkAnalyticsGateService,
         WorkAnalyticsService,
+        GoogleFormSyncService,
+        // Never called by `ingest`/`previewMatch` - the only paths this spec
+        // exercises - so a stub is enough; a real Google client would need
+        // OAuth credentials this suite has no business holding.
+        { provide: GoogleIntegrationService, useValue: {} },
+        { provide: GoogleFormsClient, useValue: {} },
         StaffScopeService,
         StudentGroupsService,
         AuditService,
@@ -104,6 +114,7 @@ describe('WorkAnalyticsGateService (AUTH-6)', () => {
     authoring = module.get(AssessmentAuthoringService);
     groups = module.get(GROUP_REPOSITORY);
     scopes = module.get(ASSISTANT_SCOPE_REPOSITORY);
+    audit = module.get(AuditService);
 
     // A second course-1 cohort assistant-1 does not hold. student-2 moves out
     // of group-1 into it, so the two students are cleanly split one per group.
@@ -204,6 +215,108 @@ describe('WorkAnalyticsGateService (AUTH-6)', () => {
       expect((outOfCourse as NotFoundException).message).toBe(
         (outOfGroup as NotFoundException).message,
       );
+    });
+  });
+
+  describe('importCsv (D-60, REM-080a)', () => {
+    /** student-1 = student@example.com, student-2 = student2@example.com. */
+    const csv =
+      'Timestamp,Email Address,Score,What is 2+2?\n' +
+      '2026/09/27 3:00:00 PM GMT+3,student@example.com,4 / 5,Four\n' +
+      '2026/09/27 3:01:00 PM GMT+3,student2@example.com,3 / 5,Four\n' +
+      '2026/09/27 3:02:00 PM GMT+3,nobody@example.com,2 / 5,Five\n';
+
+    it('400s a task that is not a google_form', async () => {
+      const created = await authoring.create('course-1', ADMIN, TASK); // file_upload
+      await expect(
+        gate.importCsv(created.id, ADMIN, csv, false),
+      ).rejects.toThrow(/not a Google Form/);
+    });
+
+    it('404s an assistant an unheld task, byte-identical to a missing id (anti-enumeration)', async () => {
+      const bOnly = await authoring.create('course-1', ADMIN, {
+        ...TASK,
+        workType: 'google_form',
+        externalUrl: 'https://forms.gle/x',
+        targets: [{ groupId: groupBId }],
+      });
+      const denied = await gate
+        .importCsv(bOnly.id, TA, csv, false)
+        .catch((e) => e as NotFoundException);
+      const missing = await gate
+        .importCsv('nope', TA, csv, false)
+        .catch((e) => e as NotFoundException);
+      expect(denied).toBeInstanceOf(NotFoundException);
+      expect((denied as NotFoundException).message).toBe(
+        (missing as NotFoundException).message,
+      );
+    });
+
+    it('dryRun matches and counts without storing anything', async () => {
+      const created = await authoring.create('course-1', ADMIN, {
+        ...TASK,
+        workType: 'google_form',
+        externalUrl: 'https://forms.gle/x',
+      });
+      const preview = await gate.importCsv(created.id, ADMIN, csv, true);
+      expect(preview).toEqual({
+        rows: 3,
+        matched: 2,
+        unmatched: 1,
+        errors: [],
+        questions: 1,
+      });
+      expect(await gate.unmatched(created.id)).toHaveLength(0);
+    });
+
+    it('imports, matches, and writes one audit entry inside a transaction', async () => {
+      const created = await authoring.create('course-1', ADMIN, {
+        ...TASK,
+        workType: 'google_form',
+        externalUrl: 'https://forms.gle/x',
+      });
+      const outcome = await gate.importCsv(created.id, ADMIN, csv, false);
+      expect(outcome).toMatchObject({ fetched: 3, matched: 2, unmatched: 1, questions: 1 });
+
+      const rows = await gate.results(created.id, ADMIN);
+      expect(rows.find((r) => r.studentId === 'student-1')?.score).toBe(4);
+
+      const entries = (await audit.find({ limit: 50 })).entries;
+      const entry = entries.find((e) => e.action === 'work.results_imported');
+      expect(entry?.targetId).toBe(created.id);
+      expect(entry?.actorId).toBe('teacher-1');
+      expect(entry?.after).toMatchObject({ matched: 2, unmatched: 1 });
+    });
+
+    it('narrows question distributions to a scoped assistant\'s held groups', async () => {
+      const created = await authoring.create('course-1', ADMIN, {
+        ...TASK,
+        workType: 'google_form',
+        externalUrl: 'https://forms.gle/x',
+        targets: [{ groupId: 'group-1' }, { groupId: groupBId }],
+      });
+      await gate.importCsv(created.id, ADMIN, csv, false);
+
+      const wide = await gate.analyticsFor(created.id, ADMIN);
+      const q = wide.questions[0]!;
+      expect(q.distribution.reduce((sum, d) => sum + d.count, 0)).toBe(2); // both matched rows
+
+      const narrow = await gate.analyticsFor(created.id, TA); // holds group-1 (student-1) only
+      const qNarrow = narrow.questions[0]!;
+      expect(qNarrow.distribution.reduce((sum, d) => sum + d.count, 0)).toBe(1);
+    });
+
+    it('a second import of the same file is a no-op on the stored rows', async () => {
+      const created = await authoring.create('course-1', ADMIN, {
+        ...TASK,
+        workType: 'google_form',
+        externalUrl: 'https://forms.gle/x',
+      });
+      await gate.importCsv(created.id, ADMIN, csv, false);
+      const first = await gate.results(created.id, ADMIN);
+      await gate.importCsv(created.id, ADMIN, csv, false);
+      const second = await gate.results(created.id, ADMIN);
+      expect(second).toEqual(first);
     });
   });
 });

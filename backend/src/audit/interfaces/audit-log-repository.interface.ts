@@ -120,6 +120,13 @@ export type AuditAction =
   // for - and unlike grading, the *evidence* lives in someone else's system,
   // so this entry is the only durable record of who decided it was Ahmed's.
   | 'external_result.attached'
+  // The CSV import (`D-60`, `REM-080a`): a teacher or assistant rewrote the
+  // mirror from a Google-exported file rather than a live sync. Its own
+  // action rather than folded into a hypothetical `assessment.synced` -
+  // there is no such action today, and this is the first write that touches
+  // `external_results` from a source other than the Forms API, which is
+  // exactly the kind of provenance question §5.4 exists to answer.
+  | 'work.results_imported'
   // The Google integration. Teacher-only, and the only actions in this list
   // that change what a *third party* may be asked for on Dr. Tahir's behalf:
   // connecting stores a long-lived credential that can read every form his

@@ -27,7 +27,34 @@ import {
   WorkAnalyticsService,
   type StudentWorkResult,
   type StudentWorkRow,
+  type WorkAnalytics,
 } from '../assessments/work-analytics.service.js';
+import {
+  GoogleFormSyncService,
+  type SyncOutcome,
+} from '../assessments/google-form-sync.service.js';
+import { parseGoogleFormCsv } from '../assessments/google-form-csv.js';
+
+/**
+ * `POST .../results/import?dryRun=true` - what would happen, without writing
+ * anything. `errors` is always `[]` today: a malformed row fails the whole
+ * parse with a 400 naming the row (`google-form-csv.ts`) rather than
+ * collecting a partial list, so a dry run either throws or has none to show.
+ * Kept as a field rather than dropped so the shape does not have to change if
+ * that ever becomes per-row-tolerant.
+ */
+export interface ImportResultsPreview {
+  rows: number;
+  matched: number;
+  unmatched: number;
+  errors: string[];
+  questions: number;
+}
+
+/** `POST .../results/import` (stored). Same shape as a sync, plus the question count. */
+export interface ImportResultsOutcome extends SyncOutcome {
+  questions: number;
+}
 
 /**
  * The access decision for every analytics route, in one place.
@@ -58,6 +85,7 @@ export class WorkAnalyticsGateService {
     /** Global (`GroupDataModule`), so this needs no import edge. */
     private readonly studentGroups: StudentGroupsService,
     private readonly analytics: WorkAnalyticsService,
+    private readonly formSync: GoogleFormSyncService,
   ) {}
 
   /**
@@ -96,6 +124,22 @@ export class WorkAnalyticsGateService {
   }
 
   /**
+   * The held-group student set for a scoped caller, or `null` for one with
+   * unrestricted reach (teacher, admin, `all_groups` assistant) - the same
+   * shape `reachableGroupIds` itself uses, one level up.
+   */
+  private async allowedStudentIds(
+    actor: StaffActor,
+  ): Promise<Set<string> | null> {
+    const reach = await this.scope.reachableGroupIds(actor);
+    if (reach === null) {
+      return null;
+    }
+    const members = await this.groupRepo.findMembersForGroups(reach);
+    return new Set(members.map((m) => m.studentId));
+  }
+
+  /**
    * Per-student standing for one piece of work (`GET /staff/assessments/:id/results`).
    * Rows narrow to held-group students for scoped callers (AUTH-6).
    */
@@ -105,17 +149,106 @@ export class WorkAnalyticsGateService {
   ): Promise<StudentWorkRow[]> {
     await this.assertMayRead(assessmentId, actor);
     const rows = await this.analytics.rosterForAssessment(assessmentId);
-    const reach = await this.scope.reachableGroupIds(actor);
-    if (reach === null) {
+    const heldStudentIds = await this.allowedStudentIds(actor);
+    if (heldStudentIds === null) {
       return rows;
     }
-    const members = await this.groupRepo.findMembersForGroups(reach);
-    const heldStudentIds = new Set(members.map((m) => m.studentId));
     return rows.filter((r) => heldStudentIds.has(r.studentId));
+  }
+
+  /**
+   * `GET /staff/assessments/:id/analytics`. The aggregate completion/average
+   * figures stay course-wide (`D-44`); `questions` is the one part of this
+   * response narrowed to the caller's reach, because it is the one part that
+   * can show another cohort's actual answers rather than a count.
+   */
+  async analyticsFor(
+    assessmentId: string,
+    actor: StaffActor,
+  ): Promise<WorkAnalytics> {
+    await this.assertMayRead(assessmentId, actor);
+    const [base, heldStudentIds] = await Promise.all([
+      this.analytics.forAssessment(assessmentId),
+      this.allowedStudentIds(actor),
+    ]);
+    const questions = await this.analytics.questionsForAssessment(
+      assessmentId,
+      heldStudentIds,
+    );
+    return { ...base, questions };
   }
 
   async unmatched(assessmentId: string): Promise<ExternalResult[]> {
     return this.work.findUnmatchedResults(assessmentId);
+  }
+
+  /**
+   * `POST /staff/assessments/:id/results/import` (`D-60`, `REM-080a`).
+   *
+   * Gated exactly like `POST .../sync` - `assertMayRead`, no separate write
+   * check - because both routes rewrite the same mirror and an assistant who
+   * may see a task's results may also refresh them. Only for a `google_form`
+   * task: importing responses into a file-upload assignment has nothing to
+   * attach them to.
+   *
+   * `dryRun` parses and matches but writes nothing. Otherwise the store and
+   * the audit entry commit in one transaction (CLAUDE.md §9) - the CSV is
+   * never itself stored (D-60/T7: parsed from the buffer, discarded after).
+   */
+  async importCsv(
+    assessmentId: string,
+    actor: StaffActor,
+    csvText: string,
+    dryRun: boolean,
+  ): Promise<ImportResultsPreview | ImportResultsOutcome> {
+    await this.assertMayRead(assessmentId, actor);
+    const assessment = await this.assessments.findById(assessmentId);
+    if (!assessment || assessment.workType !== 'google_form') {
+      throw new BadRequestException(
+        'This task is not a Google Form - there is nothing to import results into.',
+      );
+    }
+
+    const parsed = parseGoogleFormCsv(csvText);
+
+    if (dryRun) {
+      const { matched, unmatched } = await this.formSync.previewMatch(
+        parsed.responses,
+      );
+      return {
+        rows: parsed.responses.length,
+        matched,
+        unmatched,
+        errors: [],
+        questions: parsed.questions.length,
+      };
+    }
+
+    return this.db.runInTransaction(async () => {
+      const outcome = await this.formSync.ingest(
+        assessmentId,
+        parsed.responses,
+        parsed.totalPoints,
+        { questions: parsed.questions, source: 'csv' },
+      );
+      await this.audit.record({
+        actorId: actor.id,
+        actorRole: actorRoleOf(actor),
+        action: 'work.results_imported',
+        targetType: 'assessment',
+        targetId: assessmentId,
+        courseId: assessment.courseId,
+        before: null,
+        after: {
+          rows: parsed.responses.length,
+          fetched: outcome.fetched,
+          matched: outcome.matched,
+          unmatched: outcome.unmatched,
+          questions: parsed.questions.length,
+        },
+      });
+      return { ...outcome, questions: parsed.questions.length };
+    });
   }
 
   /**

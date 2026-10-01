@@ -193,6 +193,59 @@ describe('Assessment authoring (§5.18) and targeting (§5.16)', () => {
     });
   });
 
+  describe('a Google Form task without an API binding (D-60, CSV-only import)', () => {
+    it('creates with only externalUrl (the responder link), never calling the binder', async () => {
+      const created = await authoring.create('course-1', ADMIN, {
+        ...TASK,
+        workType: 'google_form',
+        externalUrl: 'https://docs.google.com/forms/d/e/abc/viewform',
+      });
+      expect(created.workType).toBe('google_form');
+      // No binding was ever written - the whole point of `D-60`'s CSV path is
+      // that it needs none.
+      expect(await work.findBinding(created.id)).toBeNull();
+    });
+
+    it('refuses a google_form task with neither googleForm nor externalUrl', async () => {
+      await expect(
+        authoring.create('course-1', ADMIN, {
+          ...TASK,
+          workType: 'google_form',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('the stored externalUrl feeds the student-facing responder link', async () => {
+      const created = await authoring.create('course-1', ADMIN, {
+        ...TASK,
+        workType: 'google_form',
+        externalUrl: 'https://docs.google.com/forms/d/e/abc/viewform',
+      });
+      const detail = await studentService.getAssessmentDetail(
+        created.id,
+        'student-1',
+      );
+      expect(detail.work).toMatchObject({
+        kind: 'google_form',
+        formUrl: 'https://docs.google.com/forms/d/e/abc/viewform',
+      });
+    });
+
+    it('an update that keeps workType=google_form does not lose the stored responder link', async () => {
+      const created = await authoring.create('course-1', ADMIN, {
+        ...TASK,
+        workType: 'google_form',
+        externalUrl: 'https://docs.google.com/forms/d/e/abc/viewform',
+      });
+      const updated = await authoring.update(created.id, ADMIN, {
+        title: 'Renamed',
+      });
+      expect(updated.externalUrl).toBe(
+        'https://docs.google.com/forms/d/e/abc/viewform',
+      );
+    });
+  });
+
   describe('the window has to be coherent before it is stored (§5.10)', () => {
     it('rejects an inverted availability window', async () => {
       await expect(

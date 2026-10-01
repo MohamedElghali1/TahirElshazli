@@ -66,6 +66,7 @@ const AUDIT_ACTION_VALUES: Record<AuditAction, true> = {
   'blog_post.media_set': true,
   'blog_post.deleted': true,
   'external_result.attached': true,
+  'work.results_imported': true,
   'google.connected': true,
   'google.disconnected': true,
   'task_draft.created': true,

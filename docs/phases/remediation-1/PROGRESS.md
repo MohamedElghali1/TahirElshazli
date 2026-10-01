@@ -19,7 +19,7 @@ weekly reports (`REM-031`, post-launch).
 | T4 | REM-007 classroom-safe rate limits | reviewed + committed | (this commit) |
 | T5 | REM-030 Cloudflare R2 storage driver | reviewed + committed | (this commit) |
 | T6 | REM-082 DOCX submissions | reviewed + committed | (this commit) |
-| T7 | REM-080a Google Form CSV import + analytics (backend) | queued | |
+| T7 | REM-080a Google Form CSV import + analytics (backend) | reviewed + committed | (this commit) |
 | T8 | REM-080b CSV import + analytics (frontend) | queued | |
 | T9 | Frontend fixes: REM-009, 013, 014, 016, 017, 018, 019, 021a | queued | |
 | T10 | Deploy prep: REM-008, 011, 012, 020, 021, 050 | queued | |
@@ -38,6 +38,9 @@ weekly reports (`REM-031`, post-launch).
 - Replay migrations from an empty schema.
 - Re-run the audit's live journeys T-13 and T-14 and the browser walk.
 - Update `REMEDIATION_PLAN.md` boxes, `PRODUCTION_READINESS.md`, `CLAUDE.md` counts, `project_log.md`.
+- **Land on `D:/Users/ghali/TahirElshazli` branch `redesign` by fast-forward, full history** (user,
+  2026-10-01). `TahirElshazli/redesign` (4687787) is an ancestor of this branch, so a fast-forward is
+  possible; check first that `redesign` has not moved, and never force.
 
 ### T1 — REM-001 bootstrap-staff CLI
 - First dispatch auto-denied (headless agy cannot prompt for command permission). The user chose
@@ -137,3 +140,26 @@ models inside agy alike. By the user's choice, remaining tasks go to the `unit-i
   integration 192/192; both builds; both tsc 0.
 - Lead's migration check: fresh DB, `migrate.js` applied 001–027; the CHECK now lists `docx_upload`;
   an update to `{pdf_upload,docx_upload}` succeeds and `{exe_upload}` is refused by the constraint.
+
+### T7 — REM-080a Google Form CSV import + per-question analytics (backend)
+- The first `unit-implementer` run was cut off when the session ended; a second one verified the draft
+  file by file, found it correct, and added the missing `API_SPEC.yaml` route and schemas.
+- Landed: `ingest()` extracted from `sync()` (the seam the deadline automation will call, `REM-083`);
+  RFC 4180 parser (`common/csv/parse-csv.ts`); Google Forms CSV → responses (`google-form-csv.ts`:
+  headers by name, then structural fallback for a non-English form; `7 / 10` scores; two timestamp
+  shapes; multi-select kept as one string); `POST /staff/assessments/:id/results/import` (`dryRun`,
+  2 MB / 2000 rows / 200 columns, gated like `/sync`, audited `work.results_imported`);
+  `WorkAnalytics.questions` (distributions over the caller's reach, aggregates course-wide per `D-44`);
+  CSV-only `google_form` tasks need no API binding (responder link in `external_url`, no migration).
+- **Fixture time bomb fixed in the same commit:** `assess-1`'s window closed 2026-09-30, so from
+  2026-10-01 a staff e2e case failed for everyone. Moved to 2027-09-30 in the in-memory fixture and
+  `001_development_fixtures.sql`.
+- Open: a timestamp **without** a zone is read as UTC (display-only; no deadline comparison uses
+  imported times). Decide against the user's real export in T8 — Cairo time is the likely right
+  reading.
+- Lead's gates: lint 0 errors; drift ok; unit 924/56; e2e 412 across 5 files; both builds; both tsc 0;
+  integration 192/192 (first two attempts crashed the worker on low memory with Docker's other
+  containers running; third clean). The gate run was reaped once for low memory; Docker Desktop was
+  restarted by the lead at the user's request.
+- Live check with a **real** Google export: owed, in T8 (the user is providing
+  `tmp/audit/google-forms-real.csv`).

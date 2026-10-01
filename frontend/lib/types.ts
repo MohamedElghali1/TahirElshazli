@@ -1070,6 +1070,7 @@ export type AuditAction =
   | 'assessment.targeted'
   | 'assessment.deleted'
   | 'external_result.attached'
+  | 'work.results_imported'
   | 'google.connected'
   | 'google.disconnected'
   | 'blog_post.created'
@@ -1582,6 +1583,26 @@ export interface UploadConfig {
 export type WorkStatus = 'not_started' | 'submitted' | 'graded' | 'not_available';
 
 /**
+ * One value's share of the answers to one question.
+ * Source: `work-analytics.service.ts` `QuestionDistributionEntry` interface.
+ */
+export interface QuestionDistributionEntry {
+  value: string;
+  count: number;
+}
+
+/**
+ * One question's answer distribution (`D-60`, CSV import).
+ * Source: `work-analytics.service.ts` `QuestionAnalytics` interface.
+ */
+export interface QuestionAnalytics {
+  id: string;
+  title: string;
+  answered: number;
+  distribution: QuestionDistributionEntry[];
+}
+
+/**
  * The teacher's per-assessment analytics.
  * Source: `work-analytics.service.ts` `WorkAnalytics` interface (lines 57-84).
  */
@@ -1603,6 +1624,8 @@ export interface WorkAnalytics {
   lastSyncedAt: string | null;
   lastSyncError: string | null;
   collectsEmail: boolean | null;
+  /** Per-question answer distributions (`D-60`), narrowed to the caller's reach. */
+  questions: QuestionAnalytics[];
 }
 
 /**
@@ -1645,6 +1668,27 @@ export interface SyncOutcome {
   matched: number;
   unmatched: number;
   syncedAt: string;
+}
+
+/**
+ * `dryRun=true` on the CSV results import (`D-60`) - what would happen,
+ * without writing anything.
+ * Source: `work-analytics-gate.service.ts` `ImportResultsPreview` interface.
+ */
+export interface ImportResultsPreview {
+  rows: number;
+  matched: number;
+  unmatched: number;
+  errors: string[];
+  questions: number;
+}
+
+/**
+ * Outcome of a stored CSV results import (`D-60`).
+ * Source: `work-analytics-gate.service.ts` `ImportResultsOutcome` interface.
+ */
+export interface ImportResultsOutcome extends SyncOutcome {
+  questions: number;
 }
 
 /**

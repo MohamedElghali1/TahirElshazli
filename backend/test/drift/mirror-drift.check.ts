@@ -167,9 +167,13 @@ import type { UploadKind as B_UploadKind } from '../../src/common/storage/upload
 import type { UploadResult as B_UploadResult } from '../../src/common/storage/uploads.service.js';
 import type { WorkStatus as B_WorkStatus } from '../../src/assessments/work-analytics.service.js';
 import type { WorkAnalytics as B_WorkAnalytics } from '../../src/assessments/work-analytics.service.js';
+import type { QuestionAnalytics as B_QuestionAnalytics } from '../../src/assessments/work-analytics.service.js';
+import type { QuestionDistributionEntry as B_QuestionDistributionEntry } from '../../src/assessments/work-analytics.service.js';
 import type { StudentWorkRow as B_StudentWorkRow } from '../../src/assessments/work-analytics.service.js';
 import type { ExternalResult as B_ExternalResult } from '../../src/assessments/interfaces/work-repository.interface.js';
 import type { SyncOutcome as B_SyncOutcome } from '../../src/assessments/google-form-sync.service.js';
+import type { ImportResultsPreview as B_ImportResultsPreview } from '../../src/manage/work-analytics-gate.service.js';
+import type { ImportResultsOutcome as B_ImportResultsOutcome } from '../../src/manage/work-analytics-gate.service.js';
 import type { StudentWorkResult as B_StudentWorkResult } from '../../src/assessments/work-analytics.service.js';
 import type { NotificationPreferences as B_NotificationPreferences } from '../../src/settings/interfaces/notification-preferences-repository.interface.js';
 import type { GoogleStart as B_GoogleStart } from '../../src/auth/google/google-sign-in.service.js';
@@ -290,9 +294,13 @@ import type {
   UploadResult as F_UploadResult,
   WorkStatus as F_WorkStatus,
   WorkAnalytics as F_WorkAnalytics,
+  QuestionAnalytics as F_QuestionAnalytics,
+  QuestionDistributionEntry as F_QuestionDistributionEntry,
   StudentWorkRow as F_StudentWorkRow,
   ExternalResult as F_ExternalResult,
   SyncOutcome as F_SyncOutcome,
+  ImportResultsPreview as F_ImportResultsPreview,
+  ImportResultsOutcome as F_ImportResultsOutcome,
   StudentWorkResult as F_StudentWorkResult,
   NotificationPreferences as F_NotificationPreferences,
   GoogleStart as F_GoogleStart,
@@ -417,9 +425,13 @@ export type Check_UploadKind = Assert<Same<Wire<B_UploadKind>, F_UploadKind>>;
 export type Check_UploadResult = Assert<Same<Wire<B_UploadResult>, F_UploadResult>>;
 export type Check_WorkStatus = Assert<Same<Wire<B_WorkStatus>, F_WorkStatus>>;
 export type Check_WorkAnalytics = Assert<Same<Wire<B_WorkAnalytics>, F_WorkAnalytics>>;
+export type Check_QuestionAnalytics = Assert<Same<Wire<B_QuestionAnalytics>, F_QuestionAnalytics>>;
+export type Check_QuestionDistributionEntry = Assert<Same<Wire<B_QuestionDistributionEntry>, F_QuestionDistributionEntry>>;
 export type Check_StudentWorkRow = Assert<Same<Wire<B_StudentWorkRow>, F_StudentWorkRow>>;
 export type Check_ExternalResult = Assert<Same<Wire<B_ExternalResult>, F_ExternalResult>>;
 export type Check_SyncOutcome = Assert<Same<Wire<B_SyncOutcome>, F_SyncOutcome>>;
+export type Check_ImportResultsPreview = Assert<Same<Wire<B_ImportResultsPreview>, F_ImportResultsPreview>>;
+export type Check_ImportResultsOutcome = Assert<Same<Wire<B_ImportResultsOutcome>, F_ImportResultsOutcome>>;
 export type Check_StudentWorkResult = Assert<Same<Wire<B_StudentWorkResult>, F_StudentWorkResult>>;
 export type Check_NotificationPreferences = Assert<Same<Wire<B_NotificationPreferences>, F_NotificationPreferences>>;
 export type Check_GoogleStart = Assert<Same<Wire<B_GoogleStart>, F_GoogleStart>>;

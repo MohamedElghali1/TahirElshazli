@@ -78,6 +78,8 @@ import type {
   AnnotationPatch,
   AnnotationWrite,
   SyncOutcome,
+  ImportResultsPreview,
+  ImportResultsOutcome,
   TaskDraft,
   TaskVisibility,
   TaskDraftUpdate,
@@ -1256,6 +1258,25 @@ export const api = {
         method: 'POST',
         token,
       }),
+
+    /**
+     * Imports a Google Forms "Download responses (.csv)" export (`D-60`).
+     * Multipart, field `file` - the same shape `upload` above uses.
+     * `dryRun: true` parses and matches without storing anything.
+     */
+    importResults: (
+      token: string,
+      assessmentId: string,
+      file: File,
+      options?: { dryRun?: boolean },
+      signal?: AbortSignal,
+    ) =>
+      uploadTo<ImportResultsPreview | ImportResultsOutcome>(
+        `/staff/assessments/${assessmentId}/results/import${options?.dryRun ? '?dryRun=true' : ''}`,
+        token,
+        file,
+        signal,
+      ),
 
     /** One response in full, including per-question answers. */
     result: (token: string, resultId: string) =>

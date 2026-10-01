@@ -78,7 +78,7 @@ const SEED_ASSESSMENTS: SeedAssessment[] = [
     type: 'homework',
     topics: ['Atomic Structure'],
     availableFrom: '2026-08-10T00:00:00Z',
-    availableTo: '2026-09-30T23:59:59Z',
+    availableTo: '2027-09-30T23:59:59Z',
     dueAt: '2026-09-05T23:59:59Z',
     maxScore: 20,
     allowedFileTypes: PDF_ONLY,

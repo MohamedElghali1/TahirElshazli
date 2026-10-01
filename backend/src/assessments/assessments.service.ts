@@ -420,7 +420,11 @@ export class AssessmentsService {
       const mine = results[0] ?? null;
       return {
         kind: 'google_form',
-        formUrl: binding?.responderUri ?? '',
+        // A form bound live to the API has its responder link on the
+        // binding. A CSV-only task (`D-60`, no binding) stores the same link
+        // as `externalUrl` instead - the fallback here is what makes the
+        // student-facing button work either way.
+        formUrl: binding?.responderUri ?? assessment.externalUrl ?? '',
         completed: mine !== null,
         score: mine?.score ?? null,
         maxScore: mine?.maxScore ?? null,

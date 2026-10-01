@@ -158,14 +158,22 @@ export class PostgresWorkRepository implements WorkRepository {
   }
 
   async markSynced(assessmentId: string, error: string | null): Promise<void> {
+    // An upsert, not an UPDATE: a CSV-only `google_form` task (`D-60`) has no
+    // row in this table at all - it was never bound to the Forms API - and
+    // "last updated" still needs somewhere to live. The insert branch writes
+    // empty-string placeholders for the columns only a real API binding can
+    // supply (`form_id`, `responder_uri`); the update branch is byte-for-byte
+    // what this method did before, so an existing real binding is unaffected.
     // `last_synced_at` advances only on success, so the screen cannot say
     // "synced just now" above numbers that failed to refresh.
     await this.db.query(
-      `UPDATE assessment_google_forms
-          SET last_sync_error = $2,
-              last_synced_at  = CASE WHEN $2::text IS NULL
-                                     THEN now() ELSE last_synced_at END
-        WHERE assessment_id = $1`,
+      `INSERT INTO assessment_google_forms
+         (assessment_id, form_id, responder_uri, last_sync_error, last_synced_at)
+       VALUES ($1, '', '', $2, CASE WHEN $2::text IS NULL THEN now() ELSE NULL END)
+       ON CONFLICT (assessment_id) DO UPDATE SET
+         last_sync_error = $2,
+         last_synced_at  = CASE WHEN $2::text IS NULL
+                                THEN now() ELSE assessment_google_forms.last_synced_at END`,
       [assessmentId, error],
     );
   }

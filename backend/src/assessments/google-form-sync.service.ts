@@ -145,6 +145,33 @@ export class GoogleFormSyncService implements ExternalWorkBinder {
       throw error;
     }
 
+    return this.ingest(assessmentId, responses, totalPoints);
+  }
+
+  /**
+   * The mapping + store half of a sync, extracted so the CSV importer
+   * (`D-60`, `REM-080a`) and the live Forms API path share one write - and so
+   * a later deadline-triggered automation (`REM-083`) is a timer calling code
+   * that already exists rather than a second ingestion path to keep in step.
+   *
+   * Takes responses already fetched (by either caller) and `totalPoints`
+   * already resolved (from the API's metadata, or from the CSV's own "x / y"
+   * score column) - this method does no fetching and no interpretation of
+   * where the responses came from, only matching and storage.
+   */
+  async ingest(
+    assessmentId: string,
+    responses: readonly GoogleFormResponse[],
+    totalPoints: number | null,
+    /**
+     * Extra fields merged into every stored row's `raw`, alongside `answers`.
+     * Only the CSV importer passes this (`D-60`): it is the one caller that
+     * has question titles and knows its own provenance. The live API path
+     * (`sync()`) omits it, so `raw` there stays exactly `{ answers }` -
+     * unchanged for every existing reader.
+     */
+    extraRaw?: { questions: Array<{ id: string; title: string }>; source: 'csv' },
+  ): Promise<SyncOutcome> {
     const byEmail = await this.buildEmailIndex(responses);
     const mapped: NewExternalResult[] = responses.map((response) => ({
       assessmentId,
@@ -159,7 +186,9 @@ export class GoogleFormSyncService implements ExternalWorkBinder {
       // cannot retroactively rewrite what a past response was marked out of.
       maxScore: response.totalScore === null ? null : totalPoints,
       submittedAt: response.submittedAt || new Date().toISOString(),
-      raw: { answers: response.answers },
+      raw: extraRaw
+        ? { answers: response.answers, ...extraRaw }
+        : { answers: response.answers },
     }));
 
     const stored = await this.work.replaceResults(
@@ -167,6 +196,9 @@ export class GoogleFormSyncService implements ExternalWorkBinder {
       'google_form',
       mapped,
     );
+    // Upserts a stub binding row when none exists (a CSV-only `google_form`
+    // task with no API binding), so "last updated" still has somewhere to
+    // live - see `PostgresWorkRepository.markSynced`.
     await this.work.markSynced(assessmentId, null);
 
     // Counted from what was **stored**, not from what was mapped. A response a
@@ -180,6 +212,23 @@ export class GoogleFormSyncService implements ExternalWorkBinder {
       unmatched: stored.length - matched,
       syncedAt: new Date().toISOString(),
     };
+  }
+
+  /**
+   * `dryRun=true` on the CSV import (`D-60`): who *would* match, without
+   * writing anything. Shares `buildEmailIndex` with `ingest()` so a dry run
+   * and the real import can never disagree about who a response belongs to.
+   */
+  async previewMatch(
+    responses: readonly GoogleFormResponse[],
+  ): Promise<{ matched: number; unmatched: number }> {
+    const byEmail = await this.buildEmailIndex(responses);
+    const matched = responses.filter((r) =>
+      r.respondentEmail
+        ? byEmail.has(r.respondentEmail.trim().toLowerCase())
+        : false,
+    ).length;
+    return { matched, unmatched: responses.length - matched };
   }
 
   /**

@@ -174,7 +174,7 @@ an existing pattern in this repository and names it.
   once everything else is ready. REM-001 (the CLI) must still be built and tested before go-live;
   running it on production is a go-live step (REM-060), not before.
 
-- [ ] **REM-080 — Google Form homework by CSV import, with per-student results** · **P1** · `D-60`
+- [x] **REM-080a — backend landed; UI is REM-080b/T8** · **P1** · `D-60`
   - *Why:* the user wants Google Form homework now, without the Google Forms API; teachers export the
     responses CSV after the deadline and import it. A later automation will fetch at the deadline, so
     both paths must feed **one** ingestion.

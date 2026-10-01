@@ -50,6 +50,7 @@ const ACTION_LABEL: Record<AuditAction, string> = {
   'assessment.targeted': 'changed which groups work is set for',
   'assessment.deleted': 'deleted work',
   'external_result.attached': 'attached an external result',
+  'work.results_imported': 'imported Google Form results from a CSV',
   'google.connected': 'connected a Google account',
   'google.disconnected': 'disconnected a Google account',
   'blog_post.created': 'wrote an achievement post',
@@ -114,6 +115,7 @@ const ACTION_TONE: Record<AuditAction, TagTone> = {
   'assessment.targeted': 'amber',
   'assessment.deleted': 'red',
   'external_result.attached': 'blue',
+  'work.results_imported': 'blue',
   // Violet for the integration pair: connecting hands a third party a
   // long-lived credential, which is neither a create nor an edit of anything
   // inside this platform and should not read as routine (CLAUDE.md §5.4).

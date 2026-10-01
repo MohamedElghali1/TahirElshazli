@@ -451,9 +451,20 @@ export class AssessmentAuthoringService {
         'A link task needs externalUrl - the address students should open.',
       );
     }
-    if (workType === 'google_form' && !input.googleForm?.trim()) {
+    if (
+      workType === 'google_form' &&
+      !input.googleForm?.trim() &&
+      !input.externalUrl?.trim()
+    ) {
+      // `D-60`/`REM-080a`: a Google Form task no longer requires an API
+      // binding. `googleForm` still binds it live (requires
+      // `GOOGLE_DRIVER=google`); `externalUrl` alone stores the responder
+      // link students open, with results added later by CSV import. One of
+      // the two must be present - a form task with neither renders a button
+      // going nowhere, same as the `link` check above.
       throw new BadRequestException(
-        'A Google Form task needs googleForm - the form\'s editing link.',
+        'A Google Form task needs either googleForm (to bind it live) or ' +
+          "externalUrl (the form's responder link, for CSV-only import).",
       );
     }
   }
@@ -794,9 +805,15 @@ export class AssessmentAuthoringService {
           input.allowedFileTypes,
         maxFileSizeBytes: input.maxFileSizeBytes,
         workType,
-        // Only a `link` task stores a URL here. A Google Form's address is
-        // resolved against Google and written as a binding instead - see below.
-        externalUrl: workType === 'link' ? (input.externalUrl ?? null) : null,
+        // A `link` task stores its URL here. A Google Form bound live to the
+        // API resolves its address against Google and writes it as a binding
+        // instead (below) - but a CSV-only form (`D-60`, no `googleForm`
+        // given) has no binding to hold the responder link, so it is stored
+        // here too, the same as a `link` task's.
+        externalUrl:
+          workType === 'link' || (workType === 'google_form' && !input.googleForm?.trim())
+            ? (input.externalUrl ?? null)
+            : null,
         // The unit-6 settings. Later slices thread the rest of them through.
         visibility: input.visibility ?? 'published',
         markerId: input.markerId ?? null,
@@ -817,11 +834,21 @@ export class AssessmentAuthoringService {
       // waiting for the result anyway - and the alternative (bind afterwards,
       // outside) is exactly the crash-in-the-gap shape §5.4 spent a migration
       // closing for audit entries.
-      await this.binder.bindExternal(
-        assessment.id,
-        workType,
-        input.googleForm ?? input.externalUrl ?? '',
-      );
+      //
+      // Skipped for a `google_form` task that supplied no `googleForm`
+      // (`D-60`): that task is CSV-only by choice, and calling the binder
+      // with `externalUrl` in its place would attempt to bind that URL as a
+      // form against the Google API - failing outright with
+      // `GOOGLE_DRIVER=none` and, even when configured, misreading a plain
+      // responder link as an editing link. `link` and `file_upload` tasks
+      // still call it unconditionally; the binder is a no-op for both.
+      if (workType !== 'google_form' || input.googleForm?.trim()) {
+        await this.binder.bindExternal(
+          assessment.id,
+          workType,
+          input.googleForm ?? input.externalUrl ?? '',
+        );
+      }
       const targets = await this.assessmentRepo.setTargets(
         assessment.id,
         input.targets,
@@ -919,11 +946,14 @@ export class AssessmentAuthoringService {
       const after = await this.assessmentRepo.update(assessmentId, {
         ...columns,
         ...(derivedTypes !== undefined ? { allowedFileTypes: derivedTypes } : {}),
-        // Clearing the URL when a task stops being a link: leaving it behind is
-        // harmless to the read path (which selects on `work_type`) but it makes
-        // the row say something untrue about itself.
+        // Clearing the URL when a task stops being a link (or a CSV-only
+        // form, `D-60`): leaving it behind is harmless to the read path
+        // (which selects on `work_type`) but it makes the row say something
+        // untrue about itself.
         externalUrl:
-          update.workType !== undefined && update.workType !== 'link'
+          update.workType !== undefined &&
+          update.workType !== 'link' &&
+          update.workType !== 'google_form'
             ? null
             : columns.externalUrl,
       });

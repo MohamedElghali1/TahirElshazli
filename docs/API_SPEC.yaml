@@ -614,6 +614,47 @@ components:
         createdAt:   { type: string, format: date-time }
         targets:     { type: array, items: { $ref: '#/components/schemas/AssessmentTarget' } }
 
+    # --- Google Form CSV import and per-question analytics (D-60, REM-080a) ---
+    QuestionDistributionEntry:
+      type: object
+      required: [value, count]
+      properties:
+        value: { type: string }
+        count: { type: integer }
+    QuestionAnalytics:
+      type: object
+      required: [id, title, answered, distribution]
+      description: >
+        One question's answer distribution across matched results in the
+        caller's reach. Sorted by count desc, capped at 20 entries plus a
+        trailing "Other" bucket. `title` falls back to `id` for a response
+        synced through the live API, which carries no question titles.
+      properties:
+        id:       { type: string }
+        title:    { type: string }
+        answered: { type: integer }
+        distribution: { type: array, items: { $ref: '#/components/schemas/QuestionDistributionEntry' } }
+    ImportResultsPreview:
+      type: object
+      required: [rows, matched, unmatched, errors, questions]
+      description: 'dryRun=true: what would happen, without writing anything.'
+      properties:
+        rows:      { type: integer }
+        matched:   { type: integer }
+        unmatched: { type: integer }
+        errors:    { type: array, items: { type: string } }
+        questions: { type: integer }
+    ImportResultsOutcome:
+      type: object
+      required: [fetched, matched, unmatched, syncedAt, questions]
+      description: 'The stored outcome - same shape as a live sync, plus the question count.'
+      properties:
+        fetched:   { type: integer }
+        matched:   { type: integer }
+        unmatched: { type: integer }
+        syncedAt:  { type: string, format: date-time }
+        questions: { type: integer }
+
     # A target on the staff task list, with its group's display name.
     StaffTaskTarget:
       allOf:
@@ -1993,6 +2034,55 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
       x-audit: assessment.targeted
+
+  /staff/assessments/{assessmentId}/results/import:
+    parameters:
+      - { name: assessmentId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    post:
+      tags: [tasks]
+      summary: Import a Google Forms "Download responses (.csv)" export (D-60, REM-080a)
+      description: >
+        The launch path for form results until a live API sync is wired up:
+        `GoogleFormSyncService.ingest` is the seam this shares with the API
+        path, so a later deadline-triggered sync writes through the same code.
+        Only for a task whose `workType` is `google_form` - 400 otherwise. The
+        file is parsed from the multipart buffer and never stored; parsing and
+        matching are the same for `dryRun=true` (returns counts, writes
+        nothing) and the real import (stores and audits `work.results_imported`
+        in one transaction). Gated exactly like `POST .../sync`: a scoped
+        assistant gets the same byte-identical 404 as a missing assessment id
+        when the task is outside every group they hold. Oversized (>2 MB),
+        wrong-type, or unparseable files are refused before anything is stored.
+      x-roles: [assistant, teacher, admin]
+      parameters:
+        - name: dryRun
+          in: query
+          required: false
+          schema: { type: string, enum: ['true', 'false'] }
+          description: 'true parses and matches without writing anything.'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary, description: 'text/csv or application/vnd.ms-excel, <= 2 MB.' }
+      responses:
+        '200':
+          description: Preview (dryRun) or the stored outcome
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: '#/components/schemas/ImportResultsPreview' }
+                  - { $ref: '#/components/schemas/ImportResultsOutcome' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { description: Larger than the 2 MB cap }
+        '415': { description: Not a CSV mimetype }
+      x-audit: work.results_imported
 
   /staff/courses/{courseId}/groups:
     get:
