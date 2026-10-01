@@ -2555,3 +2555,16 @@ moved student sat in two groups on one course and every assistant holding either
   withheld removal verb).
 **Consequence:** enforced in the service at every membership write (`GroupsService`); a student on two
 groups of one course is now an invariant violation, not a state.
+
+## 2026-10-02 — Remediation run 1: weekly-report details
+
+### `D-66` — Weekly reports: Saturday–Friday Cairo weeks, tasks due that week, no assistant access
+**Chosen (user, 2026-10-02),** completing `D-63` for the T12 plan
+(`docs/phases/remediation-1/T12-PLAN.md`).
+- A report's **week is Saturday 00:00 to the next Saturday 00:00, Africa/Cairo** (the Egyptian school
+  week; Cairo's DST is honoured, so the UTC offset is not fixed).
+- Its **homework completion and marks cover the tasks due in that week** — one set of tasks for both
+  figures. A task marked after its week shows an em-dash in that week's report until it is marked.
+- **Assistants have no access** to weekly reports, draft or published: the routes are `/admin/*`
+  (teacher and admin). Rejected: scoped read access for held groups (more routes and refusal tests for
+  a reviewing role `D-63` did not give them).
