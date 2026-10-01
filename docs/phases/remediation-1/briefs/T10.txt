@@ -1,0 +1,127 @@
+<task>
+Repository: npm-workspaces monorepo (frontend/ Next.js 16 App Router, backend/ NestJS 12), one root
+package-lock.json. Read CLAUDE.md §3, §5, §8 and docs/HOSTINGER_DEPLOYMENT.md §2-§9 first - that
+document already sketches most of the files below; implement them as real files and keep that
+document's topology (Cloudflare proxied, Full strict -> nginx on the host -> 127.0.0.1:3000 web,
+127.0.0.1:3001 api; postgres unpublished; TRUSTED_PROXY_HOPS=2). Binding.
+
+Deployment prep for the Hostinger VPS. Do every item; keep each minimal. No new dependencies except
+what an `overrides` entry in item 1 needs.
+
+1. REM-008 - `npm audit` (root) must report 0 high and 0 critical. Run it, read which packages
+   (multer/qs were flagged before). Prefer `npm update <pkg>` within existing ranges; if a fix is
+   only reachable transitively, add a root package.json "overrides" entry. Never `npm audit fix
+   --force`. Re-run `npm ci` after so the lockfile is consistent. Report before/after counts.
+
+2. REM-011 - Node 24. Dockerfile.backend and Dockerfile.frontend: every `FROM node:20-alpine` (both
+   stages each) -> `node:24-alpine`. .github/workflows/ci.yml: NODE_VERSION '20.x' -> '24.x'.
+   frontend/package.json and backend/package.json `@types/node` to a ^24 range if they are lower
+   (reinstall so the lockfile follows). Update the Node mentions in HOSTINGER_DEPLOYMENT.md §3.
+
+3. REM-020 - docker-compose.prod.yml at the repo root, from HOSTINGER_DEPLOYMENT.md §5.1 (build on
+   the VPS, DEPLOY_TAG required, env_file .env, ports bound to 127.0.0.1 only, postgres not
+   published, json-file log caps, healthchecks). The api service must NOT set DB_AUTO_SEED and must
+   set NODE_ENV=production and DB_AUTO_MIGRATE "0". Leave docker-compose.yml (development) alone.
+
+4. REM-021 - deploy/nginx/tahirelshazli.conf from §5.2: 80 -> 301 https; web server block
+   (client_max_body_size small); api server block with client_max_body_size at least the API's
+   real upload cap (find it in backend/src - the submission/upload size limit - and state the
+   number you found in a comment); X-Forwarded-For / X-Forwarded-Proto; origin certificate paths
+   under /etc/ssl/cloudflare/. Add `real_ip` handling ONLY if it does not change what the app
+   sees in X-Forwarded-For (the app counts hops itself - TRUSTED_PROXY_HOPS=2); if in doubt, leave
+   it out and say so.
+
+5. REM-023 - deploy/backup.sh (bash, `set -euo pipefail`): `backup.sh nightly|pre-deploy`; runs
+   `docker compose -f docker-compose.prod.yml exec -T postgres pg_dump -U "$POSTGRES_USER" -Fc
+   tahirelshazli` into /var/backups/lms/<kind>-<UTC timestamp>.dump (dir overridable by env
+   BACKUP_DIR), mode 600; fails non-zero on an empty dump; retention: delete dumps older than
+   BACKUP_RETENTION_DAYS (default 30 - the privacy policy, docs/legal/privacy-policy.md §7, promises
+   backups are overwritten on a rolling 30-day cycle; say so in a comment), but never delete the
+   newest dump; an
+   optional off-host hook: if BACKUP_OFFSITE_CMD is set, run it with the dump path as $1. Reads
+   POSTGRES_USER from the environment or from the .env next to the compose file. A header comment
+   with the cron line for nightly use. Update HOSTINGER_DEPLOYMENT.md §9 ("Keep 14 daily + 8
+   weekly", the inline pg_dump line) to point at the script and the 30-day retention.
+
+6. REM-025 - deploy/cloudflare-firewall.sh (bash, `set -euo pipefail`): ufw default deny incoming,
+   allow 22/tcp, then allow 80,443/tcp only from Cloudflare's published ranges fetched from
+   https://www.cloudflare.com/ips-v4 and ips-v6; abort (do not enable a half-built rule set) if
+   either fetch returns empty; idempotent on re-run; print what it did. A header comment saying
+   Docker-published ports bypass ufw, which is why compose binds 127.0.0.1.
+
+7. REM-047 - security headers in frontend/next.config.ts via `async headers()` on all routes:
+   Content-Security-Policy, X-Frame-Options DENY (and frame-ancestors 'none' in the CSP),
+   Referrer-Policy strict-origin-when-cross-origin, X-Content-Type-Options nosniff,
+   Permissions-Policy (camera/microphone/geolocation off), and `poweredByHeader: false`.
+   CSP must allow what the app really loads - VERIFY each by grep, don't guess:
+     - connect-src: 'self', the API origin (NEXT_PUBLIC_API_URL, read at build time in
+       next.config.ts; fall back to http://localhost:3001), https://*.r2.cloudflarestorage.com
+       (presigned reads are fetched by script in components/marking/use-file-bytes.ts);
+     - img-src / media-src: 'self' data: blob: + the API origin + https://*.r2.cloudflarestorage.com
+       + picsum.photos (marketing placeholders, next.config images) + whatever else grep shows
+       (YouTube/Vimeo thumbnails? embeds? check components/student/recording-player.tsx);
+     - frame-src: only the embed hosts recording-player.tsx actually iframes (if any);
+     - script-src / style-src: Next.js App Router needs inline scripts/styles unless nonces are
+       wired - use 'self' 'unsafe-inline' for both (no nonce middleware in this task; say so in a
+       comment as a known ceiling), plus 'unsafe-eval' in development only (next dev needs it);
+     - pdf.js worker: check how components/marking loads it (worker-src 'self' blob: if needed);
+     - font-src: 'self' + Google Fonts hosts only if next/font is NOT self-hosting (check).
+   `next build` must still pass. The lead will browse the built app with the console open and
+   treat any CSP violation as a failure.
+
+8. REM-027 - frontend/app/robots.ts (Next.js metadata route): allow '/', disallow the signed-in
+   areas (find the real top-level paths under app/(app)/ and app/(auth)/ - e.g. /manage,
+   /dashboard ...), and a sitemap line only if a sitemap route exists. Check
+   node_modules/next/dist/docs for the robots.ts API of this Next version.
+
+9. REM-050 - remove tracked junk at the repo root: `git rm 0 1036 and` (they are 0-byte, tracked
+   since unit 8), and `git rm` backend/{const if it is tracked. Delete nothing else.
+
+10. REM-012 (.env.example) - you CANNOT edit .env.example (permission-blocked). Instead write the
+    complete proposed contents to docs/phases/remediation-1/env.example.proposed, derived from
+    backend/src/common/config/env.ts (every resolve* function), backend/src/database/database.module.ts
+    (DATABASE_POOL_MAX, PGSSLMODE), backend/src/database/cli/bootstrap-staff.ts (BOOTSTRAP_* as
+    commented examples only), frontend/lib/api.ts (NEXT_PUBLIC_API_URL build-time,
+    INTERNAL_API_URL runtime): NODE_ENV, PORT, JWT_SECRET (placeholder that boot refuses in prod),
+    JWT_EXPIRY, TRUSTED_PROXY_HOPS (0 dev; comment: 2 behind Cloudflare+nginx), PERSISTENCE_DRIVER,
+    DATABASE_URL, DATABASE_POOL_MAX, PGSSLMODE, DB_AUTO_MIGRATE, DB_AUTO_SEED (dev only),
+    CORS_ORIGIN, FRONTEND_URL, STORAGE_DRIVER + UPLOAD_DIR + R2_ACCOUNT_ID R2_ACCESS_KEY_ID
+    R2_SECRET_ACCESS_KEY R2_BUCKET, MAIL_DRIVER + MAIL_SMTP_HOST/PORT/USER/PASS/FROM,
+    GOOGLE_DRIVER + GOOGLE_CLIENT_ID/SECRET/OAUTH_REDIRECT_URI + GOOGLE_TOKEN_ENCRYPTION_KEY +
+    GOOGLE_SIGN_IN_REDIRECT_URI + STAFF_GOOGLE_DOMAINS, POSTGRES_USER/POSTGRES_PASSWORD (prod
+    compose), NEXT_PUBLIC_API_URL, INTERNAL_API_URL. One short comment per variable: default, and
+    what production refuses. NO Bunny, NEXT_PUBLIC_VIDEO_CDN, CLOUDFLARE_R2_*, Resend, Paymob,
+    Stripe. Grep for any other process.env read you find and include it. The lead copies it over.
+
+Leave untouched: application behaviour, docker-compose.yml, everything not listed.
+</task>
+
+<verification_loop>
+From the repo root, make green before finishing:
+  npm audit                 (0 high, 0 critical - paste the summary line)
+  npm run lint
+  npm run typecheck:drift
+  npm test
+  npm run build:frontend    (with the CSP in place)
+  npm run build:backend
+  cd frontend && npx tsc --noEmit
+  bash -n deploy/backup.sh && bash -n deploy/cloudflare-firewall.sh
+  docker compose -f docker-compose.prod.yml config  (with DEPLOY_TAG=x POSTGRES_USER=x
+    POSTGRES_PASSWORD=x in the environment and an empty .env if needed - do not commit a .env)
+Do NOT build Docker images (the lead does that; this machine has 8 GB RAM). Never run two
+builds/suites at once. Confirm git status shows only intended files.
+</verification_loop>
+
+<action_safety>
+Scoped to the ten items. The only git commands allowed are the `git rm` in item 9. Do NOT
+git add/commit/checkout/stash. Do not stop or remove any Docker container. Do not run the firewall
+script. Avoid shell redirections that could create stray files.
+</action_safety>
+
+<structured_output_contract>
+End with:
+  1. Per item (1-10): what changed, files
+  2. Gate outcomes with counts (npm audit before/after)
+  3. The CSP as finally written, and for each source the grep evidence that it is needed
+  4. Deviations, open points, decisions wanted
+</structured_output_contract>
