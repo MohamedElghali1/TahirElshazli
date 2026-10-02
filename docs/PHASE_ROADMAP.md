@@ -551,7 +551,17 @@ remain in `docs/phases/unit-8/HANDOFF.md` §10.
 
 ---
 
-### Chat unit 9 — Weekly reports `[ ]`  *(the flagship — 9 routes, none exist)*
+### Chat unit 9 — Weekly reports `[x]`
+
+**State, 2026-10-02.** Done in remediation run 1 (T12a–T12d, `REM-031`), **to a narrower design than
+the text below**: `D-63` and `D-66` replaced it. Reports go to the **student in the app only** — no
+parent email, no PDF, no `mail_deliveries` row, no notes; weeks are Saturday–Friday Africa/Cairo;
+homework and marks cover tasks due that week; drafts are generated hourly by an in-process timer for
+the last completed week and never overwrite a published row (SQL guard); the teacher or an admin
+publishes one group-week at a time (audited, each student notified); **assistants have no access**.
+Four routes (`GET /admin/weekly-reports/weeks`, `GET /admin/weekly-reports`,
+`POST /admin/weekly-reports/publish`, `GET /reports/weekly`), console `/manage/reports` and the
+student's "Weekly reports" section on `/marks`. The text below is kept as the superseded original.
 
 **Scope** `RPT-1` … `RPT-9`.
 **Depends on** units 2, 3, 7, 8 — it composes their figures. The attendance figure it composes is

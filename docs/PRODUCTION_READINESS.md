@@ -17,7 +17,7 @@ the task that clears every open box is named. Re-run this checklist before `REM-
 - [x] Main pages verified — 60+ screens walked in a real browser, 0 console errors
 - [x] Main workflows verified — sign-in, homework, marking and return, groups, public site
 - [x] API integrations verified — no mocked data; contract drift check green
-- [x] Navigation complete — "Reports" hidden, course "Assistants" tab removed, admin-only items hidden from assistants (T9: `REM-021a`, `REM-014`, `REM-017`)
+- [x] Navigation complete — "Reports" shown to teacher/admin only (T12d, `REM-031`), course "Assistants" tab removed, admin-only items hidden from assistants (T9: `REM-021a`, `REM-014`, `REM-017`)
 - [x] Error states — per-screen states plus app-level `not-found`, `error`, `global-error` (T9: `REM-018`)
 - [x] Responsive — student pages at 375 px, no horizontal scroll
 - [x] Accessibility — grading dialog focus trap, visible scope-checkbox labels (T9: `REM-013`, `REM-009`)
@@ -44,7 +44,7 @@ the task that clears every open box is named. Re-run this checklist before `REM-
 - [ ] Rate limits safe for a shared school IP → `REM-007`
 
 ## Product scope (client decisions)
-- [x] Weekly reports — after launch (`D-58`); hide the nav item for launch → `REM-021a`
+- [x] Weekly reports — built before launch after all (`D-63`, `D-66`, `REM-031`): drafts generated hourly for the last completed Sat–Fri Cairo week, teacher/admin publishes per group-week, students notified in-app and read them on `/marks`; live-checked end to end 2026-10-02
 - [x] File uploads — PDF + DOCX at launch (`D-59`) → build `REM-030`, `REM-082`
 - [x] Google Form homework — CSV import now, API fetch later (`D-60`) → build `REM-080`
 - [x] Real staff accounts created last (`D-61`); bootstrap CLI still needed → `REM-001`

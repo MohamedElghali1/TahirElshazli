@@ -2,9 +2,15 @@
 
 import { api } from '@/lib/api';
 import { useApi } from '@/lib/session';
-import { formatDate, formatPercent } from '@/lib/format';
-import type { CourseProgress, TopicScore } from '@/lib/types';
-import { Panel, EmptyState, Loader, Meter, StatNumber, Button, Icon } from '@/components/ui';
+import {
+  ASSESSMENT_STATUS_LABEL,
+  ASSESSMENT_TYPE_LABEL,
+  formatDate,
+  formatDateOnly,
+  formatPercent,
+} from '@/lib/format';
+import type { AssessmentStatus, AssessmentType, CourseProgress, TopicScore, WeeklyReport } from '@/lib/types';
+import { Panel, EmptyState, Loader, Meter, StatNumber, Button, Icon, Score, Divider } from '@/components/ui';
 import { PageTitle } from '@/components/shell/page-chrome';
 import { CourseGate } from '@/components/student/course-gate';
 import { useSelectedCourse } from '@/components/shell/course-context';
@@ -25,10 +31,104 @@ export default function MarksPage() {
   return (
     <>
       <PageTitle title="Marks" />
+      <div className="p-6 pb-0">
+        <WeeklyReportsSection />
+      </div>
       <CourseGate loading={loading} hasCourses={Boolean(courses && courses.length > 0)}>
         {selectedId && <ReportSummary courseId={selectedId} />}
       </CourseGate>
     </>
+  );
+}
+
+/**
+ * The student's weekly reports (`RPT-9`, `REM-031`): "the report is the
+ * page" - shown above the marks table, not scoped to the course switcher,
+ * newest first.
+ */
+function WeeklyReportsSection() {
+  const { data, error, loading, reload } = useApi((token) => api.reports.weekly(token), []);
+
+  return (
+    <Panel title="Weekly reports" bodyClassName="">
+      {loading && (
+        <div className="flex justify-center p-8">
+          <Loader label="Loading weekly reports" />
+        </div>
+      )}
+      {error && (
+        <div className="p-6">
+          <EmptyState
+            icon="AlertTriangle"
+            title={error.message}
+            action={<Button onClick={reload}>Try again</Button>}
+          />
+        </div>
+      )}
+      {data && data.length === 0 && <EmptyState icon="ChartPie" title="No weekly reports yet." />}
+      {data && data.length > 0 && (
+        <div className="flex flex-col divide-y divide-border-light">
+          {data.map((report) => (
+            <WeeklyReportBlock key={report.id} report={report} />
+          ))}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function WeeklyReportBlock({ report }: { report: WeeklyReport }) {
+  const { attendance, homework } = report.content;
+
+  return (
+    <div className="flex flex-col gap-3 px-4 py-4">
+      <span className="text-base font-semibold text-fg">
+        Week of {formatDateOnly(report.weekStart)}
+      </span>
+
+      <div className="flex flex-wrap gap-6 text-xs text-fg-3">
+        <span className="num">
+          Attendance {attendance.present} of {attendance.expected}
+          {(attendance.late > 0 || attendance.absent > 0 || attendance.unmarked > 0) && (
+            <span className="text-fg-4">
+              {' '}
+              ({attendance.late > 0 && `${attendance.late} late`}
+              {attendance.late > 0 && (attendance.absent > 0 || attendance.unmarked > 0) && ', '}
+              {attendance.absent > 0 && `${attendance.absent} absent`}
+              {attendance.absent > 0 && attendance.unmarked > 0 && ', '}
+              {attendance.unmarked > 0 && `${attendance.unmarked} unmarked`})
+            </span>
+          )}
+        </span>
+        <span className="num">
+          Homework {homework.submitted} of {homework.due}
+        </span>
+      </div>
+
+      {homework.tasks.length > 0 && (
+        <>
+          <Divider />
+          <ul className="flex flex-col divide-y divide-border-light">
+            {homework.tasks.map((t) => (
+              <li
+                key={t.assessmentId}
+                className="flex flex-wrap items-center justify-between gap-3 py-2 text-base"
+              >
+                <span className="min-w-40 flex-1 truncate text-fg">{t.title}</span>
+                <span className="shrink-0 text-xs text-fg-3">
+                  {ASSESSMENT_TYPE_LABEL[t.type as AssessmentType] ?? t.type}
+                </span>
+                <span className="num shrink-0 text-xs text-fg-3">{formatDate(t.dueAt)}</span>
+                <span className="shrink-0 text-xs text-fg-3">
+                  {ASSESSMENT_STATUS_LABEL[t.status as AssessmentStatus] ?? t.status}
+                </span>
+                <Score value={t.score} of={t.maxScore} />
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
   );
 }
 

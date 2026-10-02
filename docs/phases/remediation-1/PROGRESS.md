@@ -24,6 +24,7 @@ weekly reports (`REM-031`, post-launch).
 | T9 | Frontend fixes: REM-009, 013, 014, 016, 017, 018, 019, 021a, 045 | reviewed + committed | (this commit) |
 | T10 | Deploy prep: REM-008, 011, 012, 020, 021, 023, 025, 027, 047, 050 | reviewed + committed | (this commit) |
 | T11 | REM-015 legal pages (/privacy, /terms) | reviewed + committed | (this commit) |
+| T12 | REM-031 weekly reports (12a table, 12b generation, 12c routes, 12d screens) | reviewed + committed | 2c1a73a, 864ff56, effec86, (this commit) |
 
 ## Review notes
 
@@ -312,3 +313,26 @@ open timestamp point). The lead reviewed that diff and covered it in 12a's full 
   student list empty before publish; teacher publish 200 (2 reports); re-publish 409; student then sees
   only their own group-1 report (not group-2's draft); notification "Week of 19 Sep 2026" → `/marks`;
   audit entry with both report ids. **PASS.**
+
+### T12d — weekly-report screens (REM-031)
+- `unit-implementer`: "Reports" nav item back for admins only; `/manage/reports` (group-weeks table,
+  drafts as an amber count); `/manage/reports/[groupId]/[weekStart]` (one expandable row per student:
+  attendance x of y with late/absent/unmarked, homework x of y, sessions and tasks with `Score`;
+  "Publish N reports" behind an inline confirmation naming the group and week); the student's
+  "Weekly reports" section above `/marks`; `formatDateOnly` so a `YYYY-MM-DD` week never shifts a day.
+  No dialog primitive exists, so the confirmation is inline (the codebase's documented pattern).
+- Lead's fixes: the "Published N reports." message was held inside the publish panel, which unmounts
+  when the reload takes drafts to 0 — the message vanished the moment it appeared; moved to the page.
+  Row button `text-left` → `text-start` (RTL). At 375 px names and titles shrank to "Ali …"/"…t";
+  they now keep a minimum width and wrap onto their own line.
+- Lead's gates: lint 0 errors (tokens resolve); drift ok; frontend build; frontend tsc 0. (No backend
+  change in this slice; backend gates as on `effec86`.)
+- Lead's live check (production API + `next start` + headless Chrome, fresh DB 001–029 + fixtures plus
+  two sessions and a marked task inside 2026-09-19…25, student-2 renamed to a long Arabic name):
+  bootstrap generated 3 drafts; teacher list and group-week in light, dark, `dir="rtl"`, 375 px — no
+  horizontal scroll, late ≠ present, unmarked shown as unmarked, em-dash for no mark, 8/10 for the
+  marked task; confirmation text correct, Cancel works, Publish → "Published 2 reports." and both rows
+  Published; repeat publish 409 "Nothing to publish for this group and week."; student's notification
+  "Your weekly report is ready" → `/marks` showing the report (light, dark at 375 px); Arabic-named
+  student at 375 px RTL; assistant has no Reports item and gets "You don't have access to this page."
+  on both URLs. **PASS.**

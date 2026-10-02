@@ -85,6 +85,22 @@ export function formatFileSize(bytes: number): string {
   return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[i]}`;
 }
 
+/**
+ * A bare `YYYY-MM-DD` calendar date (a weekly report's `weekStart`, the
+ * Saturday, Africa/Cairo) rendered without a timezone shift. `new
+ * Date('2026-09-26')` parses as UTC midnight, which renders as the *previous*
+ * day in any timezone behind UTC - the parts are read directly and handed to
+ * a local `Date` instead.
+ */
+export function formatDateOnly(weekStart: string): string {
+  const [y, m, d] = weekStart.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(LOCALE, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
 export function formatPercent(value: number | null): string {
   // A missing mark is an em-dash, never `0` or `--` (CLAUDE.md §11.1).
   return value === null ? '—' : `${Math.round(value)}%`;

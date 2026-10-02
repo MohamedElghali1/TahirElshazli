@@ -219,11 +219,14 @@ an existing pattern in this repository and names it.
 
 ## Phase 10 — After launch
 
-- [ ] **REM-031 — Weekly reports (Unit 9, `RPT-1…9`)** · `AUD-03`, `D-58` — "must function well after
+- [x] **REM-031 — Weekly reports (Unit 9, `RPT-1…9`)** · `AUD-03`, `D-58` — "must function well after
   launch": run through `/redesign-phase 9`; shape fixed by `D-63`: delivered to the student in the app only,
   drafts auto-generated weekly (idempotent per group-week), teacher/admin reviews and publishes
   (audited, never overwritten); pure composition over attendance, homework completion and marks
   (including imported Google Form results, REM-080). Re-enable the "Reports" nav item (reverse REM-021a) when it lands. Depends on REM-004.
+  **Done 2026-10-02, ahead of launch** (remediation run 1, T12a–T12d: migrations 028–029, hourly
+  in-process generation, `/admin/weekly-reports*` + `/reports/weekly`, console Reports screens, the
+  student's "Weekly reports" on `/marks`; Sat–Fri Cairo weeks, assistants have no access — `D-66`).
 - [ ] **REM-083 — Fetch Google Form responses automatically at the deadline** · `D-60` — a later step:
   call the existing API `sync()` (which already routes through the `ingest()` seam REM-080 extracts)
   once per task when its deadline passes. Needs the client's Google OAuth client (`GOOGLE_DRIVER=google`)

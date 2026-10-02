@@ -98,8 +98,8 @@ function sectionsFor(admin: boolean, studentCount: number | null): NavGroup[] {
         { href: '/manage/tasks', label: 'Tasks', icon: 'ListDetails' },
         { href: '/manage/tasks/drafts', label: 'Draft tasks', icon: 'FileText', indent: 1 },
         { href: '/manage/marks', label: 'Marks', icon: 'ListNumbers' },
-        // Weekly reports return with Unit 9 (REM-031); /manage/reports does
-        // not exist yet (REM-021a).
+        // Admin only: assistants have no access to weekly reports (`D-66`).
+        ...(admin ? [{ href: '/manage/reports', label: 'Reports', icon: 'ChartPie' as IconName }] : []),
       ],
     },
     {
