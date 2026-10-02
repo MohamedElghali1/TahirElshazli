@@ -88,4 +88,4 @@ schema, and on a seeded database. e2e: cases go into the existing `app.e2e-spec.
 - **12d** console screens + student section + nav item; live browser check.
 
 ## Status
-Plan written and committed 2026-10-02. Implementation not started.
+Plan written and committed 2026-10-02. **12a committed** (migration 028 + both repositories; integration 197/197 from an empty schema). 12b next.

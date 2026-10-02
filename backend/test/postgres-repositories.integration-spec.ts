@@ -32,6 +32,8 @@ import { Role } from '../src/auth/roles.enum.js';
 import { STAFF_ADMIN } from '../src/auth/staff-roles.js';
 import { PostgresGoogleIdentityRepository } from '../src/auth/google/repositories/postgres-google-identity.repository.js';
 import { GoogleIdentityConflictError } from '../src/auth/google/interfaces/google-identity-repository.interface.js';
+import { PostgresWeeklyReportRepository } from '../src/reports/repositories/postgres-weekly-report.repository.js';
+import type { WeeklyReportContent } from '../src/reports/interfaces/weekly-report-repository.interface.js';
 
 /**
  * Executes the real SQL against a real Postgres.
@@ -3403,6 +3405,145 @@ describeIfDb('Postgres repositories', () => {
           WHERE table_name = 'user_google_identities' AND column_name = 'linked_at'`,
       );
       expect(col.datetime_precision).toBe(3);
+    });
+  });
+
+  /**
+   * `REM-031`, `D-63`, `D-66`, migration 028. Uses seeded `group-1`
+   * (studies `course-1`, members `student-1` and `student-2`) and `teacher-1`
+   * (`003_group_fixtures.sql`) - a real group, its students, its course.
+   */
+  describe('weekly reports (migration 028)', () => {
+    const repo = () => new PostgresWeeklyReportRepository(db);
+    const CONTENT = (present: number): WeeklyReportContent => ({
+      attendance: { present, late: 0, absent: 0, unmarked: 0, expected: present, sessions: [] },
+      homework: { due: 0, submitted: 0, tasks: [] },
+    });
+    // A week not touched by any other test in this file.
+    const WEEK = '2026-10-03';
+
+    it('upsertDraft distinguishes inserted, updated, and skipped-after-publish, and week_start round-trips', async () => {
+      const inserted = await repo().upsertDraft({
+        groupId: 'group-1',
+        studentId: 'student-1',
+        courseId: 'course-1',
+        weekStart: WEEK,
+        content: CONTENT(1),
+        generatedAt: '2026-10-03T12:00:00.000Z',
+      });
+      expect(inserted).toBe('inserted');
+
+      const [row] = await repo().findByGroupWeek('group-1', WEEK);
+      expect(row.weekStart).toBe(WEEK); // no timezone shift from the ::text cast
+      expect(row.status).toBe('draft');
+
+      const updated = await repo().upsertDraft({
+        groupId: 'group-1',
+        studentId: 'student-1',
+        courseId: 'course-1',
+        weekStart: WEEK,
+        content: CONTENT(2),
+        generatedAt: '2026-10-04T12:00:00.000Z',
+      });
+      expect(updated).toBe('updated');
+      const [refreshed] = await repo().findByGroupWeek('group-1', WEEK);
+      expect(refreshed.content.attendance.present).toBe(2);
+
+      const published = await repo().publishGroupWeek('group-1', WEEK, 'teacher-1', '2026-10-05T00:00:00.000Z');
+      expect(published).toHaveLength(1);
+      expect(published[0].status).toBe('published');
+      expect(published[0].publishedBy).toBe('teacher-1');
+
+      // The published guard is in SQL: this upsert conflicts, the
+      // `WHERE weekly_reports.status = 'draft'` fails, nothing is written and
+      // nothing is RETURNING'd, so the repository reports 'skipped'.
+      const skipped = await repo().upsertDraft({
+        groupId: 'group-1',
+        studentId: 'student-1',
+        courseId: 'course-1',
+        weekStart: WEEK,
+        content: CONTENT(999),
+        generatedAt: '2026-10-09T00:00:00.000Z',
+      });
+      expect(skipped).toBe('skipped');
+      const [untouched] = await repo().findByGroupWeek('group-1', WEEK);
+      expect(untouched.content.attendance.present).toBe(2);
+      expect(untouched.status).toBe('published');
+    });
+
+    it('publishGroupWeek only flips drafts, and a second publish of the same group-week returns nothing', async () => {
+      const week = '2026-09-26';
+      await repo().upsertDraft({
+        groupId: 'group-1',
+        studentId: 'student-1',
+        courseId: 'course-1',
+        weekStart: week,
+        content: CONTENT(1),
+        generatedAt: '2026-09-26T00:00:00.000Z',
+      });
+      await repo().upsertDraft({
+        groupId: 'group-1',
+        studentId: 'student-2',
+        courseId: 'course-1',
+        weekStart: week,
+        content: CONTENT(1),
+        generatedAt: '2026-09-26T00:00:00.000Z',
+      });
+
+      const flipped = await repo().publishGroupWeek('group-1', week, 'teacher-1', '2026-09-28T00:00:00.000Z');
+      expect(flipped.map((r) => r.studentId).sort()).toEqual(['student-1', 'student-2']);
+
+      const again = await repo().publishGroupWeek('group-1', week, 'teacher-1', '2026-09-29T00:00:00.000Z');
+      expect(again).toEqual([]);
+
+      const forStudent1 = await repo().findPublishedForStudent('student-1');
+      expect(forStudent1.some((r) => r.weekStart === week)).toBe(true);
+      const forStudent2Other = (await repo().findPublishedForStudent('student-2')).filter(
+        (r) => r.weekStart === week,
+      );
+      expect(forStudent2Other).toHaveLength(1);
+    });
+
+    it('listWeeks counts drafts and published per group-week, newest week first', async () => {
+      const weeks = await repo().listWeeks();
+      const ours = weeks.filter((w) => w.groupId === 'group-1' && (w.weekStart === WEEK || w.weekStart === '2026-09-26'));
+      const byWeek = new Map(ours.map((w) => [w.weekStart, w]));
+      expect(byWeek.get(WEEK)).toEqual({ groupId: 'group-1', weekStart: WEEK, drafts: 0, published: 1 });
+      expect(byWeek.get('2026-09-26')).toEqual({ groupId: 'group-1', weekStart: '2026-09-26', drafts: 0, published: 2 });
+      // Newest week first.
+      const idx1003 = weeks.findIndex((w) => w.weekStart === WEEK);
+      const idx0926 = weeks.findIndex((w) => w.weekStart === '2026-09-26');
+      expect(idx1003).toBeLessThan(idx0926);
+    });
+
+    it('the unique key refuses a duplicate raw INSERT', async () => {
+      await db.query(
+        `INSERT INTO weekly_reports (id, group_id, student_id, course_id, week_start, status, content, generated_at)
+         VALUES ('wr-dup-1', 'group-1', 'student-1', 'course-1', '2026-07-04', 'draft', '{}', now())`,
+      );
+      await expect(
+        db.query(
+          `INSERT INTO weekly_reports (id, group_id, student_id, course_id, week_start, status, content, generated_at)
+           VALUES ('wr-dup-2', 'group-1', 'student-1', 'course-1', '2026-07-04', 'draft', '{}', now())`,
+        ),
+      ).rejects.toThrow();
+    });
+
+    it('the status/published_at CHECK refuses an inconsistent row', async () => {
+      // published without published_at
+      await expect(
+        db.query(
+          `INSERT INTO weekly_reports (id, group_id, student_id, course_id, week_start, status, content, generated_at)
+           VALUES ('wr-bad-1', 'group-1', 'student-1', 'course-1', '2026-07-11', 'published', '{}', now())`,
+        ),
+      ).rejects.toThrow();
+      // draft with published_at set
+      await expect(
+        db.query(
+          `INSERT INTO weekly_reports (id, group_id, student_id, course_id, week_start, status, content, generated_at, published_at)
+           VALUES ('wr-bad-2', 'group-1', 'student-1', 'course-1', '2026-07-18', 'draft', '{}', now(), now())`,
+        ),
+      ).rejects.toThrow();
     });
   });
 });

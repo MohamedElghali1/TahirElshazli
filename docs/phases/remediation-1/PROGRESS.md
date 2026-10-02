@@ -257,3 +257,19 @@ as on T1) was refused by Claude Code's permission classifier before it ran, so T
   (tables scroll inside their own container), dark and `dir="rtl"`, no console error, no CSP
   violation. **PASS.** The pages are drafts until the client fills the placeholders and a lawyer
   reviews them (`docs/legal/README.md`).
+
+### Peer session (2026-10-02)
+A second background session ("Dr. Tahir LMS launch blockers and deployment") was writing into this
+tree at the same time — the source of several stray 0-byte files and of an unannounced CHANGELOG
+entry. The user confirmed the decision it recorded and stopped it; it committed `255013e` (CSV import:
+day/month dates, zoneless = Cairo, `Email` header, impossible dates refused — `D-67`, closing T8's
+open timestamp point). The lead reviewed that diff and covered it in 12a's full gate run.
+
+### T12a — weekly_reports table + repositories (REM-031)
+- `unit-implementer`: migration `028_weekly_reports.sql` (TEXT ids as every other table; unique per
+  group/student/week; status/published_at CHECK; two indexes), `WeeklyReportRepository` with both
+  drivers; `upsertDraft` is one `INSERT … ON CONFLICT … DO UPDATE … WHERE status = 'draft'`, so a
+  published report can never be rewritten — proven on PostgreSQL by re-reading the row, not only by
+  the returned `'skipped'`. In-memory reads deep-copy.
+- Lead's gates (tree incl. `255013e`): lint 0 errors; drift ok; unit 935/57; e2e 412 across 5 files;
+  integration 197/197 (001–028 from an empty schema); backend build; backend tsc 0.
