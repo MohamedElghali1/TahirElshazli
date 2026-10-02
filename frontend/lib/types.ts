@@ -581,6 +581,66 @@ export interface ReportDocument {
   issuedAt: string;
 }
 
+/* --- weekly reports (reports/interfaces/weekly-report-repository, weekly-reports.service) --- */
+
+export interface WeeklyReportContent {
+  attendance: {
+    present: number;
+    late: number;
+    absent: number;
+    unmarked: number;
+    expected: number;
+    sessions: {
+      sessionId: string;
+      title: string;
+      scheduledAt: string;
+      status: 'present' | 'late' | 'absent' | null;
+    }[];
+  };
+  homework: {
+    due: number;
+    submitted: number;
+    tasks: {
+      assessmentId: string;
+      title: string;
+      type: string;
+      dueAt: string;
+      status: string;
+      score: number | null;
+      maxScore: number;
+    }[];
+  };
+}
+
+export interface WeeklyReport {
+  id: string;
+  groupId: string;
+  studentId: string;
+  courseId: string;
+  /** YYYY-MM-DD, the Saturday, Africa/Cairo calendar date. */
+  weekStart: string;
+  status: 'draft' | 'published';
+  content: WeeklyReportContent;
+  generatedAt: string;
+  publishedAt: string | null;
+  publishedBy: string | null;
+}
+
+/** One group-week, enriched for the teacher/admin's own screen. */
+export interface WeeklyReportWeekView {
+  groupId: string;
+  weekStart: string;
+  drafts: number;
+  published: number;
+  groupName: string;
+  courseTitle: string;
+}
+
+/** One report in a group-week, enriched with the student's name. */
+export interface WeeklyReportView extends WeeklyReport {
+  studentName: string;
+}
+
 /* --- notifications (notifications/interfaces/notification-repository) ----- */
 
 export type NotificationType =
@@ -595,7 +655,9 @@ export type NotificationType =
    * announcement a student received rendered `<undefined />` and took the page
    * down with it.
    */
-  | 'announcement';
+  | 'announcement'
+  /** A weekly report published to one student (`REM-031`). Migration 029. */
+  | 'weekly_report';
 
 export interface AppNotification {
   id: string;
@@ -1085,7 +1147,9 @@ export type AuditAction =
   // Unit 8: the timetable draft, its publication, and the attendance sheet.
   | 'session.planned'
   | 'session.published'
-  | 'attendance.marked';
+  | 'attendance.marked'
+  // Unit 9: publishing a group-week's weekly reports (`REM-031`).
+  | 'weekly_report.published';
 
 /** Mirrors the backend's `AuditTargetType`; `OPS-1`'s drift check holds the two together. */
 export type AuditTargetType =

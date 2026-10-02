@@ -3,6 +3,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import type { Server } from 'node:http';
 import { AppModule } from './../src/app.module.js';
+import { WeeklyReportsService } from './../src/reports/weekly-reports.service.js';
 import { RATE_LIMIT_STORE } from './../src/common/rate-limit/rate-limit.interface.js';
 import type {
   RateLimitDecision,
@@ -950,6 +951,44 @@ describe('Student API (e2e)', () => {
         .get('/courses/course-3/announcements')
         .set({ Authorization: `Bearer ${accessToken}` })
         .expect(404);
+    });
+  });
+
+  describe('weekly reports (REM-031, D-63, D-66, T12c)', () => {
+    // A week nothing else in this file touches, so a generated/published
+    // draft here cannot collide with another describe block's fixtures.
+    const WEEK_START = '2029-09-01'; // a Saturday
+
+    it("shows only the caller's own published reports, and none before publish", async () => {
+      // Seed a draft the real way: through the service, for group-1
+      // (student-1's course-1 group) - no sixth e2e file and no direct
+      // repository reach-around (CLAUDE.md §10).
+      const weeklyReports = app.get(WeeklyReportsService);
+      await weeklyReports.generateWeek(WEEK_START, new Date('2029-09-08T00:00:00Z'));
+
+      const beforePublish = await request(app.getHttpServer())
+        .get('/reports/weekly')
+        .set({ Authorization: `Bearer ${accessToken}` })
+        .expect(200);
+      expect(beforePublish.body).toEqual([]);
+
+      const adminAuth = await asAdmin();
+      await request(app.getHttpServer())
+        .post('/admin/weekly-reports/publish')
+        .set(adminAuth)
+        .send({ groupId: 'group-1', weekStart: WEEK_START })
+        .expect(200);
+
+      const afterPublish = await request(app.getHttpServer())
+        .get('/reports/weekly')
+        .set({ Authorization: `Bearer ${accessToken}` })
+        .expect(200);
+      expect(Array.isArray(afterPublish.body)).toBe(true);
+      expect(afterPublish.body.length).toBeGreaterThan(0);
+      for (const report of afterPublish.body as { studentId: string; status: string }[]) {
+        expect(report.studentId).toBe('student-1');
+        expect(report.status).toBe('published');
+      }
     });
   });
 

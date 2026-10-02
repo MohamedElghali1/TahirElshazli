@@ -11,7 +11,12 @@ export type NotificationType =
    * fail every insert under Postgres and none under the memory driver - which
    * is the two-driver failure the integration suite exists to catch.
    */
-  | 'announcement';
+  | 'announcement'
+  /**
+   * A weekly report published to one student (`REM-031`, `D-63`, `D-66`).
+   * Mirrored by migration 029's widened `notifications_type_check`.
+   */
+  | 'weekly_report';
 
 export interface Notification {
   id: string;

@@ -15,6 +15,8 @@ const ICON: Record<NotificationType, IconName> = {
   live_session_soon: 'Bell',
   assessment_available: 'Clipboard',
   announcement: 'Message',
+  // Unit 9: weekly reports (`REM-031`).
+  weekly_report: 'ChartPie',
 };
 
 /**

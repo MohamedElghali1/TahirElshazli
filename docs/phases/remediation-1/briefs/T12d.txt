@@ -1,0 +1,63 @@
+<task>
+Repository: Next.js 16 frontend in frontend/ (App Router, React 19, Tailwind v4 over tokens in
+frontend/app/tokens/*.css, primitives in frontend/components/ui/). Read CLAUDE.md §4, §6, §11 and
+§11.1 (binding: tokens only, never text-[var(...)], one utility per property, no card inside a
+card, both themes, RTL, console 13px scale, sentence case, numbers with their denominator, a
+missing mark is an em-dash, amber for a queue, no emoji), frontend/AGENTS.md, and
+docs/phases/remediation-1/T12-PLAN.md (slice 12d). Slice 12c is committed: the API is
+api.admin.weeklyReportWeeks / weeklyReports(groupId, weekStart) / publishWeeklyReports(groupId,
+weekStart) and api.reports.weekly() in frontend/lib/api.ts, types in frontend/lib/types.ts - read
+them first and use them exactly.
+
+Slice 12d - the screens. No backend change.
+
+1. Console nav: re-add the "Reports" item that REM-021a removed in
+   frontend/components/shell/console-shell.tsx (Teaching section, after Marks, icon 'ChartPie',
+   href /manage/reports), shown to admins only (the same `admin` flag that already gates
+   Students/Groups/Assistants). Replace the REM-021a comment with one citing REM-031/D-66.
+
+2. frontend/app/(app)/manage/reports/page.tsx - the group-weeks list (api.admin.weeklyReportWeeks):
+   a Table (existing components/ui) with Week (format the Saturday as "Week of 26 Sep 2026" via
+   lib/format), Group, Course, Drafts (amber Tag when > 0 - a queue), Published; each row links to
+   the group-week page. Empty state: "No weekly reports yet. Drafts appear after the first week
+   ends." An assistant reaching it gets the existing "You don't have access to this page." state
+   (follow how T9 did it on /manage/students: error.isAuth).
+
+3. frontend/app/(app)/manage/reports/[groupId]/[weekStart]/page.tsx - one group-week
+   (api.admin.weeklyReports): PageTitle "<group> - week of <date>", back to /manage/reports. One row
+   per student: name (dir="auto"), status Tag (Draft amber / Published green), Attendance as
+   "present of expected" plus late/absent/unmarked counts when non-zero, Homework as
+   "submitted of due"; a row expands (button, aria-expanded) to the full report: the session list
+   (title, date, status or "Not marked") and the task list (title, type, due date, status, mark via
+   the existing Score primitive - em-dash when null). Completion and marks never merged into one
+   number (§11.1). A primary "Publish N reports" button when N drafts > 0, behind a confirmation
+   that names the group and the week and says students will be notified and it cannot be undone;
+   on success reload and show "Published N reports."; a 409 shows its message inline.
+
+4. Student: frontend/app/(app)/marks/page.tsx gains a "Weekly reports" section ABOVE the existing
+   marks content (RPT-9), from api.reports.weekly(): newest first, each report a block with
+   "Week of <date>", Attendance present of expected (+ late/absent/unmarked), Homework submitted of
+   due, and the task rows with Score (em-dash when null). Empty state: "No weekly reports yet."
+   No card inside a card - use the page's existing container and dividers.
+
+5. Both themes, dir="rtl", a long Arabic name (fixtures have one), 375 px wide without horizontal
+   page scroll (tables may scroll inside their own overflow-x-auto container).
+</task>
+
+<verification_loop>
+From the repo root, one at a time, foreground (8 GB RAM):
+  npm run lint              (includes the token checker)
+  npm run typecheck:drift
+  npm run build:frontend
+  cd frontend && npx tsc --noEmit
+Confirm git status shows only intended files.
+</verification_loop>
+
+<action_safety>
+Do NOT git add/commit/checkout/stash. Touch only frontend/. Do not stop Docker containers. Quote
+shell arguments containing `>`, `(`, `)`, `'` or `,` - unquoted ones create 0-byte junk files.
+</action_safety>
+
+<structured_output_contract>
+End with: files and what each does; gate outcomes; deviations/open points.
+</structured_output_contract>

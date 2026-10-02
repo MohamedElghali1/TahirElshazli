@@ -293,3 +293,22 @@ open timestamp point). The lead reviewed that diff and covered it in 12a's full 
   tick logged `weekly reports generated for 2026-09-19: 3 inserted, 0 updated, 0 skipped` — the last
   *completed* Sat–Fri week — and wrote one draft per group membership. No name, email or mark in the
   log. **PASS.**
+
+### T12c — weekly-report routes, audit, notifications (REM-031)
+- `unit-implementer` (stalled once on a stream watchdog and was resumed; then cut off by the account's
+  usage limit after finishing the code — the lead ran every gate): migration `029` widens
+  `notifications_type_check` with `weekly_report`; `AdminWeeklyReportsController`
+  (`GET /admin/weekly-reports/weeks`, `GET /admin/weekly-reports?groupId&weekStart`,
+  `POST /admin/weekly-reports/publish`, all `STAFF_ADMIN`); `GET /reports/weekly` (student, own
+  published reports for still-enrolled courses, id from the JWT only); `publishGroupWeek` flips
+  drafts, writes one `weekly_report.published` audit entry (`reportIds` comma-joined — the snapshot
+  type is flat) and fans out "Your weekly report is ready" → `/marks`, all in one transaction;
+  non-Saturday `weekStart` → 400, nothing to publish → 409; `API_SPEC.yaml`, mirror types + drift
+  checks, `lib/api.ts`, audit label and notification icon; role-guard enumeration updated.
+- Lead's gates: lint 0 errors; drift ok; unit 954/59; e2e 419 across 5 files (+7); integration
+  198/198 (001–029 from an empty schema); both builds; both tsc 0.
+- Lead's live check (production API, fresh DB 001–029 + fixtures): bootstrap generated 3 drafts for
+  2026-09-19; assistant 403 on all three admin routes, student 403 on them; Friday `weekStart` 400;
+  student list empty before publish; teacher publish 200 (2 reports); re-publish 409; student then sees
+  only their own group-1 report (not group-2's draft); notification "Week of 19 Sep 2026" → `/marks`;
+  audit entry with both report ids. **PASS.**

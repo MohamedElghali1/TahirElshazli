@@ -88,4 +88,4 @@ schema, and on a seeded database. e2e: cases go into the existing `app.e2e-spec.
 - **12d** console screens + student section + nav item; live browser check.
 
 ## Status
-Plan written and committed 2026-10-02. **12a and 12b committed** (migration 028, both repositories, composition, hourly generation). 12c (routes, audit, notifications, migration 029) next.
+Plan written and committed 2026-10-02. **12a, 12b, 12c committed** (table, composition + hourly generation, routes + audit + notifications + migration 029). **12d (screens) remains** — brief `briefs/T12d.txt`.

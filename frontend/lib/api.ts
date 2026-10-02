@@ -50,6 +50,9 @@ import type {
   RecordingProgress,
   ReportDocument,
   ReportSummary,
+  WeeklyReport,
+  WeeklyReportView,
+  WeeklyReportWeekView,
   StaffCourseSummary,
   StaffRecording,
   Assistant,
@@ -612,6 +615,10 @@ export const api = {
 
     document: (token: string, documentId: string) =>
       request<ReportDocument>(`/reports/documents/${documentId}`, { token }),
+
+    /** The caller's own published weekly reports (`REM-031`), newest first. */
+    weekly: (token: string) =>
+      request<WeeklyReport[]>('/reports/weekly', { token }),
   },
 
   notifications: {
@@ -1560,6 +1567,25 @@ export const api = {
       request<PublishedAnnouncement>(`/admin/announcements/${id}/publish`, {
         method: 'POST',
         token,
+      }),
+
+    /** Group-weeks list (`REM-031`), newest week first. */
+    weeklyReportWeeks: (token: string) =>
+      request<WeeklyReportWeekView[]>('/admin/weekly-reports/weeks', { token }),
+
+    /** One group-week's reports, each carrying the student's name. */
+    weeklyReports: (token: string, groupId: string, weekStart: string) =>
+      request<WeeklyReportView[]>(
+        `/admin/weekly-reports${qs({ groupId, weekStart })}`,
+        { token },
+      ),
+
+    /** Publishes every draft of a group-week. 409 if there is nothing to publish. */
+    publishWeeklyReports: (token: string, groupId: string, weekStart: string) =>
+      request<WeeklyReport[]>('/admin/weekly-reports/publish', {
+        method: 'POST',
+        token,
+        body: { groupId, weekStart },
       }),
   },
 

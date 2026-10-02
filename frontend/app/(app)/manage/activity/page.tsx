@@ -77,6 +77,8 @@ const ACTION_LABEL: Record<AuditAction, string> = {
   'session.planned': 'planned a session',
   'session.published': 'published the timetable',
   'attendance.marked': 'marked attendance',
+  // Unit 9: weekly reports (`REM-031`).
+  'weekly_report.published': 'published weekly reports',
 };
 
 /**
@@ -147,6 +149,9 @@ const ACTION_TONE: Record<AuditAction, TagTone> = {
   'session.planned': 'amber',
   'session.published': 'green',
   'attendance.marked': 'blue',
+  // Publishing is the moment the report reaches the student - green, like
+  // `submission.returned` and `session.published` above.
+  'weekly_report.published': 'green',
 };
 
 export default function ActivityLogPage() {

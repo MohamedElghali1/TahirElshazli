@@ -108,6 +108,10 @@ const EXPECTED: Record<string, readonly Role[]> = {
   AdminCoursesController: STAFF_ADMIN,
   AdminGroupsController: STAFF_ADMIN,
   AdminManageController: STAFF_ADMIN,
+  // Weekly reports (`REM-031`, `D-63`, `D-66`, unit 9). Assistants have no
+  // access at all - unlike every other admin controller here, there is no
+  // narrower `/staff/*` counterpart for this surface.
+  AdminWeeklyReportsController: STAFF_ADMIN,
 
   // ---- /staff/* : every staff role, scoped by StaffScopeService ----
   StaffAnnouncementsController: STAFF_ALL,
@@ -169,7 +173,7 @@ describe('the authorization boundary', () => {
     // branches each bumped it correctly for their own controller and git took
     // the identical text without a conflict. It is recomputed at every merge
     // rather than carried from either side.
-    expect(CONTROLLERS).toHaveLength(34);
+    expect(CONTROLLERS).toHaveLength(35);
     const named = CONTROLLERS.map((c) => c.name);
     expect(new Set(named).size).toBe(named.length);
     const accounted = [
@@ -187,7 +191,7 @@ describe('the authorization boundary', () => {
     }
     // 29 + PUBLIC_CONTROLLERS (2) + PER_METHOD_CONTROLLERS (3) = 34. Recomputed
     // at unit 8's merge, 2026-09-24: `SessionsController` is the 29th entry here.
-    expect(Object.keys(EXPECTED)).toHaveLength(29);
+    expect(Object.keys(EXPECTED)).toHaveLength(30);
   });
 
   describe('@Roles, read back off the decorator', () => {
@@ -232,10 +236,11 @@ describe('the authorization boundary', () => {
       const adminControllers = CONTROLLERS.filter((c) =>
         c.path.startsWith('admin'),
       );
-      // Six today - `AdminCoursesController` joined for `DOM-5` and
-      // `AdminStaffController` left with `AUTH-2`. Asserted so a seventh admin
-      // controller cannot arrive without this test looking at it.
-      expect(adminControllers).toHaveLength(6);
+      // Seven today - `AdminCoursesController` joined for `DOM-5`,
+      // `AdminStaffController` left with `AUTH-2`, and `AdminWeeklyReportsController`
+      // joined for `REM-031` (unit 9). Asserted so an eighth admin controller
+      // cannot arrive without this test looking at it.
+      expect(adminControllers).toHaveLength(7);
       for (const entry of adminControllers) {
         // Per **handler**, through `resolve()` - the guard's own precedence -
         // and not off the class. A method-level `@Roles(...STAFF_ALL)` on a

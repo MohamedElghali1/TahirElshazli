@@ -476,6 +476,90 @@ components:
           type: array
           items: { $ref: '#/components/schemas/GroupReportEntry' }
 
+    # Weekly reports (`REM-031`, `D-63`, `D-66`, unit 9). A frozen per-student
+    # snapshot for one Saturday-Friday Cairo week: attendance, homework
+    # completion and marks - never an average, never merged with progress
+    # (CLAUDE.md §11.1).
+    WeeklyReportContent:
+      type: object
+      required: [attendance, homework]
+      properties:
+        attendance:
+          type: object
+          required: [present, late, absent, unmarked, expected, sessions]
+          properties:
+            present: { type: integer }
+            late: { type: integer }
+            absent: { type: integer }
+            unmarked: { type: integer }
+            expected: { type: integer }
+            sessions:
+              type: array
+              items:
+                type: object
+                required: [sessionId, title, scheduledAt, status]
+                properties:
+                  sessionId: { $ref: '#/components/schemas/Id' }
+                  title: { type: string }
+                  scheduledAt: { type: string, format: date-time }
+                  status: { type: [string, 'null'], enum: [present, late, absent, null] }
+        homework:
+          type: object
+          required: [due, submitted, tasks]
+          properties:
+            due: { type: integer }
+            submitted: { type: integer }
+            tasks:
+              type: array
+              items:
+                type: object
+                required: [assessmentId, title, type, dueAt, status, score, maxScore]
+                properties:
+                  assessmentId: { $ref: '#/components/schemas/Id' }
+                  title: { type: string }
+                  type: { type: string }
+                  dueAt: { type: string, format: date-time }
+                  status: { type: string }
+                  score: { type: [number, 'null'] }
+                  maxScore: { type: number }
+
+    WeeklyReport:
+      type: object
+      required: [id, groupId, studentId, courseId, weekStart, status, content, generatedAt, publishedAt, publishedBy]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        groupId: { $ref: '#/components/schemas/Id' }
+        studentId: { $ref: '#/components/schemas/Id' }
+        courseId: { $ref: '#/components/schemas/Id' }
+        weekStart: { type: string, description: 'YYYY-MM-DD, the Saturday, Africa/Cairo calendar date.' }
+        status: { type: string, enum: [draft, published] }
+        content: { $ref: '#/components/schemas/WeeklyReportContent' }
+        generatedAt: { type: string, format: date-time }
+        publishedAt: { type: string, format: date-time, nullable: true }
+        publishedBy: { $ref: '#/components/schemas/Id', nullable: true }
+
+    # `GET /admin/weekly-reports` - one group-week's reports, each carrying
+    # the student's name for the roster-style list.
+    WeeklyReportView:
+      allOf:
+        - $ref: '#/components/schemas/WeeklyReport'
+        - type: object
+          required: [studentName]
+          properties:
+            studentName: { type: string }
+
+    # `GET /admin/weekly-reports/weeks` - the group-weeks list.
+    WeeklyReportWeekView:
+      type: object
+      required: [groupId, weekStart, drafts, published, groupName, courseTitle]
+      properties:
+        groupId: { $ref: '#/components/schemas/Id' }
+        weekStart: { type: string }
+        drafts: { type: integer }
+        published: { type: integer }
+        groupName: { type: string }
+        courseTitle: { type: string }
+
     # --- Tasks -------------------------------------------------------------
     # A draft-library template (`TASK-2`) - the RESPONSE shape. Content only:
     # no window, audience or submission settings. `usedCount`, `createdBy` and
@@ -2948,6 +3032,96 @@ paths:
               schema: { $ref: '#/components/schemas/PublishedAnnouncement' }
         '409': { $ref: '#/components/responses/Conflict' }
       x-audit: announcement.posted
+
+  # --- Weekly reports (`REM-031`, `D-63`, `D-66`, unit 9) ------------------
+  # Teacher/admin only - assistants have no access (`D-66`), so there is no
+  # group-scope filter here, only the `STAFF_ADMIN` role gate.
+  /admin/weekly-reports/weeks:
+    get:
+      tags: [weekly-reports]
+      summary: Group-weeks list, newest week first
+      x-roles: [teacher, admin]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/WeeklyReportWeekView' }
+
+  /admin/weekly-reports:
+    get:
+      tags: [weekly-reports]
+      summary: One group-week's reports
+      x-roles: [teacher, admin]
+      parameters:
+        - { name: groupId, in: query, required: true, schema: { $ref: '#/components/schemas/Id' } }
+        - { name: weekStart, in: query, required: true, schema: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/WeeklyReportView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404':
+          description: Group not found or out of scope - byte-identical message either way.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /admin/weekly-reports/publish:
+    post:
+      tags: [weekly-reports]
+      summary: Publish every draft of a group-week
+      description: >
+        Flips every DRAFT in the group-week to published, in one transaction
+        with the audit entry and an in-app notification per student
+        ("Your weekly report is ready", `/marks`). Already-published rows are
+        untouched; publishing an empty set is a 409. There is deliberately no
+        publish-all-groups action.
+      x-roles: [teacher, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [groupId, weekStart]
+              properties:
+                groupId: { $ref: '#/components/schemas/Id' }
+                weekStart: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+      responses:
+        '200':
+          description: Published
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/WeeklyReport' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+      x-audit: weekly_report.published
+
+  /reports/weekly:
+    get:
+      tags: [weekly-reports]
+      summary: The caller's own published weekly reports, newest first
+      description: >
+        No id route, so there is no other student's id to guess (`D-66`):
+        `studentId` comes only from the JWT. Drafts never appear here.
+      x-roles: [student]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/WeeklyReport' }
 
   # --- Settings -----------------------------------------------------------
   /admin/courses:

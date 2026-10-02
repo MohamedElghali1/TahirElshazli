@@ -3,8 +3,22 @@ import { SUBMISSION_ANNOTATION_REPOSITORY } from '../assessments/interfaces/subm
 import { InMemorySubmissionAnnotationRepository } from '../assessments/repositories/in-memory-submission-annotation.repository.js';
 import { ReportsController } from './reports.controller.js';
 import { ReportsService } from './reports.service.js';
+import { WeeklyReportsService } from './weekly-reports.service.js';
 import { REPORT_REPOSITORY } from './interfaces/report-repository.interface.js';
 import { InMemoryReportRepository } from './repositories/in-memory-report.repository.js';
+import { WEEKLY_REPORT_REPOSITORY } from './interfaces/weekly-report-repository.interface.js';
+import { InMemoryWeeklyReportRepository } from './repositories/in-memory-weekly-report.repository.js';
+import { StudentSessionsService } from '../live-sessions/student-sessions.service.js';
+import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js';
+import { InMemoryUserRepository } from '../auth/repositories/in-memory-user.repository.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
+import { NOTIFICATION_REPOSITORY } from '../notifications/interfaces/notification-repository.interface.js';
+import { InMemoryNotificationRepository } from '../notifications/repositories/in-memory-notification.repository.js';
+import { AuditService } from '../audit/audit.service.js';
+import { AUDIT_LOG_REPOSITORY } from '../audit/interfaces/audit-log-repository.interface.js';
+import { InMemoryAuditLogRepository } from '../audit/repositories/in-memory-audit-log.repository.js';
+import { DatabaseService } from '../database/database.service.js';
+import { DATABASE_POOL } from '../database/database.tokens.js';
 import { AssessmentsService } from '../assessments/assessments.service.js';
 import { ASSESSMENT_REPOSITORY } from '../assessments/interfaces/assessment-repository.interface.js';
 import { WORK_REPOSITORY } from '../assessments/interfaces/work-repository.interface.js';
@@ -58,11 +72,21 @@ describe('ReportsController', () => {
         { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },
         StudentGroupsService,
         ReportsService,
+        WeeklyReportsService,
+        StudentSessionsService,
         AssessmentsService,
         CoursesService,
         RecordingsService,
         LiveSessionsService,
+        NotificationsService,
+        AuditService,
+        DatabaseService,
+        { provide: DATABASE_POOL, useValue: null },
         { provide: REPORT_REPOSITORY, useClass: InMemoryReportRepository },
+        { provide: WEEKLY_REPORT_REPOSITORY, useClass: InMemoryWeeklyReportRepository },
+        { provide: USER_REPOSITORY, useClass: InMemoryUserRepository },
+        { provide: NOTIFICATION_REPOSITORY, useClass: InMemoryNotificationRepository },
+        { provide: AUDIT_LOG_REPOSITORY, useClass: InMemoryAuditLogRepository },
         { provide: ASSESSMENT_REPOSITORY, useClass: InMemoryAssessmentRepository },
         { provide: WORK_REPOSITORY, useClass: InMemoryWorkRepository },
         { provide: SUBMISSION_ANNOTATION_REPOSITORY, useClass: InMemorySubmissionAnnotationRepository },

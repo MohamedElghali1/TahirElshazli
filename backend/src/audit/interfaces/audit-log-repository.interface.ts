@@ -161,7 +161,13 @@ export type AuditAction =
   // first question after a suspected takeover. Sign-in itself is not audited,
   // matching password login.
   | 'account.google_linked'
-  | 'account.google_unlinked';
+  | 'account.google_unlinked'
+  // Weekly reports (`REM-031`, `D-63`, `D-66`, unit 9). Publishing is the one
+  // staff action here: it flips every draft of a group-week to published,
+  // which is the moment the content becomes fixed and visible to students -
+  // "who released this week's reports to this group, and when" is exactly
+  // the question §5.4 exists to answer.
+  | 'weekly_report.published';
 
 /** What the action happened *to*. Grows with `AuditAction`, for the same reason. */
 export type AuditTargetType =

@@ -77,6 +77,7 @@ const AUDIT_ACTION_VALUES: Record<AuditAction, true> = {
   'attendance.marked': true,
   'account.google_linked': true,
   'account.google_unlinked': true,
+  'weekly_report.published': true,
 };
 
 const AUDIT_TARGET_TYPE_VALUES: Record<AuditTargetType, true> = {

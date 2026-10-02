@@ -1126,6 +1126,22 @@ describeIfDb('Postgres repositories', () => {
         ),
       ).rejects.toThrow();
     });
+
+    // Migration 029 (`REM-031`, slice 12c): widened `notifications_type_check`
+    // to add 'weekly_report'. Both directions matter - the new member must be
+    // accepted, and the constraint must still refuse everything it did not
+    // name, which the case above already pins.
+    it('accepts the weekly_report type added by migration 029', async () => {
+      await db.query(
+        `INSERT INTO notifications (id, user_id, type, title, message, link)
+         VALUES ('notif-weekly-report', 'student-1', 'weekly_report', 'Your weekly report is ready', 'Week of 3 Oct 2026', '/marks')`,
+      );
+      const repo = new PostgresNotificationRepository(db);
+      const row = (await repo.findByUser('student-1', false)).find(
+        (n) => n.id === 'notif-weekly-report',
+      );
+      expect(row).toMatchObject({ type: 'weekly_report', link: '/marks' });
+    });
   });
 
   describe('announcements', () => {

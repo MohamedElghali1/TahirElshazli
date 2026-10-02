@@ -16,14 +16,17 @@ import { AuthModule } from '../auth/auth.module.js';
 import { EnrollmentsModule } from '../enrollments/enrollments.module.js';
 import { StorageModule } from '../common/storage/storage.module.js';
 import { LiveSessionsModule } from '../live-sessions/live-sessions.module.js';
+import { NotificationsModule } from '../notifications/notifications.module.js';
 import { WeeklyReportsService } from './weekly-reports.service.js';
 import { WeeklyReportsScheduler } from './weekly-reports.scheduler.js';
+import { AdminWeeklyReportsController } from './admin-weekly-reports.controller.js';
 
 @Module({
   // `LiveSessionsModule` for `StudentSessionsService.getAttendanceForGroupWeek`
   // (`WeeklyReportsService.compose`'s attendance half, `REM-031`). No cycle:
   // `LiveSessionsModule` imports only `AuthModule`/`EnrollmentsModule`.
   // `GROUP_REPOSITORY` needs no import - `GroupDataModule` is `@Global()`.
+  // `NotificationsModule` for `publishGroupWeek`'s fan-out (slice 12c).
   imports: [
     AuthModule,
     EnrollmentsModule,
@@ -31,8 +34,9 @@ import { WeeklyReportsScheduler } from './weekly-reports.scheduler.js';
     CoursesModule,
     StorageModule,
     LiveSessionsModule,
+    NotificationsModule,
   ],
-  controllers: [ReportsController],
+  controllers: [ReportsController, AdminWeeklyReportsController],
   providers: [
     ReportsService,
     WeeklyReportsService,

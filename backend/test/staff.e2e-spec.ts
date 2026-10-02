@@ -3,6 +3,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import type { Server } from 'node:http';
 import { AppModule } from './../src/app.module.js';
+import { WeeklyReportsService } from './../src/reports/weekly-reports.service.js';
 import { WORK_REPOSITORY, type WorkRepository } from './../src/assessments/interfaces/work-repository.interface.js';
 import { ASSESSMENT_REPOSITORY, type AssessmentRepository } from './../src/assessments/interfaces/assessment-repository.interface.js';
 import { RATE_LIMIT_STORE } from './../src/common/rate-limit/rate-limit.interface.js';
@@ -92,6 +93,7 @@ describe('Staff and admin API (e2e)', () => {
       '/admin/assistants',
       '/admin/announcements',
       '/admin/audit-log',
+      '/admin/weekly-reports/weeks',
     ])('requires a token for %s', async (route) => {
       await request(app.getHttpServer()).get(route).expect(401);
     });
@@ -108,6 +110,7 @@ describe('Staff and admin API (e2e)', () => {
       '/admin/students',
       '/admin/announcements',
       '/admin/audit-log',
+      '/admin/weekly-reports/weeks',
     ])('refuses a student token on %s', async (route) => {
       // A student authenticates fine; the role check is what stops them.
       await request(app.getHttpServer())
@@ -121,6 +124,7 @@ describe('Staff and admin API (e2e)', () => {
       '/admin/assistants',
       '/admin/announcements',
       '/admin/audit-log',
+      '/admin/weekly-reports/weeks',
     ])(
       'refuses a TA token on the admin route %s',
       async (route) => {
@@ -1123,6 +1127,99 @@ describe('Staff and admin API (e2e)', () => {
         .get('/admin/audit-log?action=nonsense')
         .set(bearer(adminToken))
         .expect(400);
+    });
+  });
+
+  describe('weekly reports (REM-031, D-63, D-66, T12c)', () => {
+    // A week nothing else in this file touches.
+    const WEEK_START = '2028-06-03'; // a Saturday
+
+    beforeAll(async () => {
+      // Seed drafts the real way, through the service - no sixth e2e file
+      // and no direct repository reach-around (CLAUDE.md §10). group-1
+      // (student-1, student-2) gives this group-week two drafts.
+      const weeklyReports = app.get(WeeklyReportsService);
+      await weeklyReports.generateWeek(WEEK_START, new Date('2028-06-10T00:00:00Z'));
+    });
+
+    it('an assistant gets 403 on all three /admin/weekly-reports routes', async () => {
+      await request(app.getHttpServer())
+        .get('/admin/weekly-reports/weeks')
+        .set(bearer(assignedTaToken))
+        .expect(403);
+      await request(app.getHttpServer())
+        .get(`/admin/weekly-reports?groupId=group-1&weekStart=${WEEK_START}`)
+        .set(bearer(assignedTaToken))
+        .expect(403);
+      await request(app.getHttpServer())
+        .post('/admin/weekly-reports/publish')
+        .set(bearer(assignedTaToken))
+        .send({ groupId: 'group-1', weekStart: WEEK_START })
+        .expect(403);
+    });
+
+    it('a student gets 403 on all three /admin/weekly-reports routes', async () => {
+      await request(app.getHttpServer())
+        .get('/admin/weekly-reports/weeks')
+        .set(bearer(studentToken))
+        .expect(403);
+      await request(app.getHttpServer())
+        .get(`/admin/weekly-reports?groupId=group-1&weekStart=${WEEK_START}`)
+        .set(bearer(studentToken))
+        .expect(403);
+      await request(app.getHttpServer())
+        .post('/admin/weekly-reports/publish')
+        .set(bearer(studentToken))
+        .send({ groupId: 'group-1', weekStart: WEEK_START })
+        .expect(403);
+    });
+
+    it('the teacher can list weeks, list a group-week and publish; the entry is visible in /admin/audit-log', async () => {
+      const weeks = await request(app.getHttpServer())
+        .get('/admin/weekly-reports/weeks')
+        .set(bearer(adminToken))
+        .expect(200);
+      const ourWeek = (
+        weeks.body as { groupId: string; weekStart: string; drafts: number; published: number }[]
+      ).find((w) => w.groupId === 'group-1' && w.weekStart === WEEK_START);
+      expect(ourWeek).toMatchObject({ drafts: 2, published: 0 });
+
+      const groupWeek = await request(app.getHttpServer())
+        .get(`/admin/weekly-reports?groupId=group-1&weekStart=${WEEK_START}`)
+        .set(bearer(adminToken))
+        .expect(200);
+      expect(groupWeek.body).toHaveLength(2);
+      for (const row of groupWeek.body as { studentName: string }[]) {
+        expect(row.studentName).toBeTruthy();
+      }
+
+      const publish = await request(app.getHttpServer())
+        .post('/admin/weekly-reports/publish')
+        .set(bearer(adminToken))
+        .send({ groupId: 'group-1', weekStart: WEEK_START })
+        .expect(200);
+      expect(publish.body).toHaveLength(2);
+      for (const report of publish.body as { status: string }[]) {
+        expect(report.status).toBe('published');
+      }
+
+      // A second publish of the same group-week has nothing left to flip.
+      await request(app.getHttpServer())
+        .post('/admin/weekly-reports/publish')
+        .set(bearer(adminToken))
+        .send({ groupId: 'group-1', weekStart: WEEK_START })
+        .expect(409);
+
+      const auditLog = await request(app.getHttpServer())
+        .get('/admin/audit-log?action=weekly_report.published')
+        .set(bearer(adminToken))
+        .expect(200);
+      expect(auditLog.body.entries.length).toBeGreaterThan(0);
+      expect(auditLog.body.entries[0]).toMatchObject({
+        action: 'weekly_report.published',
+        targetType: 'group',
+        targetId: 'group-1',
+      });
     });
   });
 

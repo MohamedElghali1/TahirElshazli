@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConflictException, BadRequestException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { WeeklyReportsService } from './weekly-reports.service.js';
 import { WeeklyReportsScheduler } from './weekly-reports.scheduler.js';
@@ -6,6 +7,18 @@ import { WEEKLY_REPORT_REPOSITORY } from './interfaces/weekly-report-repository.
 import { InMemoryWeeklyReportRepository } from './repositories/in-memory-weekly-report.repository.js';
 import { GROUP_REPOSITORY } from '../groups/interfaces/group-repository.interface.js';
 import { InMemoryGroupRepository } from '../groups/repositories/in-memory-group.repository.js';
+import { COURSE_REPOSITORY } from '../courses/interfaces/course-repository.interface.js';
+import { InMemoryCourseRepository } from '../courses/repositories/in-memory-course.repository.js';
+import { USER_REPOSITORY } from '../auth/interfaces/user-repository.interface.js';
+import { InMemoryUserRepository } from '../auth/repositories/in-memory-user.repository.js';
+import { NOTIFICATION_REPOSITORY } from '../notifications/interfaces/notification-repository.interface.js';
+import { InMemoryNotificationRepository } from '../notifications/repositories/in-memory-notification.repository.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
+import { AUDIT_LOG_REPOSITORY } from '../audit/interfaces/audit-log-repository.interface.js';
+import { InMemoryAuditLogRepository } from '../audit/repositories/in-memory-audit-log.repository.js';
+import { AuditService } from '../audit/audit.service.js';
+import { DatabaseService } from '../database/database.service.js';
+import { DATABASE_POOL } from '../database/database.tokens.js';
 import { LIVE_SESSION_REPOSITORY } from '../live-sessions/interfaces/live-session-repository.interface.js';
 import { InMemoryLiveSessionRepository } from '../live-sessions/repositories/in-memory-live-session.repository.js';
 import { ATTENDANCE_REPOSITORY } from '../live-sessions/interfaces/attendance-repository.interface.js';
@@ -65,6 +78,8 @@ describe('WeeklyReportsService composition (REM-031)', () => {
   let assessmentRepo: InMemoryAssessmentRepository;
   let workRepo: InMemoryWorkRepository;
   let weeklyReportRepo: InMemoryWeeklyReportRepository;
+  let auditRepo: InMemoryAuditLogRepository;
+  let notificationRepo: InMemoryNotificationRepository;
 
   beforeEach(async () => {
     module = await Test.createTestingModule({
@@ -74,9 +89,15 @@ describe('WeeklyReportsService composition (REM-031)', () => {
         StudentSessionsService,
         StudentGroupsService,
         EnrollmentsService,
+        NotificationsService,
+        AuditService,
+        DatabaseService,
         FileUrls,
+        { provide: DATABASE_POOL, useValue: null },
         { provide: FILE_STORAGE, useValue: null },
         { provide: GROUP_REPOSITORY, useClass: InMemoryGroupRepository },
+        { provide: COURSE_REPOSITORY, useClass: InMemoryCourseRepository },
+        { provide: USER_REPOSITORY, useClass: InMemoryUserRepository },
         { provide: LIVE_SESSION_REPOSITORY, useClass: InMemoryLiveSessionRepository },
         { provide: ATTENDANCE_REPOSITORY, useClass: InMemoryAttendanceRepository },
         { provide: ASSESSMENT_REPOSITORY, useClass: InMemoryAssessmentRepository },
@@ -87,6 +108,8 @@ describe('WeeklyReportsService composition (REM-031)', () => {
         },
         { provide: ENROLLMENT_REPOSITORY, useClass: InMemoryEnrollmentRepository },
         { provide: WEEKLY_REPORT_REPOSITORY, useClass: InMemoryWeeklyReportRepository },
+        { provide: NOTIFICATION_REPOSITORY, useClass: InMemoryNotificationRepository },
+        { provide: AUDIT_LOG_REPOSITORY, useClass: InMemoryAuditLogRepository },
       ],
     }).compile();
 
@@ -97,6 +120,8 @@ describe('WeeklyReportsService composition (REM-031)', () => {
     assessmentRepo = module.get(ASSESSMENT_REPOSITORY);
     workRepo = module.get(WORK_REPOSITORY);
     weeklyReportRepo = module.get(WEEKLY_REPORT_REPOSITORY);
+    auditRepo = module.get(AUDIT_LOG_REPOSITORY);
+    notificationRepo = module.get(NOTIFICATION_REPOSITORY);
   });
 
   afterEach(() => {
@@ -432,6 +457,142 @@ describe('WeeklyReportsService composition (REM-031)', () => {
         ),
       );
       expect(afterRegeneration).toBe(publishedSnapshot);
+    });
+  });
+
+  describe('listWeeks / listGroupWeek (12c)', () => {
+    const WEEK_START = '2032-03-06'; // a Saturday
+
+    it('404s with the byte-identical group message for an unknown group', async () => {
+      await expect(
+        weeklyReports.listGroupWeek('no-such-group', WEEK_START),
+      ).rejects.toMatchObject({ message: 'Group not found' });
+    });
+
+    it('rejects a weekStart that is not a real Saturday', async () => {
+      await expect(
+        weeklyReports.listGroupWeek('group-1', '2032-03-07'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('enriches group-weeks with groupName/courseTitle, and a group-week with studentName', async () => {
+      await weeklyReports.generateWeek(WEEK_START, new Date('2032-03-13T00:00:00Z'));
+
+      const weeks = await weeklyReports.listWeeks();
+      const group1Week = weeks.find((w) => w.groupId === 'group-1' && w.weekStart === WEEK_START)!;
+      expect(group1Week).toMatchObject({
+        groupName: 'IGCSE Chemistry — Saturday 18:00',
+        courseTitle: 'AS Chemistry',
+        drafts: 2,
+        published: 0,
+      });
+
+      const rows = await weeklyReports.listGroupWeek('group-1', WEEK_START);
+      const byStudent = new Map(rows.map((r) => [r.studentId, r]));
+      expect(byStudent.get('student-1')?.studentName).toBe('Ali Esam');
+      expect(byStudent.get('student-2')?.studentName).toBe('Sara Ahmed');
+    });
+  });
+
+  describe('publishGroupWeek (12c)', () => {
+    const WEEK_START = '2033-04-02'; // a Saturday
+    const ACTOR = { id: 'teacher-1', role: 'teacher' };
+
+    beforeEach(async () => {
+      await weeklyReports.generateWeek(WEEK_START, new Date('2033-04-09T00:00:00Z'));
+    });
+
+    it('rejects a weekStart that is not a real Saturday', async () => {
+      await expect(
+        weeklyReports.publishGroupWeek(ACTOR, 'group-1', '2033-04-03'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('publishes every draft of the group-week, writes one audit entry and fans out one notification per student', async () => {
+      const published = await weeklyReports.publishGroupWeek(ACTOR, 'group-1', WEEK_START);
+      expect(published.map((r) => r.studentId).sort()).toEqual(['student-1', 'student-2']);
+      expect(published.every((r) => r.status === 'published')).toBe(true);
+
+      const { entries } = await auditRepo.find({ limit: 10 });
+      const entry = entries.find((e) => e.action === 'weekly_report.published')!;
+      expect(entry).toMatchObject({
+        actorId: 'teacher-1',
+        actorRole: 'teacher',
+        targetType: 'group',
+        targetId: 'group-1',
+        courseId: 'course-1',
+      });
+      expect(entry.after).toMatchObject({ weekStart: WEEK_START, count: 2 });
+      expect(String(entry.after!.reportIds).split(',').sort()).toEqual(
+        published.map((r) => r.id).sort(),
+      );
+
+      // `InMemoryNotificationRepository` seeds unrelated notifications for
+      // these users; filter to the one this publish just wrote.
+      const student1New = (await notificationRepo.findByUser('student-1', false)).filter(
+        (n) => n.type === 'weekly_report',
+      );
+      expect(student1New).toHaveLength(1);
+      expect(student1New[0]).toMatchObject({
+        type: 'weekly_report',
+        title: 'Your weekly report is ready',
+        link: '/marks',
+      });
+      const student2New = (await notificationRepo.findByUser('student-2', false)).filter(
+        (n) => n.type === 'weekly_report',
+      );
+      expect(student2New).toHaveLength(1);
+    });
+
+    it('409s on a second publish of the same group-week', async () => {
+      await weeklyReports.publishGroupWeek(ACTOR, 'group-1', WEEK_START);
+      await expect(
+        weeklyReports.publishGroupWeek(ACTOR, 'group-1', WEEK_START),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('409s publishing a group-week with no drafts at all', async () => {
+      await expect(
+        weeklyReports.publishGroupWeek(ACTOR, 'group-1', '2033-04-09'),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+
+  describe('listPublishedForStudent (12c)', () => {
+    const WEEK_START = '2034-05-06'; // a Saturday
+    const ACTOR = { id: 'teacher-1', role: 'teacher' };
+
+    it('excludes drafts, other students, and a published report for a course the student holds no enrollment on', async () => {
+      // student-3: placed in group-2 (course-2) but, unlike the seed
+      // fixtures' student-1, never enrolled on course-2 - the "left the
+      // course" case, reached without a `remove` the repository does not
+      // offer (there is no un-enroll feature anywhere in this codebase).
+      await groupRepo.addMember({
+        groupId: 'group-2',
+        studentId: 'student-3',
+        assignedBy: 'teacher-1',
+      });
+
+      await weeklyReports.generateWeek(WEEK_START, new Date('2034-05-13T00:00:00Z'));
+      await weeklyReports.publishGroupWeek(ACTOR, 'group-1', WEEK_START); // student-1 + student-2
+      await weeklyReports.publishGroupWeek(ACTOR, 'group-2', WEEK_START); // student-1 + student-3
+
+      // student-1 is published in both group-1 (course-1) and group-2
+      // (course-2), and is enrolled in both (seed fixtures) - both show.
+      const student1Reports = await weeklyReports.listPublishedForStudent('student-1');
+      expect(student1Reports).toHaveLength(2);
+      expect(student1Reports.every((r) => r.status === 'published')).toBe(true);
+
+      // student-2 is only ever placed in group-1/course-1 - never sees
+      // student-1's report, draft or otherwise.
+      const student2Reports = await weeklyReports.listPublishedForStudent('student-2');
+      expect(student2Reports).toHaveLength(1);
+      expect(student2Reports[0]!.studentId).toBe('student-2');
+
+      // student-3 has a published course-2 report but no course-2
+      // enrollment - excluded entirely.
+      const student3Reports = await weeklyReports.listPublishedForStudent('student-3');
+      expect(student3Reports).toHaveLength(0);
     });
   });
 });

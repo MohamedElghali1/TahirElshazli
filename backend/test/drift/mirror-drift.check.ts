@@ -97,6 +97,10 @@ import type { TopicScore as B_TopicScore } from '../../src/reports/reports.servi
 import type { PerformanceSnapshot as B_PerformanceSnapshot } from '../../src/reports/reports.service.js';
 import type { ReportSummary as B_ReportSummary } from '../../src/reports/reports.service.js';
 import type { ReportDocument as B_ReportDocument } from '../../src/reports/interfaces/report-repository.interface.js';
+import type { WeeklyReportContent as B_WeeklyReportContent } from '../../src/reports/interfaces/weekly-report-repository.interface.js';
+import type { WeeklyReport as B_WeeklyReport } from '../../src/reports/interfaces/weekly-report-repository.interface.js';
+import type { WeeklyReportWeekView as B_WeeklyReportWeekView } from '../../src/reports/weekly-reports.service.js';
+import type { WeeklyReportView as B_WeeklyReportView } from '../../src/reports/weekly-reports.service.js';
 import type { NotificationType as B_NotificationType } from '../../src/notifications/interfaces/notification-repository.interface.js';
 import type { NotificationListResponse as B_NotificationListResponse } from '../../src/notifications/notifications.service.js';
 import type { StudentProfileView as B_StudentProfile } from '../../src/students/students.service.js';
@@ -226,6 +230,10 @@ import type {
   PerformanceSnapshot as F_PerformanceSnapshot,
   ReportSummary as F_ReportSummary,
   ReportDocument as F_ReportDocument,
+  WeeklyReportContent as F_WeeklyReportContent,
+  WeeklyReport as F_WeeklyReport,
+  WeeklyReportWeekView as F_WeeklyReportWeekView,
+  WeeklyReportView as F_WeeklyReportView,
   NotificationType as F_NotificationType,
   NotificationListResponse as F_NotificationListResponse,
   StudentProfile as F_StudentProfile,
@@ -436,3 +444,7 @@ export type Check_StudentWorkResult = Assert<Same<Wire<B_StudentWorkResult>, F_S
 export type Check_NotificationPreferences = Assert<Same<Wire<B_NotificationPreferences>, F_NotificationPreferences>>;
 export type Check_GoogleStart = Assert<Same<Wire<B_GoogleStart>, F_GoogleStart>>;
 export type Check_GoogleLinkStatus = Assert<Same<Wire<B_GoogleLinkStatus>, F_GoogleLinkStatus>>;
+export type Check_WeeklyReportContent = Assert<Same<Wire<B_WeeklyReportContent>, F_WeeklyReportContent>>;
+export type Check_WeeklyReport = Assert<Same<Wire<B_WeeklyReport>, F_WeeklyReport>>;
+export type Check_WeeklyReportWeekView = Assert<Same<Wire<B_WeeklyReportWeekView>, F_WeeklyReportWeekView>>;
+export type Check_WeeklyReportView = Assert<Same<Wire<B_WeeklyReportView>, F_WeeklyReportView>>;
