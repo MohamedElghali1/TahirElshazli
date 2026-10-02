@@ -1,0 +1,67 @@
+<task>
+Repository: npm-workspaces monorepo; Next.js 16 frontend in frontend/ (App Router, React 19,
+Tailwind v4 over tokens in frontend/app/tokens/*.css, primitives in frontend/components/ui/). Read
+CLAUDE.md §8 (never dangerouslySetInnerHTML), §11 (tokens only, never text-[var(...)], one utility
+per property, both themes, RTL, the marketing site's 17px type scale - NOT the console's 13px) and
+frontend/AGENTS.md (this Next.js differs from your training data; check node_modules/next/dist/docs).
+Binding.
+
+REM-015 - publish the privacy policy and the terms of use as /privacy and /terms on the public site.
+The source texts are docs/legal/privacy-policy.md and docs/legal/terms-of-use.md (committed; do NOT
+edit them). The footer already links to /privacy and /terms (components/site/site-footer.tsx) and
+both 404 today.
+
+1. frontend/lib/legal.ts - the two documents as a typed structure, transcribed faithfully from the
+   Markdown (no Markdown parsing at runtime, no raw HTML anywhere):
+     type Inline = string | { strong: string } | { text: string; href: string };
+     type Block =
+       | { kind: 'h2' | 'h3'; text: string }
+       | { kind: 'p'; content: Inline[] }
+       | { kind: 'ul'; items: Inline[][] }
+       | { kind: 'table'; head: string[]; rows: Inline[][][] };
+     interface LegalDocument { title: string; updated: string; blocks: Block[] }
+     export const PRIVACY_POLICY: LegalDocument; export const TERMS_OF_USE: LegalDocument;
+   Keep **bold** as { strong }, Markdown links as { text, href } (they are internal: /privacy etc.),
+   numbered lists as 'ul' only if the source has none (check - if the source has ordered lists add an
+   'ol' kind). Keep every `[[…]]` placeholder VERBATIM - they are filled by the client before
+   publishing (docs/legal/README.md); do not invent values. `updated` = whatever the source states
+   for its date (a placeholder is fine). Header comment: the Markdown in docs/legal/ is the source;
+   change both together.
+   Transcription check (do not commit it): write a throwaway script in your temp dir that flattens
+   each structure to plain text and diffs it against the Markdown with markup stripped; fix every
+   difference; report that it came out identical.
+
+2. frontend/components/site/legal-document.tsx - one server component rendering a LegalDocument:
+   h1 title, "Last updated …" line, then blocks. Internal links via next/link. A table must not
+   force horizontal page scroll on a 375px viewport (wrap it in an overflow-x-auto container).
+   Readable measure (max width ~ 70ch), marketing type scale, existing token utilities only, no
+   new primitive in components/ui. Reuse the page shell spacing the other (site) pages use.
+
+3. frontend/app/(site)/privacy/page.tsx and frontend/app/(site)/terms/page.tsx - static pages,
+   each exporting `metadata` (title "Privacy policy" / "Terms of use", a one-sentence description),
+   rendering <LegalDocument doc={…} />.
+
+Leave untouched: everything else (no footer change needed - verify the links resolve). No new
+dependencies.
+</task>
+
+<verification_loop>
+From the repo root, one at a time (8 GB RAM machine; never two builds at once):
+  npm run lint              (includes the token checker)
+  npm run build:frontend    (both pages must be listed as static ○)
+  cd frontend && npx tsc --noEmit
+Confirm git status shows only the four new files.
+</verification_loop>
+
+<action_safety>
+Do NOT git add/commit/checkout/stash. Do not edit docs/legal/*. Do not stop Docker containers.
+Avoid shell redirections that could create stray files in the repo.
+</action_safety>
+
+<structured_output_contract>
+End with:
+  1. Files created, and the block counts per document
+  2. The transcription check result
+  3. Gate outcomes
+  4. Deviations, open points
+</structured_output_contract>

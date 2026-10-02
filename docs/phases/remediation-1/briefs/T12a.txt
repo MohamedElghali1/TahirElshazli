@@ -1,0 +1,104 @@
+<task>
+Repository: npm-workspaces monorepo; NestJS backend in backend/ (no ORM: DatabaseService +
+parameterised SQL behind repository interfaces, two implementations per interface chosen by
+PERSISTENCE_DRIVER). Read CLAUDE.md §5 and §9 (binding), then docs/phases/remediation-1/T12-PLAN.md
+(the approved plan; this is its slice 12a) and the decisions D-63/D-66 in docs/CHANGELOG.md.
+Follow the announcements module as the pattern (backend/src/announcements/interfaces,
+repositories/, the repositoryProvider wiring in announcements.module.ts, migration 021).
+
+Slice 12a — the weekly_reports table and its two repositories. No service, no routes, no frontend.
+
+1. backend/src/database/migrations/028_weekly_reports.sql:
+   weekly_reports(
+     id uuid primary key default gen_random_uuid()  (match how other migrations mint ids),
+     group_id   -> groups(id) on delete cascade,
+     student_id -> users(id) on delete cascade,
+     course_id  -> courses(id) on delete cascade,
+     week_start date not null            -- the Saturday, Africa/Cairo calendar date (D-66)
+     status text not null check (status in ('draft','published')),
+     content jsonb not null,
+     generated_at timestamptz(3) not null,
+     published_at timestamptz(3) null,
+     published_by -> users(id) null (on delete set null),
+     created_at / updated_at timestamptz(3) not null default now(),
+     unique (group_id, student_id, week_start),
+     check ((status = 'published') = (published_at is not null))
+   ) + index (student_id, status, week_start desc) + index (group_id, week_start).
+   Match the id/fk column types the referenced tables actually use (read 001 and later
+   migrations - some ids are text, not uuid). Header comment citing REM-031, D-63, D-66.
+
+2. backend/src/reports/interfaces/weekly-report-repository.interface.ts:
+   export interface WeeklyReportContent {
+     attendance: { present: number; late: number; absent: number; unmarked: number; expected: number;
+       sessions: { sessionId: string; title: string; scheduledAt: string;
+                   status: 'present' | 'late' | 'absent' | null }[] };
+     homework: { due: number; submitted: number;
+       tasks: { assessmentId: string; title: string; type: string; dueAt: string; status: string;
+                score: number | null; maxScore: number }[] };
+   }
+   export interface WeeklyReport { id; groupId; studentId; courseId; weekStart: string /* YYYY-MM-DD */;
+     status: 'draft' | 'published'; content: WeeklyReportContent; generatedAt: string;
+     publishedAt: string | null; publishedBy: string | null; }
+   export interface WeeklyReportWeek { groupId; weekStart; drafts: number; published: number }
+   export interface WeeklyReportRepository {
+     /** Insert, or refresh content+generated_at of a DRAFT. Never touches a published row.
+         Returns 'inserted' | 'updated' | 'skipped' (skipped = the row is published). */
+     upsertDraft(input: { groupId; studentId; courseId; weekStart; content; generatedAt }): Promise<...>;
+     findByGroupWeek(groupId: string, weekStart: string): Promise<WeeklyReport[]>;
+     listWeeks(): Promise<WeeklyReportWeek[]>;              // newest week first, then groupId
+     /** Flip every DRAFT of the group-week to published; returns the rows it flipped. */
+     publishGroupWeek(groupId, weekStart, publishedBy: string, at: string): Promise<WeeklyReport[]>;
+     findPublishedForStudent(studentId: string): Promise<WeeklyReport[]>;  // newest week first
+   }
+   export const WEEKLY_REPORT_REPOSITORY = Symbol('WEEKLY_REPORT_REPOSITORY');
+
+3. Postgres implementation: upsertDraft is ONE statement:
+   INSERT ... ON CONFLICT (group_id, student_id, week_start) DO UPDATE SET content = EXCLUDED.content,
+   generated_at = EXCLUDED.generated_at, updated_at = now() WHERE weekly_reports.status = 'draft'
+   RETURNING (xmax = 0) AS inserted   -- no row returned => skipped.
+   (Verify the xmax trick on PG 15; if you prefer, distinguish with a CTE - but it must stay one
+   round trip and the published guard must be in SQL.) week_start returned as 'YYYY-MM-DD' text (no
+   timezone shift - select it as week_start::text). publishGroupWeek is one UPDATE ... WHERE
+   status='draft' RETURNING *. Joins the ambient transaction like every other repository.
+
+4. In-memory implementation with identical semantics; every read returns COPIES (CLAUDE.md §9: a
+   before snapshot must not alias its after).
+
+5. Register the provider in backend/src/reports/reports.module.ts with repositoryProvider (export the
+   token if a later slice's service will need it from this module - it will live in the same module,
+   so no export is needed yet).
+
+6. Tests:
+   - Unit spec for the in-memory repository (backend/src/reports/repositories/
+     in-memory-weekly-report.repository.spec.ts): insert -> 'inserted'; same key -> 'updated' with new
+     content; publish -> rows flipped, publishedAt/By set; upsert after publish -> 'skipped' and the
+     content is byte-for-byte unchanged; publish twice -> second returns []; findPublishedForStudent
+     never returns drafts or another student's rows; listWeeks counts.
+   - Integration cases in backend/test/postgres-repositories.integration-spec.ts, new
+     describe('weekly reports (migration 028)'): the same contract against PostgreSQL, plus: the
+     unique key refuses a duplicate raw INSERT; the status/published_at CHECK refuses an
+     inconsistent row; week_start round-trips as the same date string. Use existing fixture rows
+     (a real group, its student, its course).
+</task>
+
+<verification_loop>
+From the repo root, one at a time, foreground (8 GB RAM):
+  npm run lint
+  npm test
+  npm run build:backend
+  cd backend && npx tsc --noEmit -p tsconfig.json
+  TEST_DATABASE_URL=postgresql://dev:devpassword@localhost:55433/remed_test npm run test:integration
+    (container remed-pg must be running: `docker start remed-pg`; it applies 001-028 to an empty
+    schema - report the Tests line)
+Confirm git status shows only intended files.
+</verification_loop>
+
+<action_safety>
+Do NOT git add/commit/checkout/stash. Touch only backend/. Do not stop Docker containers other
+than starting remed-pg. Avoid shell redirections that could create stray files.
+</action_safety>
+
+<structured_output_contract>
+End with: files and what each does; gate outcomes with counts; how upsertDraft distinguishes
+inserted/updated/skipped and proof the published guard is in SQL; deviations/open points.
+</structured_output_contract>

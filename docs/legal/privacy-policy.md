@@ -12,8 +12,8 @@
 - Your teacher and the teaching assistants responsible for your group can see your work and your
   marks. Other students can see only your name, and only if they are in the same group.
 - We do not sell your data, we do not show advertising, and we do not use tracking or analytics tools.
-- If you are under 18, a parent or guardian must agree before you create an account, and they may
-  receive reports about your progress.
+- Many of our students are under 18. A parent or guardian can contact us about a student's data
+  and exercise the student's rights on their behalf.
 - You can ask to see, correct, download or delete your data at any time by emailing
   [[PRIVACY CONTACT EMAIL]].
 
@@ -58,13 +58,14 @@ We store your password only in a scrambled, one-way form (a "hash"). Nobody at t
 - **Lesson progress**: which recorded lessons you have opened and completed.
 - **Group and course membership**: which course and group you belong to.
 - **Notifications** we show you, whether you have read them, and your notification preferences.
-- **Weekly progress reports**, when this feature is available, compiled from your attendance, work
-  and marks.
+- **Weekly progress reports**, when this feature is available: a summary of your attendance,
+  homework completion and marks for the week, prepared automatically, checked by your teacher and
+  then shown to you in the Platform. Reports are not emailed.
 
 ### 3.3 Information provided by your teaching staff
 
-- The name of your school and a parent or guardian's email address, recorded by staff so that
-  reports can reach the right person.
+- The name of your school and a parent or guardian's email address, which staff may record so
+  that they can contact your family about your studies.
 - Private teaching notes about your learning, visible only to staff. You can ask to see them (§8).
 
 ### 3.4 Homework set as a Google Form
@@ -104,9 +105,9 @@ entered or changed a mark and when. These records may refer to the student the a
 
 | Purpose | Legal basis |
 |---|---|
-| Creating and running your account; delivering lessons, homework, marking and attendance | Performing our agreement with you (or with your parent or guardian); consent of a parent or guardian for students under 18 |
-| Showing you and your teacher your results and progress, including per-question results for Google Form homework | Performing our agreement with you |
-| Sending progress reports to a parent or guardian | Consent of the parent or guardian; our legitimate interest in keeping families informed about a child's education |
+| Creating and running your account; delivering lessons, homework, marking and attendance | Performing our agreement with you (or with your parent or guardian, where they arranged your enrolment) |
+| Showing you and your teacher your results and progress, including weekly reports and per-question results for Google Form homework | Performing our agreement with you |
+| Contacting a parent or guardian about a student's studies | Our legitimate interest in keeping families informed about a child's education |
 | Sending service emails: account setup, password resets, announcements from your teacher | Performing our agreement with you |
 | Keeping the Platform secure, preventing abuse, and keeping a record of staff actions | Our legitimate interest in a secure, accountable service |
 | Answering your questions | Your request; our legitimate interest |
@@ -116,18 +117,16 @@ We do **not** use your data for advertising, we do **not** sell it, and we do **
 about you by automated means alone. Marks are awarded by your teacher, and scores imported from
 Google Forms reflect the marking set up by your teacher on that form.
 
-## 5. Children and parental consent
+## 5. Children
 
-Many of our students are under 18. If you are under 18:
+Many of our students are under 18. We collect no more about a younger student than about any other
+student, and nothing in §3 is used for advertising or profiling.
 
-- A **parent or legal guardian must give consent** before you create an account and before we
-  process your data. We may ask them to confirm this.
-- Your parent or guardian may receive **progress reports** about your attendance, work and marks at
-  the email address they give us.
-- Your parent or guardian may exercise the rights in §8 on your behalf.
-
-If we learn that we hold data about a student under 18 without a parent or guardian's consent, we
-will ask for it and, if it is not given, delete the account.
+- A **parent or legal guardian** may contact us at [[PRIVACY CONTACT EMAIL]] about a student's data
+  and may exercise the rights in §8 on the student's behalf. Tell us which student you are writing
+  about; we may need to confirm that you are their parent or guardian.
+- If a parent or guardian asks us to stop processing a student's data or to delete the account, we
+  will do so, subject to §7 and to anything the law requires us to keep.
 
 ## 6. Who can see your data
 
@@ -138,7 +137,6 @@ will ask for it and, if it is not given, delete the account.
   students, where the teacher has given an assistant access to every group).
 - **Other students** can see only your **name**, and only if they share a group with you. They never
   see your email, your work or your marks.
-- **Your parent or guardian** receives reports about you if an email address has been recorded for them.
 
 **Service providers who process data for us.** Each works under our instructions and only for the
 purposes in §4.
@@ -181,8 +179,8 @@ You have the right to:
 - **access** your data and receive a copy, including staff notes about you;
 - **correct** data that is wrong or incomplete;
 - **delete** your data, unless we must keep something by law or to settle a dispute;
-- **withdraw consent** at any time, including a parent or guardian's consent (this does not affect
-  anything done before you withdrew it);
+- **withdraw consent** at any time, where we rely on it (for example, linking a Google account for
+  sign-in); this does not affect anything done before you withdrew it;
 - **object** to processing based on our legitimate interests;
 - **receive your data in a portable format**, where GDPR applies to you;
 - **complain** to Egypt's Personal Data Protection Center, or to your local data-protection
