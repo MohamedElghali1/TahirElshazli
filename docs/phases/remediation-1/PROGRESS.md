@@ -5,8 +5,8 @@ Antigravity CLI via `/agy-delegate`; the lead writes each brief, re-runs the gat
 commits. One task, one commit. Tasks and acceptance criteria: `docs/REMEDIATION_PLAN.md`.
 
 Out of scope by the user's instruction (2026-09-27): guardian consent (`REM-081`, deleted — `D-64`); creating the real
-staff accounts (`D-61`); real site photos and WhatsApp number (`REM-016b`, needs client content);
-weekly reports (`REM-031`, post-launch).
+staff accounts (`D-61`); real site photos and WhatsApp number (`REM-016b`, needs client content).
+Weekly reports (`REM-031`) were first out of scope, then brought in by `D-63` and built as T12.
 
 ## Status
 
@@ -336,3 +336,26 @@ open timestamp point). The lead reviewed that diff and covered it in 12a's full 
   "Your weekly report is ready" → `/marks` showing the report (light, dark at 375 px); Arabic-named
   student at 375 px RTL; assistant has no Reports item and gets "You don't have access to this page."
   on both URLs. **PASS.**
+
+### End of run (2026-10-02, tree `aa9f198` + docs)
+- Final gates, run by the lead one at a time: lint 0 errors (4 old warnings); drift ok; unit 954/59;
+  e2e 419 across 5 files, every file counted; integration 198/198 (001–029 from an empty schema);
+  both builds; both tsc 0; `npm audit` 0 vulnerabilities.
+- Production rehearsal: `docker-compose.prod.yml` under project name `rehearsal` (the dev stack's
+  project is also `tahirelshazli` — sharing it would have shared its volume), a mechanical copy whose
+  only differences are an absolute build context, a throwaway env file and the localhost API URL baked
+  into the web bundle. Both images built on `node:24-alpine` (v24.21.0); migrate CLI 001–029 from
+  empty then "Nothing to apply"; `bootstrap-staff` created the teacher, refused a second run; seed CLI
+  refused under production; three containers healthy; weekly-report tick generated 3 drafts.
+  `tmp/audit/journeys.sh`: **T-01…T-15 all PASS** (incl. T-07/T-08 with `MAIL_DRIVER=log`, T-13 scope,
+  T-14 publish, T-15 limits). Headless walk (`tmp/audit/shot.mjs`, a `securitypolicyviolation` listener
+  injected into every page and proven by a deliberate blocked fetch): every console nav item as teacher
+  (17 + 3 deep pages) and assistant, every student page, the public site — **0 console errors, 0 CSP
+  violations**, no horizontal scroll. Found: footer course links 404 (`REM-054`). Stack, volume and
+  secrets deleted.
+- Docs: `REMEDIATION_PLAN.md` Phases 2–9 restored (deleted by `84104a4`) and ticked; new
+  `docs/CLOUDFLARE_SETUP.md`; `PRODUCTION_READINESS.md`, `HOSTINGER_DEPLOYMENT.md`, `CLAUDE.md`,
+  `project_log.md` brought to the truth; `/var/` added to the root `.gitignore` (existing `var/`
+  contents left in place).
+- Not mine, noted: the dev container `tahirelshazli-api` was crash-looping at session start and is now
+  `Exited (1)` (its restart policy gave up); not touched.

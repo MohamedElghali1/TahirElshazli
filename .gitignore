@@ -69,3 +69,4 @@ tmp/
 # and never to the repository. UPLOAD_DIR can point anywhere; this covers the
 # default.
 backend/var/
+/var/

@@ -105,6 +105,7 @@ Highest first. A higher entry beats a lower one on the subject it owns.
 | Go-live checklist and release status | `docs/PRODUCTION_READINESS.md` |
 | Audit remediation tasks (`REM-nnn`), phased | `docs/REMEDIATION_PLAN.md` |
 | Hostinger VPS architecture, environment, runbook, backups, rollback | `docs/HOSTINGER_DEPLOYMENT.md` |
+| Cloudflare: DNS, TLS, cache rules, WAF, R2 bucket, token and CORS | `docs/CLOUDFLARE_SETUP.md` |
 | Privacy policy source text, and the product promises it depends on | `docs/legal/` |
 
 **Superseded, kept only as historical record:** `docs/frontend-design-system.md` describes the
@@ -144,9 +145,9 @@ Actual repository versions. Do not substitute generic knowledge for what is writ
 | Data access | **No ORM.** `DatabaseService` + parameterised SQL behind repository interfaces |
 | Migrations | Hand-written SQL in `backend/src/database/migrations/`, run by `MigrationRunner` |
 | Video | **None — recordings are plain links** (a validated http(s) `videoUrl`). Bunny Stream is out of scope (`D-57`, 2026-09-27) |
-| File storage | `FileStorage` port with drivers `none` / `local` / `r2` — `local` in dev, `none` or `r2` in prod (`local` stays refused in prod). `r2` is Cloudflare R2 via `@aws-sdk/client-s3`, a private bucket, presigned `readUrl` reads (`REM-030`, done). `.env.example` still needs its four `R2_*` vars added (`T10`). DOCX submissions remain a launch blocker (`REM-082`, open) |
+| File storage | `FileStorage` port with drivers `none` / `local` / `r2` — `local` in dev, `none` or `r2` in prod (`local` stays refused in prod). `r2` is Cloudflare R2 via `@aws-sdk/client-s3`, a private bucket, presigned `readUrl` reads (`REM-030`, done; no real bucket round trip yet — a go-live check). `.env.example` has the four `R2_*` vars. PDF and DOCX submissions with content sniffing (`REM-082`, done). Cloudflare/R2 setup: `docs/CLOUDFLARE_SETUP.md` |
 | Mail | `MailSender` port: `none` / `log` / `smtp` (nodemailer). Prod default `none` — which 503s announcements, student creation, invitations and reset, so **SMTP is required in practice** |
-| Hosting | **Hostinger VPS**, containerized. Two Dockerfiles (**still on `node:20-alpine`, EOL — `REM-011`**); `docker-compose.yml` is **development only**. Target production layout: `docs/HOSTINGER_DEPLOYMENT.md` |
+| Hosting | **Hostinger VPS**, containerized. Two Dockerfiles on `node:24-alpine` (`REM-011`, done); `docker-compose.yml` is **development only**, `docker-compose.prod.yml` is production (rehearsed 2026-10-02). Runbook: `docs/HOSTINGER_DEPLOYMENT.md` |
 | Edge | **Cloudflare** — SSL, DNS, CDN, DDoS, WAF, caching |
 | Design system | The Claude Design handoff, reimplemented as TSX + Tailwind v4 (§11) |
 | Orchestration | Ruflo (`ruflo@latest` MCP server, registered as `claude-flow`) + `.claude/agents/` |
@@ -158,8 +159,8 @@ Backend TypeScript is `strict: true`, `module: nodenext`, `target: ES2023`, with
 
 ```
 npm run dev                  # both services, no database needed
-npm test                     # backend unit — 804 tests, 48 files
-npm run test:e2e             # backend e2e — 404 in 5 files, ONE FILE PER PROCESS (OPS-3)
+npm test                     # backend unit — 954 tests, 59 files
+npm run test:e2e             # backend e2e — 419 in 5 files, ONE FILE PER PROCESS (OPS-3)
 npm run test:e2e:combined    # the raw single-process run; dies with no summary on Windows
 npm run test:integration     # backend integration; SKIPS ITSELF without TEST_DATABASE_URL
 npm run lint                 # frontend eslint + token check (OPS-2) + backend oxlint
@@ -238,11 +239,12 @@ destroyed live code (`docs/phases/unit-4/REVIEW_4D.md`). Do not read `SHELL-4`'s
 ("delete `components/app/*`, `components/site/*`") as still describing the directory's contents —
 verify against the actual consumer graph before treating either directory as legacy again.
 
-(Audit 2026-09-27: the page is gone but the admin-only "Assistants" tab in
-`manage/courses/[id]/layout.tsx:54` still links to it — `REM-014`.)
+(Audit 2026-09-27 found the admin-only "Assistants" tab in `manage/courses/[id]/layout.tsx` still
+linking to it; removed by `REM-014`, 2026-10-02.)
 
-The backend **is** green and must stay green: **804 unit / 48 files, 404 e2e, 191 integration**
-(re-measured by the 2026-09-27 audit; the figures below are the unit 8 landing record)
+The backend **is** green and must stay green: **954 unit / 59 files, 419 e2e / 5 files, 198
+integration** (against real PostgreSQL, 001–029 from an empty schema — re-measured at the end of
+remediation run 1, 2026-10-02; the figures below are the unit 8 landing record)
 (against real PostgreSQL 15.19, 001–026 from an empty schema) as of unit 8's landing, 2026-09-24
 (`docs/phases/unit-8/`; units 1–8 and 10–14 are `[x]` — unit 14 closed 2026-09-25 when `GAUTH-C1`
 and `GAUTH-C2` did). **Backend `tsc
@@ -291,6 +293,10 @@ PostgreSQL
 - **Resist a fourth `@Global()` module.** There are three (`DatabaseModule`, `AuditModule`,
   `GroupDataModule`). Global providers are invisible in an import list, which is what makes them
   worth rationing.
+- **Scheduled work is an in-process timer, not a framework.** The one instance is
+  `reports/weekly-reports.scheduler.ts` (`D-63`): bootstrap + hourly `setInterval(...).unref()`, never
+  overlapping, off under `NODE_ENV=test`, idempotent because the write it drives is guarded in SQL.
+  Copy that shape (`REM-083` will); it is safe on one replica and harmless on two only because of the guard.
 - **Do not introduce** GraphQL, microservices, CQRS, event sourcing, a message queue, a background-job
   framework, an ORM, or Redis. `docs/ARCHITECTURE.md` §4 gives the reason for each. Redis has one
   named trigger: a second replica being configured, or device/session management being committed to.
@@ -453,7 +459,8 @@ A security claim needs a test that proves the unauthorized case fails (§10).
   a gate, not a nicety: migrations 001–008 were each verified this way and **every single first run
   found something** — including the audit log silently ending after page one, because
   `created_at` was microsecond `TIMESTAMPTZ` while the JavaScript cursor carried only milliseconds.
-  **As of 2026-09-24, 001–026 have all run from an empty schema**, on `postgres:15-alpine` (15.19)
+  **As of 2026-10-02, 001–029 have all run from an empty schema** (integration suite, and the
+  production image's migrate CLI in the rehearsal); 001–026 first on `postgres:15-alpine` (15.19)
   (`docs/phases/unit-7/EXECUTION_NOTES.md`, `docs/phases/RECONCILE_UNITS_10_12.md`, and unit 8's
   landing), including a one-off check of `019`'s backfill on a
   database populated before it ran. Keep it that way: authoring a migration on top of an unverified one buries whatever it gets wrong. Without

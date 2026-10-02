@@ -4388,3 +4388,35 @@ browser walk used headless Chrome over the DevTools protocol with Node 24's buil
 (`tmp/audit/ui-walk.mjs`, no dependency added). A two-week-old compose API image, restarted by
 Docker on boot, crash-looped against a database newer migrations had touched — the rollback hazard
 now written into `docs/HOSTINGER_DEPLOYMENT.md` §8.
+
+## 2026-10-02 — Remediation run 1: launch blockers closed, weekly reports built, production rehearsed
+
+Branch `remediation/launch-blockers`, 2026-09-27 → 2026-10-02, tasks T1–T12 (`docs/phases/remediation-1/`).
+Every code P0/P1 from the audit is done: the bootstrap-staff CLI, group-grain scope on course routes
+(and `D-65`, one group per student per course), announcements that publish whatever mail does,
+classroom-safe rate limits, the Cloudflare R2 driver, DOCX submissions with content sniffing, Google
+Form responses by CSV import with a results screen (`D-60`, `D-67`), nine frontend fixes, the
+deployment files (Node 24, prod compose, nginx, backups, origin firewall, security headers), legal
+pages, and — brought forward from "after launch" — **weekly reports** (`D-63`, `D-66`): hourly drafts for
+the last completed Saturday–Friday Cairo week, published per group-week by the teacher or an admin,
+read by the student on `/marks`.
+
+The end-of-run rehearsal ran `docker-compose.prod.yml` from the final tree with throwaway secrets:
+migrations 001–029 from empty, the bootstrap CLI, all fifteen audit journeys (five of which had failed
+in the audit) and a headless walk of every console, student and public page with **no CSP violation**.
+Gates: 954 unit, 419 e2e across 5 files, 198 integration, both builds and both `tsc` at 0, `npm audit` 0.
+
+Three things worth remembering:
+- **Subagent reports were wrong in substance repeatedly** — a mark over the wrong denominator, focus
+  return broken by `autoFocus`, a backup script that could keep a truncated dump as "newest", and in
+  T12d a success message that vanished the instant it appeared because its panel unmounted on reload.
+  Each was found by reading the code or driving a real browser, never by the report.
+- **A docs commit can delete what it never mentions.** `84104a4` ("drop guardian consent") also removed
+  Phases 2–9 of `REMEDIATION_PLAN.md`, 125 lines, unnoticed for five days; restored at the end of the
+  run. Read a docs diff's line count against its message.
+- The rehearsal walk found one pre-existing bug no gate could: the public footer hardcodes
+  `/courses/igcse` and `/courses/ielts`, slugs that exist only if the client happens to choose them
+  (`REM-054`, recorded, not fixed).
+
+What remains is the client's: SMTP, the VPS, Cloudflare and the R2 bucket, the first staff identity,
+the legal placeholders, real photos and the WhatsApp number (`docs/PRODUCTION_READINESS.md`).

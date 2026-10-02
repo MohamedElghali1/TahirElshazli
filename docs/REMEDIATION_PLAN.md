@@ -12,6 +12,11 @@ an existing pattern in this repository and names it.
 
 **Status key:** `[ ]` open · `[~]` in progress · `[x]` verified · `[?]` waiting on a client decision
 
+**Restored 2026-10-02.** Commit `84104a4` (2026-09-27, recording `D-62`…`D-64`) deleted Phases 2–9 and
+`REM-016b` along with the intended removal of `REM-081` (`D-64`); its message mentioned only the
+latter. They were restored from `84104a4^` at the end of remediation run 1, minus `REM-081`, and
+ticked against what the run actually did.
+
 ---
 
 ## Phase 0 — Audit baseline `[x]`
@@ -159,7 +164,7 @@ an existing pattern in this repository and names it.
     is 429 even across distinct emails; a rule without `by` behaves exactly as before; a body with no
     string `email` falls back to IP-only; register allows 30 per 10 minutes per IP.
 
-- [ ] **REM-008 — Patch vulnerable dependencies** · P1 · `AUD-08`
+- [x] **REM-008 — Patch vulnerable dependencies** (**Done:** T10 `ef89b96`; `npm audit` 0 vulnerabilities on 2026-10-02) · P1 · `AUD-08`
   - *Change:* `npm audit fix` (lockfile only; no major bumps). If multer cannot move without a Nest
     major, pin via `overrides` in the root `package.json`.
   - *Acceptance:* `npm audit` reports 0 high; all suites green.
@@ -213,6 +218,124 @@ an existing pattern in this repository and names it.
     into a task for an unheld group; analytics numbers match a hand count for a 30-row fixture;
     `API_SPEC.yaml` updated.
 
+- [ ] **REM-016b — Replace placeholder content on the public site** · **P1** · `AUD-16`
+  - *Why:* the About and home pages show random stock photos from `picsum.photos` as Dr. Tahir's
+    portrait (7 `photo()` calls, `lib/site-content.ts`, `app/(site)/page.tsx:90`,
+    `app/(site)/about/page.tsx:54`), and the WhatsApp number is `201000000000` (footer, contact
+    page, in-app Help).
+  - *Change:* the client supplies real photos (served from `frontend/public/`) and the real number;
+    remove `picsum.photos` from `next.config.ts` `remotePatterns`.
+  - *Acceptance:* `grep -r picsum frontend` is empty; the WhatsApp link opens the real chat.
+
+---
+
+## Phase 2 — Core functionality fixes
+
+- [x] **REM-013 — Grading dialog focus trap** (**Done:** T9 `0aa8203`) · P1 · `AUD-13` — copy `CurriculumDrawer`'s effect
+  (`lessons/page.tsx:430-468`) into `GradeDialog`. *Acceptance:* Tab cycles inside, Escape closes,
+  focus returns to the opener. Consider extracting one `Dialog` primitive into `components/ui/` only
+  if a second caller adopts it in the same change.
+- [x] **REM-014 — Remove the dead "Assistants" course tab** (**Done:** T9 `0aa8203`) · P1 · `AUD-14` —
+  `manage/courses/[id]/layout.tsx:54`. *Acceptance:* no link to `/staff` remains; walk U-04 clean.
+- [x] **REM-016 — Fix announcement notification links** (**Done:** T9 `0aa8203`) · P2 · `AUD-20` — `announcements.service.ts:231`:
+  link to `/dashboard` (where announcements render) or `null`; migration-free. Also fix the
+  in-memory fixture links. *Acceptance:* U-02 shows no `/learn` requests.
+- [x] **REM-017 — Assistant navigation matches capability** (**Done:** T9 `0aa8203`) · P2 · `AUD-22` — hide admin-only items
+  for `assistant` using the existing capability preset (`lib/roles.ts`), not a new rule.
+  *Acceptance:* U-05 shows no page rendering "Forbidden resource".
+- [x] **REM-018 — Error and not-found boundaries** (**Done:** T9 `0aa8203`) · P2 · `AUD-23`, `AUD-28` — add `app/not-found.tsx`,
+  `app/error.tsx`, `app/global-error.tsx` from existing UI primitives.
+- [x] **REM-019 — Correct the recording copy and drop Bunny detection** (**Done:** T9 `0aa8203`) · P2 · `AUD-24`, `AUD-36` —
+  replace the false "signed per request" hint; remove the `bunny` branch and comments from
+  `recording-player.tsx` and `create-recording.dto.ts`. Keep YouTube/Vimeo embeds unless the user
+  wants every recording to be a plain outbound link.
+
+---
+
+## Phase 3 — API / backend completion
+
+- REM-030 (R2) and REM-080 (CSV import) are specified in Phase 1; REM-031 (weekly reports) is Phase 10.
+- [ ] **REM-032 — Validate task `externalUrl`** · P2 · `AUD-41` — add `@IsPublicHttpUrl()` (already used
+  by `zoomLink`); a `javascript:` negative test.
+- [ ] **REM-033 — Cap the notification list** · P2 · `AUD-40` — `LIMIT 50` in both repositories.
+- [ ] **REM-034 — Batch `expectedStudentIds`** · P3 · `AUD-44` — use `findMembersForGroups`.
+- [ ] **REM-035 — Notify the student when work is returned** · P3 · `AUD-43` — product decision first.
+- [ ] **REM-036 — Remove `GET /courses/catalog` and duplicate `api.ts` functions** · P3 · `AUD-45`.
+
+## Phase 4 — Frontend completion
+
+- [x] **REM-021a — Hide the "Reports" nav item until Unit 9 exists** (**Done:** T10 `ef89b96`) · P2 · `AUD-21`.
+- [ ] **REM-040 — Session expiry that does not lose work** · P2 · `AUD-25` — minimal: set
+  `JWT_EXPIRY=8h` for production (the denylist already handles logout) and document the trade-off;
+  larger (refresh cookie) only if the client asks.
+- [ ] **REM-041 — RTL: decide how Arabic is reached** · P2 · `AUD-29` — `dir="auto"` on user text is
+  done; a site-level direction switch is a product decision.
+- [ ] **REM-042 — Close the token-checker gaps** · P3 · `AUD-30` — teach `check-tokens.mjs` the
+  `text-(length:--x)` shorthand and unknown-utility names; fix the five sites it then reports.
+- [ ] **REM-043 — Quizzes page N+1** · P3 · `AUD-31`.
+- [ ] **REM-054 — Public footer links to course slugs that do not exist** · P2 — found in the
+  2026-10-02 production rehearsal walk: `components/site/site-footer.tsx` hardcodes `/courses/igcse`
+  and `/courses/ielts`, but a course's slug is whatever the teacher gives it (the fixtures use
+  `igcse-english-language`), so both links 404 unless the client creates courses with exactly those
+  slugs. Either link to `/courses` or derive the two links from the public catalogue.
+- [x] **REM-045 — Greeting uses the display name correctly** (**Done:** T9 `0aa8203`) · P3 · `AUD-35`.
+- [~] **REM-015 — Privacy and terms pages** · P1 · `AUD-15` — **`/privacy` and `/terms` built (T11 `58cc6e7`, `1d8c915`); still open: the client's `[[…]]` placeholders and lawyer review.** Originally: **privacy policy drafted**
+  (`docs/legal/privacy-policy.md`; placeholders and the product promises it depends on are listed in
+  `docs/legal/README.md`). Remaining: lawyer review, placeholders, Arabic version, terms of use, and the
+  `/privacy` + `/terms` pages in `app/(site)/` rendering the text as paragraphs (no raw HTML).
+- [~] **REM-027 — `robots.ts` and `sitemap.ts`** (**`robots.ts` done** in T10; `sitemap.ts` not built) · P2 · `AUD-27` — Next metadata routes; sitemap from
+  the public courses and blog endpoints; disallow `/manage`, `/dashboard`.
+
+## Phase 5 — Security hardening
+
+- [ ] **REM-046 — Hash one-time tokens at rest** · P2 · `AUD-42` — SHA-256 on write and lookup for
+  password-reset and invitation tokens; a migration that invalidates outstanding plaintext rows.
+- [x] **REM-047 — Web security headers** (**Done:** T10 `ef89b96`; no CSP violation in the 2026-10-02 production rehearsal walk (teacher, assistant, student, public)) · P2 · `AUD-26` — `headers()` in `next.config.ts`
+  (CSP matching the API origin, `X-Frame-Options`, `Referrer-Policy`, `nosniff`),
+  `poweredByHeader: false`. Verify no console CSP violations on U-01…U-05.
+- [ ] **REM-048 — Seed CLI refuses a non-local database unless explicitly forced** · P3 · `AUD-38`.
+- [ ] **REM-049 — Per-account login lockout** · P3 — after REM-007, a short lockout per email.
+- [ ] **REM-051 — Global exception filter for consistent logs** · P3 · `AUD-46` — hardening only; the
+  response shape is already safe.
+
+## Phase 6 — Performance and reliability
+
+- [ ] **REM-052 — Validate `DATABASE_POOL_MAX`** · P3 · `AUD-47` — a `resolve*` function like the others.
+- [ ] **REM-044 — Frontend test gate** · P3 — CI has no frontend runtime test; at minimum make the
+  lead's CDP walk (`tmp/audit/ui-walk.mjs`) a documented smoke script, or add one Playwright smoke if
+  the team wants a dependency.
+
+## Phase 7 — Hostinger deployment preparation
+
+- [x] **REM-011 — Node 22/24 in images and CI** (**Done:** T10 `ef89b96`; both images built on `node:24-alpine` (v24.21.0) 2026-10-02) · P1 · `AUD-10` — both Dockerfiles (both stages), `ci.yml`
+  `NODE_VERSION`, `frontend/package.json` `@types/node`. *Acceptance:* images build; unit, e2e and
+  integration green under the new base.
+- [x] **REM-012 — Rewrite `.env.example` from `env.ts`** (**Done:** T10 `ef89b96`) · P1 · `AUD-12` — remove the 13 unread
+  variables; add storage, mail (+5), `FRONTEND_URL`, `INTERNAL_API_URL`, pool, SSL mode;
+  `TRUSTED_PROXY_HOPS=2` for Cloudflare + nginx.
+- [x] **REM-020 — `docker-compose.prod.yml`** (**Done:** T10 `ef89b96`; rehearsed 2026-10-02) · P1 · `AUD-11` — exactly `HOSTINGER_DEPLOYMENT.md` §5.1.
+- [x] **REM-021 — nginx site config in the repo** (**Done:** T10 `ef89b96`) (`deploy/nginx/tahirelshazli.conf`) · P1 · §5.2.
+- [ ] **REM-022 — Real deploy job** · P3 — SSH + runbook §8 option B, gated on `DEPLOY_ENABLED`.
+- [x] **REM-023 — `backup.sh` + cron** (**Done:** T10 `ef89b96`) · P1 — nightly and pre-deploy `pg_dump -Fc`, off-host copy.
+- [ ] **REM-024 — Restore rehearsal** · P1 — restore a dump into a scratch DB and boot the API on it.
+- [x] **REM-025 — Origin firewall to Cloudflare ranges** (**Done:** T10 `ef89b96`) · P1 — required for `TRUSTED_PROXY_HOPS=2`.
+- [x] **REM-050 — Remove tracked junk files** (**Done:** T10 `ef89b96`) `0`, `1036`, `and`, `backend/{const` · P3. *Root cause
+  (observed during the audit, when five more appeared and were deleted):* agent shell commands run
+  through `cmd.exe` with an unquoted `>` inside a search pattern, which redirects to a file named after
+  the next token. Check `git status` for 0-byte files before every commit.
+- [x] **REM-053 — Update `docs/` for drift** (**Done:** end of remediation run 1, 2026-10-02) — `CLAUDE.md` counts and stack rows (partly done in this
+  audit), `docs/SECURITY.md` (recordings no longer signed), `README.md` quick-start mail note.
+
+## Phase 8 — Production deployment
+
+- [ ] **REM-060** — Execute `HOSTINGER_DEPLOYMENT.md` §7 on the VPS. *Depends on:* every P0/P1 above,
+  or an explicit, recorded client waiver.
+
+## Phase 9 — Post-deployment verification
+
+- [ ] **REM-070** — Smoke test §11 through Cloudflare (all four checks).
+- [ ] **REM-071** — Re-run T-01…T-15 against production with a throwaway student (then delete it).
+- [ ] **REM-072** — Reboot the VPS; confirm all containers return and the smoke test passes.
 - [ ] **REM-073** — External uptime monitor on `/public/courses` and `/`; alert to the client.
 - [ ] **REM-074** — First nightly backup present off-host; restore rehearsal repeated on it.
 - [ ] **REM-075** — One week later: `docker stats` and `pg_stat_activity` review; resize the plan if needed.

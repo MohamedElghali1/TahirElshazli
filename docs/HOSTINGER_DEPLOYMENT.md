@@ -1,11 +1,12 @@
 # Hostinger VPS deployment — Dr. Tahir LMS
 
-**Status: NOT DEPLOYABLE YET.** This document is the target architecture and the runbook. It is
-blocked by the P0 items in `docs/REMEDIATION_PLAN.md` (Phase 1), chiefly: no way to create the first
-staff account in production (`REM-001`), and the production files below do not exist in the repo yet
-(`REM-020`, `REM-021`). Everything here was derived from the repository as of commit `4687787`
-(2026-09-27) and, where marked **verified**, by actually running the production artifacts during the
-audit (`docs/PROJECT_AUDIT.md` §5).
+**Status (2026-10-02): ready to deploy once the client supplies the VPS, the Cloudflare account and R2
+bucket, SMTP credentials and the first staff identity** (`docs/PRODUCTION_READINESS.md`). The
+production files are in the repo (`docker-compose.prod.yml`, `deploy/nginx/tahirelshazli.conf`,
+`deploy/backup.sh`, `deploy/cloudflare-firewall.sh`) and were rehearsed end to end on 2026-10-02:
+images built on Node 24, migrate CLI 001–029 from empty, `bootstrap-staff`, journeys T-01…T-15, a
+browser walk with no CSP violation. Cloudflare and R2 setup: `docs/CLOUDFLARE_SETUP.md`. Originally
+written at commit `4687787` (2026-09-27) from the audit (`docs/PROJECT_AUDIT.md` §5).
 
 ---
 
@@ -15,11 +16,11 @@ audit (`docs/PROJECT_AUDIT.md` §5).
 |---|---|---|
 | Web | Next.js 16.3.3 standalone server, `node frontend/server.js`, port 3000 | `Dockerfile.frontend`, `next.config.ts` `output: 'standalone'` — **verified**: image builds and serves |
 | API | NestJS 12, `node dist/main.js`, port 3001 (`PORT`) | `Dockerfile.backend` — **verified**: production boot on empty schema |
-| Database | PostgreSQL 15 (`postgres:15-alpine`), one database | migrations 001–026 — **verified** from empty schema |
-| Reverse proxy | nginx on the host: TLS, two server blocks, body-size limit | not in repo — `REM-021` |
+| Database | PostgreSQL 15 (`postgres:15-alpine`), one database | migrations 001–029 — **verified** from empty schema (production migrate CLI, 2026-10-02) |
+| Reverse proxy | nginx on the host: TLS, two server blocks, body-size limit | `deploy/nginx/tahirelshazli.conf` (`REM-021`) |
 | Edge | Cloudflare (DNS, proxy, WAF, CDN), SSL mode **Full (strict)** | `CLAUDE.md` §3 |
 | Mail | Any SMTP provider (`MAIL_DRIVER=smtp` + 5 vars). **Required in practice** | `backend/src/common/config/env.ts` `resolveSmtpConfig` — **verified**: with the default `none`, publishing an announcement, creating a student and password reset all return 503 |
-| File storage | **Cloudflare R2** (private bucket, presigned short-lived reads) for student PDF/DOCX submissions (`D-59`). **The `r2` driver is not built yet** (`REM-030`); until it is, the only production-legal value is `none` | `env.ts` `resolveStorageDriver` — **verified**: `local` refused in production |
+| File storage | **Cloudflare R2** (private bucket, presigned short-lived reads) for student PDF/DOCX submissions (`D-59`). The `r2` driver is built (`REM-030`) and unit-tested against a mocked S3 client; **no real bucket round trip yet** — the first go-live check (`CLOUDFLARE_SETUP.md` §5) | `env.ts` `resolveStorageDriver` — **verified**: `local` refused in production |
 | Video | **None.** Recordings are plain links (user decision 2026-09-27) | `create-recording.dto.ts` `@IsUrl({protocols:['http','https']})` |
 | Process manager | **Docker Compose** (`restart: unless-stopped`) + the Docker systemd unit. **Not PM2** — it would duplicate what Docker already does | |
 | Background jobs / queue / Redis | **None.** One replica; rate limiter and token denylist are in-process by design | `CLAUDE.md` §5, §8 |
@@ -74,7 +75,7 @@ The full inventory with defaults and validation is in `docs/PROJECT_AUDIT.md` §
 | `CORS_ORIGIN` | `https://tahirelshazli.com` | boot refuses unset |
 | `FRONTEND_URL` | `https://tahirelshazli.com` | mail links; boot refuses unset |
 | `TRUSTED_PROXY_HOPS` | `2` | Cloudflare → nginx → app. **Only correct if §6's Cloudflare-only firewall is in place** |
-| `STORAGE_DRIVER` | `r2` once `REM-030` lands (`none` until then) | plus the R2 account, bucket and key variables `REM-030` defines |
+| `STORAGE_DRIVER` | `r2` | plus `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` (`CLOUDFLARE_SETUP.md` §5); boot refuses `r2` with any missing |
 | `MAIL_DRIVER` | `smtp` | `none` (the default) breaks announcements, student creation, invitations, password reset |
 | `MAIL_SMTP_HOST` `…_PORT` `…_USER` `…_PASS` `…_FROM` | from the mail provider | all five required when `smtp` |
 | `GOOGLE_DRIVER` | `none` until the client provides a Google Cloud OAuth client | then the four `GOOGLE_*` vars + `GOOGLE_TOKEN_ENCRYPTION_KEY` |
@@ -87,10 +88,12 @@ The full inventory with defaults and validation is in `docs/PROJECT_AUDIT.md` §
 | **Runtime (web container):** `INTERNAL_API_URL` | `http://api:3001` | server-side rendering calls the API over the compose network |
 
 Never set: `DB_AUTO_SEED`, `LOG_RESET_TOKENS`, `STORAGE_DRIVER=local`, `PERSISTENCE_DRIVER=memory`.
-Ignore the `.env.example` entries for R2, Bunny, Resend, Paymob and Stripe — nothing reads them
-(`REM-012`).
+`.env.example` lists exactly what `env.ts` reads (`REM-012`).
 
-## 5. Files to add to the repo (`REM-020`, `REM-021`)
+## 5. Production files (`REM-020`, `REM-021` — in the repo)
+
+**The files in the repo are authoritative**; the excerpts below are the original design and may lag
+them (`docker-compose.prod.yml`, `deploy/nginx/tahirelshazli.conf`).
 
 ### 5.1 `docker-compose.prod.yml`
 
@@ -191,6 +194,9 @@ client can forge `X-Forwarded-For` and get a fresh rate-limit bucket per request
 
 ## 6. Firewall
 
+Run `sudo deploy/cloudflare-firewall.sh` (`REM-025`): it applies the rules below, aborts rather than
+enabling a half-built rule set, and is safe to re-run when Cloudflare changes its ranges. In outline:
+
 ```
 ufw default deny incoming
 ufw allow 22/tcp                         # SSH, keys only (PasswordAuthentication no)
@@ -205,8 +211,9 @@ and does not publish 5432 at all.
 
 ## 7. First deployment — runbook
 
-Prerequisites: Phase 1 of `docs/REMEDIATION_PLAN.md` done; DNS for `tahirelshazli.com`, `www` and
-`api` in Cloudflare (proxied); SMTP credentials in hand.
+Prerequisites: Cloudflare set up per `docs/CLOUDFLARE_SETUP.md` (DNS proxied, Full strict, origin
+certificate, R2 bucket + token + CORS); SMTP credentials in hand; the first staff identity decided
+(`REM-010`).
 
 1. Create the VPS (Ubuntu 24.04). Create a non-root deploy user with sudo and an SSH key; disable
    password SSH login.
@@ -219,10 +226,11 @@ Prerequisites: Phase 1 of `docs/REMEDIATION_PLAN.md` done; DNS for `tahirelshazl
 8. Migrate: `docker compose -f docker-compose.prod.yml run --rm api node dist/database/cli/migrate.js`
    (**not** `npm run db:migrate` — that script runs `nest build`, which the runtime image cannot).
    **Verified** during the audit: prints `Nothing to apply` on an up-to-date schema.
-9. Create the first teacher account — `REM-001` must exist first:
+9. Create the first teacher account (`REM-001`; set `BOOTSTRAP_ROLE=admin` for an admin):
    `docker compose -f docker-compose.prod.yml run --rm -e BOOTSTRAP_EMAIL=… -e BOOTSTRAP_NAME=… -e BOOTSTRAP_PASSWORD=… api node dist/database/cli/bootstrap-staff.js`
-   (see `REM-001`; clear the shell history afterwards). Until it exists the only option is a
-   hand-written `INSERT` with a bcrypt hash — do not use the seed files, they carry a published password.
+   The password must be ≥ 12 characters with a letter and a number; a second run refuses once any
+   staff account exists. Clear the shell history afterwards. Never use the seed files — they carry a
+   published password, and the seed CLI refuses under `NODE_ENV=production` (rehearsed).
 10. `docker compose -f docker-compose.prod.yml up -d`
 11. Install certificates (Cloudflare Origin cert, or certbot with DNS challenge), enable the nginx
     site, `nginx -t && systemctl reload nginx`. Cloudflare SSL mode → Full (strict).
@@ -303,6 +311,6 @@ Then in a browser: sign in as the teacher, open `/manage`, open a group's mark b
 
 - SMTP provider and credentials (blocking).
 - The Cloudflare R2 account and bucket for student uploads (`D-59`, `REM-030`) — a client subscription.
-- Weekly reports ship after launch (`D-58`); nothing extra to provision for them at go-live.
+- Weekly reports are built (`REM-031`, `D-63`/`D-66`): an in-process hourly timer in the API, nothing extra to provision.
 - Google Cloud OAuth client (only if Google Forms sync or Google sign-in is wanted).
 - Who holds the Cloudflare, Hostinger, mail and domain accounts (`CLAUDE.md` §1: the client's responsibility).
