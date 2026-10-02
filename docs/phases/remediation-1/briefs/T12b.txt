@@ -1,0 +1,81 @@
+<task>
+Repository: npm-workspaces monorepo; NestJS backend in backend/. Read CLAUDE.md §5, §9, §10, §11.1
+(binding), docs/phases/remediation-1/T12-PLAN.md (approved plan; this is slice 12b), D-63/D-66 in
+docs/CHANGELOG.md. Slice 12a (committed) added migration 028 and WEEKLY_REPORT_REPOSITORY with
+WeeklyReportContent in backend/src/reports/interfaces/weekly-report-repository.interface.ts - read it.
+
+Slice 12b - week maths, composition, generation, and the in-process timer. No routes, no frontend.
+
+1. backend/src/reports/week.ts - pure functions, Africa/Cairo via Intl (Cairo has DST again since
+   2023; never a fixed offset):
+     weekStartFor(instant: Date): string      // 'YYYY-MM-DD' of the Saturday (Cairo calendar)
+                                              // of the Sat-Fri week containing `instant`
+     weekWindow(weekStart: string): { from: Date; to: Date }   // [Sat 00:00 Cairo, next Sat 00:00 Cairo)
+     lastCompletedWeekStart(now: Date): string                 // the week before weekStartFor(now)
+   Spec week.spec.ts: Friday 23:59:59 Cairo vs Saturday 00:00 Cairo; a week spanning the 2026 DST
+   start (last Friday of April) and end (last Thursday of October) - window lengths 167h/169h, and
+   `from` is exactly local midnight on both sides; lastCompletedWeekStart on a Saturday 00:30 Cairo.
+
+2. Composition - reuse existing rules, do not re-implement them:
+   a. Attendance: extend backend/src/live-sessions/student-sessions.service.ts with a method that
+      returns, for ONE group and a [from, to) window, the same counting as `collect` (published,
+      ended, the student's marks; late and absent never present; a session never marked counted as
+      `unmarked`, not absent) restricted to sessions of that group whose scheduledAt is in the
+      window, plus the per-session rows WeeklyReportContent.attendance needs. Refactor `collect` so
+      both share one filter - no second copy of the rule.
+   b. Homework + marks: extend backend/src/assessments/assessments.service.ts with a method next to
+      getPerformanceEntries that returns the tasks DUE in [from, to) for (courseId, studentId), using
+      the SAME targeting and visibility rules (targeted to the student's groups, isVisibleToStudents)
+      - share the selection code with getPerformanceEntries rather than copying it. Each row:
+      assessmentId, title, type, dueAt, status (the same computeStatus), maxScore, and score =
+      a returned submission's score (isReturnedToStudent, as today), or for a `google_form` task the
+      matched imported/synced result's score (find the existing read for a student's external result;
+      reuse it), else null. `submitted` counts rows whose status is submitted or corrected.
+   c. backend/src/reports/weekly-reports.service.ts: compose(groupId, studentId, courseId, weekStart)
+      -> WeeklyReportContent (pure assembly of a + b; owns no figures of its own), and
+      generateWeek(weekStart, now = new Date()) -> { inserted, updated, skipped }: for every group,
+      for each current member, compose and upsertDraft. Re-running is idempotent; a published row is
+      skipped by the repository's SQL guard.
+
+3. backend/src/reports/weekly-reports.scheduler.ts: OnApplicationBootstrap + OnModuleDestroy. Unless
+   NODE_ENV === 'test', run generateWeek(lastCompletedWeekStart(now)) once at bootstrap and then
+   hourly with setInterval(...).unref(); never overlap two runs (a boolean guard); catch and log
+   errors with counts only (no names, emails or marks - CLAUDE.md §8). A `ponytail:` comment naming
+   the ceiling (one replica; a second replica would double-tick, which the SQL guard tolerates).
+
+4. Wire both into ReportsModule. Avoid a circular module import; do NOT add a fourth @Global() module.
+   If a dependency cycle appears, use the narrowest fix (export the needed provider from its module)
+   and say what you did.
+
+5. Unit specs (memory driver), in backend/src/reports/weekly-reports.service.spec.ts:
+   - attendance: present/late/absent/unmarked counted separately; a session outside the week, of
+     another group, unpublished, or not yet ended is excluded; expected = sessions in window.
+   - homework: only tasks due in the week; an untargeted task and a hidden task excluded; a returned
+     mark appears, an unreturned one is null; a google_form task shows the imported score.
+   - generateWeek: first run inserts one draft per member; second run 'updated' and nothing new;
+     after publishing one row via the repository, a regeneration leaves it byte-for-byte unchanged.
+   - the scheduler does nothing when NODE_ENV === 'test' (and does not keep the process alive).
+</task>
+
+<verification_loop>
+From the repo root, one at a time, foreground (8 GB RAM):
+  npm run lint
+  npm test
+  npm run test:e2e        (every file must report a count; re-run a file that dies with
+                           0xC0000409 alone: cd backend && npx vitest run --config
+                           ./vitest.config.e2e.ts test/<file>)
+  npm run build:backend
+  cd backend && npx tsc --noEmit -p tsconfig.json
+  TEST_DATABASE_URL=postgresql://dev:devpassword@localhost:55433/remed_test npm run test:integration
+Confirm git status shows only intended files.
+</verification_loop>
+
+<action_safety>
+Do NOT git add/commit/checkout/stash. Touch only backend/. Do not stop Docker containers.
+Avoid shell redirections that could create stray files.
+</action_safety>
+
+<structured_output_contract>
+End with: files and what each does; how the shared selection/filter avoided duplicating the rules;
+gate outcomes with counts; deviations/open points.
+</structured_output_contract>
