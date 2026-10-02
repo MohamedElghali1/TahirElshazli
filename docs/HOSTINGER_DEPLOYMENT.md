@@ -52,9 +52,9 @@ share the web hostname without a path rewrite. `api.` keeps every path unmodifie
   reason to prefer KVM 2.
 - **OS:** Ubuntu 24.04 LTS (Hostinger template). Install Docker Engine + the Compose plugin, nginx,
   certbot (or use a Cloudflare Origin Certificate — 15-year, no renewal job).
-- **Runtime version:** the images pin `node:20-alpine`. **Node 20 reached end-of-life in April 2026.**
-  Bump both Dockerfiles and CI to `node:22-alpine` (or 24, matching development) before launch —
-  `REM-011`. Nothing on the host needs Node; it runs only inside the images.
+- **Runtime version:** the images pin `node:24-alpine`, matching development (`REM-011`, done). Node
+  20 reached end-of-life in April 2026, which is why the bump happened before launch. Nothing on the
+  host needs Node; it runs only inside the images.
 - **Ports:** 22 (SSH, key-only), 80 and 443 (Cloudflare ranges only). Nothing else. 3000/3001 bind
   to `127.0.0.1` only; 5432 is not published at all.
 
@@ -259,15 +259,21 @@ State lives in two places: the database, and the R2 bucket holding submitted fil
 links). Turn on object versioning for the R2 bucket, or copy it to a second bucket on a schedule: the
 nightly database dump does not cover files.
 
-- Nightly, host cron:
-  `docker compose -f /opt/tahirelshazli/docker-compose.prod.yml exec -T postgres pg_dump -U $POSTGRES_USER -Fc tahirelshazli > /var/backups/lms/$(date +%F).dump`
-- Before every deploy (the rollback mechanism, §8).
+- `deploy/backup.sh nightly|pre-deploy` runs `pg_dump -Fc` into
+  `/var/backups/lms/<kind>-<UTC timestamp>.dump` (mode 600, overridable via `BACKUP_DIR`), fails
+  non-zero on an empty dump, and deletes dumps older than `BACKUP_RETENTION_DAYS` (default 30) while
+  never deleting the newest one. **30 days, not "14 daily + 8 weekly"** — `docs/legal/privacy-policy.md`
+  §7 promises backups are overwritten on a rolling 30-day cycle, and the retention window is what makes
+  that true. An optional `BACKUP_OFFSITE_CMD` hook runs with the dump path as its argument (`REM-023`).
+- Nightly, host cron (the script's own header comment repeats this):
+  `0 3 * * * /opt/tahirelshazli/deploy/backup.sh nightly >> /var/log/tahirelshazli-backup.log 2>&1`
+- Before every deploy: `./deploy/backup.sh pre-deploy` (the rollback mechanism, §8).
 - Copy off the VPS (a second provider / object storage / the client's machine) — a backup on the box
-  it protects is not a backup. Keep 14 daily + 8 weekly.
+  it protects is not a backup. `BACKUP_OFFSITE_CMD` is where that copy step goes.
 - Hostinger VPS snapshots are a useful extra, not a substitute (whole-disk, coarse, on the same provider).
 - **Test a restore before launch** into a scratch database:
   `pg_restore -d <scratch> --clean --if-exists <dump>` then start an API against it. Untested backups
-  are an assumption (`REM-024`; the script and cron are `REM-023`).
+  are an assumption (`REM-024`; the script and cron are `REM-023`, done).
 
 ## 10. Health and monitoring
 

@@ -1,0 +1,68 @@
+# Production compose file for the Hostinger VPS (docs/HOSTINGER_DEPLOYMENT.md §5.1, REM-020).
+#
+# Build-on-VPS topology: the images are built from the checked-out commit, not
+# pulled from a registry (option B - the right call for one replica, see §8).
+# docker-compose.yml (development) is untouched; this file is production-only
+# and is never used by `npm run docker:up`.
+#
+# Usage: `DEPLOY_TAG=$(git rev-parse --short HEAD) docker compose -f
+# docker-compose.prod.yml build` then `... up -d`. Reads `.env` next to this
+# file (mode 600, never committed) for POSTGRES_USER, POSTGRES_PASSWORD and
+# everything backend/src/common/config/env.ts validates at boot.
+name: tahirelshazli
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: tahirelshazli
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d tahirelshazli"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
+    # Not published to the host at all (docs/HOSTINGER_DEPLOYMENT.md §2/§6) -
+    # reachable only from the other services on this compose network.
+
+  api:
+    build: { context: ., dockerfile: Dockerfile.backend }
+    image: tahirelshazli-api:${DEPLOY_TAG:?set DEPLOY_TAG to the git sha}
+    env_file: .env
+    environment:
+      # NODE_ENV turns on every production refusal in env.ts (placeholder JWT
+      # secret, PERSISTENCE_DRIVER=memory, STORAGE_DRIVER=local, unset
+      # CORS_ORIGIN/FRONTEND_URL...). DB_AUTO_MIGRATE stays "0" - migration is
+      # an explicit runbook step (§7.8), never a boot-time race between
+      # replicas. DB_AUTO_SEED is intentionally absent: the seed fixtures
+      # carry a published password hash, so this service must never set it.
+      NODE_ENV: production
+      PORT: 3001
+      DB_AUTO_MIGRATE: "0"
+    ports: ["127.0.0.1:3001:3001"]
+    depends_on: { postgres: { condition: service_healthy } }
+    restart: unless-stopped
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args: { NEXT_PUBLIC_API_URL: "https://api.tahirelshazli.com" }
+    image: tahirelshazli-web:${DEPLOY_TAG:?set DEPLOY_TAG to the git sha}
+    environment:
+      # Runtime, not build-time: server-side rendering calls the API over the
+      # compose network rather than round-tripping through the public
+      # hostname. NEXT_PUBLIC_API_URL above is baked into the client bundle at
+      # `docker build` instead - see Dockerfile.frontend.
+      INTERNAL_API_URL: http://api:3001
+    ports: ["127.0.0.1:3000:3000"]
+    depends_on: [api]
+    restart: unless-stopped
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
+
+volumes:
+  postgres_data:

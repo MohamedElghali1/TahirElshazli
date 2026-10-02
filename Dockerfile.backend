@@ -7,7 +7,7 @@
 # backend/package-lock.json, so an `npm ci` run from inside backend/ fails
 # outright. Build it with `docker build -f Dockerfile.backend .` from the root.
 
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
@@ -31,7 +31,7 @@ COPY backend/ ./backend/
 RUN npm run build --workspace=backend
 
 
-FROM node:20-alpine AS runtime
+FROM node:24-alpine AS runtime
 
 WORKDIR /app
 

@@ -23,7 +23,7 @@ permissions:
 env:
   # Pinned rather than "lts/*" so a Node release never changes what CI tested
   # without a commit saying so.
-  NODE_VERSION: '20.x'
+  NODE_VERSION: '24.x'
 
 jobs:
   # ---------------------------------------------------------------------------

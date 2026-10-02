@@ -6,7 +6,7 @@
 # lockfile, at the root, and `npm ci` from inside frontend/ has nothing to
 # install from. Build with `docker build -f Dockerfile.frontend .`.
 
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
@@ -31,7 +31,7 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 RUN npm run build --workspace=frontend
 
 
-FROM node:20-alpine AS runtime
+FROM node:24-alpine AS runtime
 
 WORKDIR /app
 

@@ -22,7 +22,7 @@ weekly reports (`REM-031`, post-launch).
 | T7 | REM-080a Google Form CSV import + analytics (backend) | reviewed + committed | (this commit) |
 | T8 | REM-080b CSV import + analytics (frontend) | reviewed + committed | (this commit) |
 | T9 | Frontend fixes: REM-009, 013, 014, 016, 017, 018, 019, 021a, 045 | reviewed + committed | (this commit) |
-| T10 | Deploy prep: REM-008, 011, 012, 020, 021, 050 | queued | |
+| T10 | Deploy prep: REM-008, 011, 012, 020, 021, 023, 025, 027, 047, 050 | reviewed + committed | (this commit) |
 
 ## Review notes
 
@@ -218,3 +218,26 @@ as on T1) was refused by Claude Code's permission classifier before it ran, so T
 - Follow-ups (not in the brief): the admin pages still render their create forms above the
   no-access message when an assistant reaches them by URL (server refuses every write); the 404
   page has no `h1`.
+
+### T10 — deployment prep (REM-008/011/012/020/021/023/025/027/047/050)
+- `unit-implementer`: `npm audit` 6 (1 critical, 4 high) → **0**, all within existing ranges (`next`
+  16.3.3 → 16.3.8 for a critical `next/og` RCE, `@nestjs/platform-express` 12.1.2 → multer 2.4.0,
+  `qs`, `fast-uri`, `brace-expansion`; `eslint-config-next` bumped to match); both Dockerfiles (both
+  stages) and CI on Node 24, frontend `@types/node` ^24; `docker-compose.prod.yml`;
+  `deploy/nginx/tahirelshazli.conf` (api body cap 70m from the real 64 MB multer ceiling, `real_ip`
+  deliberately omitted so the app's own `TRUSTED_PROXY_HOPS=2` counting stays the one decider);
+  `deploy/backup.sh` (30-day retention to match the privacy policy); `deploy/cloudflare-firewall.sh`;
+  security headers + CSP in `next.config.ts` (each source grep-justified; `img-src`/`media-src`
+  include `https:` because course thumbnails and recording files are staff-pasted URLs with no fixed
+  host; `'unsafe-inline'` scripts until a nonce middleware exists); `app/robots.ts`; `git rm` of the
+  tracked 0-byte `0`, `1036`, `and`, `backend/{const`; `.env.example` rewritten from `env.ts`.
+- Lead's fixes: `backup.sh` wrote `pg_dump` straight to the final name, so a dump dying midway left a
+  truncated `*.dump` that retention would keep as "newest" → writes `.part`, renames on success.
+  `PGSSLMODE` commented out in the example rather than set blank. `.env.example` copied in by the user
+  (permission-blocked for agents).
+- Lead's gates: `npm audit` 0 vulnerabilities; lint 0 errors; drift ok; unit 925/56; e2e 412 (4 files
+  153 + `staff` 259 on a solo rerun — the known `0xC0000409` crash killed it four times, once at test
+  151 with nothing failed); integration 192/192; both builds; both tsc 0; **both images built on
+  `node:24-alpine` (node v24.21.0)**; the web image serves the CSP, `X-Frame-Options: DENY`,
+  `nosniff`, `Referrer-Policy`, `Permissions-Policy`, no `X-Powered-By`, and `/robots.txt`.
+- Not run here: `cloudflare-firewall.sh` and `backup.sh` (VPS-only; syntax-checked).
