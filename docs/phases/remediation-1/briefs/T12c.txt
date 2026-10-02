@@ -1,0 +1,92 @@
+<task>
+Repository: npm-workspaces monorepo; NestJS backend in backend/, Next.js frontend mirror in
+frontend/lib/. Read CLAUDE.md §5, §6, §7, §9, §10 (binding), docs/phases/remediation-1/T12-PLAN.md
+(slice 12c), D-63/D-66 in docs/CHANGELOG.md. Slices 12a (2c1a73a) and 12b are committed: read
+backend/src/reports/ (interfaces, repositories, weekly-reports.service.ts, week.ts) first.
+Patterns to follow: backend/src/announcements/admin-announcements.controller.ts (an /admin
+controller with @Roles(...STAFF_ADMIN)), AuditService usage inside db.runInTransaction,
+NotificationsService.fanOut, backend/src/audit/dto/list-audit-log-query.dto.ts (the exhaustive
+Record<AuditAction, true>), migration 005's notifications_type_check rewrite.
+
+Slice 12c - routes, audit, notifications, contract. No frontend screens (12d).
+
+1. Migration backend/src/database/migrations/029_weekly_report_notification.sql: widen
+   notifications_type_check to add 'weekly_report' (drop + re-add with the full current list, as
+   005 did - read the latest definition first). NotificationType union gains 'weekly_report'
+   (backend + frontend/lib/types.ts mirror).
+
+2. Service methods in WeeklyReportsService (business rules live here, not in the controller):
+   - listWeeks(): WeeklyReportWeek rows enriched with groupName and courseTitle, newest first.
+   - listGroupWeek(groupId, weekStart): the group-week's reports enriched with studentName;
+     404 'Group not found' for an unknown group (byte-identical to the existing group 404 message).
+   - publishGroupWeek(actor, groupId, weekStart): in ONE db.runInTransaction: repository
+     publishGroupWeek; if it flipped nothing -> 409 ('Nothing to publish for this group and
+     week.'); one audit entry, new action 'weekly_report.published', entityType 'group',
+     entityId groupId, details { weekStart, reportIds, count }, role via actorRoleOf; then
+     notifications fanOut to the flipped reports' studentIds, type 'weekly_report', title
+     'Your weekly report is ready', message naming the week (e.g. 'Week of 3 Oct 2026'), link
+     '/marks'. Returns the published reports.
+   - listPublishedForStudent(studentId): repository findPublishedForStudent, filtered to courses
+     the student is still enrolled in (reuse EnrollmentsService; one read, not one per report).
+   - weekStart inputs must be validated as a real Saturday 'YYYY-MM-DD' (weekStartFor(window.from)
+     === input) -> 400 otherwise.
+
+3. AuditAction union + the Record<AuditAction, true> entry + frontend mirror of AuditAction if one
+   exists (drift check must stay green).
+
+4. Controllers:
+   - backend/src/reports/admin-weekly-reports.controller.ts, @Controller('admin/weekly-reports'),
+     @Roles(...STAFF_ADMIN): GET 'weeks'; GET '' with query DTO { groupId (IsString, NotEmpty),
+     weekStart (Matches YYYY-MM-DD) }; POST 'publish' body DTO { groupId, weekStart }, 200 with the
+     published reports.
+   - Student route: GET /reports/weekly on the existing student reports controller
+     (backend/src/reports/reports.controller.ts), @Roles(Role.Student), studentId from the JWT
+     only. Returns WeeklyReport[] (published only).
+   Responses never include another student's report or a draft to a student.
+
+5. Contract: docs/API_SPEC.yaml gains the four routes and the WeeklyReport/WeeklyReportContent/
+   WeeklyReportWeek(+names) schemas. frontend/lib/types.ts mirrors WeeklyReport,
+   WeeklyReportContent and the enriched week/row types; backend/test/drift/mirror-drift.check.ts
+   gains a Check_ line for each. frontend/lib/api.ts gains api.admin.weeklyReportWeeks,
+   api.admin.weeklyReports(groupId, weekStart), api.admin.publishWeeklyReports(groupId, weekStart),
+   api.reports.weekly() - follow the file's existing grouping/naming exactly.
+
+6. Tests:
+   - Unit (service): publish writes the audit entry with the right action/details and fans out one
+     notification per student; second publish -> 409; a report published and then regenerated keeps
+     its content; listPublishedForStudent excludes drafts, other students, and courses the student
+     left; bad weekStart -> 400.
+   - e2e cases in the EXISTING backend/test/app.e2e-spec.ts (no sixth e2e file - CLAUDE.md §10):
+     teacher can list weeks, list a group-week and publish (seed drafts by calling
+     WeeklyReportsService.generateWeek through app.get(...) for a fixed week that has fixture
+     data, or insert via the repository); an assistant gets 403 on all three /admin routes; a
+     student gets 403 on them; a student's GET /reports/weekly shows only their own published
+     reports and none before publish; the publish audit entry is visible in /admin/audit-log.
+   - Integration: migration 029 is applied by the existing suite from an empty schema; add one case
+     that inserts a 'weekly_report' notification row (the CHECK accepts it) and one that a bogus
+     type is still refused.
+</task>
+
+<verification_loop>
+From the repo root, one at a time, foreground (8 GB RAM):
+  npm run lint
+  npm run typecheck:drift
+  npm test
+  npm run test:e2e      (every file must report a count; re-run a crashed file alone)
+  npm run build:backend
+  npm run build:frontend
+  cd backend && npx tsc --noEmit -p tsconfig.json ; cd frontend && npx tsc --noEmit
+  TEST_DATABASE_URL=postgresql://dev:devpassword@localhost:55433/remed_test npm run test:integration
+Confirm git status shows only intended files.
+</verification_loop>
+
+<action_safety>
+Do NOT git add/commit/checkout/stash. Touch backend/, frontend/lib/ and docs/API_SPEC.yaml only.
+Do not stop Docker containers. Quote shell arguments containing `>`, `(` or `)` - unquoted ones
+have been creating 0-byte junk files in the repo root.
+</action_safety>
+
+<structured_output_contract>
+End with: files and what each does; the audit entry and notification as written; gate outcomes
+with counts; deviations/open points.
+</structured_output_contract>
