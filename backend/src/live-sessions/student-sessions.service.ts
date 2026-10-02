@@ -79,6 +79,16 @@ export class StudentSessionsService {
     return new Date(session.endsAt).getTime() <= now.getTime();
   }
 
+  /**
+   * Whether `session` counts toward attendance at all: published and ended
+   * (`PHASE_PLAN.md` §3.3). The one filter `collect` and
+   * `getAttendanceForGroupWeek` (`REM-031`) both apply, so the two cannot
+   * drift on what "counts" means.
+   */
+  private isCounted(session: LiveSession, now: Date): boolean {
+    return session.state === 'published' && this.hasEnded(session, now);
+  }
+
   private async groupIdsFor(studentId: string): Promise<string[]> {
     const memberships = await this.groupRepo.findMembershipsForStudent(studentId);
     return memberships.map((m) => m.groupId);
@@ -149,9 +159,7 @@ export class StudentSessionsService {
 
     const sessions = await this.sessionRepo.findByGroups(groupIds);
     const now = new Date();
-    const expectedSessions = sessions.filter(
-      (s) => s.state === 'published' && this.hasEnded(s, now),
-    );
+    const expectedSessions = sessions.filter((s) => this.isCounted(s, now));
 
     const marks = await this.attendanceRepo.findForStudent(
       studentId,
@@ -214,5 +222,78 @@ export class StudentSessionsService {
       });
 
     return { ...summary, history };
+  }
+
+  /**
+   * One group's attendance for one student, restricted to sessions
+   * **scheduled** in `[from, to)` - the weekly report's attendance block
+   * (`REM-031`, `D-66`). Same counting as `collect` (`isCounted`: published
+   * and ended; `late`/`absent` never folded into `present`), narrowed to one
+   * group and a window rather than every group the student sits in, plus the
+   * per-session rows the report's snapshot needs.
+   *
+   * `unmarked` is a counted session with no row in `AttendanceRepository` -
+   * never reported as absent (same rule `getAttendance`'s `history` encodes
+   * with `status: null`).
+   */
+  async getAttendanceForGroupWeek(
+    groupId: string,
+    studentId: string,
+    from: Date,
+    to: Date,
+  ): Promise<{
+    present: number;
+    late: number;
+    absent: number;
+    unmarked: number;
+    expected: number;
+    sessions: {
+      sessionId: string;
+      title: string;
+      scheduledAt: string;
+      status: 'present' | 'late' | 'absent' | null;
+    }[];
+  }> {
+    const now = new Date();
+    const sessions = await this.sessionRepo.findByGroups([groupId]);
+    const counted = sessions.filter((s) => {
+      if (!this.isCounted(s, now)) return false;
+      const t = new Date(s.scheduledAt).getTime();
+      return t >= from.getTime() && t < to.getTime();
+    });
+
+    const marks = await this.attendanceRepo.findForStudent(
+      studentId,
+      counted.map((s) => s.id),
+    );
+    const markBySession = new Map(marks.map((m) => [m.sessionId, m]));
+
+    const present = marks.filter((m) => m.status === 'present').length;
+    const late = marks.filter((m) => m.status === 'late').length;
+    const absent = marks.filter((m) => m.status === 'absent').length;
+    const expected = counted.length;
+
+    const sortedSessions = counted
+      .slice()
+      .sort(
+        (a, b) =>
+          new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime() ||
+          a.id.localeCompare(b.id),
+      )
+      .map((s) => ({
+        sessionId: s.id,
+        title: s.title,
+        scheduledAt: s.scheduledAt,
+        status: markBySession.get(s.id)?.status ?? null,
+      }));
+
+    return {
+      present,
+      late,
+      absent,
+      unmarked: expected - present - late - absent,
+      expected,
+      sessions: sortedSessions,
+    };
   }
 }

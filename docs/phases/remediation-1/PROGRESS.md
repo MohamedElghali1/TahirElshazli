@@ -260,7 +260,7 @@ as on T1) was refused by Claude Code's permission classifier before it ran, so T
 
 ### Peer session (2026-10-02)
 A second background session ("Dr. Tahir LMS launch blockers and deployment") was writing into this
-tree at the same time — the source of several stray 0-byte files and of an unannounced CHANGELOG
+tree at the same time — the source of an unannounced CHANGELOG
 entry. The user confirmed the decision it recorded and stopped it; it committed `255013e` (CSV import:
 day/month dates, zoneless = Cairo, `Email` header, impossible dates refused — `D-67`, closing T8's
 open timestamp point). The lead reviewed that diff and covered it in 12a's full gate run.
@@ -273,3 +273,23 @@ open timestamp point). The lead reviewed that diff and covered it in 12a's full 
   the returned `'skipped'`. In-memory reads deep-copy.
 - Lead's gates (tree incl. `255013e`): lint 0 errors; drift ok; unit 935/57; e2e 412 across 5 files;
   integration 197/197 (001–028 from an empty schema); backend build; backend tsc 0.
+  (Correction: the stray 0-byte files of that afternoon — `12`, `daysInMonth(y` and others — came
+  from the 12b subagent's unquoted `node -e` scratch commands, not the peer session.)
+
+### T12b — week maths, composition, hourly generation (REM-031)
+- `unit-implementer`: `reports/week.ts` (Sat–Fri Cairo weeks via `Intl`; the Cairo offset helper moved
+  from `google-form-csv.ts` to `common/timezone.ts` so both share it); `StudentSessionsService`
+  gains `getAttendanceForGroupWeek` over the same `isCounted` predicate `collect` now uses;
+  `AssessmentsService` gains `getTasksDueInWeek` over the same `selectTargetedVisible` selection
+  `getPerformanceEntries` now uses; `WeeklyReportsService.compose`/`generateWeek`;
+  `WeeklyReportsScheduler` (bootstrap + hourly, never overlapping, off under `NODE_ENV=test`, logs
+  counts only).
+- Lead's fix: a Google Form task's imported score was shown over the **task's** `maxScore`; a form
+  marked out of 20 on a task set out of 10 would have read "7 / 10". Now the mark and its
+  denominator come from the same source; the spec pins it (form 20, task 10).
+- Lead's gates: lint 0 errors; drift ok; unit 945/59; e2e 412 across 5 files; integration 197/197;
+  backend build; backend tsc 0.
+- Lead's live check (production API, fresh DB 001–028 + fixtures, Friday 2026-10-02): the bootstrap
+  tick logged `weekly reports generated for 2026-09-19: 3 inserted, 0 updated, 0 skipped` — the last
+  *completed* Sat–Fri week — and wrote one draft per group membership. No name, email or mark in the
+  log. **PASS.**

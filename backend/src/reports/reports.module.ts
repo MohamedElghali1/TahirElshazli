@@ -15,12 +15,28 @@ import { CoursesModule } from '../courses/courses.module.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { EnrollmentsModule } from '../enrollments/enrollments.module.js';
 import { StorageModule } from '../common/storage/storage.module.js';
+import { LiveSessionsModule } from '../live-sessions/live-sessions.module.js';
+import { WeeklyReportsService } from './weekly-reports.service.js';
+import { WeeklyReportsScheduler } from './weekly-reports.scheduler.js';
 
 @Module({
-  imports: [AuthModule, EnrollmentsModule, AssessmentsModule, CoursesModule, StorageModule],
+  // `LiveSessionsModule` for `StudentSessionsService.getAttendanceForGroupWeek`
+  // (`WeeklyReportsService.compose`'s attendance half, `REM-031`). No cycle:
+  // `LiveSessionsModule` imports only `AuthModule`/`EnrollmentsModule`.
+  // `GROUP_REPOSITORY` needs no import - `GroupDataModule` is `@Global()`.
+  imports: [
+    AuthModule,
+    EnrollmentsModule,
+    AssessmentsModule,
+    CoursesModule,
+    StorageModule,
+    LiveSessionsModule,
+  ],
   controllers: [ReportsController],
   providers: [
     ReportsService,
+    WeeklyReportsService,
+    WeeklyReportsScheduler,
     InMemoryReportRepository,
     PostgresReportRepository,
     repositoryProvider<ReportRepository>(REPORT_REPOSITORY, InMemoryReportRepository, PostgresReportRepository),
@@ -32,6 +48,6 @@ import { StorageModule } from '../common/storage/storage.module.js';
       PostgresWeeklyReportRepository,
     ),
   ],
-  exports: [ReportsService],
+  exports: [ReportsService, WeeklyReportsService],
 })
 export class ReportsModule {}

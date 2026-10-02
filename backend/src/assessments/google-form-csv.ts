@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { parseCsv } from '../common/csv/parse-csv.js';
+import { cairoOffsetMinutes } from '../common/timezone.js';
 import type { GoogleFormResponse } from '../integrations/google/google-forms.client.js';
 
 /** Caps (`D-60`): a form export is a few hundred rows at this platform's scale. */
@@ -26,11 +27,9 @@ const SCORE_HEADER = /^\s*score\s*$/i;
 
 /**
  * `D-67`: a Google Forms CSV timestamp with no `GMT±N` offset is the
- * respondent's locale, which for this platform's one client is Egypt's. Named
- * once rather than inlined, since it is a business fact ("the client is in
- * Cairo"), not an implementation detail.
+ * respondent's locale, which for this platform's one client is Egypt's - the
+ * zone `cairoOffsetMinutes` (shared with `reports/week.ts`) is hardcoded to.
  */
-const CSV_IMPORT_ZONE = 'Africa/Cairo';
 
 /**
  * Which columns are `Timestamp` / `Email Address`-or-`Email`-or-`Username`
@@ -94,7 +93,7 @@ function detectColumns(
  * unambiguously.
  *
  * Neither shape's offset is optional-and-ignored: a timestamp carrying
- * `GMT±N` uses that offset exactly; one with none is read as `CSV_IMPORT_ZONE`
+ * `GMT±N` uses that offset exactly; one with none is read as Africa/Cairo
  * local time, not UTC (`buildIso` below).
  */
 function parseTimestamp(raw: string): string | null {
@@ -120,25 +119,6 @@ function parseTimestamp(raw: string): string | null {
 /** Whole-number days in `month` (1-indexed) of `year`. */
 function daysInMonth(year: number, month: number): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
-}
-
-/**
- * The offset `Africa/Cairo` keeps at `naiveUtcMs` - which must be within a
- * few hours of the real instant for this to be exact across a DST change, and
- * for an imported, display-only response timestamp (`D-67`) it always is.
- * `longOffset` (Node 16+) hands back `"GMT+02:00"`/`"GMT+03:00"` directly,
- * already accounting for Egypt's DST - no timezone-data dependency needed.
- */
-function cairoOffsetMinutes(naiveUtcMs: number): number {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: CSV_IMPORT_ZONE,
-    timeZoneName: 'longOffset',
-  }).formatToParts(new Date(naiveUtcMs));
-  const name = parts.find((p) => p.type === 'timeZoneName')?.value ?? 'GMT+00:00';
-  const offset = /GMT([+-])(\d{2}):(\d{2})/.exec(name);
-  if (!offset) return 0;
-  const sign = offset[1] === '-' ? -1 : 1;
-  return sign * (Number(offset[2]) * 60 + Number(offset[3]));
 }
 
 function buildIso(
@@ -180,7 +160,7 @@ function buildIso(
     return parsed.toISOString();
   }
 
-  // No offset given - `D-67`: this is `CSV_IMPORT_ZONE` local time, not UTC.
+  // No offset given - `D-67`: this is Africa/Cairo local time, not UTC.
   // Read the digits as a naive UTC instant first purely to ask the timezone
   // database "what was Cairo's offset around here" (accurate as long as the
   // naive and real instants fall on the same side of a DST change, which a

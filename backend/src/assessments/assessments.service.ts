@@ -730,22 +730,31 @@ export class AssessmentsService {
     return updated;
   }
 
+  /**
+   * The tasks this student was actually set: targeted to a group they hold,
+   * and visible (`D-28`). `getPerformanceEntries` and
+   * `getTasksDueInWeek` (`REM-031`) both start here rather than each
+   * re-deriving "targeted and visible" - a report that averaged or counted
+   * work the student was never set, or a hidden task, would disagree with
+   * every other student-facing read of the same rule (§5.16, `D-28`).
+   */
+  private async selectTargetedVisible(
+    courseId: string,
+    studentId: string,
+  ): Promise<StoredAssessment[]> {
+    const groupIds = await this.studentGroups.groupIdsFor(courseId, studentId);
+    return (
+      await this.assessmentRepo.findByCourseForGroups(courseId, groupIds)
+    ).filter(isVisibleToStudents);
+  }
+
   /** Internal: callers (ReportsService) assert enrollment first. */
   async getPerformanceEntries(
     courseId: string,
     studentId: string,
   ): Promise<AssessmentPerformanceEntry[]> {
     const now = new Date();
-    // Targeted, like the list - a report that averaged work the student was
-    // never set would be a lower mark than they earned, on a number §5.6 says
-    // the teacher reads as authoritative.
-    const groupIds = await this.studentGroups.groupIdsFor(courseId, studentId);
-    // A hidden task is not work this student was set (`D-28`): a report that
-    // averaged it would count "not submitted" against something they could
-    // never see.
-    const assessments = (
-      await this.assessmentRepo.findByCourseForGroups(courseId, groupIds)
-    ).filter(isVisibleToStudents);
+    const assessments = await this.selectTargetedVisible(courseId, studentId);
     const submissions = await this.submissionsByAssessment(assessments, studentId);
     const externals = await this.work.countResultsByAssessments(
       assessments.map((a) => a.id),
@@ -771,5 +780,92 @@ export class AssessmentsService {
         ),
       };
     });
+  }
+
+  /**
+   * The tasks **due** in `[from, to)` - the weekly report's homework block
+   * (`REM-031`, `D-66`). Same targeting/visibility as `getPerformanceEntries`,
+   * via `selectTargetedVisible`, narrowed by `dueAt`.
+   *
+   * `score` is a returned submission's score (`isReturnedToStudent`, as
+   * everywhere else), or for a `google_form` task the matched imported
+   * result's score (`D-60`) - the same read `describeWork` uses for one
+   * task, batched here for a week's worth. Internal: `WeeklyReportsService`
+   * asserts nothing itself; the caller already knows this student holds the
+   * group.
+   */
+  async getTasksDueInWeek(
+    courseId: string,
+    studentId: string,
+    from: Date,
+    to: Date,
+  ): Promise<
+    {
+      assessmentId: string;
+      title: string;
+      type: AssessmentType;
+      dueAt: string;
+      status: AssessmentStatus;
+      score: number | null;
+      maxScore: number;
+    }[]
+  > {
+    const now = new Date();
+    const due = (await this.selectTargetedVisible(courseId, studentId)).filter(
+      (a) => {
+        const t = new Date(a.dueAt).getTime();
+        return t >= from.getTime() && t < to.getTime();
+      },
+    );
+    if (due.length === 0) return [];
+
+    const submissions = await this.submissionsByAssessment(due, studentId);
+    const results = await this.work.findResultsForStudent(
+      due.map((a) => a.id),
+      studentId,
+    );
+    // First result per assessment, same pick `describeWork` makes
+    // (`results[0]`) - one implementation of "which result is this task's".
+    const resultByAssessment = new Map<string, (typeof results)[number]>();
+    for (const r of results) {
+      if (!resultByAssessment.has(r.assessmentId)) {
+        resultByAssessment.set(r.assessmentId, r);
+      }
+    }
+
+    return due
+      .slice()
+      .sort(
+        (a, b) =>
+          new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime() ||
+          a.id.localeCompare(b.id),
+      )
+      .map((assessment) => {
+        const submission = submissions.get(assessment.id) ?? null;
+        const externalResult = resultByAssessment.get(assessment.id) ?? null;
+        const returned = submission && isReturnedToStudent(submission);
+        // An imported Google Form score is over the form's own total, which
+        // need not equal the task's configured maxScore - the mark and its
+        // denominator must come from the same source (§11.1).
+        const imported =
+          !returned && assessment.workType === 'google_form' && externalResult?.score != null
+            ? externalResult
+            : null;
+        const score = returned ? submission.score : imported ? imported.score : null;
+        return {
+          assessmentId: assessment.id,
+          title: assessment.title,
+          type: assessment.type,
+          dueAt: assessment.dueAt,
+          status: this.computeStatus(
+            assessment,
+            submission,
+            now,
+            externalResult !== null,
+          ),
+          score,
+          maxScore: imported?.maxScore ?? assessment.maxScore,
+        };
+      });
   }
 }
