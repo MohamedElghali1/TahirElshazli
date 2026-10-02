@@ -22,7 +22,7 @@ the task that clears every open box is named. Re-run this checklist before `REM-
 - [x] Responsive — student pages at 375 px, no horizontal scroll
 - [x] Accessibility — grading dialog focus trap, visible scope-checkbox labels (T9: `REM-013`, `REM-009`)
 - [ ] RTL reachable in the product → `REM-041`
-- [ ] Legal pages exist → `REM-015`
+- [x] Legal pages exist — `/privacy`, `/terms` (T11; drafts with `[[…]]` placeholders until the client fills them) → `REM-015`
 
 ## Backend
 - [x] Main endpoints verified — 143 routes mapped; journeys T-01…T-15 run live

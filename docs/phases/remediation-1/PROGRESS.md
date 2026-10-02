@@ -23,6 +23,7 @@ weekly reports (`REM-031`, post-launch).
 | T8 | REM-080b CSV import + analytics (frontend) | reviewed + committed | (this commit) |
 | T9 | Frontend fixes: REM-009, 013, 014, 016, 017, 018, 019, 021a, 045 | reviewed + committed | (this commit) |
 | T10 | Deploy prep: REM-008, 011, 012, 020, 021, 023, 025, 027, 047, 050 | reviewed + committed | (this commit) |
+| T11 | REM-015 legal pages (/privacy, /terms) | reviewed + committed | (this commit) |
 
 ## Review notes
 
@@ -241,3 +242,18 @@ as on T1) was refused by Claude Code's permission classifier before it ran, so T
   `node:24-alpine` (node v24.21.0)**; the web image serves the CSP, `X-Frame-Options: DENY`,
   `nosniff`, `Referrer-Policy`, `Permissions-Policy`, no `X-Powered-By`, and `/robots.txt`.
 - Not run here: `cloudflare-firewall.sh` and `backup.sh` (VPS-only; syntax-checked).
+
+### T11 — legal pages (REM-015)
+- agy first (user authorised `--dangerously-skip-permissions`, 2026-10-02): HTTP 429, quota resets
+  ~2026-10-04 19:00; no files touched. Fell back to `unit-implementer`.
+- `unit-implementer`: `frontend/lib/legal.ts` (typed blocks: h2/h3/p/ul/table, inline strong and
+  internal links; `[[…]]` placeholders verbatim), `components/site/legal-document.tsx` (server
+  component, no raw HTML), `/privacy` and `/terms` (static, Metadata). Its throwaway transcription
+  check (markup-stripped Markdown vs flattened blocks) found one dropped space and then came out
+  identical for both documents.
+- Lead's fix: table borders used `border-[var(--border-light)]` → the named `border-border-light`.
+- Lead's gates: lint 0 errors; frontend build (`○ /privacy`, `○ /terms`); tsc 0. Frontend-only change.
+- Lead's live check (`next start`, CSP active): both pages at 375 px and 1280 px, no horizontal scroll
+  (tables scroll inside their own container), dark and `dir="rtl"`, no console error, no CSP
+  violation. **PASS.** The pages are drafts until the client fills the placeholders and a lawyer
+  reviews them (`docs/legal/README.md`).
