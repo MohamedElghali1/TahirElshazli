@@ -2568,3 +2568,12 @@ groups of one course is now an invariant violation, not a state.
 - **Assistants have no access** to weekly reports, draft or published: the routes are `/admin/*`
   (teacher and admin). Rejected: scoped read access for held groups (more routes and refusal tests for
   a reviewing role `D-63` did not give them).
+
+### `D-67` — Google Form CSV dates: day/month, Cairo time when no zone is given
+**Chosen (user, 2026-10-02).** An ambiguous numeric date in an imported responses CSV (`10/01/2026`)
+is read **day/month** (Egypt/UK locale), not month/day. A year-first date (`2026/10/01`) is
+unambiguous. A timestamp **without** a zone is read as **Africa/Cairo** local time (the client's
+locale), not UTC; a timestamp with `GMT±N` uses that offset. Imported times are display-only
+(nothing compares them to a deadline), but a silently wrong date would still mislead a teacher.
+Also: an `Email` header is accepted as the respondent email column alongside Google's
+`Email Address` — a form that asks for email as a question exports it under that question's title.

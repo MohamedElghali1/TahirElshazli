@@ -116,10 +116,46 @@ describe('parseGoogleFormCsv', () => {
       expect(parsed.responses).toHaveLength(2);
     });
 
-    it('parses "M/D/YYYY 24h" timestamps with no zone as UTC', () => {
-      const csv = 'Timestamp,Q1\n9/27/2026 15:45:12,answer\n';
+    it('parses "D/M/YYYY 24h" timestamps with no zone as Africa/Cairo local time (D-67)', () => {
+      // 27/9/2026 = 27 September 2026, day/month - never "27th month".
+      // Cairo is UTC+3 in September (DST).
+      const csv = 'Timestamp,Q1\n27/9/2026 15:45:12,answer\n';
       const parsed = parseGoogleFormCsv(csv);
-      expect(parsed.responses[0]!.submittedAt).toBe('2026-09-27T15:45:12.000Z');
+      expect(parsed.responses[0]!.submittedAt).toBe('2026-09-27T12:45:12.000Z');
+    });
+
+    it('reads an ambiguous day/month date as day-first, not month-first (D-67)', () => {
+      // 10/01/2026 is 10 January, never October 1st. Cairo is UTC+2 in January.
+      const csv = 'Timestamp,Q1\n10/01/2026 14:31:00,answer\n';
+      const parsed = parseGoogleFormCsv(csv);
+      expect(parsed.responses[0]!.submittedAt).toBe('2026-01-10T12:31:00.000Z');
+    });
+
+    it('honours Cairo DST for a summer date (D-67)', () => {
+      // Cairo is UTC+3 in July (DST), vs UTC+2 in January above.
+      const csv = 'Timestamp,Q1\n15/07/2026 12:00:00,answer\n';
+      const parsed = parseGoogleFormCsv(csv);
+      expect(parsed.responses[0]!.submittedAt).toBe('2026-07-15T09:00:00.000Z');
+    });
+
+    it('rejects an invalid day/month combination, naming the row (D-67)', () => {
+      const csv = 'Timestamp,Q1\n31/02/2026 10:00:00,answer\n';
+      expect(() => parseGoogleFormCsv(csv)).toThrow(/Row 2/);
+    });
+
+    it('keeps a "GMT+N" timestamp\'s explicit offset exactly as before (D-67)', () => {
+      const csv = 'Timestamp,Q1\n2026/01/10 2:31:00 PM GMT+3,answer\n';
+      const parsed = parseGoogleFormCsv(csv);
+      // GMT+3 given explicitly, even though Cairo itself is UTC+2 in January -
+      // an explicit offset is never second-guessed against the zone table.
+      expect(parsed.responses[0]!.submittedAt).toBe('2026-01-10T11:31:00.000Z');
+    });
+
+    it('accepts a plain "Email" header as the respondent email column (D-67)', () => {
+      const csv = 'Timestamp,Email,Q1\n2026/09/27 3:00:00 PM GMT+3,ta@example.com,answer\n';
+      const parsed = parseGoogleFormCsv(csv);
+      expect(parsed.responses[0]!.respondentEmail).toBe('ta@example.com');
+      expect(parsed.questions.map((q) => q.title)).toEqual(['Q1']);
     });
 
     it('rejects more than 2000 rows', () => {
