@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import { useApi } from '@/lib/session';
 import { formatDate } from '@/lib/format';
@@ -56,7 +57,11 @@ const STATUS: Record<StaffTaskStatus, { label: string; tone: TagTone }> = {
 export default function TasksPage() {
   const [courseId, setCourseId] = useState('');
   const [groupId, setGroupId] = useState('');
-  const [status, setStatus] = useState<'' | StaffTaskStatus>('');
+  // `?status=` lets the overview's "Awaiting grading" figure land pre-filtered.
+  const initialStatus = useSearchParams().get('status');
+  const [status, setStatus] = useState<'' | StaffTaskStatus>(
+    initialStatus && initialStatus in STATUS ? (initialStatus as StaffTaskStatus) : '',
+  );
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
 

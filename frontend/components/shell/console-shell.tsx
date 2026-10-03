@@ -12,7 +12,6 @@ import {
   IconButton,
   NavItem,
   NavSection,
-  SearchInput,
   Tag,
   type IconName,
   type TagTone,
@@ -25,7 +24,7 @@ import { activeHrefFor } from './nav-active';
 /**
  * The console shell — teacher, admin and assistant (`docs/redesign-mapping.md`
  * "Console" section). 244px `--surface-2` rail with a right border, the
- * course switcher, a (currently inert) search field, and the six nav
+ * course switcher, and the six nav
  * sections in the exact order the handoff draws them.
  */
 
@@ -193,17 +192,6 @@ function ConsoleShellInner({ children }: { children: React.ReactNode }) {
             onSelect={setSelectedCourseId}
             loading={!courseList}
             className="flex-1"
-          />
-        </div>
-
-        <div className="flex items-center gap-1.5 px-2 pt-2">
-          {/* No search backend exists yet — honestly inert, same pattern the
-              legacy shell used for the same gap. */}
-          <SearchInput
-            className="flex-1"
-            disabled
-            label="Search (coming soon)"
-            placeholder="Search (coming soon)"
           />
         </div>
 

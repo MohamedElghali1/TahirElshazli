@@ -1,6 +1,7 @@
 'use client';
 
 import { use, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { api, ApiError } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
 import { ASSESSMENT_TYPE_LABEL, formatDateTime, formatPercent } from '@/lib/format';
@@ -167,6 +168,7 @@ function SubmissionRow({
   const { token } = useSession();
   const [returning, setReturning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const markHref = `/manage/tasks/${item.assessmentId}/submissions/${item.submissionId}`;
 
   // `MARK-2`: saving and returning are two operations. Since `D-44` every row
   // listed here is one the caller may return, so the action can live here.
@@ -185,12 +187,13 @@ function SubmissionRow({
 
   return (
     <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-base font-medium text-fg">{item.studentName}</span>
+      {/* The marking page renders the hand-in itself (photos, PDF, typed answer). */}
+      <Link href={markHref} className="min-w-0 flex-1 rounded-sm">
+        <span className="block truncate text-base font-medium text-fg hover:underline">{item.studentName}</span>
         <span className="mt-1 block truncate text-xs text-fg-3">
           {item.assessmentTitle} · submitted {formatDateTime(item.lastSubmittedAt)}
         </span>
-      </span>
+      </Link>
 
       {/* Amber: late is a fact about the queue, not a failure (CLAUDE.md §11.1). */}
       {item.isLate && <Tag tone="amber">Late</Tag>}
@@ -207,17 +210,13 @@ function SubmissionRow({
         {item.score === null ? '—' : `${item.score}/${item.maxScore}`}
       </span>
 
-      {item.fileUrl && (
-        <a
-          href={item.fileUrl}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="inline-flex items-center gap-1 text-xs text-fg-3 transition-colors duration-[var(--dur-fast)] ease-[var(--ease)] hover:text-fg"
-        >
-          Open work
-          <Icon name="ArrowUpRight" size={12} />
-        </a>
-      )}
+      <Link
+        href={markHref}
+        className="inline-flex items-center gap-1 text-xs text-fg-3 transition-colors duration-[var(--dur-fast)] ease-[var(--ease)] hover:text-fg"
+      >
+        Open work
+        <Icon name="ArrowUpRight" size={12} />
+      </Link>
 
       <Button size="small" variant={item.status === 'graded' ? 'tertiary' : 'primary'} onClick={onGrade}>
         {item.status === 'graded' ? 'Re-grade' : 'Grade'}

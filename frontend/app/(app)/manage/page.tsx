@@ -31,6 +31,20 @@ function firstNameOf(name: string): string {
   return first ?? '';
 }
 
+/** A headline figure that opens the screen it counts. */
+function StatLink({ href, children }: { href?: string; children: React.ReactNode }) {
+  const box = '-m-2 rounded-sm p-2';
+  if (!href) return <div className={box}>{children}</div>;
+  return (
+    <Link
+      href={href}
+      className={`${box} transition-colors duration-[var(--dur-fast)] ease-[var(--ease)] hover:bg-wash-hover`}
+    >
+      {children}
+    </Link>
+  );
+}
+
 export default function ManageOverviewPage() {
   const router = useRouter();
   const { user } = useSession();
@@ -88,18 +102,27 @@ export default function ManageOverviewPage() {
         {data && (
           <>
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <StatNumber label="Courses" value={data.courseCount} caption={scopeNote} />
-              <StatNumber
-                label="Students"
-                value={data.studentCount}
-                caption="Distinct people, not a sum of rosters."
-              />
-              <StatNumber
-                label="Awaiting grading"
-                value={data.awaitingGrading}
-                caption="Submissions nobody has corrected yet."
-              />
-              <StatNumber label="Recordings" value={data.recordingCount} />
+              <StatLink href="/manage/courses">
+                <StatNumber label="Courses" value={data.courseCount} caption={scopeNote} />
+              </StatLink>
+              {/* /manage/students calls /admin/* - an assistant would get a 403 there. */}
+              <StatLink href={admin ? '/manage/students' : undefined}>
+                <StatNumber
+                  label="Students"
+                  value={data.studentCount}
+                  caption="Distinct people, not a sum of rosters."
+                />
+              </StatLink>
+              <StatLink href="/manage/tasks?status=marking">
+                <StatNumber
+                  label="Awaiting grading"
+                  value={data.awaitingGrading}
+                  caption="Submissions nobody has corrected yet."
+                />
+              </StatLink>
+              <StatLink href="/manage/recordings">
+                <StatNumber label="Recordings" value={data.recordingCount} />
+              </StatLink>
             </div>
 
             <div className="flex items-center justify-between">
