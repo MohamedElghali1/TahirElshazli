@@ -6,7 +6,7 @@ import { api } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
 import { isAdminRole } from '@/lib/roles';
 import type { ManageCourseCard } from '@/lib/types';
-import { Button, EmptyState, Loader, StatNumber, Table, Tag, type Column } from '@/components/ui';
+import { Button, ButtonLink, EmptyState, Loader, StatNumber, Table, Tag, type Column } from '@/components/ui';
 import { PageTitle } from '@/components/shell/page-chrome';
 
 /**
@@ -80,11 +80,16 @@ export default function ManageOverviewPage() {
     <>
       <PageTitle title={firstName ? `Welcome back, ${firstName}` : 'Management'} />
       <div className="flex flex-col gap-4 p-6">
-        <p className="text-base text-fg-3">
-          {admin
-            ? 'Courses, students, recordings and grading across the platform.'
-            : 'Grade work, mark attendance and post materials for your courses.'}
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-base text-fg-3">
+            {admin
+              ? 'Courses, students, recordings and grading across the platform.'
+              : 'Grade work, mark attendance and post materials for your courses.'}
+          </p>
+          <ButtonLink href="/manage/live-sessions" size="small" icon="CalendarEvent">
+            Sessions and attendance
+          </ButtonLink>
+        </div>
 
         {loading && (
           <div className="flex justify-center p-8">
@@ -113,7 +118,7 @@ export default function ManageOverviewPage() {
                   caption="Distinct people, not a sum of rosters."
                 />
               </StatLink>
-              <StatLink href="/manage/tasks?status=marking">
+              <StatLink href="/manage/submissions">
                 <StatNumber
                   label="Awaiting grading"
                   value={data.awaitingGrading}

@@ -17,13 +17,15 @@ import {
   Loader,
   Tag,
   Button,
-  Select,
   TextInput,
   TextArea,
   InlineBanner,
   Breadcrumb,
   PageHeader,
   Icon,
+  FileDrop,
+  ButtonGroup,
+  ButtonLink,
   type TagTone,
 } from '@/components/ui';
 import { PageTitle } from '@/components/shell/page-chrome';
@@ -91,6 +93,13 @@ export default function AssessmentDetailPage({
             <Breadcrumb items={[{ href: '/homework', label: 'Homework' }, { label: data.title }]} />
           }
           title={data.title}
+          actions={
+            data.canSubmit && (
+              <ButtonLink href="#hand-in" variant="primary" icon="Upload">
+                {data.submission ? 'Revise your work' : 'Hand in your work'}
+              </ButtonLink>
+            )
+          }
           description={
             <span className="flex flex-wrap items-center gap-2">
               {ASSESSMENT_TYPE_LABEL[data.type]}
@@ -105,7 +114,9 @@ export default function AssessmentDetailPage({
         <div className="grid gap-6 xl:grid-cols-[3fr_2fr]">
           <div className="flex flex-col gap-6">
             <Brief assessment={data} />
-            <SubmitPanel assessment={data} onSubmitted={reload} />
+            <div id="hand-in" className="scroll-mt-6">
+              <SubmitPanel assessment={data} onSubmitted={reload} />
+            </div>
           </div>
 
           <div className="flex flex-col gap-6">
@@ -334,9 +345,7 @@ function ModedSubmit({
         ? '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
         : 'image/jpeg,image/png,image/webp';
 
-  async function choose(event: React.ChangeEvent<HTMLInputElement>) {
-    const chosen = Array.from(event.target.files ?? []);
-    event.target.value = '';
+  async function choose(chosen: File[]) {
     if (!token || chosen.length === 0) return;
     const room = singleFile ? 1 : photoCap - files.length;
     if (chosen.length > room) {
@@ -398,16 +407,23 @@ function ModedSubmit({
       )}
       <form onSubmit={submit} noValidate className="flex flex-col gap-4">
         {modes.length > 1 && (
-          <Select
-            label="How you are handing it in"
-            value={mode}
-            onChange={(e) => {
-              setMode(e.target.value as SubmissionMode);
-              setFiles([]);
-              setError(null);
-            }}
-            options={modes.map((m) => ({ value: m, label: MODE_LABEL[m] }))}
-          />
+          <ButtonGroup aria-label="How you are handing it in">
+            {modes.map((m, i) => (
+              <Button
+                key={m}
+                size="small"
+                position={i === 0 ? 'left' : i === modes.length - 1 ? 'right' : 'middle'}
+                active={mode === m}
+                onClick={() => {
+                  setMode(m);
+                  setFiles([]);
+                  setError(null);
+                }}
+              >
+                {MODE_LABEL[m]}
+              </Button>
+            ))}
+          </ButtonGroup>
         )}
 
         {mode === 'doc_link' ? (
@@ -422,30 +438,31 @@ function ModedSubmit({
           />
         ) : (
           <div className="flex flex-col gap-2">
-            <label className="flex flex-col gap-1 text-xs text-fg-3">
-              {mode === 'pdf_upload'
-                ? 'Your PDF'
-                : mode === 'docx_upload'
-                  ? 'Your Word document'
-                  : `Photos of your work (up to ${photoCap})`}
-              <input
-                type="file"
-                accept={accept}
-                multiple={mode === 'photo_upload'}
-                disabled={uploading || (mode === 'photo_upload' ? files.length >= photoCap : false)}
-                onChange={(e) => void choose(e)}
-                className="text-base text-fg-2"
-              />
-            </label>
-            <p className="text-xxs text-fg-4">
-              {mode === 'pdf_upload'
-                ? 'PDF'
-                : mode === 'docx_upload'
-                  ? 'Word document (.docx)'
-                  : 'JPEG, PNG or WebP (iPhone HEIC photos: choose "Most compatible" in camera settings)'}
-              , up to {formatFileSize(Math.min(maxBytes, 20 * 1024 * 1024))} each.
-            </p>
-            {uploading && <Loader size={3} label="Uploading" />}
+            <FileDrop
+              title={
+                mode === 'pdf_upload'
+                  ? 'Upload your PDF'
+                  : mode === 'docx_upload'
+                    ? 'Upload your Word document'
+                    : `Upload photos of your work (up to ${photoCap})`
+              }
+              hint={
+                <>
+                  Click to choose, or drag it here.{' '}
+                  {mode === 'pdf_upload'
+                    ? 'PDF'
+                    : mode === 'docx_upload'
+                      ? 'Word document (.docx)'
+                      : 'JPEG, PNG or WebP (iPhone HEIC photos: choose "Most compatible" in camera settings)'}
+                  , up to {formatFileSize(Math.min(maxBytes, 20 * 1024 * 1024))} each.
+                </>
+              }
+              accept={accept}
+              multiple={mode === 'photo_upload'}
+              busy={uploading}
+              disabled={mode === 'photo_upload' ? files.length >= photoCap : false}
+              onFiles={(chosen) => void choose(chosen)}
+            />
             {files.length > 0 && (
               <ul className="flex flex-col gap-1">
                 {files.map((f, i) => (

@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
 import { addDays, formatTime, formatWeekday, startOfWeek } from '@/lib/format';
@@ -39,6 +40,20 @@ export default function LiveSessionsPage() {
   const [editing, setEditing] = useState<LiveSession | 'new' | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // The console header's "Live session" button lands here with `?new=1`.
+  // Open the form, then drop the param so a refresh or a second click of
+  // the same button still works.
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const wantsNew = searchParams.get('new') === '1';
+  useEffect(() => {
+    if (!wantsNew) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setEditing('new');
+    router.replace(pathname);
+  }, [wantsNew, router, pathname]);
 
   const { data: courses } = useApi((t) => api.staff.courses(t), []);
   const { data: groups } = useApi(
@@ -93,6 +108,17 @@ export default function LiveSessionsPage() {
           {formatWeekday(s.scheduledAt)} {formatTime(s.scheduledAt)}–{formatTime(s.endsAt)}
         </span>
       ),
+    },
+    {
+      label: 'Meeting link',
+      render: (s) =>
+        s.meetingLink ? (
+          <a href={s.meetingLink} target="_blank" rel="noopener noreferrer" className="text-accent">
+            Open
+          </a>
+        ) : (
+          '—'
+        ),
     },
     {
       label: 'State',

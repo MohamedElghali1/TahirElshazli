@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useRef, useState } from 'react';
+import { use, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
@@ -15,6 +15,7 @@ import type {
 import {
   Button,
   EmptyState,
+  FileDrop,
   InlineBanner,
   Loader,
   Panel,
@@ -467,13 +468,11 @@ function UploadField({
   onUploaded: (item: BlogMediaInput) => void;
 }) {
   const { token } = useSession();
-  const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const pick = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file || !token) return;
+  const pick = async (file: File) => {
+    if (!token) return;
     setBusy(true);
     setError(null);
     try {
@@ -497,36 +496,21 @@ function UploadField({
       setError(err instanceof ApiError ? err.message : 'That upload failed.');
     } finally {
       setBusy(false);
-      // Cleared so picking the same file twice fires a change event again.
-      if (input.current) input.current.value = '';
     }
   };
 
   return (
     <div className="flex flex-col gap-2">
-      <label htmlFor="upload" className="text-xs font-medium text-fg-2">
-        Add a picture, a video or a file
-      </label>
-      <div className="flex items-center gap-3">
-        <input
-          ref={input}
-          id="upload"
-          type="file"
-          // A convenience only. The server validates the type against its own
-          // whitelist regardless, because `accept` is a file-dialog filter and
-          // not a control (CLAUDE.md §8).
-          accept={config.allowedMimeTypes.filter((m) => !m.startsWith('audio/')).join(',')}
-          onChange={pick}
-          disabled={busy}
-          className="text-base text-fg-2 file:me-3 file:rounded-md file:border file:border-border-medium file:bg-surface-2 file:px-3 file:py-2 file:text-xs file:text-fg"
-        />
-        {busy && (
-          <span role="status" className="inline-flex items-center gap-2 text-base text-fg-3">
-            <Loader size={3} label="Uploading" />
-            Uploading…
-          </span>
-        )}
-      </div>
+      <FileDrop
+        title="Add a picture, a video or a file"
+        hint="Click to choose, or drag it here."
+        // A convenience only. The server validates the type against its own
+        // whitelist regardless, because `accept` is a file-dialog filter and
+        // not a control (CLAUDE.md §8).
+        accept={config.allowedMimeTypes.filter((m) => !m.startsWith('audio/')).join(',')}
+        busy={busy}
+        onFiles={([file]) => void pick(file!)}
+      />
       <p className="text-xs text-fg-3">
         Up to {formatFileSize(config.maxBytes)}. Uploading adds it to the list; it is only attached once
         you save the gallery.

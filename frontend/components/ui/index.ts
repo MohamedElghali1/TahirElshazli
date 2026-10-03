@@ -73,6 +73,7 @@ export {
 /* Inputs */
 export {
   TextInput,
+  FileDrop,
   TextArea,
   Select,
   SearchInput,

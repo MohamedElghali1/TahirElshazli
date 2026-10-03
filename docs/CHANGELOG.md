@@ -2591,3 +2591,20 @@ its social links, email and "next intake" date (placeholders in the reference). 
 Dr. Tahir**, outside this change's boundary: ~25 console/student/site copy strings, `INSTRUCTOR` in
 `lib/site-content.ts` (matched against the course's teacher name), the legal pages (the data
 controller is a legal fact), `metadataBase` and the domain, and the docs.
+
+### `D-69` — Sessions, submissions and uploads made reachable; new tasks default to uploads
+**Chosen (user, 2026-10-03).** Three findability fixes, frontend only, no route changes:
+- The console header's "Live session" action opened the bare course list (written before
+  `POST /staff/groups/:groupId/sessions` existed), so a teacher could not schedule from it. It now
+  opens `/manage/live-sessions` with the new-session form open, for every staff role (`D-6`).
+  The overview links to sessions and attendance; the week grid shows each session's meeting link.
+- **New `/manage/submissions`**: one grading queue across every course the caller reaches, fanned
+  out over the existing per-course `GET /staff/courses/:id/submissions` (so `D-44`'s group narrowing
+  holds). "Awaiting grading" on the overview opens it instead of the Tasks list. The row and grade
+  dialog moved to `components/marking/grading-queue.tsx`, shared with the course Grading tab.
+- Student hand-in uses a full-width drop zone (`FileDrop` in `components/ui/form.tsx`) instead of a
+  bare `<input type="file">`, with a "Hand in your work" action in the page header; the blog editor's
+  upload uses the same primitive.
+**Narrows `D-47`'s default:** a *new* task now starts with PDF, Word and photo upload ticked when the
+server stores files. With none ticked a student saw only a link box, which is why uploads looked
+missing. Existing tasks are unchanged — a teacher edits one and ticks a mode to give it an upload.

@@ -96,6 +96,7 @@ function sectionsFor(admin: boolean, studentCount: number | null): NavGroup[] {
       items: [
         { href: '/manage/tasks', label: 'Tasks', icon: 'ListDetails' },
         { href: '/manage/tasks/drafts', label: 'Draft tasks', icon: 'FileText', indent: 1 },
+        { href: '/manage/submissions', label: 'Submissions', icon: 'Inbox' },
         { href: '/manage/marks', label: 'Marks', icon: 'ListNumbers' },
         // Admin only: assistants have no access to weekly reports (`D-66`).
         ...(admin ? [{ href: '/manage/reports', label: 'Reports', icon: 'ChartPie' as IconName }] : []),

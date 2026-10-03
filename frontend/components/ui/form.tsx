@@ -160,6 +160,82 @@ export function TextArea({
   );
 }
 
+/* --- FileDrop ------------------------------------------------------------- */
+
+/**
+ * A file picker that cannot be missed: a full-width dashed target you click or
+ * drop onto. The native input stays in the tree (visually hidden, inside the
+ * label) so the keyboard, screen readers and the OS picker behave as normal;
+ * the wrapper only adds the drop. `accept` is a courtesy filter for the picker,
+ * never validation - the server sniffs what it is sent.
+ */
+export function FileDrop({
+  title,
+  hint,
+  accept,
+  multiple = false,
+  disabled = false,
+  busy = false,
+  onFiles,
+  className,
+}: {
+  title: React.ReactNode;
+  hint?: React.ReactNode;
+  accept?: string;
+  multiple?: boolean;
+  disabled?: boolean;
+  busy?: boolean;
+  onFiles: (files: File[]) => void;
+  className?: string;
+}) {
+  const [over, setOver] = React.useState(false);
+  const off = disabled || busy;
+
+  function take(list: FileList | null) {
+    const files = Array.from(list ?? []);
+    if (files.length > 0) onFiles(multiple ? files : files.slice(0, 1));
+  }
+
+  return (
+    <label
+      onDragOver={(e) => {
+        if (off) return;
+        e.preventDefault();
+        setOver(true);
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setOver(false);
+        if (!off) take(e.dataTransfer.files);
+      }}
+      className={cx(
+        'flex flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed px-4 py-8 text-center',
+        'transition-colors duration-[var(--dur-fast)] ease-[var(--ease)] focus-within:border-accent',
+        over ? 'border-accent bg-accent-wash' : 'border-border-medium bg-wash-field',
+        off ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-accent hover:bg-accent-wash',
+        className,
+      )}
+    >
+      <Icon name="Upload" size={24} className="text-accent" />
+      <span className="text-base font-medium text-fg">{busy ? 'Uploading…' : title}</span>
+      {hint && <span className={cx(HINT, 'text-fg-3')}>{hint}</span>}
+      <input
+        type="file"
+        className="sr-only"
+        accept={accept}
+        multiple={multiple}
+        disabled={off}
+        onChange={(e) => {
+          take(e.target.files);
+          // Choosing the same file twice must fire `change` again.
+          e.target.value = '';
+        }}
+      />
+    </label>
+  );
+}
+
 /* --- Select --------------------------------------------------------------- */
 
 export interface SelectOption {

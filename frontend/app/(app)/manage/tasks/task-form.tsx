@@ -260,6 +260,20 @@ export function TaskForm({
     [form.courseId, task?.id],
   );
   const { data: uploadConfig } = useApi((t) => api.staff.uploadConfig(t), []);
+  // A new task starts with every upload mode ticked when this server stores
+  // files: with none ticked a student gets only a link box and no upload,
+  // which is rarely what a teacher meant. Untick to narrow it. Applied once,
+  // when the config arrives, and never over a mode already chosen.
+  const defaultedModes = useRef(false);
+  useEffect(() => {
+    if (task || defaultedModes.current || !uploadConfig) return;
+    defaultedModes.current = true;
+    if (!uploadConfig.enabled) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setForm((f) =>
+      f.submissionModes.length > 0 ? f : { ...f, submissionModes: ['pdf_upload', 'docx_upload', 'photo_upload'] },
+    );
+  }, [task, uploadConfig]);
   // Marker candidates: only the teacher and admins choose (`D-32`), and
   // `/admin/assistants` is theirs.
   const { data: staff } = useApi(
