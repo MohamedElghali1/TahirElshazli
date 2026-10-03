@@ -16,7 +16,7 @@ export default function AuthLayout({
   return (
     <div data-surface="site" className="grid min-h-[100dvh] lg:grid-cols-[1fr_1fr]">
       <aside className="relative hidden flex-col justify-between border-e border-[var(--border-light)] bg-surface-2 p-12 lg:flex">
-        <Link href="/" aria-label="Dr. Tahir Elshazli, home">
+        <Link href="/" aria-label="Dr. Za3balawy, home">
           <Wordmark />
         </Link>
 
@@ -46,7 +46,7 @@ export default function AuthLayout({
         className="flex flex-col justify-center px-6 py-12"
       >
         <div className="mb-8 flex items-center justify-between lg:hidden">
-          <Link href="/" aria-label="Dr. Tahir Elshazli, home">
+          <Link href="/" aria-label="Dr. Za3balawy, home">
             <Wordmark />
           </Link>
           <ThemeToggle />

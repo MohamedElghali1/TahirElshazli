@@ -222,6 +222,8 @@ body {
   --color-za-background:         hsl(var(--za-background));
   --color-za-foreground:         hsl(var(--za-foreground));
   --color-za-primary:            hsl(var(--za-primary));
+  --color-za-primary-foreground: hsl(var(--za-primary-foreground));
+  --color-za-border:             hsl(var(--za-border));
   --color-za-secondary:          hsl(var(--za-secondary));
   --color-za-secondary-foreground: hsl(var(--za-secondary-foreground));
   --color-za-muted:              hsl(var(--za-muted));
@@ -245,6 +247,8 @@ body {
     --za-background: 0 0% 100%;
     --za-foreground: 225 7% 12%;
     --za-primary: 232 79% 59%;
+    --za-primary-foreground: 231 65% 51%;
+    --za-border: 192 3% 90%;
     --za-secondary: 210 5% 85.9%;
     --za-secondary-foreground: 192 3% 61%;
     --za-muted: 210 5% 95.9%;
@@ -263,6 +267,8 @@ body {
   .za-theme .za-auth {
     --za-foreground: 45 8% 20%;
     --za-primary: 211 76% 51%;
+    --za-primary-foreground: 211 76% 44%;
+    --za-border: 60 5% 89%;
     --za-secondary: 60 5% 91%;
     --za-secondary-foreground: 48 3% 41%;
     --za-muted: 60 14% 96%;

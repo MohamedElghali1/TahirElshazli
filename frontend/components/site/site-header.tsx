@@ -39,7 +39,7 @@ export function SiteHeader() {
   return (
     <header className="sticky top-0 z-40 border-b border-[var(--border-light)] bg-surface/72 backdrop-blur-xl">
       <div className="mx-auto flex h-[72px] max-w-[1200px] items-center gap-8 px-6">
-        <Link href="/" className="shrink-0" aria-label="Dr. Tahir Elshazli, home">
+        <Link href="/" className="shrink-0" aria-label="Dr. Za3balawy, home">
           <Wordmark />
         </Link>
 

@@ -27,15 +27,15 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL('https://tahirelshazli.com'),
   title: {
-    default: 'Dr. Tahir Elshazli - IGCSE and IELTS preparation',
-    template: '%s | Dr. Tahir Elshazli',
+    default: 'Dr. Za3balawy - IGCSE Chemistry',
+    template: '%s | Dr. Za3balawy',
   },
   description:
-    'Structured IGCSE and IELTS preparation with Dr. Tahir Elshazli. Live classes, recorded lessons, marked assignments and a full progress record for every student.',
+    'Chemistry made simple, logical and enjoyable. IGCSE Chemistry with Mohamed Za3balawy: live classes, recorded lessons, marked assignments and a full progress record for every student.',
   openGraph: {
     type: 'website',
-    siteName: 'Dr. Tahir Elshazli',
-    title: 'Dr. Tahir Elshazli - IGCSE and IELTS preparation',
+    siteName: 'Dr. Za3balawy',
+    title: 'Dr. Za3balawy - IGCSE Chemistry',
     description:
       'Live classes, recorded lessons, marked assignments and a full progress record for every student.',
   },

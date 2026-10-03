@@ -4420,3 +4420,13 @@ Three things worth remembering:
 
 What remains is the client's: SMTP, the VPS, Cloudflare and the R2 bucket, the first staff identity,
 the legal placeholders, real photos and the WhatsApp number (`docs/PRODUCTION_READINESS.md`).
+
+## 2026-10-03 — The entry pages take the Za3 landing-page design (`D-68`)
+
+The landing page, sign in and sign up were ported first (`02f3bd0`, another session); this change
+adds **About** in the same reference design — photo header, sticky facts column, the biography and
+the reference's scroll-drifting "Let's learn chemistry" footer — and moves the public-site chrome and
+root metadata to the **Dr. Za3balawy** brand. Onboarding was deliberately not built: its answers have
+nowhere to live, and inventing persistence for them would be mock functionality. The reference's
+social links, email and intake date were placeholders and were left out rather than shipped as links
+to nowhere. Checked in a browser at 1280 and 375 px; console and student pages walked unchanged.

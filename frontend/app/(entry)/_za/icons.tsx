@@ -1,6 +1,6 @@
 /**
- * The five lucide glyphs the reference uses, inlined (lucide is ISC) rather
- * than adding `lucide-react` for five paths.
+ * The six lucide glyphs the reference uses, inlined (lucide is ISC) rather
+ * than adding `lucide-react` for six paths.
  */
 type IconProps = { size?: number; strokeWidth?: number; className?: string };
 
@@ -56,5 +56,12 @@ export const MoveDownRight = (p: IconProps) => (
 export const Dot = (p: IconProps) => (
   <Svg {...p}>
     <circle cx="12.1" cy="12.1" r="1" />
+  </Svg>
+);
+
+export const ArrowDownLeft = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M17 7 7 17" />
+    <path d="M17 17H7V7" />
   </Svg>
 );

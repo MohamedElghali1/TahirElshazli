@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import {
@@ -15,6 +15,7 @@ import {
   type Variants,
 } from 'motion/react';
 import { Dot, FlaskConical, MoveDownRight } from './icons';
+import { Magnetic } from './magnetic';
 
 const NAV = [
   { href: '/about', title: 'about' },
@@ -56,32 +57,6 @@ export function Navbar() {
         </ul>
       </div>
     </nav>
-  );
-}
-
-/**
- * The reference's MagneticButton, default variant. A span rather than a
- * button, because it sits inside a link and a button there is invalid.
- */
-function Magnetic({ children }: { children: React.ReactNode }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const [pos, setPos] = useState({ x: 0, y: 0 });
-
-  return (
-    <motion.span
-      ref={ref}
-      className="relative inline-flex items-center justify-center overflow-hidden rounded-full p-2 text-za-sm font-medium"
-      animate={pos}
-      transition={{ type: 'spring', damping: 15, stiffness: 150, mass: 0.1 }}
-      onPointerMove={(e) => {
-        const r = ref.current!.getBoundingClientRect();
-        setPos({ x: (e.clientX - (r.left + r.width / 2)) * 0.35, y: (e.clientY - (r.top + r.height / 2)) * 0.35 });
-      }}
-      onPointerOut={() => setPos({ x: 0, y: 0 })}
-      whileHover={{ scale: 1.1 }}
-    >
-      <span className="relative z-[1] block w-max max-w-[14ch] break-all">{children}</span>
-    </motion.span>
   );
 }
 

@@ -16,7 +16,7 @@ const COLUMNS = [
   {
     heading: 'About',
     links: [
-      { href: '/about', label: 'Dr. Tahir' },
+      { href: '/about', label: 'Dr. Za3balawy' },
       { href: '/blog', label: 'Blog' },
       { href: '/contact', label: 'Contact' },
     ],
@@ -30,7 +30,7 @@ export function SiteFooter() {
         <div>
           <Wordmark />
           <p className="mt-4 max-w-[38ch] text-m-body leading-[1.65] text-fg-3">
-            IGCSE and IELTS preparation, with every piece of work marked and
+            IGCSE Chemistry, with every piece of work marked and
             returned.
           </p>
           <a
@@ -67,7 +67,7 @@ export function SiteFooter() {
 
       <div className="border-t border-[var(--border-light)]">
         <div className="mx-auto flex max-w-[1200px] flex-col gap-2 px-6 py-6 text-m-body text-fg-4 sm:flex-row sm:items-center sm:justify-between">
-          <p>&copy; {new Date().getFullYear()} Dr. Tahir Elshazli. All rights reserved.</p>
+          <p>&copy; {new Date().getFullYear()} Dr. Za3balawy. All rights reserved.</p>
           <div className="flex gap-6">
             <Link href="/privacy" className="hover:text-fg-2">
               Privacy

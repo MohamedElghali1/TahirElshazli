@@ -39,7 +39,7 @@ export function Wordmark({ size = 'md' }: { size?: 'md' | 'lg' }) {
             (size === 'lg' ? 'text-m-h2' : 'text-m-lead')
           }
         >
-          Dr. Tahir Elshazli
+          Dr. Za3balawy
         </span>
         {/* A literal 12px, not a scale step. The marketing scale bottoms out
             at 17px body, and 17px under a 20px wordmark collapses the lockup's
@@ -48,7 +48,7 @@ export function Wordmark({ size = 'md' }: { size?: 'md' | 'lg' }) {
             a marketing surface (CLAUDE.md §11, "two type scales that never
             mix"), so the value is written out rather than borrowed. */}
         <span className="mt-[3px] text-[12px] text-fg-3">
-          English Team
+          Chemistry Class
         </span>
       </span>
     </span>

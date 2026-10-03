@@ -562,6 +562,10 @@ historical only.
 - **The handoff's `.jsx` files are inline-styled reference prototypes, not importable code** — its own
   documents say so. Read them for exact structure, states and measurements; **reimplement** in TSX +
   Tailwind v4 over the ported tokens.
+- **Exception — the four entry pages (`D-68`).** `/`, `/about`, `/login`, `/register` live in
+  `app/(entry)/` on the Za3 landing-page reference design, with their own `.za-theme` palette
+  (`za-` utilities in `globals.css`), Neue Montreal and motion. Keep that palette scoped there; the
+  console and the rest of the site stay on the handoff tokens. The brand there is Dr. Za3balawy.
 - **Tokens are ported verbatim** into `app/tokens/fig-tokens.css` and `app/tokens/semantic.css`.
   **Do not duplicate a token, and do not add a literal hex, rgb or px font-size that a token already
   expresses.** The one deliberate departure — a marked additive `[data-theme="dark"]` block for four

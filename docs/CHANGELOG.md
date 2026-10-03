@@ -2577,3 +2577,17 @@ locale), not UTC; a timestamp with `GMT±N` uses that offset. Imported times are
 (nothing compares them to a deadline), but a silently wrong date would still mislead a teacher.
 Also: an `Email` header is accepted as the respondent email column alongside Google's
 `Email Address` — a form that asks for email as a question exports it under that question's title.
+
+### `D-68` — Entry pages take the Za3 landing-page design; the brand becomes Dr. Za3balawy
+**Chosen (user, 2026-10-03).** The landing page, About, sign in and sign up take their design from
+`github.com/alies1m/Za3-Landing-page`, which **overrides the Claude Design handoff for those four
+pages only** (`CLAUDE.md` §2.1, user first). They live in the `(entry)` route group with a scoped
+`.za-theme` palette, Neue Montreal and the reference's motion; no other page sees them. Logic, routes
+and API calls are the existing ones. The brand on these pages, the public-site chrome (wordmark,
+header, footer) and the root metadata is **Dr. Za3balawy — IGCSE Chemistry**.
+**Not done, deliberately:** the reference's onboarding flow (it collects ~12 answers the backend
+cannot store, and sign-up here ends in staff acceptance, not in the app — a data decision first);
+its social links, email and "next intake" date (placeholders in the reference). **Still saying
+Dr. Tahir**, outside this change's boundary: ~25 console/student/site copy strings, `INSTRUCTOR` in
+`lib/site-content.ts` (matched against the course's teacher name), the legal pages (the data
+controller is a legal fact), `metadataBase` and the domain, and the docs.
