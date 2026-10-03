@@ -4,7 +4,14 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { ApiError } from '@/lib/api';
 import { useSession } from '@/lib/session';
-import { Button, TextInput, InlineBanner } from '@/components/ui';
+import { AuthAside, AuthShell, Field, FormError, SubmitButton, textLink } from '../_za/auth-shell';
+
+const ASIDE = (
+  <AuthAside
+    heading="Chemistry that finally makes sense."
+    body="Reactions, equations and theories explained with real-life examples and a structure that makes the hardest topics approachable."
+  />
+);
 
 /** Mirrors the backend's RegisterDto rule, so the failure is caught here first. */
 const PASSWORD_RULE = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
@@ -24,6 +31,7 @@ export default function RegisterPage() {
     const name = String(data.get('name') ?? '').trim();
     const email = String(data.get('email') ?? '').trim();
     const password = String(data.get('password') ?? '');
+    const confirm = String(data.get('confirmPassword') ?? '');
 
     const next: Record<string, string> = {};
     if (name.length < 2) next.name = 'Please enter your full name.';
@@ -32,6 +40,8 @@ export default function RegisterPage() {
     if (!PASSWORD_RULE.test(password))
       next.password =
         'At least 8 characters, including one letter and one number.';
+    else if (password !== confirm)
+      next.confirmPassword = 'The two passwords do not match yet.';
 
     setFieldErrors(next);
     setError(null);
@@ -61,84 +71,83 @@ export default function RegisterPage() {
   // registration. No session, no redirect, no dashboard.
   if (waiting) {
     return (
-      <div role="status">
-        <h1 className="text-m-h2 font-semibold tracking-[-0.02em] text-fg">
-          Your account is being reviewed
-        </h1>
-        <p className="mt-4 text-m-body leading-[1.65] text-fg-2">
-          We will let you know once your place is confirmed. This usually takes
-          one working day.
+      <AuthShell
+        eyebrow="Account created"
+        title="Your account is being reviewed."
+        lead="We will let you know once your place is confirmed. This usually takes one working day."
+        aside={ASIDE}
+      >
+        <p role="status" className="text-za-sm text-za-muted-foreground">
+          <Link href="/login" className={textLink}>
+            Back to sign in
+          </Link>
         </p>
-        <Link
-          href="/login"
-          className="mt-8 inline-block text-m-body text-fg-2 underline underline-offset-4 hover:text-fg"
-        >
-          Back to sign in
-        </Link>
-      </div>
+      </AuthShell>
     );
   }
 
   return (
-    <>
-      <h1 className="text-m-h2 font-semibold tracking-[-0.02em] text-fg">
-        Create your account
-      </h1>
-      <p className="mt-2 text-m-body text-fg-3">
-        Once your place is confirmed, this is where your course appears.
-      </p>
-
-      <form onSubmit={submit} noValidate className="mt-8 flex flex-col gap-6">
-        <TextInput
+    <AuthShell
+      eyebrow="Create your account"
+      title="Join the chemistry class."
+      lead="One account gives you the lessons, the problem sets, the past-paper drills and the feedback. Setting it up takes less than a minute."
+      aside={ASIDE}
+    >
+      <form onSubmit={submit} noValidate className="flex flex-col gap-10">
+        <Field
           label="Full name"
-          id="name"
           name="name"
           autoComplete="name"
+          placeholder="Nour Hassan"
           required
           autoFocus
           error={fieldErrors.name}
-          aria-invalid={Boolean(fieldErrors.name)}
         />
 
-        <TextInput
+        <Field
           label="Email"
-          id="email"
           name="email"
           type="email"
           autoComplete="email"
+          placeholder="you@example.com"
           required
           error={fieldErrors.email}
-          aria-invalid={Boolean(fieldErrors.email)}
         />
 
-        <TextInput
-          label="Password"
-          id="password"
-          name="password"
-          type="password"
-          autoComplete="new-password"
-          required
-          hint="At least 8 characters, including one letter and one number."
-          error={fieldErrors.password}
-          aria-invalid={Boolean(fieldErrors.password)}
-        />
+        <div className="grid gap-10 sm:grid-cols-2">
+          <Field
+            label="Password"
+            name="password"
+            type="password"
+            autoComplete="new-password"
+            placeholder="At least 8 characters"
+            required
+            hint="At least 8 characters, including one letter and one number."
+            error={fieldErrors.password}
+          />
 
-        {error && <InlineBanner tone="danger">{error}</InlineBanner>}
+          <Field
+            label="Confirm password"
+            name="confirmPassword"
+            type="password"
+            autoComplete="new-password"
+            placeholder="Repeat it once more"
+            required
+            error={fieldErrors.confirmPassword}
+          />
+        </div>
 
-        <Button type="submit" variant="primary" size="medium" disabled={busy}>
-          {busy ? 'Creating account…' : 'Create account'}
-        </Button>
+        {error ? <FormError>{error}</FormError> : null}
+
+        <SubmitButton disabled={busy}>{busy ? 'Creating account…' : 'Create my account'}</SubmitButton>
+
+        <p className="text-za-sm text-za-muted-foreground">
+          Already have an account?{' '}
+          <Link href="/login" className={textLink}>
+            Sign in
+          </Link>
+        </p>
       </form>
-
-      <p className="mt-6 text-m-body text-fg-3">
-        Already have an account?{' '}
-        <Link
-          href="/login"
-          className="text-fg-2 underline underline-offset-4 hover:text-fg"
-        >
-          Sign in
-        </Link>
-      </p>
-    </>
+    </AuthShell>
   );
 }

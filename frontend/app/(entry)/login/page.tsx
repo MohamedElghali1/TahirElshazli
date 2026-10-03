@@ -7,7 +7,7 @@ import { api, ApiError } from '@/lib/api';
 import { useSession } from '@/lib/session';
 import { resolvePostAuthPath } from '@/lib/roles';
 import { goToGoogle } from '@/lib/google-flow';
-import { Button, TextInput, InlineBanner } from '@/components/ui';
+import { AuthAside, AuthShell, Field, FormError, SubmitButton, textLink } from '../_za/auth-shell';
 
 export default function LoginPage() {
   const { signIn } = useSession();
@@ -65,74 +65,76 @@ export default function LoginPage() {
   }
 
   return (
-    <>
-      <h1 className="text-m-h2 font-semibold tracking-[-0.02em] text-fg">
-        Sign in
-      </h1>
-      <p className="mt-2 text-m-body text-fg-3">
-        Use the email address your place was booked under.
-      </p>
-
-      <form onSubmit={submit} noValidate className="mt-8 flex flex-col gap-6">
-        <TextInput
+    <AuthShell
+      eyebrow="Welcome back"
+      title="Sign in and pick up where you stopped."
+      lead="Your lessons, notes, past-paper drills and progress are waiting exactly where you left them."
+      aside={
+        <AuthAside
+          heading="Patient. Disciplined. Focused on your result."
+          body="Every lesson is built to strengthen critical thinking, build confidence and prepare you for the exam — and for what comes after it."
+        />
+      }
+    >
+      <form onSubmit={submit} noValidate className="flex flex-col gap-10">
+        <Field
           label="Email"
-          id="email"
           name="email"
           type="email"
           autoComplete="email"
+          placeholder="you@example.com"
           required
           autoFocus
         />
 
-        <TextInput
+        <Field
           label="Password"
-          id="password"
           name="password"
           type="password"
           autoComplete="current-password"
+          placeholder="Your password"
           required
         />
 
-        {error && <InlineBanner tone="danger">{error}</InlineBanner>}
+        <div className="flex flex-wrap items-center justify-end gap-4">
+          <Link
+            href="/forgot-password"
+            className="text-za-sm text-za-muted-foreground transition-colors duration-300 ease-in-expo hover:text-za-foreground"
+          >
+            Forgot your password?
+          </Link>
+        </div>
 
-        <Button type="submit" variant="primary" size="medium" disabled={busy}>
-          {busy ? 'Signing in…' : 'Sign in'}
-        </Button>
+        {error ? <FormError>{error}</FormError> : null}
+
+        <SubmitButton disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</SubmitButton>
       </form>
 
-      <div className="mt-6 flex flex-col gap-3 border-t border-border-light pt-6">
-        <Button
+      <div className="mt-10 flex flex-col gap-3 border-t border-solid border-za-input pt-10">
+        <button
           type="button"
-          variant="secondary"
-          size="medium"
           onClick={continueWithGoogle}
           disabled={googleBusy}
+          className="w-full rounded-full border border-solid border-za-foreground px-8 py-5 text-za-base transition-colors duration-300 ease-in-expo hover:bg-za-foreground hover:text-za-background disabled:cursor-wait disabled:opacity-60"
         >
           {googleBusy ? 'Opening Google…' : 'Continue with Google'}
-        </Button>
-        <p className="text-(length:--fs-base) text-fg-3">
+        </button>
+        <p className="text-za-xs text-za-muted-foreground">
           For accounts already connected to Google in their settings.
         </p>
-        {googleError && <InlineBanner tone="amber">{googleError}</InlineBanner>}
+        {googleError ? (
+          <p role="status" className="text-za-sm text-za-muted-foreground">
+            {googleError}
+          </p>
+        ) : null}
       </div>
 
-      <div className="mt-6 flex flex-col gap-3 text-m-body text-fg-3">
-        <Link
-          href="/forgot-password"
-          className="text-fg-2 underline underline-offset-4 hover:text-fg"
-        >
-          Forgot your password?
+      <p className="mt-10 text-za-sm text-za-muted-foreground">
+        New here?{' '}
+        <Link href="/register" className={textLink}>
+          Create an account
         </Link>
-        <p className="text-fg-3">
-          No account yet?{' '}
-          <Link
-            href="/register"
-            className="text-fg-2 underline underline-offset-4 hover:text-fg"
-          >
-            Create one
-          </Link>
-        </p>
-      </div>
-    </>
+      </p>
+    </AuthShell>
   );
 }

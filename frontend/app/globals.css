@@ -211,3 +211,71 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* ============================================================================
+   Entry pages (landing, sign in, sign up) — ported from the Za3 landing-page
+   reference repository, which carries its own shadcn-style HSL palette. Every
+   utility is `za-` prefixed and every variable is defined only under
+   `.za-theme`, so nothing here can reach any other page.
+   ============================================================================ */
+@theme inline {
+  --color-za-background:         hsl(var(--za-background));
+  --color-za-foreground:         hsl(var(--za-foreground));
+  --color-za-primary:            hsl(var(--za-primary));
+  --color-za-secondary:          hsl(var(--za-secondary));
+  --color-za-secondary-foreground: hsl(var(--za-secondary-foreground));
+  --color-za-muted:              hsl(var(--za-muted));
+  --color-za-muted-foreground:   hsl(var(--za-muted-foreground));
+  --color-za-destructive:        hsl(var(--za-destructive));
+  --color-za-input:              hsl(var(--za-input));
+  --color-za-ring:               hsl(var(--za-ring));
+
+  /* Tailwind's stock steps, which the console scale above redefines. */
+  --text-za-xs:   0.75rem;  --text-za-xs--line-height:   1rem;
+  --text-za-sm:   0.875rem; --text-za-sm--line-height:   1.25rem;
+  --text-za-base: 1rem;     --text-za-base--line-height: 1.5rem;
+  --text-za-lg:   1.125rem; --text-za-lg--line-height:   1.75rem;
+
+  --ease-in-expo: cubic-bezier(0.1, 0, 0.3, 1);
+}
+
+@layer base {
+  /* The landing palette. */
+  .za-theme {
+    --za-background: 0 0% 100%;
+    --za-foreground: 225 7% 12%;
+    --za-primary: 232 79% 59%;
+    --za-secondary: 210 5% 85.9%;
+    --za-secondary-foreground: 192 3% 61%;
+    --za-muted: 210 5% 95.9%;
+    --za-muted-foreground: 240 3.8% 46.1%;
+    --za-destructive: 0 84.2% 60.2%;
+    --za-input: 192 3% 90%;
+    --za-ring: 232 79% 59%;
+    color-scheme: light;
+    font-size: 1rem;
+    line-height: 1.5;
+    background-color: hsl(var(--za-background));
+    color: hsl(var(--za-foreground));
+  }
+
+  /* The warmer palette the reference scopes to its auth screens. */
+  .za-theme .za-auth {
+    --za-foreground: 45 8% 20%;
+    --za-primary: 211 76% 51%;
+    --za-secondary: 60 5% 91%;
+    --za-secondary-foreground: 48 3% 41%;
+    --za-muted: 60 14% 96%;
+    --za-muted-foreground: 45 2% 46%;
+    --za-destructive: 0 79% 63%;
+    --za-input: 60 5% 89%;
+    --za-ring: 211 76% 51%;
+  }
+
+  /* semantic.css paints every link indigo; the reference inherits. */
+  .za-theme a,
+  .za-theme a:hover {
+    color: inherit;
+    text-decoration: none;
+  }
+}
