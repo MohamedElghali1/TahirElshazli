@@ -5,19 +5,10 @@ import { useSearchParams } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
 import { formatDate, formatTime } from '@/lib/format';
-import type { AttendanceSheetItem, AttendanceStatus, GroupMemberView } from '@/lib/types';
-import {
-  Avatar,
-  Button,
-  ButtonGroup,
-  EmptyState,
-  InlineBanner,
-  Loader,
-  Panel,
-  Table,
-  type Column,
-} from '@/components/ui';
+import type { AttendanceStatus, GroupMemberView } from '@/lib/types';
 import { PageTitle } from '@/components/shell/page-chrome';
+import { initialsOf } from '@/components/shell/classroom';
+import { BackLink, ClEmpty, ClError, ClSkeleton, PanelHead } from '@/components/classroom/ui';
 
 /**
  * The attendance sheet (`SESS-3`), reached from a session row on the week
@@ -30,7 +21,19 @@ import { PageTitle } from '@/components/shell/page-chrome';
  * `{ studentId, status }` and no name - joined here client-side from
  * `api.staff.groupMembers`, which is the right trade at ~30 students a group
  * (`PHASE_PLAN.md`, `CLAUDE.md` §1) rather than a backend change.
+ *
+ * Redesign V2: the artifact's "Session detail". Saving stays an explicit
+ * button (the API takes one write for the whole sheet). The artifact's end
+ * time, status, meeting link, description and an "excused" mark are not
+ * available here: no single-session read exists and the status enum is
+ * present / late / absent.
  */
+const SEG: { status: AttendanceStatus; label: string; on: string }[] = [
+  { status: 'present', label: 'Attended', on: 'on-a' },
+  { status: 'late', label: 'Late', on: 'on-l' },
+  { status: 'absent', label: 'Absent', on: 'on-x' },
+];
+
 export default function SessionAttendancePage({
   params,
 }: {
@@ -59,6 +62,17 @@ export default function SessionAttendancePage({
     [groupId],
   );
 
+  // The group's name, from the same fan-out the week grid uses.
+  const { data: groupLabel } = useApi(
+    async (t) => {
+      if (!groupId) return null;
+      const courses = await api.staff.courses(t);
+      const lists = await Promise.all(courses.map((c) => api.staff.courseGroups(t, c.id)));
+      return lists.flat().find((g) => g.id === groupId)?.name ?? null;
+    },
+    [groupId],
+  );
+
   const [marks, setMarks] = useState<Map<string, AttendanceStatus | null>>(new Map());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +94,12 @@ export default function SessionAttendancePage({
     setMarks((prev) => new Map(prev).set(studentId, status));
   }
 
+  function markAll() {
+    if (!sheet) return;
+    setSaved(false);
+    setMarks(new Map(sheet.map((s) => [s.studentId, 'present'])));
+  }
+
   async function save() {
     if (!token) return;
     setSaving(true);
@@ -99,96 +119,94 @@ export default function SessionAttendancePage({
     }
   }
 
-  const columns: Column<AttendanceSheetItem>[] = [
-    {
-      label: 'Student',
-      render: (r) => {
-        const name = nameById.get(r.studentId) ?? r.studentId;
-        return (
-          <span className="inline-flex items-center gap-2">
-            <Avatar name={name} size={20} shape="circle" />
-            {name}
-          </span>
-        );
-      },
-    },
-    {
-      label: 'Attendance',
-      align: 'end',
-      render: (r) => {
-        const status = marks.get(r.studentId) ?? null;
-        const name = nameById.get(r.studentId) ?? r.studentId;
-        return (
-          <ButtonGroup aria-label={`Attendance for ${name}`}>
-            <Button
-              size="small"
-              position="left"
-              active={status === 'present'}
-              onClick={() => setStatus(r.studentId, 'present')}
-            >
-              Present
-            </Button>
-            <Button
-              size="small"
-              position="middle"
-              active={status === 'late'}
-              onClick={() => setStatus(r.studentId, 'late')}
-            >
-              Late
-            </Button>
-            <Button
-              size="small"
-              position="right"
-              active={status === 'absent'}
-              onClick={() => setStatus(r.studentId, 'absent')}
-            >
-              Absent
-            </Button>
-          </ButtonGroup>
-        );
-      },
-    },
-  ];
-
   const firstError = sheetError ?? membersError;
+  const count = (s: AttendanceStatus) => (sheet ?? []).filter((r) => marks.get(r.studentId) === s).length;
+  const nA = count('present');
+  const nL = count('late');
+  const nX = count('absent');
+  const nU = (sheet?.length ?? 0) - nA - nL - nX;
 
   return (
     <>
       <PageTitle title={title ? `Attendance · ${title}` : 'Attendance'} backHref="/manage/live-sessions" />
-      <div className="flex flex-col gap-4 p-6">
+      <BackLink href="/manage/live-sessions">All sessions</BackLink>
+
+      <section aria-labelledby="sd-h" className="cl-panel">
+        <PanelHead id="sd-h" title={title ?? 'Session'} className="mb-4" />
+        <div className="cl-muted -mt-3 mb-4 text-[14px]">
+          {[groupLabel, sheet ? `${sheet.length} ${sheet.length === 1 ? 'student' : 'students'}` : null]
+            .filter(Boolean)
+            .join(' · ')}
+        </div>
         {scheduledAt && (
-          <p className="num text-xs text-fg-3">
-            {formatDate(scheduledAt)} · {formatTime(scheduledAt)}
-          </p>
-        )}
-        {error && <InlineBanner tone="danger">{error}</InlineBanner>}
-        {saved && <InlineBanner tone="green">Attendance saved.</InlineBanner>}
-
-        <Panel padded={false}>
-          {(sheetLoading || membersLoading) && !sheet && (
-            <div className="flex justify-center p-8">
-              <Loader label="Loading attendance" />
+          <div className="grid gap-5 px-1" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+            <div>
+              <div className="cl-flab m-0 mb-1">Date</div>
+              {formatDate(scheduledAt)}
             </div>
-          )}
-          {firstError && (
-            <EmptyState icon="AlertTriangle" title={firstError.message} action={<Button onClick={reloadSheet}>Try again</Button>} />
-          )}
-          {sheet && (
-            <Table
-              columns={columns}
-              rows={sheet}
-              rowKey={(r) => r.studentId}
-              empty={<EmptyState icon="Users" title="Nobody in this group yet" />}
-            />
-          )}
-        </Panel>
-
-        {sheet && sheet.length > 0 && (
-          <Button variant="primary" className="self-start" disabled={saving} onClick={save}>
-            {saving ? <Loader size={3} label="Saving" /> : 'Save attendance'}
-          </Button>
+            <div>
+              <div className="cl-flab m-0 mb-1">Starts</div>
+              {formatTime(scheduledAt)}
+            </div>
+          </div>
         )}
-      </div>
+      </section>
+
+      <section aria-labelledby="att-h" className="cl-panel pb-3">
+        <PanelHead id="att-h" title="Attendance" className="mb-2">
+          {sheet && sheet.length > 0 && (
+            <>
+              {saved && (
+                <span role="status" className="cl-muted text-[13px]">
+                  Attendance saved.
+                </span>
+              )}
+              <button type="button" className="cl-glink" onClick={markAll}>
+                Mark all attended
+              </button>
+              <button type="button" className="cl-btnp" disabled={saving} onClick={() => void save()}>
+                {saving ? 'Saving…' : 'Save attendance'}
+              </button>
+            </>
+          )}
+        </PanelHead>
+        {sheet && sheet.length > 0 && (
+          <div className="cl-muted mb-2 px-2 text-[13px]">
+            {nA} attended · {nL} late · {nX} absent · {nU} not marked
+          </div>
+        )}
+        {error && (
+          <div role="alert" className="cl-soft mb-2" style={{ color: 'var(--cl-bad)' }}>
+            {error}
+          </div>
+        )}
+        {(sheetLoading || membersLoading) && !sheet && <ClSkeleton rows={4} label="Loading attendance" />}
+        {firstError && <ClError message={firstError.message} onRetry={reloadSheet} />}
+        {sheet && sheet.length === 0 && <ClEmpty icon="groups" tone="cl-tone-blue" title="Nobody in this group yet" />}
+        {sheet?.map((r) => {
+          const name = nameById.get(r.studentId) ?? r.studentId;
+          const status = marks.get(r.studentId) ?? null;
+          return (
+            <div key={r.studentId} className="cl-grow" style={{ cursor: 'default' }}>
+              <span className="cl-av">{initialsOf(name)}</span>
+              <span className="cl-grow-main truncate">{name}</span>
+              <div className="cl-seg3" role="group" aria-label={`Attendance for ${name}`}>
+                {SEG.map((o) => (
+                  <button
+                    key={o.status}
+                    type="button"
+                    aria-pressed={status === o.status}
+                    className={status === o.status ? o.on : undefined}
+                    onClick={() => setStatus(r.studentId, o.status)}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </section>
     </>
   );
 }

@@ -32,6 +32,7 @@ export function MarkedCopy({
   const file = useFileBytes(readUrl);
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [failed, setFailed] = useState(false);
+  const [current, setCurrent] = useState(1);
 
   useEffect(() => {
     if (!isPdf || !file.bytes) return;
@@ -69,20 +70,39 @@ export function MarkedCopy({
 
   const pages = isPdf && pdf ? Array.from({ length: pdf.numPages }, (_, i) => i + 1) : [1];
 
+  // One page at a time, as the teacher's marking view shows it.
+  const page = Math.min(Math.max(current, 1), pages.length);
+
   return (
     <div className="flex flex-col gap-3">
-      {pages.map((page) => (
-        <div key={page} dir="ltr" className="relative w-full overflow-hidden rounded-md bg-surface-2">
-          {isPdf && pdf ? (
-            <PdfPage pdf={pdf} page={page} />
-          ) : (
-            // A `blob:` URL of bytes fetched through CORS - see `useFileBytes`.
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={file.objectUrl ?? ''} alt="Your work, marked" className="block h-auto w-full" />
-          )}
-          <AnnotationLayer marks={mine.filter((a) => a.page === page)} numberOf={numberOf} />
+      {pages.length > 1 && (
+        <div className="flex items-center justify-center gap-3">
+          <button type="button" className="cl-btns" disabled={page <= 1} onClick={() => setCurrent(page - 1)}>
+            Previous
+          </button>
+          <span className="num cl-muted text-[14px]" aria-live="polite">
+            Page {page} of {pages.length}
+          </span>
+          <button
+            type="button"
+            className="cl-btns"
+            disabled={page >= pages.length}
+            onClick={() => setCurrent(page + 1)}
+          >
+            Next
+          </button>
         </div>
-      ))}
+      )}
+      <div key={page} dir="ltr" className="relative w-full overflow-hidden rounded-md bg-surface-2">
+        {isPdf && pdf ? (
+          <PdfPage pdf={pdf} page={page} />
+        ) : (
+          // A `blob:` URL of bytes fetched through CORS - see `useFileBytes`.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={file.objectUrl ?? ''} alt="Your work, marked" className="block h-auto w-full" />
+        )}
+        <AnnotationLayer marks={mine.filter((a) => a.page === page)} numberOf={numberOf} />
+      </div>
       {comments.length > 0 && (
         <ol className="flex flex-col gap-1">
           {comments.map((c) => (

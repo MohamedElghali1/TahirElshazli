@@ -80,11 +80,11 @@ export function TextInput({
   return (
     <div className={cx('flex flex-col gap-1', className)}>
       {label && (
-        <label htmlFor={inputId} className={LABEL}>
+        <label htmlFor={inputId} data-ui="field-label" className={LABEL}>
           {label}
         </label>
       )}
-      <div className={cx(fieldShell(Boolean(error), disabled), 'h-8 px-2')}>
+      <div data-ui="field" className={cx(fieldShell(Boolean(error), disabled), 'h-8 px-2')}>
         {icon && <Icon name={icon} size={16} className="shrink-0 text-fg-4" />}
         <input
           {...rest}
@@ -133,11 +133,11 @@ export function TextArea({
   return (
     <div className={cx('flex flex-col gap-1', className)}>
       {label && (
-        <label htmlFor={fieldId} className={LABEL}>
+        <label htmlFor={fieldId} data-ui="field-label" className={LABEL}>
           {label}
         </label>
       )}
-      <div className={cx(fieldShell(Boolean(error), disabled), 'p-2')}>
+      <div data-ui="field" className={cx(fieldShell(Boolean(error), disabled), 'p-2')}>
         <textarea
           {...rest}
           id={fieldId}
@@ -267,11 +267,11 @@ export function Select({
   return (
     <div className={cx('flex flex-col gap-1', className)}>
       {label && (
-        <label htmlFor={fieldId} className={LABEL}>
+        <label htmlFor={fieldId} data-ui="field-label" className={LABEL}>
           {label}
         </label>
       )}
-      <div className={cx(fieldShell(Boolean(error), disabled), 'h-8 px-2')}>
+      <div data-ui="field" className={cx(fieldShell(Boolean(error), disabled), 'h-8 px-2')}>
         <select
           {...rest}
           id={fieldId}
@@ -323,7 +323,7 @@ export function SearchInput({
   className?: string;
 } & Omit<React.InputHTMLAttributes<HTMLInputElement>, 'className' | 'type'>) {
   return (
-    <div className={cx(fieldShell(false, false), 'h-8 px-2', className)}>
+    <div data-ui="field" className={cx(fieldShell(false, false), 'h-8 px-2', className)}>
       <Icon name="Search" size={16} className="shrink-0 text-fg-4" />
       <input
         type="search"

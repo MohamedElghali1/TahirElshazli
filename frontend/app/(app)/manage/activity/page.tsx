@@ -4,11 +4,13 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
-import { useApi } from '@/lib/session';
+import { useApi, useSession } from '@/lib/session';
 import { formatDateTime } from '@/lib/format';
 import type { AuditAction, AuditLogEntry } from '@/lib/types';
-import { Button, EmptyState, InlineBanner, Loader, Table, Tag, type Column, type TagTone } from '@/components/ui';
+import type { TagTone } from '@/components/ui';
 import { PageTitle } from '@/components/shell/page-chrome';
+import { ClIcon } from '@/components/shell/classroom';
+import { ClEmpty, ClError, ClSkeleton, PanelHead } from '@/components/classroom/ui';
 
 /**
  * The activity log - CLAUDE.md §5.4's actual ask: the teacher must be able to
@@ -178,97 +180,98 @@ export default function ActivityLogPage() {
 
   const entries = data?.entries ?? [];
 
-  const columns: Column<AuditLogEntry>[] = [
-    {
-      label: 'Who',
-      render: (entry) => (
-        <Tag tone={ACTION_TONE[entry.action] ?? 'gray'}>
-          {entry.actorRole === 'teacher' ? 'Teacher' : 'Assistant'}
-        </Tag>
-      ),
-    },
-    { label: 'Action', render: (entry) => ACTION_LABEL[entry.action] ?? entry.action },
-    {
-      label: 'Target',
-      render: (entry) => (
-        <span className="block max-w-[32ch] truncate text-fg-4">
-          {entry.targetType} {entry.targetId}
-        </span>
-      ),
-    },
-    { label: 'Change', align: 'end', render: (entry) => <ScoreChange entry={entry} /> },
-    {
-      label: 'When',
-      align: 'end',
-      render: (entry) => <span className="whitespace-nowrap text-fg-3">{formatDateTime(entry.createdAt)}</span>,
-    },
-  ];
+  // The audit entry carries only actorId + role: names come from the staff
+  // directory (assistants and admins) plus the signed-in user (the teacher).
+  const { user } = useSession();
+  const { data: staff } = useApi((token) => api.admin.assistants(token), []);
+  const names = new Map<string, string>((staff ?? []).map((a) => [a.id, a.name]));
+  if (user) names.set(user.id, user.name);
 
   return (
     <>
       <PageTitle title="Activity log" />
-      <div className="flex flex-col gap-4 p-6">
-        <div className="flex items-center justify-between">
-          <span className="text-base font-medium text-fg-2">Every recorded action</span>
-          <span className="text-base text-fg-3">Who did it, and when</span>
-        </div>
+      <section aria-labelledby="aa-h" className="cl-panel pb-4">
+        <PanelHead id="aa-h" title="Assistant activity" className="mb-2">
+          <span className="cl-muted text-[14px]">Every recorded action · who did it, and when</span>
+        </PanelHead>
 
         {actorId && (
-          <InlineBanner tone="blue">
+          <p className="cl-soft mb-2">
             Showing activity for one assistant.{' '}
-            <Link href="/manage/activity" className="underline-offset-4 hover:underline">
+            <Link href="/manage/activity" className="cl-glink">
               Clear filter
             </Link>
-          </InlineBanner>
+          </p>
         )}
 
-        {loading && entries.length === 0 && (
-          <div className="flex justify-center p-8">
-            <Loader label="Loading the activity log" />
-          </div>
-        )}
+        {loading && entries.length === 0 && !error && <ClSkeleton rows={5} label="Loading the activity log" />}
         {error && (
-          <EmptyState
-            icon="AlertTriangle"
-            title={error.isAuth ? "You don't have access to this page." : error.message}
-            action={error.isAuth ? undefined : <Button onClick={reload}>Try again</Button>}
+          <ClError
+            message={error.isAuth ? "You don't have access to this page." : error.message}
+            onRetry={error.isAuth ? undefined : reload}
           />
         )}
         {!loading && !error && entries.length === 0 && (
-          <EmptyState
-            icon="History"
+          <ClEmpty
+            icon="activity"
             title="Nothing recorded yet"
-            description="Assigning an assistant, grading work or publishing a recording all leave an entry here."
+            hint="Assigning an assistant, grading work or publishing a recording all leave an entry here."
           />
         )}
-        {entries.length > 0 && (
-          <>
-            <Table columns={columns} rows={entries} rowKey={(entry) => entry.id} />
+        {entries.map((entry) => {
+          const tone = TONE_STYLE[ACTION_TONE[entry.action] ?? 'gray'];
+          return (
+            <div key={entry.id} className="cl-grow" style={{ cursor: 'default' }}>
+              <span className={`cl-ic40 ${tone.cls}`} style={tone.style}>
+                <ClIcon name="activity" small />
+              </span>
+              <span className="cl-grow-main">
+                <span className="block">
+                  {ACTION_LABEL[entry.action] ?? entry.action} <ScoreChange entry={entry} />
+                </span>
+                <span className="cl-sub block truncate">
+                  {names.get(entry.actorId) ?? (entry.actorRole === 'teacher' ? 'Teacher' : 'Assistant')} · {entry.targetType} {entry.targetId}
+                </span>
+              </span>
+              <span className="cl-muted whitespace-nowrap text-[13.5px]">{formatDateTime(entry.createdAt)}</span>
+            </div>
+          );
+        })}
 
-            {(stack.length > 1 || data?.nextCursor) && (
-              <div className="flex items-center justify-between gap-3">
-                <Button
-                  size="small"
-                  disabled={stack.length === 1}
-                  onClick={() => setStack((s) => s.slice(0, -1))}
-                >
-                  Newer
-                </Button>
-                <Button
-                  size="small"
-                  disabled={!data?.nextCursor}
-                  onClick={() => setStack((s) => [...s, data?.nextCursor ?? undefined])}
-                >
-                  {loading ? <Loader size={3} label="Loading" /> : 'Older'}
-                </Button>
-              </div>
-            )}
-          </>
+        {entries.length > 0 && (stack.length > 1 || data?.nextCursor) && (
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <button
+              type="button"
+              className="cl-btns"
+              disabled={stack.length === 1}
+              onClick={() => setStack((s) => s.slice(0, -1))}
+            >
+              Newer
+            </button>
+            <button
+              type="button"
+              className="cl-btns"
+              disabled={!data?.nextCursor || loading}
+              onClick={() => setStack((s) => [...s, data?.nextCursor ?? undefined])}
+            >
+              {loading ? 'Loading…' : 'Older'}
+            </button>
+          </div>
         )}
-      </div>
+      </section>
     </>
   );
 }
+
+/** Action tone (by consequence) -> the artifact's round icon tone. */
+const TONE_STYLE: Record<TagTone, { cls: string; style?: React.CSSProperties }> = {
+  green: { cls: 'cl-tone-mint' },
+  red: { cls: '', style: { background: 'var(--cl-bad-bg)', color: 'var(--cl-bad-deep)' } },
+  amber: { cls: 'cl-tone-peach' },
+  blue: { cls: 'cl-tone-blue' },
+  violet: { cls: 'cl-tone-sky' },
+  gray: { cls: 'cl-tone-badge' },
+};
 
 /**
  * The before/after pair, where there is one worth reading at a glance. A mark
@@ -280,7 +283,7 @@ function ScoreChange({ entry }: { entry: AuditLogEntry }) {
   const after = entry.after?.score;
   if (after === undefined || after === null) return null;
   return (
-    <span className="num shrink-0 text-xs text-fg-2">
+    <span className="num cl-muted text-[13px]">
       {before === null || before === undefined ? '—' : String(before)} → {String(after)}
     </span>
   );

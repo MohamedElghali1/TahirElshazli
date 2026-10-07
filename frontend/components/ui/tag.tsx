@@ -48,6 +48,7 @@ export function Tag({
   return (
     <span
       {...rest}
+      data-ui="tag"
       data-tone={tone}
       className={cx(
         'inline-flex h-5 items-center gap-1 whitespace-nowrap rounded-sm px-1 py-[3px]',

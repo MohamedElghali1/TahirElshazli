@@ -7,18 +7,14 @@ const COLUMNS = [
   {
     heading: 'Study',
     links: [
-      { href: '/courses', label: 'Courses' },
-      { href: '/courses/igcse', label: 'IGCSE English' },
-      { href: '/courses/ielts', label: 'IELTS Preparation' },
       { href: '/login', label: 'Sign in' },
+      { href: '/register', label: 'Join now' },
     ],
   },
   {
     heading: 'About',
     links: [
       { href: '/about', label: 'Dr. Za3balawy' },
-      { href: '/blog', label: 'Blog' },
-      { href: '/contact', label: 'Contact' },
     ],
   },
 ] as const;

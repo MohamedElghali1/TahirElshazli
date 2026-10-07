@@ -10,17 +10,15 @@ import {
   Button,
   ButtonGroup,
   Callout,
-  EmptyState,
   InlineBanner,
-  Loader,
-  Panel,
-  Tag,
   TextArea,
   TextInput,
   cx,
   type IconName,
 } from '@/components/ui';
 import { PageTitle } from '@/components/shell/page-chrome';
+import { initialsOf } from '@/components/shell/classroom';
+import { BackLink, ClEmpty, ClError, ClSkeleton, PanelHead } from '@/components/classroom/ui';
 import { MarkingSurface, type NewMark, type Tool } from '@/components/marking/marking-surface';
 
 const TOOLS: { tool: Tool; label: string; icon?: IconName }[] = [
@@ -187,57 +185,54 @@ function MarkingView({ id, submissionId }: { id: string; submissionId: string })
   return (
     <>
       <PageTitle title={row ? row.studentName : 'Marking'} backHref={`/manage/tasks/${id}/submissions`} />
-      <div className="flex flex-col gap-4 p-6">
-        {(queue.loading || listed.loading) && !row && (
-          <div className="flex justify-center p-8">
-            <Loader label="Loading the paper" />
-          </div>
-        )}
-        {(queue.error || listed.error) && (
-          <EmptyState
-            icon="AlertTriangle"
-            title={(queue.error ?? listed.error)!.message}
-            action={
-              <Button
-                onClick={() => {
-                  queue.reload();
-                  listed.reload();
-                }}
-              >
-                Try again
-              </Button>
-            }
+      <BackLink href={`/manage/tasks/${id}/submissions`}>All submissions</BackLink>
+      {(queue.loading || listed.loading) && !row && (
+        <section className="cl-panel">
+          <ClSkeleton rows={3} label="Loading the paper" />
+        </section>
+      )}
+      {(queue.error || listed.error) && (
+        <section className="cl-panel">
+          <ClError
+            message={(queue.error ?? listed.error)!.message}
+            onRetry={() => {
+              queue.reload();
+              listed.reload();
+            }}
           />
-        )}
-        {data && !row && !queue.loading && <EmptyState icon="ListDetails" title="Submission not found" />}
-        {data && row && (
+        </section>
+      )}
+      {data && !row && !queue.loading && (
+        <section className="cl-panel">
+          <ClEmpty icon="tasks" title="Submission not found" />
+        </section>
+      )}
+      {data && row && (
           <>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-base text-fg-3">
-                <span dir="auto" className="text-fg">
-                  {row.studentName}
-                </span>{' '}
-                · {row.groupName} · handed in {row.lastSubmittedAt ? formatDateTime(row.lastSubmittedAt) : '—'}
-                {row.isLate && (
-                  <>
-                    {' '}
-                    <Tag tone="amber">Late</Tag>
-                  </>
-                )}
-              </p>
-              <div className="flex gap-2">
+            <section className="cl-panel" aria-label="Student">
+              <div className="flex flex-wrap items-center gap-4">
+                <span className="cl-av">{initialsOf(row.studentName)}</span>
+                <div className="min-w-0 flex-1">
+                  <h1 dir="auto" className="cl-pt m-0">
+                    {row.studentName}
+                  </h1>
+                  <div className="cl-sub">
+                    {row.groupName} · handed in {row.lastSubmittedAt ? formatDateTime(row.lastSubmittedAt) : '—'}
+                    {row.isLate && <span style={{ color: 'var(--cl-warn)' }}> · Late</span>}
+                  </div>
+                </div>
                 {prev && (
-                  <Link href={`/manage/tasks/${id}/submissions/${prev.submissionId}`} className="text-base text-accent">
+                  <Link href={`/manage/tasks/${id}/submissions/${prev.submissionId}`} className="cl-btns">
                     Previous student
                   </Link>
                 )}
                 {next && (
-                  <Link href={`/manage/tasks/${id}/submissions/${next.submissionId}`} className="text-base text-accent">
+                  <Link href={`/manage/tasks/${id}/submissions/${next.submissionId}`} className="cl-btnp">
                     Next student
                   </Link>
                 )}
               </div>
-            </div>
+            </section>
 
             {row.staleAnnotationCount > 0 && (
               <InlineBanner tone="amber" icon="History">
@@ -251,28 +246,9 @@ function MarkingView({ id, submissionId }: { id: string; submissionId: string })
               </InlineBanner>
             )}
 
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-              <Panel
-                title="The student's work"
-                action={
-                  doc?.annotatable ? (
-                    <ButtonGroup aria-label="Marking tools">
-                      {TOOLS.map((t) => (
-                        <Button
-                          key={t.tool}
-                          size="small"
-                          variant="tertiary"
-                          icon={t.icon}
-                          active={tool === t.tool}
-                          onClick={() => setTool(t.tool)}
-                        >
-                          {t.label}
-                        </Button>
-                      ))}
-                    </ButtonGroup>
-                  ) : undefined
-                }
-              >
+            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+              <section className="cl-panel" aria-labelledby="mk-work">
+                <PanelHead id="mk-work" title="The student's work" small />
                 <div className="flex flex-col gap-3">
                   {markError && (
                     <InlineBanner tone="danger" icon="AlertTriangle">
@@ -314,40 +290,59 @@ function MarkingView({ id, submissionId }: { id: string; submissionId: string })
                       onErase={erase}
                       numberOf={numberOf}
                       highlightId={focused}
+                      tools={
+                        <ButtonGroup aria-label="Marking tools">
+                          {TOOLS.map((t) => (
+                            <Button
+                              key={t.tool}
+                              size="small"
+                              variant="tertiary"
+                              icon={t.icon}
+                              active={tool === t.tool}
+                              onClick={() => setTool(t.tool)}
+                            >
+                              {t.label}
+                            </Button>
+                          ))}
+                        </ButtonGroup>
+                      }
+                      footer={
+                        pageCount > 1 ? (
+                          <div className="flex items-center justify-center gap-3">
+                            <Button size="small" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+                              Previous page
+                            </Button>
+                            <span className="num text-base text-fg-3">
+                              Page {page}
+                              <span className="text-fg-4">/{pageCount}</span>
+                            </span>
+                            <Button size="small" disabled={page >= pageCount} onClick={() => setPage((p) => p + 1)}>
+                              Next page
+                            </Button>
+                          </div>
+                        ) : undefined
+                      }
                     />
                   ) : (
                     <Callout tone="neutral" title="No file was handed in">
                       Only a typed answer, below.
                     </Callout>
                   )}
-                  {pageCount > 1 && (
-                    <div className="flex items-center justify-center gap-3">
-                      <Button size="small" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-                        Previous page
-                      </Button>
-                      <span className="num text-base text-fg-3">
-                        Page {page}
-                        <span className="text-fg-4">/{pageCount}</span>
-                      </span>
-                      <Button size="small" disabled={page >= pageCount} onClick={() => setPage((p) => p + 1)}>
-                        Next page
-                      </Button>
-                    </div>
-                  )}
                   {row.answerText && (
                     <div className="flex flex-col gap-1">
-                      <span className="text-xs text-fg-4">Typed answer</span>
+                      <span className="cl-flab">Typed answer</span>
                       {/* Text, never HTML (SECURITY.md §2.5). */}
-                      <p dir="auto" className="whitespace-pre-wrap text-base text-fg">
+                      <p dir="auto" className="cl-soft whitespace-pre-wrap">
                         {row.answerText}
                       </p>
                     </div>
                   )}
                 </div>
-              </Panel>
+              </section>
 
-              <div className="flex flex-col gap-4">
-                <Panel title="Mark and feedback">
+              <div className="flex flex-col gap-6">
+                <section className="cl-panel" aria-labelledby="mk-fb">
+                  <PanelHead id="mk-fb" title="Mark and feedback" small />
                   <form
                     className="flex flex-col gap-3"
                     onSubmit={(e) => {
@@ -404,11 +399,12 @@ function MarkingView({ id, submissionId }: { id: string; submissionId: string })
                       )}
                     </div>
                   </form>
-                </Panel>
+                </section>
 
-                <Panel title={`Marks on this paper (${onPaper.length})`} padded={false}>
+                <section className="cl-panel" aria-labelledby="mk-list">
+                  <PanelHead id="mk-list" title={`Marks on this paper (${onPaper.length})`} small />
                   {onPaper.length === 0 ? (
-                    <p className="p-3 text-base text-fg-4">No marks yet.</p>
+                    <p className="cl-muted m-0">No marks yet.</p>
                   ) : (
                     <ul className="flex flex-col">
                       {onPaper
@@ -450,12 +446,11 @@ function MarkingView({ id, submissionId }: { id: string; submissionId: string })
                         ))}
                     </ul>
                   )}
-                </Panel>
+                </section>
               </div>
             </div>
           </>
         )}
-      </div>
     </>
   );
 }

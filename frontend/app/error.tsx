@@ -1,10 +1,12 @@
 'use client'; // Error boundaries must be Client Components
 
-import { EmptyState, Button } from '@/components/ui';
+import Link from 'next/link';
+import { StatusPage } from '@/components/status-page';
 
 /**
- * The app-level error boundary (REM-018). Renders inside the root layout, so
- * the signed-in theme and tokens already apply.
+ * The app-level error boundary (REM-018), on the entry pages' design. The
+ * consoles have their own (`app/(app)/error.tsx`) so a failing screen keeps
+ * the shell around it.
  */
 export default function ErrorBoundary({
   reset,
@@ -13,13 +15,13 @@ export default function ErrorBoundary({
   reset: () => void;
 }) {
   return (
-    <div className="flex min-h-[100dvh] items-center justify-center p-4">
-      <EmptyState
-        icon="AlertTriangle"
-        title="Something went wrong"
-        description="Please try again."
-        action={<Button onClick={reset}>Try again</Button>}
-      />
-    </div>
+    <StatusPage lead="Something went" word="wrong" message="An unexpected error stopped this page. Please try again.">
+      <button type="button" className="btn btn-p" onClick={reset}>
+        Try again
+      </button>
+      <Link className="btn btn-o" href="/">
+        Go home
+      </Link>
+    </StatusPage>
   );
 }

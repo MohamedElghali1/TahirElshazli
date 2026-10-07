@@ -36,7 +36,7 @@ export async function loadPdf(bytes: ArrayBuffer): Promise<PDFDocumentProxy> {
  * The box keeps the page's own aspect ratio, so an annotation's `x%`/`y%`
  * lands on the same spot of the paper at any width or zoom.
  */
-export function PdfPage({ pdf, page }: { pdf: PDFDocumentProxy; page: number }) {
+export function PdfPage({ pdf, page, zoom = 1 }: { pdf: PDFDocumentProxy; page: number; zoom?: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [ratio, setRatio] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -72,7 +72,8 @@ export function PdfPage({ pdf, page }: { pdf: PDFDocumentProxy; page: number }) 
       cancelled = true;
       task?.cancel();
     };
-  }, [pdf, page]);
+  // `zoom` resizes the box, so the canvas is re-rendered at the new width to stay sharp.
+  }, [pdf, page, zoom]);
 
   if (error) {
     return <p className="p-4 text-base text-fg-3">{error}</p>;

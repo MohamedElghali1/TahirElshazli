@@ -4,8 +4,7 @@ import { use } from 'react';
 import { api } from '@/lib/api';
 import { useApi } from '@/lib/session';
 import { formatDate, formatPercent } from '@/lib/format';
-import type { RosterEntry } from '@/lib/types';
-import { Button, EmptyState, Loader, Panel, Table, type Column } from '@/components/ui';
+import { ClEmpty, ClError, ClSkeleton, PanelHead } from '@/components/classroom/ui';
 
 /**
  * The course roster - read-only, for both roles.
@@ -19,91 +18,63 @@ import { Button, EmptyState, Loader, Panel, Table, type Column } from '@/compone
  * progress is a different measurement and is deliberately not shown beside
  * them as if it were the same thing (§5.1).
  *
- * No "Mode" column: the pre-port screen read `entry.learningMode` off each
- * roster row, but `AUTH-2`'s group-grain migration moved learning mode onto
- * the group-course pairing and `RosterEntry` no longer carries it
- * (`lib/types.ts`). Restoring an equivalent reading means joining the
- * roster against the course's groups, which is a data-shape decision this
- * slice does not make - dropped rather than left reading a field that no
- * longer exists on the wire.
+ * No "Mode" column: `RosterEntry` no longer carries a learning mode
+ * (`AUTH-2`'s group-grain migration moved it off the roster row).
  */
+const GRID = '2.4fr 1fr 0.8fr 1fr 1fr';
+
 export default function CourseRosterPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { data, error, loading, reload } = useApi((token) => api.staff.roster(token, id), [id]);
 
-  const columns: Column<RosterEntry>[] = [
-    {
-      label: 'Student',
-      render: (entry) => (
-        <>
-          <span className="block text-base text-fg">{entry.name}</span>
-          <span className="block text-xxs text-fg-4">{entry.email}</span>
-        </>
-      ),
-    },
-    {
-      label: 'Submitted',
-      align: 'end',
-      render: (entry) => (
-        <span className="num">
-          {entry.submittedCount}
-          <span className="text-fg-4">/{data?.assessmentCount}</span>
-        </span>
-      ),
-    },
-    {
-      label: 'Graded',
-      align: 'end',
-      render: (entry) => <span className="num">{entry.gradedCount}</span>,
-    },
-    {
-      label: 'Average',
-      align: 'end',
-      // A numeral, never a meter. Meters are for completion only, so a grade
-      // can never be misread as progress.
-      render: (entry) => <span className="num text-fg">{formatPercent(entry.averageScorePercent)}</span>,
-    },
-    {
-      label: 'Joined',
-      align: 'end',
-      render: (entry) => <span className="text-fg-3">{formatDate(entry.enrolledAt)}</span>,
-    },
-  ];
-
   return (
-    <div className="p-6">
-      <Panel
-        title="Enrolled students"
-        action={data && <span className="num text-xs text-fg-3">{data.entries.length}</span>}
-        bodyClassName=""
-      >
-        {loading && (
-          <div className="flex justify-center p-8">
-            <Loader label="Loading the roster" />
+    <section aria-labelledby="ros-h" className="cl-panel pb-4">
+      <PanelHead id="ros-h" title="Enrolled students">
+        {data && <span className="cl-muted text-[13px]">{data.entries.length}</span>}
+      </PanelHead>
+      {loading && !data && <ClSkeleton rows={4} label="Loading the roster" />}
+      {error && (
+        <ClError
+          message={error.isNotFound ? 'This course does not exist, or it is not assigned to you.' : error.message}
+          onRetry={error.isNotFound ? undefined : reload}
+        />
+      )}
+      {data && data.entries.length === 0 && (
+        <ClEmpty
+          icon="people"
+          tone="cl-tone-blue"
+          title="Nobody enrolled yet"
+          hint="Students who join this course will be listed here with their submitted work and average mark."
+        />
+      )}
+      {data && data.entries.length > 0 && (
+        <div className="overflow-x-auto">
+          <div className="cl-gt" role="table" aria-label="Enrolled students" style={{ minWidth: 640 }}>
+            <div className="hd" role="row" style={{ gridTemplateColumns: GRID }}>
+              <span>Student</span>
+              <span className="r">Submitted</span>
+              <span className="r">Graded</span>
+              <span className="r">Average</span>
+              <span className="r">Joined</span>
+            </div>
+            {data.entries.map((entry) => (
+              <div key={entry.studentId} className="rw" role="row" style={{ gridTemplateColumns: GRID }}>
+                <span className="min-w-0">
+                  <span className="block truncate">{entry.name}</span>
+                  <span className="cl-sub block truncate">{entry.email}</span>
+                </span>
+                <span className="r">
+                  {entry.submittedCount} of {data.assessmentCount}
+                </span>
+                <span className="r">{entry.gradedCount}</span>
+                {/* A numeral, never a meter: a grade must not read as progress. */}
+                <span className="r">{formatPercent(entry.averageScorePercent)}</span>
+                <span className="r cl-muted">{formatDate(entry.enrolledAt)}</span>
+              </div>
+            ))}
           </div>
-        )}
-        {error && (
-          <EmptyState
-            icon="AlertTriangle"
-            title={
-              error.isNotFound
-                ? 'This course does not exist, or it is not assigned to you.'
-                : error.message
-            }
-            action={error.isNotFound ? undefined : <Button onClick={reload}>Try again</Button>}
-          />
-        )}
-        {data && data.entries.length === 0 && (
-          <EmptyState
-            icon="Users"
-            title="Nobody enrolled yet"
-            description="Students who join this course will be listed here with their submitted work and average mark."
-          />
-        )}
-        {data && data.entries.length > 0 && (
-          <Table columns={columns} rows={data.entries} rowKey={(entry) => entry.studentId} />
-        )}
-      </Panel>
-    </div>
+        </div>
+      )}
+    </section>
   );
 }

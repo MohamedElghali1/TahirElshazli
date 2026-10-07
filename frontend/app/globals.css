@@ -285,3 +285,172 @@ body {
     text-decoration: none;
   }
 }
+
+/* ============================================================================
+   Classroom (Redesign V2) — the student and staff consoles, ported from the two
+   "interactive" dashboard artifacts (student + teacher). Like `.za-theme`, it is
+   scoped: `.cl-theme` sits on the app shell's root only, so the marketing site
+   and the entry pages are untouched. Two halves:
+
+     1. The handoff's semantic tokens re-pointed at the V2 palette and type
+        scale, so every existing primitive (`Panel`, `Button`, `Table`, `Tag`…)
+        and every page built from them repaints without being rewritten.
+     2. `--cl-*` values for the V2-only pieces (`app/(app)/classroom.css`).
+
+   V2 is drawn light only. Dark redefines what changes, per CLAUDE.md §11.
+   ============================================================================ */
+@layer base {
+  .cl-theme {
+    --cl-page: #FAFAFB;
+    --cl-panel: #FFFFFF;
+    --cl-panel-border: #ECEEF2;
+    --cl-ink: #1F1F1F;
+    --cl-ink-2: #3C4043;
+    --cl-muted: #444746;
+    --cl-nav-ink: #3A4054;
+    --cl-nav-ink-strong: #1C2033;
+    --cl-label: #5B6275;
+    --cl-hover: #F6F8FC;
+    --cl-hover-2: #EEF0F6;
+    --cl-row-hover: #F8F9FC;
+    --cl-line: #E8EAED;
+    --cl-line-2: #F0F1F4;
+    --cl-line-3: #DADCE0;
+    --cl-outline: #C4C7C5;
+    --cl-blue: #1A66D9;
+    --cl-blue-hover: #1557B8;
+    --cl-blue-deep: #0B4FB3;
+    --cl-blue-ring: #2B74E0;
+    --cl-blue-soft: #DCE8FC;
+    --cl-active: #E3EEFD;
+    --cl-active-border: #9DBEF5;
+    --cl-sess: #F3F7FE;
+    --cl-chip-ground: #F1F3F6;
+    --cl-soft-ground: #F7F9FC;
+    --cl-icon-ground: #F0F2F7;
+    --cl-tone-blue-bg: #E8F0FE;   --cl-tone-blue-fg: #1A66D9;
+    --cl-tone-mint-bg: #E6F4EA;   --cl-tone-mint-fg: #1E7E45;
+    --cl-tone-peach-bg: #FDEEE4;  --cl-tone-peach-fg: #B0531C;
+    --cl-tone-sky-bg: #E3F2F7;    --cl-tone-sky-fg: #1D6F8A;
+    --cl-tone-sand-bg: #FBF3DC;   --cl-tone-sand-fg: #8A6400;
+    --cl-badge-bg: #FFE1CF;       --cl-badge-fg: #8A3A12;
+    --cl-dot: #E0692F;
+    --cl-ok: #146C2E;
+    --cl-warn: #8A5300;           --cl-warn-bg: #FEF3E0;
+    --cl-bad: #B3261E;
+    --cl-bad-deep: #A50E0E;       --cl-bad-bg: #FCE8E6;
+    --cl-on-blue: #FFFFFF;
+    --cl-toast: #1F1F1F;
+    --cl-scrim: rgba(20,24,40,.36);
+    --cl-shadow-pop: 0 8px 28px rgba(20,24,60,.18);
+    --cl-shadow-soft: 0 1px 2px rgba(20,24,60,.08);
+    --cl-shadow-card: 0 2px 10px rgba(20,24,60,.12);
+    --cl-whatsapp: #25A85A;
+    --cl-card-2: #2F6E9E;  --cl-card-2-ring: #3779AB;
+    --cl-card-3: #1E7A63;  --cl-card-3-ring: #23866D;
+    --cl-card-4: #C2702E;  --cl-card-4-ring: #CB7B3A;
+    --cl-font: var(--font-gsans), "Google Sans", system-ui, "Noto Sans Arabic", sans-serif;
+    --cl-font-nav: var(--font-figtree), "Figtree", system-ui, "Noto Sans Arabic", sans-serif;
+    --cl-font-brand: var(--font-lexend), "Lexend", sans-serif;
+
+    /* The handoff's semantic layer, re-pointed. */
+    --font-sans: var(--cl-font);
+    --fg: var(--cl-ink);
+    --fg-2: var(--cl-ink-2);
+    --fg-3: var(--cl-muted);
+    --fg-4: #6B7180;
+    --fg-5: var(--cl-outline);
+    --fg-invert: var(--cl-on-blue);
+    --fg-accent: var(--cl-blue);
+    --fg-danger: var(--cl-bad);
+    --surface: var(--cl-panel);
+    --surface-2: var(--cl-hover);
+    --surface-3: var(--cl-chip-ground);
+    --surface-4: var(--cl-line);
+    --surface-accent: var(--cl-blue);
+    --surface-overlay: var(--cl-scrim);
+    --border-light: var(--cl-line);
+    --border-medium: var(--cl-line-3);
+    --border-strong: var(--cl-outline);
+    --border-accent: var(--cl-active-border);
+    --accent: var(--cl-blue);
+    --accent-hover: var(--cl-blue-hover);
+    --accent-active: var(--cl-blue-deep);
+    --accent-wash: var(--cl-tone-blue-bg);
+    --accent-wash-2: var(--cl-active);
+    --accent-border: var(--cl-active-border);
+    --status-green: var(--cl-tone-mint-fg);
+    --status-green-wash: var(--cl-tone-mint-bg);
+    --status-green-text: var(--cl-ok);
+    --status-amber: #E0A100;
+    --status-amber-wash: var(--cl-warn-bg);
+    --status-amber-text: var(--cl-warn);
+    --status-red: var(--cl-bad);
+    --status-red-wash: var(--cl-bad-bg);
+    --status-red-text: var(--cl-bad-deep);
+    --status-blue: var(--cl-blue);
+    --status-blue-wash: var(--cl-tone-blue-bg);
+    --status-blue-text: var(--cl-blue-deep);
+    --wash-hover: rgba(26,64,160,0.04);
+    --wash-press: rgba(26,64,160,0.08);
+    --fs-xxs: 12px;
+    --fs-xs: 13px;
+    --fs-base: 14px;
+    --fs-md: 16px;
+    --fs-lg: 22px;
+    --fs-xl: 28px;
+    --lh-body: 1.45;
+
+    background: var(--cl-page);
+    color: var(--fg);
+    font-family: var(--cl-font);
+    font-size: var(--fs-base);
+    line-height: var(--lh-body);
+  }
+
+  :root[data-theme="dark"] .cl-theme {
+    --cl-page: #131417;
+    --cl-panel: #1B1C20;
+    --cl-panel-border: #2A2C32;
+    --cl-ink: #E8EAED;
+    --cl-ink-2: #C8CBD1;
+    --cl-muted: #A9ADB5;
+    --cl-nav-ink: #C8CBD1;
+    --cl-nav-ink-strong: #F1F3F4;
+    --cl-label: #9AA0AA;
+    --cl-hover: #23252B;
+    --cl-hover-2: #262830;
+    --cl-row-hover: #212329;
+    --cl-line: #2E3037;
+    --cl-line-2: #26282E;
+    --cl-line-3: #3A3D45;
+    --cl-outline: #4A4E57;
+    --cl-blue: #6EA1F0;
+    --cl-blue-hover: #8DB5F4;
+    --cl-blue-deep: #A9C7F7;
+    --cl-blue-ring: #2A4C80;
+    --cl-blue-soft: #C9DBF8;
+    --cl-active: #1E3354;
+    --cl-active-border: #36598F;
+    --cl-sess: #1A2435;
+    --cl-chip-ground: #24262C;
+    --cl-soft-ground: #202228;
+    --cl-icon-ground: #262830;
+    --cl-tone-blue-bg: #1D2D48;   --cl-tone-blue-fg: #8DB5F4;
+    --cl-tone-mint-bg: #183427;   --cl-tone-mint-fg: #7FD3A0;
+    --cl-tone-peach-bg: #3A2518;  --cl-tone-peach-fg: #F0A77A;
+    --cl-tone-sky-bg: #16303A;    --cl-tone-sky-fg: #7CC5DD;
+    --cl-tone-sand-bg: #352C14;   --cl-tone-sand-fg: #E2C46A;
+    --cl-badge-bg: #4A2A18;       --cl-badge-fg: #FFC6A3;
+    --cl-ok: #7FD3A0;
+    --cl-warn: #F2C26B;           --cl-warn-bg: #3A2C12;
+    --cl-bad: #F28B82;
+    --cl-bad-deep: #F6AEA9;       --cl-bad-bg: #41201E;
+    --cl-on-blue: #0E1A2E;
+    --cl-toast: #E8EAED;
+    --cl-scrim: rgba(0,0,0,.6);
+    --fg-4: #8B909A;
+    --wash-hover: rgba(255,255,255,0.05);
+    --wash-press: rgba(255,255,255,0.09);
+  }
+}

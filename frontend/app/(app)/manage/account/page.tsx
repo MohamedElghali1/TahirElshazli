@@ -4,40 +4,36 @@ import { Suspense, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
 import type { StaffProfile } from '@/lib/types';
-import { Panel, EmptyState, Loader, Button, TextInput, InlineBanner, Tag } from '@/components/ui';
 import { PageTitle } from '@/components/shell/page-chrome';
+import { TEACHER_AVATAR, initialsOf } from '@/components/shell/classroom';
+import { ClError, ClSkeleton, PanelHead } from '@/components/classroom/ui';
 import { GoogleSignInPanel } from '@/components/account/google-sign-in-panel';
 
+/** Staff account, Redesign V2 "ACCOUNT": big avatar, the editable name, read-only email and role. */
 export default function AccountPage() {
   const { data, error, loading, reload } = useApi((token) => api.staff.profile(token), []);
 
   return (
     <>
       <PageTitle title="Account" />
-      <div className="grid gap-6 p-6 xl:grid-cols-2">
-        {loading && (
-          <div className="flex justify-center p-12 xl:col-span-2">
-            <Loader label="Loading your profile" />
-          </div>
-        )}
-        {error && (
-          <div className="xl:col-span-2">
-            <EmptyState
-              icon="AlertTriangle"
-              title={error.message}
-              action={<Button onClick={reload}>Try again</Button>}
-            />
-          </div>
-        )}
-        {data && (
-          <>
-            <DetailsPanel profile={data} onSaved={reload} />
-            <Suspense fallback={null}>
-              <GoogleSignInPanel returnTo="/manage/account" />
-            </Suspense>
-          </>
-        )}
-      </div>
+      {loading && !data && (
+        <section className="cl-panel">
+          <ClSkeleton rows={3} label="Loading your profile" />
+        </section>
+      )}
+      {error && (
+        <section className="cl-panel">
+          <ClError message={error.message} onRetry={reload} />
+        </section>
+      )}
+      {data && (
+        <>
+          <DetailsPanel profile={data} onSaved={reload} />
+          <Suspense fallback={null}>
+            <GoogleSignInPanel returnTo="/manage/account" />
+          </Suspense>
+        </>
+      )}
     </>
   );
 }
@@ -63,46 +59,55 @@ function DetailsPanel({ profile, onSaved }: { profile: StaffProfile; onSaved: ()
       setSaved(true);
       onSaved();
     } catch (cause) {
-      setError(
-        cause instanceof ApiError ? cause.message : 'Could not save your details. Please try again.',
-      );
+      setError(cause instanceof ApiError ? cause.message : 'Could not save your details. Please try again.');
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <Panel title="Your details">
-      <form onSubmit={submit} noValidate className="flex flex-col gap-4">
-        <TextInput label="Full name" id="name" name="name" autoComplete="name" defaultValue={profile.name} required />
-
-        <TextInput
-          label="Email"
-          id="email"
-          value={profile.email}
-          disabled
-          readOnly
-          hint="Contact us to change the address on your account."
-        />
-
-        {error && <InlineBanner tone="danger">{error}</InlineBanner>}
-
-        <div className="flex items-center justify-between gap-4 border-t border-border-light pt-4">
-          <div>
-            <Tag tone="blue">{profile.role}</Tag>
+    <section aria-labelledby="ac-h" className="cl-panel">
+      <PanelHead id="ac-h" title="Your details" />
+      <div className="flex flex-wrap items-start gap-8">
+        <span className="cl-av shrink-0 text-[40px]" style={{ width: 120, height: 120 }}>
+          {profile.role === 'teacher' ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={TEACHER_AVATAR} alt="" />
+          ) : (
+            initialsOf(profile.name)
+          )}
+        </span>
+        <form onSubmit={submit} noValidate className="cl-fgrid min-w-[260px] flex-1">
+          <label className="cl-fl">
+            Full name
+            <input className="cl-inp" id="name" name="name" autoComplete="name" defaultValue={profile.name} required />
+          </label>
+          <div className="cl-f2">
+            <label className="cl-fl">
+              Email
+              <input className="cl-inp" id="email" value={profile.email} disabled readOnly />
+            </label>
+            <label className="cl-fl">
+              Role
+              <input className="cl-inp" id="role" value={profile.role} disabled readOnly />
+            </label>
           </div>
-          <div className="flex items-center gap-3">
+          <p className="cl-muted m-0 text-[13px]">Contact us to change the address on your account.</p>
+
+          {error && <ClError message={error} />}
+
+          <div className="flex items-center justify-end gap-3">
             {saved && (
-              <span role="status" className="text-xs text-status-green-text">
+              <span role="status" className="text-[13px]" style={{ color: 'var(--cl-ok)' }}>
                 Saved
               </span>
             )}
-            <Button type="submit" variant="primary" disabled={busy}>
-              {busy ? <Loader size={3} label="Saving" /> : 'Save changes'}
-            </Button>
+            <button type="submit" className="cl-btnp" disabled={busy}>
+              {busy ? 'Saving…' : 'Save changes'}
+            </button>
           </div>
-        </div>
-      </form>
-    </Panel>
+        </form>
+      </div>
+    </section>
   );
 }

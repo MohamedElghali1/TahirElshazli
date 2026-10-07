@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { Button, Callout, Loader, TextInput, cx } from '@/components/ui';
 import type { AnnotationKind, AnnotationPoint, SubmissionDocument } from '@/lib/types';
@@ -26,6 +26,11 @@ const MAX_POINTS = 2000;
 const MIN_STEP = 0.25;
 /** How near, in percent of the page, the eraser must pass to take a mark. */
 const ERASE_RADIUS = 2;
+
+/** Zoom bounds and step (a multiple of the fitted width). */
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 3;
+const ZOOM_STEP = 0.25;
 
 const round = (n: number) => Math.round(n * 100) / 100;
 const clamp = (n: number) => Math.min(100, Math.max(0, n));
@@ -53,6 +58,8 @@ export function MarkingSurface({
   onErase,
   numberOf,
   highlightId,
+  tools,
+  footer,
 }: {
   doc: SubmissionDocument;
   page: number;
@@ -66,6 +73,10 @@ export function MarkingSurface({
   onErase: (mark: DrawnMark) => Promise<void>;
   numberOf?: (id: string) => number | undefined;
   highlightId?: string | null;
+  /** The tool buttons; rendered in the surface's own toolbar so they stay reachable in full screen. */
+  tools?: ReactNode;
+  /** Page navigation etc.; likewise rendered inside the full-screen area. */
+  footer?: ReactNode;
 }) {
   // `doc.url` is the stored form - the identity a mark anchors on (`D-41`) and
   // what creating one sends back. It is never itself fetchable behind a
@@ -78,6 +89,40 @@ export function MarkingSurface({
   const erased = useRef<Set<string>>(new Set());
   const [live, setLive] = useState<{ id: string; kind: 'pen' | 'highlight'; path: AnnotationPoint[] }[]>([]);
   const [comment, setComment] = useState<{ x: number; y: number; text: string } | null>(null);
+  // Zoom is the page box's WIDTH as a multiple of the viewport width (never a
+  // CSS transform), so every percent coordinate keeps meaning "this fraction
+  // of the paper" and `at()` reads the box's real laid-out rect.
+  const [zoom, setZoom] = useState(1);
+  const areaRef = useRef<HTMLDivElement>(null);
+  const [nativeFs, setNativeFs] = useState(false);
+  // Fallback when the Fullscreen API is missing or refused: a fixed overlay.
+  const [overlay, setOverlay] = useState(false);
+  const full = nativeFs || overlay;
+
+  useEffect(() => {
+    const onChange = () => setNativeFs(document.fullscreenElement === areaRef.current);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+  useEffect(() => {
+    if (!overlay) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOverlay(false);
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [overlay]);
+
+  const toggleFull = useCallback(async () => {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen().catch(() => undefined);
+    } else if (overlay) {
+      setOverlay(false);
+    } else if (areaRef.current?.requestFullscreen) {
+      await areaRef.current.requestFullscreen().catch(() => setOverlay(true));
+    } else {
+      setOverlay(true);
+    }
+  }, [overlay]);
+  const setZoomTo = (z: number) => setZoom(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(z * 100) / 100)));
 
   useEffect(() => {
     if (doc.kind !== 'pdf' || !file.bytes) return;
@@ -121,17 +166,6 @@ export function MarkingSurface({
       </Callout>
     );
   }
-  if (file.loading || (doc.kind === 'pdf' && !pdf && !pdfError && !file.error)) {
-    return (
-      <div className="flex justify-center p-8">
-        <Loader label="Loading the paper" />
-      </div>
-    );
-  }
-  if (file.error || pdfError) {
-    return <Callout tone="danger" title={file.error ?? pdfError ?? 'The paper could not be loaded.'} />;
-  }
-
   /** Pointer position as percent of the page box, from its PHYSICAL top-left. */
   const at = (e: React.PointerEvent): AnnotationPoint => {
     const rect = boxRef.current!.getBoundingClientRect();
@@ -209,17 +243,54 @@ export function MarkingSurface({
       });
   };
 
+  const waiting = file.loading || (doc.kind === 'pdf' && !pdf && !pdfError && !file.error);
+  const failed = file.error || pdfError;
+
   return (
-    <div className="flex flex-col gap-2">
+    <div
+      ref={areaRef}
+      className={cx(
+        'flex flex-col gap-2',
+        overlay && 'fixed inset-0 z-[60] p-4',
+        full && 'h-full',
+      )}
+      style={full ? { background: 'var(--cl-panel)' } : undefined}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        {tools}
+        <div className="ms-auto flex items-center gap-1" role="group" aria-label="Zoom and full screen">
+          <Button size="small" variant="tertiary" aria-label="Zoom out" disabled={zoom <= ZOOM_MIN} onClick={() => setZoomTo(zoom - ZOOM_STEP)}>
+            −
+          </Button>
+          <Button size="small" variant="tertiary" aria-label="Reset zoom" onClick={() => setZoomTo(1)}>
+            <span className="num">{Math.round(zoom * 100)}%</span>
+          </Button>
+          <Button size="small" variant="tertiary" aria-label="Zoom in" disabled={zoom >= ZOOM_MAX} onClick={() => setZoomTo(zoom + ZOOM_STEP)}>
+            +
+          </Button>
+          <Button size="small" variant="tertiary" onClick={() => void toggleFull()}>
+            {full ? 'Exit full screen' : 'Full screen'}
+          </Button>
+        </div>
+      </div>
+      {waiting ? (
+        <div className="flex justify-center p-8">
+          <Loader label="Loading the paper" />
+        </div>
+      ) : failed ? (
+        <Callout tone="danger" title={file.error ?? pdfError ?? 'The paper could not be loaded.'} />
+      ) : (
+      <div className={cx('overflow-auto rounded-md bg-surface-2', full ? 'min-h-0 flex-1' : 'max-h-[80vh]')}>
       {/* The page box: `dir="ltr"` so coordinates are physical (see AnnotationLayer). */}
       <div
         ref={boxRef}
         dir="ltr"
         className={cx(
-          'relative w-full select-none overflow-hidden rounded-md bg-surface-2',
+          'relative mx-auto select-none overflow-hidden rounded-md bg-surface-2',
           tool !== 'select' && 'touch-none',
           tool === 'eraser' ? 'cursor-cell' : tool === 'select' ? 'cursor-default' : 'cursor-crosshair',
         )}
+        style={{ width: `${zoom * 100}%` }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -229,7 +300,7 @@ export function MarkingSurface({
           // eslint-disable-next-line @next/next/no-img-element
           <img src={file.objectUrl} alt="The student's work" className="block h-auto w-full" draggable={false} />
         )}
-        {doc.kind === 'pdf' && pdf && <PdfPage pdf={pdf} page={page} />}
+        {doc.kind === 'pdf' && pdf && <PdfPage pdf={pdf} page={page} zoom={zoom} />}
         <AnnotationLayer marks={marks} pending={live} numberOf={numberOf} highlightId={highlightId} />
         {comment && (
           <form
@@ -265,6 +336,9 @@ export function MarkingSurface({
           </form>
         )}
       </div>
+      </div>
+      )}
+      {footer}
     </div>
   );
 }

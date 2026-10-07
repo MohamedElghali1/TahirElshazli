@@ -20,7 +20,7 @@ import { StudentShell } from '@/components/shell/student-shell';
  *    them to /manage instead is the fix, and the mirror case keeps a student
  *    out of a console whose every request would refuse them.
  */
-export default function AppLayout({ children }: { children: React.ReactNode }) {
+export function AppGate({ children }: { children: React.ReactNode }) {
   const { user, loading } = useSession();
   const router = useRouter();
   const pathname = usePathname();

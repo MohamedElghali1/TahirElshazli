@@ -19,7 +19,7 @@ export function CourseGate({
 }) {
   if (loading) {
     return (
-      <div className="flex justify-center p-12">
+      <div className="cl-panel flex justify-center">
         <Loader label="Loading your courses" />
       </div>
     );
@@ -27,7 +27,7 @@ export function CourseGate({
 
   if (!hasCourses) {
     return (
-      <div className="p-6">
+      <div className="cl-panel">
         <EmptyState
           icon="Book"
           title="No courses yet"

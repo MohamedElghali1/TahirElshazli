@@ -1,136 +1,109 @@
 'use client';
 
 import * as React from 'react';
-import { usePathname } from 'next/navigation';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
 import { isAdminRole } from '@/lib/roles';
 import type { Role } from '@/lib/types';
-import {
-  cx,
-  Avatar,
-  IconButton,
-  NavItem,
-  NavSection,
-  Tag,
-  type IconName,
-  type TagTone,
-} from '@/components/ui';
-import { PageChromeProvider } from '@/components/shell/page-chrome';
-import { ShellHeader } from './shell-header';
-import { CourseSwitcher } from './course-switcher';
+import { PageChromeProvider, usePageChrome } from '@/components/shell/page-chrome';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { activeHrefFor } from './nav-active';
+import {
+  Brand,
+  ClIcon,
+  NavFolder,
+  NavPill,
+  RailButton,
+  ShellFrame,
+  TEACHER_AVATAR,
+  initialsOf,
+  useDismiss,
+  useShellFrame,
+  type IconKey,
+} from './classroom';
 
 /**
- * The console shell — teacher, admin and assistant (`docs/redesign-mapping.md`
- * "Console" section). 244px `--surface-2` rail with a right border, the
- * course switcher, and the six nav
- * sections in the exact order the handoff draws them.
+ * The staff console (teacher, admin, assistant) — Redesign V2, the "Teacher
+ * Dashboard" artifact: a top bar with the page crumb, a course switcher and
+ * the account menu; a sidebar with the New menu, search, and the artifact's
+ * nav including its two folders (People, Progress).
+ *
+ * Every route the old rail reached is still reachable, except the blog,
+ * which the client removed from the console. The artifact has no Courses or
+ * Submissions entry; Courses sits with the communication items, and the artifact's "To review" IS the submissions
+ * queue. Draft tasks and the draft timetable are reached from their parent
+ * screens, exactly as the artifact draws them, and light their parent here.
+ *
+ * Admin-only items stay admin-only — courtesy, not access control (CLAUDE.md
+ * §7): `/admin/*` refuses an assistant server-side regardless of this nav.
  */
 
-interface NavLeaf {
+interface Leaf {
   href: string;
   label: string;
-  icon: IconName;
-  count?: number;
-  indent?: number;
+  icon: IconKey;
+  badge?: number | null;
+  badgeTone?: 'peach' | 'blue';
 }
 
-interface NavGroup {
-  title?: string;
-  items: NavLeaf[];
+interface Folder {
+  id: 'people' | 'progress';
+  label: string;
+  icon: IconKey;
+  kids: Leaf[];
 }
 
-/**
- * `admin` gates the three items the handoff marks `*` — teacher-only
- * courtesy, not access control (CLAUDE.md §7: "hiding a control is courtesy,
- * never security"; the server-side `@Roles` guard on `/admin/*` is what
- * actually enforces this).
- *
- * `admin` here means `isAdminRole` — teacher *or* admin (AUTH-1) — not a
- * literal `role === 'teacher'` check. The legacy `app-shell.tsx` this
- * replaces used the literal check, which meant an `admin` account fell
- * through `navFor`'s `if/else` chain to the *student* nav while still being
- * routed into `/manage` by the layout guard — a real bug, fixed here as part
- * of reproducing "the same role-gating logic" correctly rather than
- * literally, since `isAdminRole` exists in `lib/roles.ts` for exactly this.
- *
- * `Courses` and `Blog` aren't in `docs/redesign-mapping.md`'s own nav list
- * (139-147) at all — the shell being additive-only (nothing deleted, SHELL-4
- * lands later) means dropping them would leave real, working screens
- * (`/manage/courses/*`, `/manage/blog/*`) unreachable from the rail with no
- * replacement navigation yet. Placed in Main and Communication respectively
- * as the closest fit until a later unit's own IA work resolves this for real.
- */
-function sectionsFor(admin: boolean, studentCount: number | null): NavGroup[] {
-  // All four of these are admin-only pages that call /admin/* — an assistant
-  // hitting one of them gets a raw "Forbidden resource" (REM-017), so the
-  // nav item is gated the same way the courtesy already gates Assistants and
-  // Assistant activity below.
-  const people: NavLeaf[] = [];
-  if (admin) {
-    people.push(
-      { href: '/manage/students', label: 'Students', icon: 'Users', count: studentCount ?? undefined },
-      { href: '/manage/groups', label: 'Groups', icon: 'Hierarchy2' },
-      { href: '/manage/assistants', label: 'Assistants', icon: 'Briefcase' },
-      { href: '/manage/activity', label: 'Assistant activity', icon: 'History' },
-    );
-  }
-
-  const system: NavLeaf[] = [];
-  system.push({ href: '/manage/settings', label: 'Settings', icon: 'Settings' });
-  system.push({ href: '/manage/account', label: 'Account', icon: 'UserCircle' });
-
-  return [
-    {
-      items: [
-        { href: '/manage', label: 'Overview', icon: 'Home' },
-        { href: '/manage/courses', label: 'Courses', icon: 'Book' },
-      ],
-    },
-    // Omitted for an assistant: `people` is empty when `admin` is false, and
-    // a titled section with no items would render a bare heading.
-    ...(people.length > 0 ? [{ title: 'People', items: people }] : []),
-    {
-      title: 'Teaching',
-      items: [
-        { href: '/manage/tasks', label: 'Tasks', icon: 'ListDetails' },
-        { href: '/manage/tasks/drafts', label: 'Draft tasks', icon: 'FileText', indent: 1 },
-        { href: '/manage/submissions', label: 'Submissions', icon: 'Inbox' },
-        { href: '/manage/marks', label: 'Marks', icon: 'ListNumbers' },
-        // Admin only: assistants have no access to weekly reports (`D-66`).
-        ...(admin ? [{ href: '/manage/reports', label: 'Reports', icon: 'ChartPie' as IconName }] : []),
-      ],
-    },
-    {
-      title: 'Sessions',
-      items: [
-        { href: '/manage/live-sessions', label: 'Live sessions', icon: 'Video' },
-        { href: '/manage/live-sessions/drafts', label: 'Draft timetable', icon: 'CalendarClock', indent: 1 },
-        { href: '/manage/recordings', label: 'Recordings', icon: 'PlayerPlay' },
-      ],
-    },
-    {
-      title: 'Communication',
-      items: [
-        { href: '/manage/announcements', label: 'Announcements', icon: 'Message' },
-        { href: '/manage/blog', label: 'Blog', icon: 'Notes' },
-      ],
-    },
-    { title: 'System', items: system },
+function navFor(admin: boolean, toReview: number, waiting: number) {
+  const top: Leaf[] = [
+    { href: '/manage', label: 'Overview', icon: 'home' },
+    { href: '/manage/submissions', label: 'To review', icon: 'review', badge: toReview, badgeTone: 'peach' },
+    { href: '/manage/tasks', label: 'Tasks', icon: 'tasks' },
   ];
+  const teaching: Leaf[] = [
+    { href: '/manage/live-sessions', label: 'Live sessions', icon: 'schedule' },
+    { href: '/manage/recordings', label: 'Recordings', icon: 'live' },
+  ];
+  const folders: Folder[] = [];
+  if (admin) {
+    folders.push({
+      id: 'people',
+      label: 'People',
+      icon: 'people',
+      kids: [
+        { href: '/manage/students', label: 'Students', icon: 'people', badge: waiting, badgeTone: 'blue' },
+        { href: '/manage/groups', label: 'Groups', icon: 'groups' },
+        { href: '/manage/assistants', label: 'Assistants', icon: 'assistants' },
+        { href: '/manage/activity', label: 'Assistant activity', icon: 'activity' },
+      ],
+    });
+  }
+  folders.push({
+    id: 'progress',
+    label: 'Progress',
+    icon: 'marks',
+    kids: [
+      { href: '/manage/marks', label: 'Marks', icon: 'marks' },
+      // Weekly reports are admin-only (`D-66`).
+      ...(admin ? [{ href: '/manage/reports', label: 'Reports', icon: 'chart' as IconKey }] : []),
+    ],
+  });
+  const comms: Leaf[] = [
+    { href: '/manage/announcements', label: 'Announcements', icon: 'announce' },
+    { href: '/manage/courses', label: 'Courses', icon: 'book' },
+  ];
+  const system: Leaf[] = [
+    { href: '/manage/settings', label: 'Settings', icon: 'settings' },
+    { href: '/manage/account', label: 'Account', icon: 'account' },
+  ];
+  return { top, teaching, folders, comms, system };
 }
 
 function roleLabel(role: Role | undefined): string {
   if (role === 'admin') return 'Admin';
   if (role === 'assistant') return 'Assistant';
   return 'Teacher';
-}
-
-function roleTone(role: Role | undefined): TagTone {
-  if (role === 'admin') return 'green';
-  if (role === 'assistant') return 'blue';
-  return 'amber';
 }
 
 export function ConsoleShell({ children }: { children: React.ReactNode }) {
@@ -142,107 +115,296 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
 }
 
 function ConsoleShellInner({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const { user, signOut } = useSession();
+  const { pathname, navOpen, drawer, setDrawer, toggle } = useShellFrame();
+  const { user } = useSession();
   const admin = isAdminRole(user?.role);
-  const [open, setOpen] = React.useState(false);
+  const { chrome, actions } = usePageChrome();
+  const router = useRouter();
 
-  // A route change with the sheet still open leaves the page unscrollable
-  // behind it — derived during render, same as the legacy shell, because an
-  // effect would paint one frame with the sheet still over the new page.
-  const [lastPathname, setLastPathname] = React.useState(pathname);
-  if (lastPathname !== pathname) {
-    setLastPathname(pathname);
-    setOpen(false);
-  }
-
-  const { data: overview } = useApi((token) => api.staff.overview(token), []);
-  const { data: courseList } = useApi((token) => api.staff.courses(token), []);
-  const courses = React.useMemo(
-    () => courseList?.map((c) => ({ id: c.id, title: c.title })) ?? null,
-    [courseList],
+  const { data: overview } = useApi((token) => api.staff.overview(token), [pathname]);
+  const { data: waitingList } = useApi(
+    (token) => (admin ? api.admin.students(token, undefined, 'waiting') : Promise.resolve(null)),
+    [admin],
   );
-  // Local UI state only — nothing downstream reads the selected course yet.
-  // Scoping the console's own screens by it is a later unit's job; the
-  // switcher is built now because SHELL-1 asks for it in the rail.
-  const [selectedCourseId, setSelectedCourseId] = React.useState<string | null>(null);
-  const effectiveSelected = selectedCourseId ?? courses?.[0]?.id ?? null;
+  const toReview = overview?.awaitingGrading ?? 0;
+  const waiting = waitingList?.length ?? 0;
 
-  const groups = sectionsFor(admin, overview?.studentCount ?? null);
-  const activeHref = activeHrefFor(
-    pathname,
-    groups.flatMap((g) => g.items.map((i) => i.href)),
+  const nav = navFor(admin, toReview, waiting);
+  const all = [...nav.top, ...nav.teaching, ...nav.folders.flatMap((f) => f.kids), ...nav.comms, ...nav.system];
+  const activeHref = activeHrefFor(pathname, all.map((l) => l.href));
+
+  const [folders, setFolders] = React.useState<Record<string, boolean>>({});
+  const folderOpen = (f: Folder) => folders[f.id] ?? f.kids.some((k) => k.href === activeHref);
+
+  const pill = (l: Leaf, sub = false) => (
+    <NavPill
+      key={l.href}
+      href={l.href}
+      label={l.label}
+      icon={l.icon}
+      sub={sub}
+      badge={l.badge || null}
+      badgeTone={l.badgeTone}
+      active={l.href === activeHref}
+    />
+  );
+
+  const side = (
+    <nav aria-label="Main" className="cl-side cl-side--staff">
+      <div className="flex flex-col gap-2.5 pb-2.5 ps-4">
+        <NewMenu />
+        <NavSearch admin={admin} />
+      </div>
+      {nav.top.map((l) => pill(l))}
+      <div className="cl-nav-div" />
+      {nav.teaching.map((l) => pill(l))}
+      {nav.folders.map((f) => {
+        const open = folderOpen(f);
+        const hasActive = f.kids.some((k) => k.href === activeHref);
+        const badge = f.kids.reduce((n, k) => n + (k.badge ?? 0), 0);
+        return (
+          <React.Fragment key={f.id}>
+            <NavFolder
+              label={f.label}
+              icon={f.icon}
+              open={open}
+              hasActive={hasActive}
+              badge={badge || null}
+              onToggle={() => setFolders((s) => ({ ...s, [f.id]: !open }))}
+            />
+            {open && f.kids.map((k) => pill(k, true))}
+          </React.Fragment>
+        );
+      })}
+      {nav.comms.map((l) => pill(l))}
+      <div className="cl-nav-div" />
+      {nav.system.map((l) => pill(l))}
+    </nav>
+  );
+
+  const rail = (
+    <nav aria-label="Main (collapsed)" className="cl-rail">
+      <Link href="/manage/tasks/new" aria-label="New task" title="New task" className="cl-newbtn mb-2 w-12 justify-center p-0">
+        <ClIcon name="plus" size={20} />
+      </Link>
+      {all.map((l) => (
+        <RailButton key={l.href} href={l.href} label={l.label} icon={l.icon} active={l.href === activeHref} />
+      ))}
+    </nav>
+  );
+
+  const top = (
+    <header className="cl-top flex-wrap print:hidden">
+      <button type="button" className="cl-ibtn" aria-label="Toggle menu" onClick={toggle}>
+        <ClIcon name="menu" />
+      </button>
+      <Brand href="/manage" />
+      {chrome?.backHref && (
+        <button type="button" className="cl-ibtn" aria-label="Back" onClick={() => router.push(chrome.backHref as string)}>
+          <ClIcon name="back" className="rtl:rotate-180" />
+        </button>
+      )}
+      {chrome?.title && (
+        <>
+          <span className="cl-crumb-sep cl-hide-sm" aria-hidden>
+            /
+          </span>
+          <h1 className="cl-crumb cl-hide-sm m-0">{chrome.title}</h1>
+        </>
+      )}
+      <div className="flex-1" />
+      <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">{actions}</div>
+      <CourseMenu />
+      <Link
+        href="/manage/submissions"
+        className="cl-ibtn"
+        aria-label={toReview > 0 ? `To review, ${toReview} waiting` : 'To review'}
+      >
+        <ClIcon name="bell" />
+        {toReview > 0 && <span className="cl-countbadge">{toReview > 99 ? '99+' : toReview}</span>}
+      </Link>
+      <AccountMenu />
+    </header>
   );
 
   return (
-    <div className="flex min-h-[100dvh] bg-surface">
-      <aside
-        className={cx(
-          'fixed inset-y-0 start-0 z-40 flex w-[244px] flex-col border-e border-border-light bg-surface-2',
-          'transition-transform duration-[var(--dur-fast)] ease-[var(--ease)] print:hidden',
-          // Closed only below `md`. A `md:translate-x-0` override lost to
-          // `rtl:translate-x-full` (emitted later, same specificity), which hid
-          // the sidebar on every desktop page under `dir="rtl"`.
-          open ? 'translate-x-0' : 'max-md:-translate-x-full max-md:rtl:translate-x-full',
-        )}
-      >
-        <div className="flex h-[52px] shrink-0 items-center border-b border-border-light px-2">
-          <CourseSwitcher
-            courses={courses}
-            selectedId={effectiveSelected}
-            onSelect={setSelectedCourseId}
-            loading={!courseList}
-            className="flex-1"
-          />
-        </div>
+    <ShellFrame top={top} side={side} rail={rail} navOpen={navOpen} drawer={drawer} onCloseDrawer={() => setDrawer(false)} wide>
+      {children}
+    </ShellFrame>
+  );
+}
 
-        <nav className="flex flex-1 flex-col gap-3 overflow-y-auto px-2 py-3">
-          {groups.map((group, i) => (
-            <NavSection key={group.title ?? i} title={group.title}>
-              {group.items.map((item) => (
-                <NavItem
-                  key={item.href}
-                  href={item.href}
-                  icon={item.icon}
-                  label={item.label}
-                  count={item.count}
-                  indent={item.indent}
-                  active={item.href === activeHref}
-                />
-              ))}
-            </NavSection>
+/** The artifact's "New" button. Only creators with a screen behind them. */
+function NewMenu() {
+  const [open, setOpen] = React.useState(false);
+  const close = React.useCallback(() => setOpen(false), []);
+  const ref = useDismiss(open, close);
+  const items: { href: string; label: string; sub: string; icon: IconKey; tone: string }[] = [
+    { href: '/manage/tasks/new', label: 'New task', sub: 'Homework, assignment or quiz', icon: 'tasks', tone: 'cl-tone-peach' },
+    { href: '/manage/live-sessions?new=1', label: 'New session', sub: 'Schedule a live class', icon: 'schedule', tone: 'cl-tone-blue' },
+    { href: '/manage/recordings', label: 'Add recording', sub: 'Add a session video link', icon: 'live', tone: 'cl-tone-sky' },
+    { href: '/manage/announcements', label: 'New announcement', sub: 'Post to a course or group', icon: 'announce', tone: 'cl-tone-sand' },
+  ];
+  return (
+    <div ref={ref} className="relative">
+      <button type="button" className="cl-newbtn" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <ClIcon name="plus" size={20} />
+        New
+      </button>
+      {open && (
+        <div className="cl-newmenu" role="menu">
+          {items.map((n) => (
+            <Link key={n.href} href={n.href} role="menuitem" className="cl-aopt" onClick={close}>
+              <span className={`cl-ic40 ${n.tone}`} style={{ width: 32, height: 32 }}>
+                <ClIcon name={n.icon} small size={16} />
+              </span>
+              <span>
+                <span className="block">{n.label}</span>
+                <span className="cl-muted block text-[12px]">{n.sub}</span>
+              </span>
+            </Link>
           ))}
-        </nav>
+        </div>
+      )}
+    </div>
+  );
+}
 
-        <div className="flex items-center justify-between gap-2 border-t border-border-light p-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <Avatar name={user?.name ?? ''} size={20} />
-            <div className="flex min-w-0 flex-col">
-              <span className="truncate text-base font-medium text-fg">{user?.name}</span>
-              <Tag tone={roleTone(user?.role)}>{roleLabel(user?.role)}</Tag>
+function NavSearch({ admin }: { admin: boolean }) {
+  const router = useRouter();
+  const [q, setQ] = React.useState('');
+  return (
+    <form
+      role="search"
+      className="cl-navsearch"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const term = q.trim();
+        const base = admin ? '/manage/students' : '/manage/tasks';
+        router.push(term ? `${base}?search=${encodeURIComponent(term)}` : base);
+      }}
+    >
+      <ClIcon name="search" small />
+      <input
+        type="search"
+        aria-label={admin ? 'Search students' : 'Search tasks'}
+        placeholder={admin ? 'Search students…' : 'Search tasks…'}
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+      />
+    </form>
+  );
+}
+
+/**
+ * "Showing <course>". The old rail's switcher selected a course that nothing
+ * read; here picking one opens that course, which is what the artifact's
+ * "Showing" implies a teacher wants.
+ */
+function CourseMenu() {
+  const router = useRouter();
+  const { data: courses } = useApi((token) => api.staff.courses(token), []);
+  const [open, setOpen] = React.useState(false);
+  const close = React.useCallback(() => setOpen(false), []);
+  const ref = useDismiss(open, close);
+  if (!courses || courses.length === 0) return null;
+  const label = courses.length === 1 ? courses[0].title : 'All courses';
+  return (
+    <div ref={ref} className="relative cl-hide-sm">
+      <button type="button" className="cl-cbtn" aria-haspopup="menu" aria-expanded={open} aria-label="Change course" onClick={() => setOpen((v) => !v)}>
+        <span>Showing</span>
+        <b>{label}</b>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--cl-blue-deep)" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+      {open && (
+        <div className="cl-cdrop" role="menu">
+          <div className="cl-menu-h">Courses</div>
+          {courses.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              role="menuitem"
+              className="cl-copt"
+              onClick={() => {
+                close();
+                router.push(`/manage/courses/${c.id}`);
+              }}
+            >
+              <span className="cl-ic40 cl-tone-blue" style={{ width: 32, height: 32, fontSize: 12, fontWeight: 700 }}>
+                {initialsOf(c.title)}
+              </span>
+              <span className="min-w-0 flex-1 truncate">{c.title}</span>
+            </button>
+          ))}
+          <div className="cl-menu-sep" />
+          <Link href="/manage/courses" role="menuitem" className="cl-copt" onClick={close}>
+            All courses
+          </Link>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AccountMenu() {
+  const { user, signOut } = useSession();
+  const [open, setOpen] = React.useState(false);
+  const close = React.useCallback(() => setOpen(false), []);
+  const ref = useDismiss(open, close);
+  const isTeacher = user?.role === 'teacher';
+
+  return (
+    <div ref={ref} className="relative">
+      <button type="button" className="cl-acct" aria-label="Account menu" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        {isTeacher ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={TEACHER_AVATAR} alt="" className="h-[34px] w-[34px] rounded-full object-cover" />
+        ) : (
+          <span className="cl-av" style={{ width: 34, height: 34 }}>
+            {initialsOf(user?.name ?? '')}
+          </span>
+        )}
+        <span className="cl-hide-sm">{roleLabel(user?.role)}</span>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--cl-label)" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+      {open && (
+        <div className="cl-menu" role="menu">
+          <div className="px-3 pb-2 pt-1.5">
+            <div className="truncate text-[15px] text-fg">{user?.name}</div>
+            <div className="cl-label truncate text-[12.5px]">
+              {roleLabel(user?.role)} · {user?.email}
             </div>
           </div>
-          <IconButton icon="Logout" label="Sign out" onClick={() => void signOut()} />
+          <div className="cl-menu-sep" />
+          <Link href="/manage/account" role="menuitem" className="cl-mi" onClick={close}>
+            Account
+          </Link>
+          <Link href="/manage/settings" role="menuitem" className="cl-mi" onClick={close}>
+            Settings
+          </Link>
+          <div className="flex items-center justify-between px-3 py-1.5 text-[14px] font-semibold text-fg">
+            Theme
+            <ThemeToggle size="sm" />
+          </div>
+          <div className="cl-menu-sep" />
+          <button
+            type="button"
+            role="menuitem"
+            className="cl-mi"
+            style={{ color: 'var(--cl-bad)' }}
+            onClick={() => {
+              close();
+              void signOut();
+            }}
+          >
+            Sign out
+          </button>
         </div>
-      </aside>
-
-      {open && (
-        <button
-          type="button"
-          aria-label="Close navigation"
-          onClick={() => setOpen(false)}
-          className="fixed inset-0 z-30 bg-surface-overlay md:hidden"
-        />
       )}
-
-      <div className="flex min-w-0 flex-1 flex-col md:ms-[244px] print:ms-0">
-        <div className="print:hidden">
-          <ShellHeader open={open} onToggle={() => setOpen((v) => !v)} />
-        </div>
-        <main id="main" className="min-w-0 flex-1">
-          {children}
-        </main>
-      </div>
     </div>
   );
 }

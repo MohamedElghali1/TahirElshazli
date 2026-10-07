@@ -13,13 +13,11 @@ export default function NewTaskPage() {
   return (
     <>
       <PageTitle title="New task" backHref="/manage/tasks" />
-      <div className="p-6">
-        <TaskForm
-          task={null}
-          initialCourseId={params.get('course') ?? ''}
-          initialDraftId={params.get('draft')}
-        />
-      </div>
+      <TaskForm
+        task={null}
+        initialCourseId={params.get('course') ?? ''}
+        initialDraftId={params.get('draft')}
+      />
     </>
   );
 }

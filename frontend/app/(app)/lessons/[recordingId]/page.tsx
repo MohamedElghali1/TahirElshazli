@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
 import {
-  ASSESSMENT_STATUS_CHIP,
   ASSESSMENT_STATUS_LABEL,
   ASSESSMENT_TYPE_LABEL,
   formatDate,
@@ -14,19 +13,8 @@ import {
   isQuizWork,
 } from '@/lib/format';
 import type { AssessmentListItem, Material, RecordingWithProgress } from '@/lib/types';
-import {
-  Panel,
-  EmptyState,
-  Loader,
-  Tag,
-  Button,
-  ButtonLink,
-  Breadcrumb,
-  PageHeader,
-  Icon,
-  cx,
-  type TagTone,
-} from '@/components/ui';
+import { BackLink, ClEmpty, ClError, ClSkeleton, PanelHead } from '@/components/classroom/ui';
+import { ClIcon } from '@/components/shell/classroom';
 import { PageTitle } from '@/components/shell/page-chrome';
 import { CourseGate } from '@/components/student/course-gate';
 import { useSelectedCourse } from '@/components/shell/course-context';
@@ -41,28 +29,9 @@ import { RecordingPlayer } from '@/components/student/recording-player';
  * recording missing from the selected course is not a refusal until the
  * student's own other courses have been checked; see `FindInOtherCourses`.
  *
- * "Its material" was the open half of `STU-3` and is now built. `materials`
- * originally carried `course_id` and `category` and nothing naming a lesson,
- * so unit 13 raised that as a blocker rather than showing the whole course's
- * materials as though they were this lesson's. Migration `025` adds
- * `materials.lesson_id`; the client ruled on 2026-09-24 to follow the design.
- *
- * Note what is still NOT here: there is no staff control to *set* that lesson,
- * because materials have no authoring surface at all — the module exposes one
- * `GET` and nothing else, and every material arrives by seed. Building CRUD for
- * them is a feature of its own, not a detail of this page.
+ * Materials carry `lesson_id` (migration `025`); there is still no staff
+ * control to set it, materials have no authoring surface.
  */
-
-// `ASSESSMENT_STATUS_CHIP` still speaks the legacy tone name `'neutral'` — the
-// new `Tag` scale calls it `'gray'`. Same map `/homework` uses.
-const TONE: Record<string, TagTone> = {
-  neutral: 'gray',
-  blue: 'blue',
-  amber: 'amber',
-  green: 'green',
-  red: 'red',
-  violet: 'violet',
-};
 
 type ProgressOverride = Pick<RecordingWithProgress, 'watchedSeconds' | 'completed' | 'completedAt'>;
 
@@ -83,7 +52,7 @@ export default function LessonDetailPage({
 
   return (
     <>
-      <PageTitle title="My lessons" backHref="/lessons" />
+      <PageTitle title="Recordings" backHref="/lessons" />
       <CourseGate loading={loading} hasCourses={Boolean(courses && courses.length > 0)}>
         {selectedId && (
           <LessonDetail
@@ -120,6 +89,7 @@ function LessonDetail({
     (token) => api.assessments.list(token, courseId),
     [courseId],
   );
+  const { data: course } = useApi((token) => api.courses.get(token, courseId), [courseId]);
   const { data: materials } = useApi(
     (token) => api.materials.list(token, courseId),
     [courseId],
@@ -127,21 +97,24 @@ function LessonDetail({
 
   if (loading) {
     return (
-      <div className="flex justify-center p-12">
-        <Loader label="Loading lesson" />
-      </div>
+      <section className="cl-panel" aria-busy>
+        <ClSkeleton rows={3} label="Loading lesson" />
+      </section>
     );
   }
 
   if (error) {
     return (
-      <div className="p-6">
-        <EmptyState
-          icon="AlertTriangle"
-          title={error.isNotFound ? 'This lesson is not available to you.' : error.message}
-          action={!error.isNotFound && <Button onClick={reload}>Try again</Button>}
-        />
-      </div>
+      <>
+        <BackLink href="/lessons">All lessons</BackLink>
+        <section className="cl-panel">
+          {error.isNotFound ? (
+            <ClEmpty icon="close" title="This lesson is not available to you." />
+          ) : (
+            <ClError message={error.message} onRetry={reload} />
+          )}
+        </section>
+      </>
     );
   }
 
@@ -152,16 +125,9 @@ function LessonDetail({
 
   // Not in the selected course. Before saying no, look at the student's OWN
   // other courses: this page is reached by a link, and a link does not carry
-  // the rail's course selection with it. A student in two courses who follows
-  // a bookmarked lesson while the switcher sits on the other one was being
-  // told "not available to you" about a lesson they are fully entitled to —
-  // the UI lying about the reader's own access, which is the mirror of the
-  // 403-not-404 rule in CLAUDE.md §7.
-  //
-  // Bounded by §1: a student holds one to three courses, so this is at most
-  // two extra reads and only on the miss path. It searches nothing the caller
-  // is not already enrolled in, so it widens no access — the server still
-  // refuses anything else.
+  // the rail's course selection with it (the mirror of CLAUDE.md §7's
+  // 403-not-404 rule). Bounded by §1: at most two extra reads, only on the
+  // miss path, and only courses the caller is already enrolled in.
   if (index === -1) {
     return (
       <FindInOtherCourses
@@ -176,21 +142,19 @@ function LessonDetail({
   const next = index < recordings.length - 1 ? recordings[index + 1] : null;
 
   // The work set from this lesson: assessments sharing its lessonId, minus
-  // Google Form work (that is a quiz and lives on `/quizzes` — same exclusion
-  // `/homework` applies, for the same reason).
+  // Google Form work (a quiz, which lives on `/quizzes`).
   const work = (assessments ?? []).filter(
     (item) => item.lessonId === recording.lessonId && !isQuizWork(item.workType),
   );
 
-  // This lesson's material (`025`, `STU-3`). The endpoint groups by category
-  // because that is what the course Materials page renders; here the grouping
-  // is not the point — the lesson is — so it is flattened and filtered by
-  // `lessonId`. Most materials are course-wide and carry a null, so the common
-  // result is an empty list, and the panel says so rather than implying the
-  // teacher forgot something.
+  // This lesson's material (`025`, `STU-3`): the endpoint groups by category,
+  // so flatten and filter by `lessonId`. Most materials are course-wide (null).
   const lessonMaterials = Object.values(materials ?? {})
     .flat()
     .filter((m) => m.lessonId === recording.lessonId);
+
+  const lessonTitle =
+    (course?.modules ?? []).flatMap((m) => m.lessons).find((l) => l.id === recording.lessonId)?.title ?? '';
 
   const handleProgress = (watchedSeconds: number) => {
     if (!token) return;
@@ -209,128 +173,94 @@ function LessonDetail({
   };
 
   return (
-    <div className="flex flex-col gap-6 p-6">
-      <PageHeader
-        breadcrumb={
-          <Breadcrumb items={[{ href: '/lessons', label: 'My lessons' }, { label: recording.title }]} />
-        }
-        title={recording.title}
-        description={
-          <span className="flex flex-wrap items-center gap-2">
-            <Tag>{recording.chapter}</Tag>
-            {recording.completed && <Tag tone="green">Watched</Tag>}
-            <span className="num text-xs text-fg-3">
-              {formatDate(recording.lessonDate)} · {formatDuration(recording.durationSeconds)}
-            </span>
-          </span>
-        }
-      />
+    <>
+      <BackLink href="/lessons">All lessons</BackLink>
 
-      <div className="grid gap-6 xl:grid-cols-[3fr_2fr]">
-        <div className="flex flex-col gap-6">
-          <Panel bodyClassName="p-4">
-            <RecordingPlayer
-              recording={recording}
-              initialWatchedSeconds={recording.watchedSeconds}
-              onProgress={handleProgress}
-            />
-            {recording.topics.length > 0 && (
-              <div className="mt-4 flex flex-wrap gap-2">
-                {recording.topics.map((topic) => (
-                  <Tag key={topic}>{topic}</Tag>
-                ))}
-              </div>
-            )}
-          </Panel>
-
-          <Panel title="Work set from this lesson" bodyClassName={work.length > 0 ? '' : 'p-4'}>
-            {work.length === 0 ? (
-              <EmptyState
-                icon="Clipboard"
-                title="Nothing set from this lesson"
-                description="Homework and assignments set from this recording appear here. Quizzes live on their own page."
-              />
-            ) : (
-              <ul className="divide-y divide-border-light">
-                {work.map((item) => (
-                  <li key={item.id}>
-                    <WorkRow item={item} />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Panel>
+      <section className="cl-panel" aria-label="Now playing" style={{ padding: 16 }}>
+        <div className="overflow-hidden rounded-2xl bg-black">
+          <RecordingPlayer
+            recording={recording}
+            initialWatchedSeconds={recording.watchedSeconds}
+            onProgress={handleProgress}
+          />
         </div>
-
-        <div className="flex flex-col gap-6">
-          <NextRecordingCard next={next} />
-
-          <Panel
-            title="Material from this lesson"
-            action={
-              <Link href="/materials" className="text-xs text-fg-3 hover:text-fg">
-                All materials
-              </Link>
-            }
-            bodyClassName={lessonMaterials.length > 0 ? '' : 'p-4'}
-          >
-            {lessonMaterials.length === 0 ? (
-              <p className="text-base text-fg-4">
-                Nothing is attached to this lesson. The course&rsquo;s own materials are on the
-                materials page.
-              </p>
-            ) : (
-              <ul className="divide-y divide-border-light">
-                {lessonMaterials.map((material) => (
-                  <li key={material.id}>
-                    <MaterialRow material={material} />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Panel>
+        <div className="px-2 pb-1 pt-4">
+          <h1 className="cl-pt cl-pt--sm">{recording.title}</h1>
+          <p className="cl-muted num mt-1 text-[13.5px]">
+            {[lessonTitle, formatDate(recording.lessonDate), formatDuration(recording.durationSeconds)]
+              .filter(Boolean)
+              .join(' · ')}
+            {recording.completed && <span style={{ color: 'var(--cl-ok)' }}> · Watched</span>}
+          </p>
         </div>
-      </div>
-    </div>
+      </section>
+
+      <section className="cl-panel" aria-labelledby="work-h">
+        <PanelHead title="Work set from this lesson" id="work-h" />
+        {work.length === 0 ? (
+          <ClEmpty
+            icon="pen"
+            title="Nothing set from this lesson"
+            hint="Homework and assignments set from this recording appear here. Quizzes live on their own page."
+          />
+        ) : (
+          <div>
+            {work.map((item) => (
+              <WorkRow key={item.id} item={item} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="cl-panel" aria-labelledby="mat-h">
+        <PanelHead title="Material from this lesson" id="mat-h">
+          <Link href="/materials" className="cl-glink">
+            All materials
+          </Link>
+        </PanelHead>
+        {lessonMaterials.length === 0 ? (
+          <p className="cl-muted text-[14px]">
+            Nothing is attached to this lesson. The course&rsquo;s own materials are on the materials page.
+          </p>
+        ) : (
+          <div>
+            {lessonMaterials.map((material) => (
+              <MaterialRow key={material.id} material={material} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <NextRecordingCard next={next} />
+    </>
   );
 }
 
 /**
- * One material attached to this lesson.
- *
- * Deliberately the same row shape and the same affordances as `/materials` —
+ * One material attached to this lesson. Same affordances as `/materials`:
  * an anchor straight to the file, type and size on the end, `rel="noreferrer"`.
- * A student who has learned to read that row on one page should not have to
- * learn a second one here.
  */
 function MaterialRow({ material }: { material: Material }) {
   return (
-    <a
-      href={material.fileUrl}
-      target="_blank"
-      rel="noreferrer"
-      className="flex items-center gap-3 px-4 py-3 transition-colors duration-[var(--dur-fast)] ease-[var(--ease)] hover:bg-wash-hover"
-    >
-      <Icon name="FileText" size={16} className="shrink-0 text-fg-3" />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-base text-fg">{material.title}</span>
-        <span className="num mt-1 block text-xs text-fg-3">
+    <a href={material.fileUrl} target="_blank" rel="noreferrer" className="cl-grow">
+      <span className="cl-ic40 cl-tone-sand">
+        <ClIcon name="doc" small />
+      </span>
+      <span className="cl-grow-main">
+        {material.title}
+        <span className="cl-sub num">
           {material.fileType.toUpperCase()} · {formatFileSize(material.fileSizeBytes)}
         </span>
       </span>
-      <Icon name="ArrowDown" size={16} className="shrink-0 text-fg-2" />
+      <ClIcon name="download" small />
     </a>
   );
 }
 
 /**
  * The miss path: is this recording on one of the student's *other* courses?
- *
- * If it is, switch the rail to that course — the page then re-renders through
- * the normal path and shows the lesson. If it is not, the recording is
- * genuinely not the caller's and the refusal stands. Either way this reads
- * only courses the student is already enrolled in; the server's own checks are
- * untouched and nothing here can widen access.
+ * If so, switch the rail to that course. Reads only courses the student is
+ * already enrolled in; the server's own checks are untouched.
  */
 function FindInOtherCourses({
   recordingId,
@@ -371,82 +301,82 @@ function FindInOtherCourses({
 
   if (!settled) {
     return (
-      <div className="flex justify-center p-12">
-        <Loader label="Finding this lesson" />
-      </div>
+      <section className="cl-panel" aria-busy>
+        <ClSkeleton rows={2} label="Finding this lesson" />
+      </section>
     );
   }
 
   return (
-    <div className="p-6">
-      <EmptyState
-        icon="AlertTriangle"
-        title="This lesson is not available to you."
-        description="It may have been removed, or it belongs to a course you are not enrolled in."
-        action={<ButtonLink href="/lessons">Back to my lessons</ButtonLink>}
-      />
-    </div>
+    <>
+      <BackLink href="/lessons">All lessons</BackLink>
+      <section className="cl-panel">
+        <ClEmpty
+          icon="close"
+          title="This lesson is not available to you."
+          hint="It may have been removed, or it belongs to a course you are not enrolled in."
+          action={
+            <Link href="/lessons" className="cl-btnp">
+              Back to my lessons
+            </Link>
+          }
+        />
+      </section>
+    </>
   );
 }
 
 function WorkRow({ item }: { item: AssessmentListItem }) {
   const locked = item.status === 'locked';
 
-  const row = (
-    <div
-      className={cx(
-        'flex items-center gap-3 px-4 py-3 transition-colors duration-[var(--dur-fast)] ease-[var(--ease)]',
-        locked ? 'opacity-60' : 'hover:bg-wash-hover',
-      )}
-    >
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-base font-medium text-fg">{item.title}</span>
-          <Tag tone={TONE[ASSESSMENT_STATUS_CHIP[item.status]] ?? 'gray'}>
-            {ASSESSMENT_STATUS_LABEL[item.status]}
-          </Tag>
-        </div>
-        <p className="mt-1 truncate text-xs text-fg-3">{ASSESSMENT_TYPE_LABEL[item.type]}</p>
-      </div>
-
-      <div className="w-[72px] shrink-0 text-end">
+  const body = (
+    <>
+      <span className="cl-ic40 cl-tone-peach">
+        <ClIcon name="pen" small />
+      </span>
+      <span className="cl-grow-main">
+        {item.title}
+        <span className="cl-sub">
+          {ASSESSMENT_TYPE_LABEL[item.type]} · {ASSESSMENT_STATUS_LABEL[item.status]}
+        </span>
+      </span>
+      <span className="num min-w-[72px] text-end">
         {item.score === null ? (
-          <span className="num text-xs text-fg-4">—</span>
+          <span className="cl-muted">—</span>
         ) : (
-          <span className="num text-base text-fg">
+          <>
             {item.score}
-            <span className="text-fg-4">/{item.maxScore}</span>
-          </span>
+            <span className="cl-muted">/{item.maxScore}</span>
+          </>
         )}
-      </div>
-    </div>
+      </span>
+    </>
   );
 
   // A locked task is not a link, same reasoning as `/homework`'s own row.
-  return locked ? <div aria-disabled>{row}</div> : <Link href={`/homework/${item.id}`}>{row}</Link>;
+  return locked ? (
+    <div className="cl-grow opacity-60" aria-disabled>
+      {body}
+    </div>
+  ) : (
+    <Link href={`/homework/${item.id}`} className="cl-grow">
+      {body}
+    </Link>
+  );
 }
 
 /**
- * Next by `order` on this course. `thumbnailUrl` is null for everything today
- * (`023_recording_thumbnails.sql`), so the icon fallback is the normal path,
- * not an edge case — same as the library's own curriculum grid.
+ * Next by `order` on this course. `thumbnailUrl` is null for everything today,
+ * so the icon fallback is the normal path.
  */
 function NextRecordingCard({ next }: { next: RecordingWithProgress | null }) {
-  if (!next) {
-    return (
-      <Panel title="Next recording">
-        <p className="text-base text-fg-4">This is the last recording on the course.</p>
-      </Panel>
-    );
-  }
-
   return (
-    <Panel title="Next recording" bodyClassName="p-3">
-      <Link
-        href={`/lessons/${next.id}`}
-        className="flex gap-3 rounded-md p-2 transition-colors duration-[var(--dur-fast)] ease-[var(--ease)] hover:bg-wash-hover"
-      >
-        <span className="relative block aspect-video w-[120px] shrink-0 overflow-hidden rounded-sm bg-surface-3">
+    <section className="cl-panel" aria-labelledby="next-h">
+      <PanelHead title="Next recording" id="next-h" />
+      {!next ? (
+        <p className="cl-muted text-[14px]">This is the last recording on the course.</p>
+      ) : (
+        <Link href={`/lessons/${next.id}`} className="cl-grow">
           {next.thumbnailUrl ? (
             // A teacher-supplied external URL, not an optimizable local asset.
             // eslint-disable-next-line @next/next/no-img-element
@@ -456,19 +386,19 @@ function NextRecordingCard({ next }: { next: RecordingWithProgress | null }) {
               width={120}
               height={68}
               loading="lazy"
-              className="h-full w-full object-cover"
+              className="aspect-video w-[120px] shrink-0 rounded-xl object-cover"
             />
           ) : (
-            <span className="flex h-full w-full items-center justify-center">
-              <Icon name="Video" size={20} className="text-fg-4" />
+            <span className="cl-ic40 cl-tone-blue">
+              <ClIcon name="play" small />
             </span>
           )}
-        </span>
-        <span className="min-w-0">
-          <span className="block truncate text-xs font-medium text-fg">{next.title}</span>
-          <span className="num mt-1 block text-xxs text-fg-4">{formatDuration(next.durationSeconds)}</span>
-        </span>
-      </Link>
-    </Panel>
+          <span className="cl-grow-main">
+            {next.title}
+            <span className="cl-sub num">{formatDuration(next.durationSeconds)}</span>
+          </span>
+        </Link>
+      )}
+    </section>
   );
 }

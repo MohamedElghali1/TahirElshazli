@@ -1,46 +1,30 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
-import { api, ApiError, mediaSrc } from '@/lib/api';
+import { useRouter } from 'next/navigation';
+import { api, ApiError } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
 import { isAdminRole } from '@/lib/roles';
 import { formatDate } from '@/lib/format';
 import type { Announcement, GroupSummary, StaffCourseSummary } from '@/lib/types';
-import {
-  Avatar,
-  Button,
-  EmptyState,
-  Icon,
-  InlineBanner,
-  Loader,
-  Panel,
-  Select,
-  Table,
-  TableToolbar,
-  Tag,
-  TextArea,
-  TextInput,
-  type Column,
-} from '@/components/ui';
+import { Button, Icon, Loader, Select, TextArea, TextInput } from '@/components/ui';
 import { PageTitle } from '@/components/shell/page-chrome';
+import { ClIcon, TEACHER_AVATAR } from '@/components/shell/classroom';
+import { mediaLabel, stashPreview, youtubeEmbedUrl } from '@/components/classroom/announcement-view';
+import { ClEmpty, ClError, ClRowMenu, ClSkeleton, PanelHead, useToast } from '@/components/classroom/ui';
 
-function getYoutubeEmbedUrl(url: string): string | null {
-  try {
-    const parsed = new URL(url);
-    const host = parsed.hostname.replace(/^www\./, '');
-    if (host === 'youtube.com' || host === 'youtube-nocookie.com') {
-      const v = parsed.searchParams.get('v');
-      if (v) return `https://www.youtube-nocookie.com/embed/${v}`;
-    }
-    if (host === 'youtu.be') {
-      const id = parsed.pathname.slice(1);
-      if (id) return `https://www.youtube-nocookie.com/embed/${id}`;
-    }
-  } catch {
-    return null;
-  }
-  return null;
-}
+/**
+ * Staff announcements, Redesign V2 "ANNOUNCEMENTS": a composer panel on top
+ * (always open; picking Edit on a posted row loads it into the same panel) and
+ * the "Posted" list below with audience/status filters.
+ *
+ * Not drawn: the artifact's Schedule control. The API has no scheduled-send -
+ * an announcement is a draft or it is published (admin publishes; an
+ * assistant's post to a held course/group goes out directly) - and a date
+ * field with nothing behind it would be a lie. Gap noted in the report.
+ * The row's author shows as an avatar only when it is the signed-in teacher:
+ * `postedBy` is an id, and there is no staff-name lookup an assistant may call.
+ */
 
 function getAudienceLabel(
   rawAudience: string,
@@ -69,16 +53,18 @@ function getAudienceLabel(
 export default function AnnouncementsPage() {
   const { user, token } = useSession();
   const admin = isAdminRole(user?.role);
+  const [toast, flash] = useToast();
+  const router = useRouter();
 
-  const [composing, setComposing] = useState(false);
   const [editingAnnouncement, setEditingAnnouncement] = useState<Announcement | null>(null);
+  // Bumped after a post so the composer remounts empty.
+  const [composerKey, setComposerKey] = useState(0);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionStatus, setActionStatus] = useState<{ tone: 'green' | 'amber'; message: string } | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
 
   const [audienceFilter, setAudienceFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<'' | 'draft' | 'published'>('');
-
 
   const { data: courses } = useApi((t) => api.staff.courses(t), []);
 
@@ -151,7 +137,6 @@ export default function AnnouncementsPage() {
     return opts;
   }, [admin, courses, groups]);
 
-
   const handlePublish = async (a: Announcement) => {
     if (!token) return;
     setActionBusy(true);
@@ -203,214 +188,159 @@ export default function AnnouncementsPage() {
     }
   };
 
-  const columns: Column<Announcement>[] = [
-    {
-      label: 'Title',
-      render: (a) => (
-        <button
-          type="button"
-          onClick={() => {
-            setComposing(false);
-            setEditingAnnouncement(a);
-          }}
-          className="text-left font-medium text-fg underline-offset-4 hover:underline cursor-pointer"
-        >
-          {a.title}
-        </button>
-      ),
-    },
-    {
-      label: 'Audience',
-      render: (a) => (
-        <span className="text-fg-2">{getAudienceLabel(a.audience, courses ?? [], groups ?? [])}</span>
-      ),
-    },
-    {
-      label: 'Status',
-      render: (a) =>
-        a.publishedAt === null ? (
-          <Tag tone="amber">Draft</Tag>
-        ) : (
-          <Tag tone="green">Sent</Tag>
-        ),
-    },
-    {
-      label: 'Recipients',
-      align: 'end',
-      render: (a) => (
-        <span className="text-fg-2">{a.publishedAt === null ? '—' : a.recipientCount}</span>
-      ),
-    },
-    {
-      label: 'Date',
-      align: 'end',
-      render: (a) => (
-        <span className="text-fg-3">
-          {a.publishedAt ? formatDate(a.publishedAt) : formatDate(a.createdAt)}
-        </span>
-      ),
-    },
-    {
-      align: 'end',
-      render: (a) => (
-        <div className="flex items-center justify-end gap-2">
-          <Button
-            size="small"
-            onClick={() => {
-              setComposing(false);
-              setEditingAnnouncement(a);
-            }}
-          >
-            Edit
-          </Button>
-          {a.publishedAt === null && admin && (
-            <Button
-              size="small"
-              variant="primary"
-              disabled={actionBusy}
-              onClick={() => handlePublish(a)}
-            >
-              Publish
-            </Button>
-          )}
-          {a.publishedAt === null && (
-            <Button
-              size="small"
-              variant="tertiary"
-              disabled={actionBusy}
-              onClick={() => handleDelete(a)}
-            >
-              Delete
-            </Button>
-          )}
-        </div>
-      ),
-    },
-  ];
+  const closeComposer = () => {
+    setEditingAnnouncement(null);
+    setComposerKey((k) => k + 1);
+  };
 
   return (
     <>
       <PageTitle title="Announcements" />
-      <div className="flex flex-col gap-4 p-6">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="font-medium text-fg-2">
-            {admin ? 'All announcements' : 'Held courses and groups'}
-            {announcements && <> · <span className="num">{announcements.length}</span></>}
-          </span>
 
-          {!composing && !editingAnnouncement && (
-            <Button
-              variant="primary"
-              icon="Plus"
-              onClick={() => {
-                setEditingAnnouncement(null);
-                setComposing(true);
-              }}
-            >
-              New announcement
-            </Button>
+      <section aria-labelledby="an-new" className="cl-panel">
+        <PanelHead
+          id="an-new"
+          title={
+            editingAnnouncement
+              ? editingAnnouncement.publishedAt !== null
+                ? 'Edit announcement'
+                : 'Edit draft'
+              : 'New announcement'
+          }
+        >
+          {editingAnnouncement && (
+            <button type="button" className="cl-glink" onClick={closeComposer}>
+              Close
+            </button>
           )}
+        </PanelHead>
+        <ComposeAnnouncementForm
+          key={editingAnnouncement?.id ?? `new-${composerKey}`}
+          initialAnnouncement={editingAnnouncement}
+          courses={courses ?? []}
+          groups={groups ?? []}
+          admin={admin}
+          onDone={(message) => {
+            flash(message);
+            closeComposer();
+            reload();
+          }}
+          onCancel={closeComposer}
+        />
+      </section>
+
+      <section aria-labelledby="an-list" className="cl-panel">
+        <PanelHead id="an-list" title="Posted">
+          <span className="cl-muted text-[13px]">
+            {admin ? 'All announcements' : 'Held courses and groups'}
+            {announcements && ` · ${announcements.length}`}
+          </span>
+        </PanelHead>
+
+        <div className="mb-3 flex flex-wrap items-center gap-3">
+          <Select
+            aria-label="Audience"
+            className="w-[220px]"
+            value={audienceFilter}
+            onChange={(e) => setAudienceFilter(e.target.value)}
+            options={filterAudienceOptions}
+          />
+          <Select
+            aria-label="Status"
+            className="w-[160px]"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as '' | 'draft' | 'published')}
+            options={[
+              { value: '', label: 'All statuses' },
+              { value: 'published', label: 'Sent' },
+              { value: 'draft', label: 'Drafts' },
+            ]}
+          />
         </div>
 
-        {actionError && <InlineBanner tone="danger">{actionError}</InlineBanner>}
-        {actionStatus && <InlineBanner tone={actionStatus.tone}>{actionStatus.message}</InlineBanner>}
-
-        {(composing || editingAnnouncement) && (
-          <Panel
-            title={
-              editingAnnouncement
-                ? editingAnnouncement.publishedAt !== null
-                  ? 'Edit announcement'
-                  : 'Edit draft'
-                : 'New announcement'
-            }
-            action={
-              <Button
-                size="small"
-                variant="tertiary"
-                onClick={() => {
-                  setComposing(false);
-                  setEditingAnnouncement(null);
-                }}
-              >
-                Close
-              </Button>
-            }
+        {actionError && <ClError message={actionError} />}
+        {actionStatus && (
+          <p
+            role="status"
+            className="m-0 mb-3 px-2 text-[14px]"
+            style={{ color: actionStatus.tone === 'green' ? 'var(--cl-ok)' : 'var(--cl-warn)' }}
           >
-            <ComposeAnnouncementForm
-              initialAnnouncement={editingAnnouncement}
-              courses={courses ?? []}
-              groups={groups ?? []}
-              admin={admin}
-              onDone={() => {
-                setComposing(false);
-                setEditingAnnouncement(null);
-                reload();
-              }}
-              onCancel={() => {
-                setComposing(false);
-                setEditingAnnouncement(null);
-              }}
-            />
-          </Panel>
+            {actionStatus.message}
+          </p>
         )}
 
-        <Panel padded={false}>
-          <TableToolbar
-            filters={
-              <>
-                <Select
-                  aria-label="Audience"
-                  className="w-[220px]"
-                  value={audienceFilter}
-                  onChange={(e) => setAudienceFilter(e.target.value)}
-                  options={filterAudienceOptions}
-                />
-                <Select
-                  aria-label="Status"
-                  className="w-[160px]"
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value as '' | 'draft' | 'published')}
-                  options={[
-                    { value: '', label: 'All statuses' },
-                    { value: 'published', label: 'Sent' },
-                    { value: 'draft', label: 'Drafts' },
-                  ]}
-                />
-              </>
-            }
+        {loading && !announcements && <ClSkeleton rows={3} label="Loading announcements" />}
+        {error && <ClError message={error.message} onRetry={reload} />}
+        {announcements && announcements.length === 0 && (
+          <ClEmpty
+            icon="announce"
+            title="No announcements match"
+            hint="Announcements created for your scope appear here."
           />
-
-          {loading && !announcements && (
-            <div className="flex justify-center p-8">
-              <Loader label="Loading announcements" />
+        )}
+        {announcements?.map((a) => {
+          const mine = a.postedBy === user?.id;
+          const draft = a.publishedAt === null;
+          return (
+            <div key={a.id} className="cl-grow items-start">
+              <span className="cl-av shrink-0">
+                {mine && user?.role === 'teacher' ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={TEACHER_AVATAR} alt="" />
+                ) : (
+                  <ClIcon name="announce" small />
+                )}
+              </span>
+              <span className="cl-grow-main">
+                <span className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className="cursor-pointer border-0 bg-transparent p-0 text-start text-[15px] text-fg hover:underline"
+                    onClick={() => setEditingAnnouncement(a)}
+                  >
+                    {a.title}
+                  </button>
+                  {draft && (
+                    <span className="cl-ic40 cl-tone-sand !h-auto !w-auto rounded-full px-2 py-0.5 text-[12px]">
+                      Draft
+                    </span>
+                  )}
+                </span>
+                <span className="cl-sub">
+                  {mine ? 'You' : 'Staff'} · {getAudienceLabel(a.audience, courses ?? [], groups ?? [])} ·{' '}
+                  {formatDate(a.publishedAt ?? a.createdAt)}
+                  {!draft && ` · ${a.recipientCount} ${a.recipientCount === 1 ? 'recipient' : 'recipients'}`}
+                </span>
+                <span className="mt-1 line-clamp-2 block whitespace-pre-line text-[14px] text-fg-2">{a.body}</span>
+              </span>
+              <ClRowMenu
+                label={`Actions for ${a.title}`}
+                items={[
+                  {
+                    label: 'Preview',
+                    onSelect: () => {
+                      stashPreview({
+                        ...a,
+                        audienceLabel: getAudienceLabel(a.audience, courses ?? [], groups ?? []),
+                        date: a.publishedAt ?? a.createdAt,
+                      });
+                      router.push(`/manage/announcements/preview?id=${encodeURIComponent(a.id)}`);
+                    },
+                  },
+                  { label: 'Edit', onSelect: () => setEditingAnnouncement(a) },
+                  ...(draft && admin
+                    ? [{ label: 'Publish', onSelect: () => void handlePublish(a), disabled: actionBusy }]
+                    : []),
+                  ...(draft
+                    ? [{ label: 'Delete', danger: true, onSelect: () => void handleDelete(a), disabled: actionBusy }]
+                    : []),
+                ]}
+              />
             </div>
-          )}
-
-          {error && (
-            <EmptyState
-              icon="AlertTriangle"
-              title={error.message}
-              action={<Button onClick={reload}>Try again</Button>}
-            />
-          )}
-
-          {announcements && (
-            <Table
-              columns={columns}
-              rows={announcements ?? []}
-              rowKey={(a) => a.id}
-              empty={
-                <EmptyState
-                  icon="Message"
-                  title="No announcements match"
-                  description="Announcements created for your scope appear here."
-                />
-              }
-            />
-          )}
-        </Panel>
-      </div>
+          );
+        })}
+      </section>
+      {toast}
     </>
   );
 }
@@ -427,10 +357,11 @@ function ComposeAnnouncementForm({
   courses: StaffCourseSummary[];
   groups: GroupSummary[];
   admin: boolean;
-  onDone: () => void;
+  onDone: (message: string) => void;
   onCancel: () => void;
 }) {
-  const { user, token } = useSession();
+  const { token } = useSession();
+  const router = useRouter();
   const isPublished = initialAnnouncement !== null && initialAnnouncement.publishedAt !== null;
 
   const audienceOptions = useMemo(() => {
@@ -476,6 +407,20 @@ function ComposeAnnouncementForm({
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Which "Add ..." button opened the file picker - decides the accept filter and the stored kind.
+  const [pickKind, setPickKind] = useState<'image' | 'video' | 'file'>('image');
+
+  const pickFile = (kind: 'image' | 'video' | 'file') => {
+    setPickKind(kind);
+    setUploadError(null);
+    // The accept filter reads pickKind, so open the picker after it renders.
+    setTimeout(() => fileInputRef.current?.click(), 0);
+  };
+  const clearMedia = () => {
+    setMediaKind('');
+    setMediaUrl('');
+    setMediaReadUrl('');
+  };
 
   const { data: reachData, loading: reachLoading } = useApi(
     (t) => {
@@ -494,15 +439,12 @@ function ComposeAnnouncementForm({
       const res = await api.staff.upload(token, file);
       setMediaUrl(res.url);
       setMediaReadUrl(res.readUrl);
-      if (!mediaKind || mediaKind === 'youtube') {
-        if (res.kind === 'image') setMediaKind('image');
-        else if (res.kind === 'video') setMediaKind('video');
-        else setMediaKind('file');
-      }
+      setMediaKind(res.kind === 'image' ? 'image' : res.kind === 'video' ? 'video' : 'file');
     } catch (err) {
       setUploadError(err instanceof ApiError ? err.message : 'Could not upload file.');
     } finally {
       setUploading(false);
+      event.target.value = '';
     }
   };
 
@@ -598,7 +540,7 @@ function ComposeAnnouncementForm({
         }
       }
 
-      onDone();
+      onDone(publishNow ? 'Published.' : initialAnnouncement ? 'Changes saved.' : admin ? 'Draft saved.' : 'Posted.');
     } catch (err) {
       setFormError(err instanceof ApiError ? err.message : 'Could not save announcement.');
     } finally {
@@ -607,14 +549,13 @@ function ComposeAnnouncementForm({
   };
 
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-      {/* Compose Form */}
+    <div>
       <form
         onSubmit={(e) => {
           e.preventDefault();
           handleSubmit(false);
         }}
-        className="flex flex-col gap-4"
+        className="flex max-w-[640px] flex-col gap-4"
       >
         {isPublished ? (
           <div className="flex flex-col gap-1">
@@ -668,34 +609,52 @@ function ComposeAnnouncementForm({
           maxLength={2000}
         />
 
-        <div className="flex flex-col gap-3">
-          <Select
-            label="Media attachment"
-            value={mediaKind}
-            onChange={(e) => {
-              const k = e.target.value as 'image' | 'video' | 'youtube' | 'file' | '';
-              setMediaKind(k);
-              if (!k) {
-                setMediaUrl('');
-                setMediaReadUrl('');
-              }
-            }}
-            options={[
-              { value: '', label: 'None' },
-              { value: 'image', label: 'Image' },
-              { value: 'video', label: 'Video' },
-              { value: 'youtube', label: 'YouTube' },
-              { value: 'file', label: 'Document / File' },
-            ]}
+        <div className="flex flex-col gap-2">
+          <span className="cl-flab m-0">Attachment</span>
+          <input
+            type="file"
+            ref={fileInputRef}
+            className="hidden"
+            onChange={handleFileUpload}
+            accept={pickKind === 'image' ? 'image/*' : pickKind === 'video' ? 'video/*' : '.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.csv'}
           />
-
+          {mediaKind && mediaKind !== 'youtube' && mediaUrl.trim() ? (
+            <div className="cl-chip-row">
+              <span className="min-w-0 flex-1 truncate">
+                {mediaLabel(mediaKind)}
+              </span>
+              <button type="button" className="cl-glink cl-glink--danger" onClick={clearMedia}>
+                Remove
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" className="cl-btns" disabled={uploading} onClick={() => pickFile('image')}>
+                Add photo
+              </button>
+              <button type="button" className="cl-btns" disabled={uploading} onClick={() => pickFile('file')}>
+                Add document
+              </button>
+              <button type="button" className="cl-btns cl-btns--quiet" disabled={uploading} onClick={() => pickFile('video')}>
+                Add video
+              </button>
+              <button
+                type="button"
+                className="cl-btns cl-btns--quiet"
+                disabled={uploading}
+                onClick={() => (mediaKind === 'youtube' ? clearMedia() : setMediaKind('youtube'))}
+              >
+                Add YouTube link
+              </button>
+              {uploading && <Loader label="Uploading" />}
+            </div>
+          )}
           {mediaKind === 'youtube' && (
             <TextInput
               label="YouTube video URL"
               value={mediaUrl}
               onChange={(e) => {
-                // A pasted URL is always external - already fetchable, so the
-                // preview reads it directly (never platform-stored).
+                // A pasted URL is always external - already fetchable.
                 setMediaUrl(e.target.value);
                 setMediaReadUrl(e.target.value);
               }}
@@ -703,57 +662,36 @@ function ComposeAnnouncementForm({
               hint="Paste a public YouTube video URL"
             />
           )}
-
-          {(mediaKind === 'image' || mediaKind === 'video' || mediaKind === 'file') && (
-            <div className="flex flex-col gap-2">
-              <div className="flex items-end gap-2">
-                <div className="flex-1">
-                  <TextInput
-                    label="Media URL or path"
-                    value={mediaUrl}
-                    onChange={(e) => {
-                      // A hand-typed value is an external link, already
-                      // fetchable - unlike a stored `/uploads/...` path, which
-                      // only ever arrives via upload or an existing draft.
-                      setMediaUrl(e.target.value);
-                      setMediaReadUrl(e.target.value);
-                    }}
-                    placeholder="Upload a file or enter URL"
-                    hint="Upload a file or enter an http(s) URL"
-                  />
-                </div>
-                <div>
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    className="hidden"
-                    onChange={handleFileUpload}
-                    accept={
-                      mediaKind === 'image'
-                        ? 'image/*'
-                        : mediaKind === 'video'
-                          ? 'video/*'
-                          : undefined
-                    }
-                  />
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploading}
-                  >
-                    {uploading ? <Loader label="Uploading" /> : 'Upload file'}
-                  </Button>
-                </div>
-              </div>
-              {uploadError && <InlineBanner tone="danger">{uploadError}</InlineBanner>}
-            </div>
+          {mediaKind === 'youtube' && mediaUrl.trim() && !youtubeEmbedUrl(mediaUrl.trim()) && (
+            <p className="cl-muted m-0 text-[13px]">Students will see this as a link rather than an embedded player.</p>
           )}
+          {uploadError && <ClError message={uploadError} />}
         </div>
 
-        {formError && <InlineBanner tone="danger">{formError}</InlineBanner>}
+        {formError && <ClError message={formError} />}
 
-        <div className="flex items-center justify-end gap-2 pt-2">
+        <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+          <Button
+            type="button"
+            variant="tertiary"
+            onClick={() => {
+              stashPreview({
+                title,
+                body,
+                mediaKind: mediaKind || null,
+                mediaUrl: mediaUrl.trim() || null,
+                mediaReadUrl: mediaReadUrl.trim() || null,
+                audienceLabel: getAudienceLabel(
+                  isPublished ? initialAnnouncement.audience : audience,
+                  courses,
+                  groups,
+                ),
+              });
+              router.push('/manage/announcements/preview');
+            }}
+          >
+            Preview
+          </Button>
           <Button type="button" variant="tertiary" onClick={onCancel}>
             Cancel
           </Button>
@@ -764,7 +702,7 @@ function ComposeAnnouncementForm({
             disabled={busy}
             onClick={() => handleSubmit(false)}
           >
-            {isPublished ? 'Save changes' : 'Save draft'}
+            {isPublished ? 'Save changes' : admin ? 'Save draft' : 'Post'}
           </Button>
 
           {admin && !isPublished && (
@@ -779,104 +717,6 @@ function ComposeAnnouncementForm({
           )}
         </div>
       </form>
-
-      {/* Student View Preview */}
-      <div className="flex flex-col gap-2">
-        <span className="font-medium text-fg-2">Student preview</span>
-        <div className="flex flex-col gap-4 rounded-xl border border-border bg-surface p-5">
-          <div className="flex items-center justify-between">
-            <Tag tone="blue">Announcement</Tag>
-            <span className="text-fg-3">{formatDate(new Date().toISOString())}</span>
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <h3 className="font-semibold text-fg">{title.trim() || 'Untitled announcement'}</h3>
-            <div className="flex items-center gap-2 text-fg-3">
-              <Avatar name={user?.name ?? 'Teacher'} size={24} />
-              <span>{user?.name ?? 'Teacher'}</span>
-              <span>·</span>
-              <span>{getAudienceLabel(audience, courses, groups)}</span>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            {body.trim() ? (
-              body
-                .split('\n\n')
-                .map((p) => p.trim())
-                .filter(Boolean)
-                .map((p, idx) => (
-                  <p key={idx} className="leading-relaxed text-fg whitespace-pre-line">
-                    {p}
-                  </p>
-                ))
-            ) : (
-              <p className="italic text-fg-3">Announcement body preview will appear here.</p>
-            )}
-          </div>
-
-          {mediaKind && mediaUrl.trim() && (
-            <div className="pt-2">
-              {mediaKind === 'image' && (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={mediaSrc(mediaReadUrl.trim() || mediaUrl.trim())}
-                  alt={title || 'Announcement media'}
-                  className="max-h-[320px] w-full rounded-lg border border-border object-cover"
-                />
-              )}
-              {mediaKind === 'video' && (
-                <video
-                  controls
-                  src={mediaSrc(mediaReadUrl.trim() || mediaUrl.trim())}
-                  className="max-h-[320px] w-full rounded-lg border border-border"
-                />
-              )}
-              {mediaKind === 'youtube' &&
-                (() => {
-                  const embed = getYoutubeEmbedUrl(mediaUrl.trim());
-                  return embed ? (
-                    <div className="aspect-video w-full overflow-hidden rounded-lg border border-border">
-                      <iframe
-                        src={embed}
-                        title="YouTube video"
-                        className="h-full w-full"
-                        allowFullScreen
-                      />
-                    </div>
-                  ) : (
-                    <a
-                      href={mediaUrl.trim()}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-2 font-medium text-accent hover:underline"
-                    >
-                      <Icon name="PlayerPlay" size={16} /> Watch on YouTube
-                    </a>
-                  );
-                })()}
-              {mediaKind === 'file' && (
-                <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-bg-2 p-3">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Icon name="FileText" size={20} className="text-fg-2" />
-                    <span className="truncate font-medium text-fg">
-                      {mediaUrl.split('/').pop() || 'Attached file'}
-                    </span>
-                  </div>
-                  <a
-                    href={mediaSrc(mediaReadUrl.trim() || mediaUrl.trim())}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-medium text-accent hover:underline"
-                  >
-                    Download
-                  </a>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
     </div>
   );
 }

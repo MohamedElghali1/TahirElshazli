@@ -14,21 +14,16 @@ import type {
   QuestionAnalytics
 } from '@/lib/types';
 import {
-  Button,
-  EmptyState,
   InlineBanner,
-  Loader,
-  Panel,
-  Tag,
   Select,
-  type TagTone,
-  Meter,
   Score,
   SyncStatus,
   Table,
   type Column
 } from '@/components/ui';
 import { PageTitle } from '@/components/shell/page-chrome';
+import { ClIcon } from '@/components/shell/classroom';
+import { BackLink, ClBar, ClEmpty, ClError, ClSkeleton, ClStat, PanelHead } from '@/components/classroom/ui';
 
 /** One raw answer, as the CSV importer and the live sync both write it (`D-60`). */
 interface RawAnswer {
@@ -58,11 +53,11 @@ function isAnsweredRaw(raw: unknown): raw is AnsweredRaw {
   );
 }
 
-const WORK_STATUS: Record<WorkStatus, { label: string; tone: TagTone }> = {
-  not_available: { label: 'Not available', tone: 'gray' },
-  not_started: { label: 'Not started', tone: 'gray' },
-  submitted: { label: 'Submitted', tone: 'amber' },
-  graded: { label: 'Graded', tone: 'green' },
+const WORK_STATUS: Record<WorkStatus, { label: string; color: string }> = {
+  not_available: { label: 'Not available', color: 'var(--cl-muted)' },
+  not_started: { label: 'Not started', color: 'var(--cl-muted)' },
+  submitted: { label: 'Submitted', color: 'var(--cl-warn)' },
+  graded: { label: 'Graded', color: 'var(--cl-ok)' },
 };
 
 export default function TaskResultsPage({ params }: { params: Promise<{ id: string }> }) {
@@ -73,25 +68,30 @@ export default function TaskResultsPage({ params }: { params: Promise<{ id: stri
   return (
     <>
       <PageTitle title={task?.title ?? 'Results'} backHref="/manage/tasks" />
-      <div className="flex flex-col gap-4 p-6">
-        {loading && !tasks && (
-          <div className="flex justify-center p-8">
-            <Loader label="Loading task" />
-          </div>
-        )}
-        {error && (
-          <EmptyState icon="AlertTriangle" title={error.message} action={<Button onClick={reload}>Try again</Button>} />
-        )}
-        {tasks && !task && <EmptyState icon="ListDetails" title="Task not found" />}
-        
-        {task && task.workType !== 'google_form' && (
-          <EmptyState icon="ListDetails" title="No form results" description="This task does not use a Google Form." />
-        )}
-        
-        {task && task.workType === 'google_form' && (
-          <GoogleFormResults task={task} />
-        )}
-      </div>
+      <BackLink href="/manage/tasks">All tasks</BackLink>
+      {loading && !tasks && (
+        <section className="cl-panel">
+          <ClSkeleton rows={3} label="Loading task" />
+        </section>
+      )}
+      {error && (
+        <section className="cl-panel">
+          <ClError message={error.message} onRetry={reload} />
+        </section>
+      )}
+      {tasks && !task && (
+        <section className="cl-panel">
+          <ClEmpty icon="tasks" title="Task not found" />
+        </section>
+      )}
+
+      {task && task.workType !== 'google_form' && (
+        <section className="cl-panel">
+          <ClEmpty icon="tasks" title="No form results" hint="This task does not use a Google Form." />
+        </section>
+      )}
+
+      {task && task.workType === 'google_form' && <GoogleFormResults task={task} />}
     </>
   );
 }
@@ -206,11 +206,19 @@ function GoogleFormResults({ task }: { task: StaffTask }) {
   }
 
   if (analyticsQuery.loading && !analyticsQuery.data) {
-    return <div className="flex justify-center p-8"><Loader label="Loading results" /></div>;
+    return (
+      <section className="cl-panel">
+        <ClSkeleton rows={3} label="Loading results" />
+      </section>
+    );
   }
-  
+
   if (analyticsQuery.error && !analyticsQuery.data) {
-    return <EmptyState icon="AlertTriangle" title={analyticsQuery.error.message} action={<Button onClick={handleReload}>Try again</Button>} />;
+    return (
+      <section className="cl-panel">
+        <ClError message={analyticsQuery.error.message} onRetry={handleReload} />
+      </section>
+    );
   }
 
   const analytics = analyticsQuery.data;
@@ -225,11 +233,20 @@ function GoogleFormResults({ task }: { task: StaffTask }) {
   const RESULT_COLUMNS: Column<StudentWorkRow>[] = [
     {
       label: 'Student',
-      render: (r) => <span className="font-medium text-fg">{r.studentName}</span>
+      render: (r) => (
+        <span dir="auto" className="text-fg">
+          {r.studentName}
+        </span>
+      )
     },
     {
       label: 'Status',
-      render: (r) => <Tag tone={WORK_STATUS[r.status].tone}>{WORK_STATUS[r.status].label}</Tag>
+      render: (r) => (
+        <span className="inline-flex items-center gap-2" style={{ color: WORK_STATUS[r.status].color }}>
+          <span className="cl-dot" style={{ background: WORK_STATUS[r.status].color }} />
+          {WORK_STATUS[r.status].label}
+        </span>
+      )
     },
     {
       label: 'Score',
@@ -242,156 +259,145 @@ function GoogleFormResults({ task }: { task: StaffTask }) {
     {
       render: (r) =>
         r.resultId ? (
-          <Button
-            variant="tertiary"
+          <button
+            type="button"
+            className="cl-glink"
             disabled={viewingBusy}
             onClick={() => handleViewResult(r.studentName, r.resultId!)}
           >
             View
-          </Button>
+          </button>
         ) : null
     }
   ];
 
+  const completionPct = Math.round(analytics.completionRate ?? 0);
+
   return (
-    <div className="flex flex-col gap-4">
-      <Panel title="Summary">
-        <div className="flex flex-col gap-4 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex gap-6 text-base text-fg">
-              <div className="flex flex-col">
-                <span className="text-xs text-fg-3">Expected</span>
-                <span className="font-medium">{analytics.expected}</span>
-              </div>
-              <div className="flex flex-col">
-                <span className="text-xs text-fg-3">Completed</span>
-                <span className="font-medium">{analytics.completed}</span>
-              </div>
-              <div className="flex flex-col">
-                <span className="text-xs text-fg-3">Not completed</span>
-                <span className="font-medium">{analytics.notCompleted}</span>
-              </div>
-            </div>
-            <div className="flex flex-col items-end gap-2">
-              <div className="flex items-center gap-2">
-                {hasApiBinding && (
-                  <>
-                    <SyncStatus state={syncState} lastSynced={analytics.lastSyncedAt ? formatRelative(analytics.lastSyncedAt) : undefined} />
-                    <Button onClick={handleSync} variant="primary" disabled={syncing}>Sync now</Button>
-                  </>
-                )}
-                <input
-                  ref={fileInput}
-                  type="file"
-                  className="sr-only"
-                  accept=".csv,text/csv"
-                  onChange={handleFilePicked}
-                />
-                <Button
-                  icon="Upload"
-                  variant={hasApiBinding ? 'secondary' : 'primary'}
-                  disabled={importBusy}
-                  onClick={() => fileInput.current?.click()}
-                >
-                  {importBusy ? 'Reading…' : 'Import responses (CSV)'}
-                </Button>
-              </div>
-              <span className="text-xs text-fg-4">
-                In Google Forms: Responses → Download responses (.csv).
-              </span>
-            </div>
-          </div>
-
-          {importError && <InlineBanner tone="danger">{importError}</InlineBanner>}
-
-          {importPreview && (
-            <div className="flex flex-col gap-3 border-t border-border-light pt-4 mt-2">
-              <div className="flex flex-wrap gap-6 text-base text-fg">
-                <div className="flex flex-col">
-                  <span className="text-xs text-fg-3">Rows</span>
-                  <span className="font-medium">{importPreview.rows}</span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-xs text-fg-3">Matched</span>
-                  <span className="font-medium">{importPreview.matched}</span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-xs text-fg-3">Unmatched</span>
-                  <span className="font-medium">{importPreview.unmatched}</span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-xs text-fg-3">Questions</span>
-                  <span className="font-medium">{importPreview.questions}</span>
-                </div>
-              </div>
-              {importPreview.errors.length > 0 && (
-                <InlineBanner tone="amber">
-                  <div className="flex flex-col gap-1 py-1">
-                    {importPreview.errors.map((line, i) => (
-                      <span key={i}>{line}</span>
-                    ))}
-                  </div>
-                </InlineBanner>
-              )}
-              <div className="flex items-center gap-2">
-                <Button variant="primary" onClick={handleConfirmImport} disabled={importBusy}>
-                  {importBusy ? 'Importing…' : 'Import'}
-                </Button>
-                <Button variant="tertiary" onClick={handleCancelImport} disabled={importBusy}>
-                  Cancel
-                </Button>
-              </div>
-            </div>
+    <>
+      <section className="cl-panel" aria-labelledby="gf-sum">
+        <PanelHead id="gf-sum" title="Summary">
+          {hasApiBinding && (
+            <>
+              <SyncStatus
+                state={syncState}
+                lastSynced={analytics.lastSyncedAt ? formatRelative(analytics.lastSyncedAt) : undefined}
+              />
+              <button type="button" className="cl-btnp" onClick={handleSync} disabled={syncing}>
+                Sync now
+              </button>
+            </>
           )}
+          <input ref={fileInput} type="file" className="sr-only" accept=".csv,text/csv" onChange={handleFilePicked} />
+          <button
+            type="button"
+            className={hasApiBinding ? 'cl-btns' : 'cl-btnp'}
+            disabled={importBusy}
+            onClick={() => fileInput.current?.click()}
+          >
+            <ClIcon name="upload" small />
+            {importBusy ? 'Reading…' : 'Import responses (CSV)'}
+          </button>
+        </PanelHead>
+        <p className="cl-muted -mt-2 mb-4 text-[13px]">In Google Forms: Responses → Download responses (.csv).</p>
 
-          <div className="flex items-center gap-8 border-t border-border-light pt-4 mt-2">
-            <div className="flex-1 max-w-sm">
-              <div className="mb-2 text-sm font-medium text-fg-2">Completion</div>
-              <Meter value={analytics.completionRate ?? 0} name="Completion" width={200} />
-            </div>
-            <div>
-              <div className="mb-2 text-sm font-medium text-fg-2">Average Score</div>
+        <div className="cl-stats">
+          <ClStat value={analytics.expected} label="Expected" />
+          <ClStat value={`${analytics.completed} of ${analytics.expected}`} label="Completed" />
+          <ClStat value={analytics.notCompleted} label="Not completed" />
+          <div className="min-w-[160px]">
+            <div className="cl-stat-v">{analytics.completionRate == null ? '—' : `${completionPct}%`}</div>
+            <ClBar value={analytics.completionRate ?? 0} label="Completion" />
+            <div className="cl-stat-k">Completion</div>
+          </div>
+          <div>
+            <div className="cl-stat-v">
               <Score value={analytics.averageScore} of={analytics.averageMaxScore} />
             </div>
-          </div>
-          
-          {analytics.unmatched > 0 && (
-            <InlineBanner tone="amber" className="mt-2">
-              {analytics.unmatched} response(s) could not be attributed — every completion figure above is understated.
-            </InlineBanner>
-          )}
-
-          <div className="flex flex-col gap-4 border-t border-border-light pt-4 mt-2">
-            <div className="text-sm font-medium text-fg-2">Responses by question</div>
-            {analytics.questions.length === 0 ? (
-              <EmptyState
-                icon="ChartPie"
-                title="No per-question data yet."
-                description="Import the responses CSV to see answers by question."
-              />
-            ) : (
-              analytics.questions.map((q) => <QuestionSummary key={q.id} question={q} />)
-            )}
+            <div className="cl-stat-k">Average score</div>
           </div>
         </div>
-      </Panel>
 
-      <Panel title="Results">
+        {importError && (
+          <div className="mt-4">
+            <InlineBanner tone="danger">{importError}</InlineBanner>
+          </div>
+        )}
+
+        {importPreview && (
+          <div className="mt-4 flex flex-col gap-3">
+            <hr className="cl-hr" />
+            <div className="cl-stats">
+              <ClStat value={importPreview.rows} label="Rows" />
+              <ClStat value={importPreview.matched} label="Matched" />
+              <ClStat value={importPreview.unmatched} label="Unmatched" />
+              <ClStat value={importPreview.questions} label="Questions" />
+            </div>
+            {importPreview.errors.length > 0 && (
+              <InlineBanner tone="amber">
+                <div className="flex flex-col gap-1 py-1">
+                  {importPreview.errors.map((line, i) => (
+                    <span key={i}>{line}</span>
+                  ))}
+                </div>
+              </InlineBanner>
+            )}
+            <div className="flex items-center gap-2">
+              <button type="button" className="cl-btnp" onClick={handleConfirmImport} disabled={importBusy}>
+                {importBusy ? 'Importing…' : 'Import'}
+              </button>
+              <button type="button" className="cl-btns" onClick={handleCancelImport} disabled={importBusy}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {analytics.unmatched > 0 && (
+          <div className="mt-4">
+            <InlineBanner tone="amber">
+              {analytics.unmatched} response(s) could not be attributed — every completion figure above is understated.
+            </InlineBanner>
+          </div>
+        )}
+      </section>
+
+      <section className="cl-panel" aria-labelledby="gf-q">
+        <PanelHead id="gf-q" title="Responses by question" small />
+        {analytics.questions.length === 0 ? (
+          <ClEmpty
+            icon="chart"
+            title="No per-question data yet."
+            hint="Import the responses CSV to see answers by question."
+          />
+        ) : (
+          <div className="flex flex-col gap-6">
+            {analytics.questions.map((q) => (
+              <QuestionSummary key={q.id} question={q} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="cl-panel pb-4" aria-labelledby="gf-res">
+        <PanelHead id="gf-res" title="Results" />
         <Table
           columns={RESULT_COLUMNS}
           rows={results}
           rowKey={(r) => r.studentId}
-          empty={<EmptyState icon="Users" title="No results" />}
+          empty={<ClEmpty icon="people" title="No results" />}
         />
-      </Panel>
+      </section>
 
       {viewingError && <InlineBanner tone="danger">{viewingError}</InlineBanner>}
 
       {viewing && (
-        <Panel
-          title={viewing.studentName}
-          action={<Button variant="tertiary" onClick={() => setViewing(null)}>Close</Button>}
-        >
+        <section className="cl-panel" aria-labelledby="gf-view">
+          <PanelHead id="gf-view" title={<span dir="auto">{viewing.studentName}</span>}>
+            <button type="button" className="cl-btns" onClick={() => setViewing(null)}>
+              Close
+            </button>
+          </PanelHead>
           {isAnsweredRaw(viewing.result.raw) ? (
             <IndividualResponseView
               raw={viewing.result.raw}
@@ -401,13 +407,13 @@ function GoogleFormResults({ task }: { task: StaffTask }) {
           ) : (
             <RawDataView raw={viewing.result.raw} />
           )}
-        </Panel>
+        </section>
       )}
 
       {analytics.unmatched > 0 && (
         <UnmatchedPanel unmatched={unmatched} roster={roster} onMatch={handleReload} />
       )}
-    </div>
+    </>
   );
 }
 
@@ -451,21 +457,22 @@ function QuestionSummary({ question }: { question: QuestionAnalytics }) {
 }
 
 function UnmatchedPanel({
-  unmatched, 
-  roster, 
-  onMatch 
-}: { 
-  unmatched: ExternalResult[]; 
+  unmatched,
+  roster,
+  onMatch
+}: {
+  unmatched: ExternalResult[];
   roster: CourseRosterResponse | null;
   onMatch: () => void;
 }) {
   const { token } = useSession();
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  
+
   if (unmatched.length === 0) return null;
 
   return (
-    <Panel title="Unmatched responses">
+    <section className="cl-panel" aria-labelledby="gf-un">
+      <PanelHead id="gf-un" title="Unmatched responses" />
       <div className="flex flex-col divide-y divide-border-light">
         {unmatched.map(result => (
           <div key={result.id} className="flex flex-col p-4 gap-4 hover:bg-surface-2 transition-colors">
@@ -486,17 +493,18 @@ function UnmatchedPanel({
               </div>
               <div className="flex flex-wrap items-start gap-2">
                 <MatchRow result={result} roster={roster} onMatched={onMatch} token={token} />
-                <Button 
-                  variant="tertiary" 
+                <button
+                  type="button"
+                  className="cl-btns"
                   onClick={() => setExpandedId(expandedId === result.id ? null : result.id)}
                 >
                   {expandedId === result.id ? 'Hide' : 'View'}
-                </Button>
+                </button>
               </div>
             </div>
-            
+
             {expandedId === result.id && (
-              <div className="bg-surface-2 rounded-md p-4 text-xs mt-2 border border-border-light">
+              <div className="cl-soft">
                 {isAnsweredRaw(result.raw) ? (
                   <IndividualResponseView
                     raw={result.raw}
@@ -511,20 +519,20 @@ function UnmatchedPanel({
           </div>
         ))}
       </div>
-    </Panel>
+    </section>
   );
 }
 
-function MatchRow({ 
-  result, 
-  roster, 
-  onMatched, 
-  token 
-}: { 
-  result: ExternalResult; 
-  roster: CourseRosterResponse | null; 
-  onMatched: () => void; 
-  token: string | null; 
+function MatchRow({
+  result,
+  roster,
+  onMatched,
+  token
+}: {
+  result: ExternalResult;
+  roster: CourseRosterResponse | null;
+  onMatched: () => void;
+  token: string | null;
 }) {
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [busy, setBusy] = useState(false);
@@ -567,13 +575,9 @@ function MatchRow({
           options={options}
           disabled={busy}
         />
-        <Button 
-          variant="primary" 
-          onClick={handleMatch} 
-          disabled={!selectedStudentId || busy}
-        >
+        <button type="button" className="cl-btnp" onClick={handleMatch} disabled={!selectedStudentId || busy}>
           {busy ? 'Matching…' : 'Match'}
-        </Button>
+        </button>
       </div>
       {error && <InlineBanner tone="danger">{error}</InlineBanner>}
     </div>

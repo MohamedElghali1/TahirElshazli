@@ -78,7 +78,7 @@ export function Table<T>({
   }
 
   return (
-    <div {...rest} className={cx('w-full overflow-x-auto', className)}>
+    <div {...rest} data-ui="table" className={cx('w-full overflow-x-auto', className)}>
       <table className="w-full border-collapse font-sans text-base">
         <thead>
           <tr>

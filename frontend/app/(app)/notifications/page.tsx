@@ -4,30 +4,44 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
-import { formatRelative } from '@/lib/format';
+import { formatDate, formatRelative } from '@/lib/format';
 import type { AppNotification, NotificationType } from '@/lib/types';
-import { Panel, EmptyState, Loader, Button, Icon, cx, type IconName } from '@/components/ui';
 import { PageTitle, PageActions } from '@/components/shell/page-chrome';
+import { ClIcon, TEACHER_AVATAR, TEACHER_NAME, type IconKey } from '@/components/shell/classroom';
+import { ClEmpty, ClError, ClSkeleton, ClTabs, PanelHead } from '@/components/classroom/ui';
+import { AnnouncementView } from '@/components/classroom/announcement-view';
+import { useSelectedCourse } from '@/components/shell/course-context';
 
-const ICON: Record<NotificationType, IconName> = {
-  grade_posted: 'CircleCheck',
-  new_recording: 'Video',
-  live_session_soon: 'Bell',
-  assessment_available: 'Clipboard',
-  announcement: 'Message',
+const ICON: Record<NotificationType, IconKey> = {
+  grade_posted: 'check',
+  new_recording: 'play',
+  live_session_soon: 'bell',
+  assessment_available: 'pen',
+  announcement: 'announce',
   // Unit 9: weekly reports (`REM-031`).
-  weekly_report: 'ChartPie',
+  weekly_report: 'chart',
 };
 
 /**
- * Notifications isn't on the flat rail (`docs/PRODUCT_SPEC.md` §5.2: the
- * design makes the student's a bell + `Menu`, which is a content redesign
- * out of this unit's scope) — kept reachable via Overview's inbox "Open
- * inbox" link rather than dropped, same precedent as `/materials`.
+ * Announcements. Not on the flat rail (`docs/PRODUCT_SPEC.md` §5.2) - reached
+ * from the bell and Home's "Open announcements". Every notification type is
+ * listed, not only announcements, because the mailbox is one list.
  */
 export default function NotificationsPage() {
   const { token } = useSession();
   const [busy, setBusy] = useState(false);
+  const [tab, setTab] = useState<'announcements' | 'notifications'>('announcements');
+  const { selectedId } = useSelectedCourse();
+  const anns = useApi(
+    async (t) => {
+      if (!selectedId) return [];
+      const list = await api.students.announcements(t, selectedId);
+      return [...list].sort(
+        (a, b) => new Date(b.publishedAt ?? b.createdAt).getTime() - new Date(a.publishedAt ?? a.createdAt).getTime(),
+      );
+    },
+    [selectedId],
+  );
   const { data, error, loading, reload } = useApi((t) => api.notifications.list(t), []);
 
   async function markAllRead() {
@@ -45,60 +59,71 @@ export default function NotificationsPage() {
 
   return (
     <>
-      <PageTitle title="Notifications" />
-      {unread > 0 && (
+      <PageTitle title="Announcements" />
+      {tab === 'notifications' && unread > 0 && (
         <PageActions>
-          <Button onClick={markAllRead} disabled={busy}>
-            {busy ? <Loader size={3} label="Marking all as read" /> : 'Mark all as read'}
-          </Button>
+          <button type="button" className="cl-btns" onClick={markAllRead} disabled={busy}>
+            {busy ? 'Marking all as read…' : 'Mark all as read'}
+          </button>
         </PageActions>
       )}
 
-      <div className="p-6">
-        <Panel bodyClassName="">
-          {loading && (
-            <div className="flex justify-center p-8">
-              <Loader label="Loading notifications" />
-            </div>
-          )}
-          {error && (
-            <div className="p-6">
-              <EmptyState
-                icon="AlertTriangle"
-                title={error.message}
-                action={<Button onClick={reload}>Try again</Button>}
-              />
-            </div>
-          )}
-          {data && data.notifications.length === 0 && (
-            <EmptyState
-              icon="Bell"
-              title="Nothing yet"
-              description="Marks, new recordings and upcoming classes are announced here."
+      <ClTabs
+        label="Announcements and notifications"
+        value={tab}
+        onChange={(v) => setTab(v as 'announcements' | 'notifications')}
+        tabs={[
+          { value: 'announcements', label: 'Announcements' },
+          { value: 'notifications', label: 'Notifications', count: unread > 0 ? unread : null },
+        ]}
+      />
+
+      {tab === 'announcements' ? (
+        <section aria-labelledby="h-ann" className="cl-panel pb-4">
+          <PanelHead title="Announcements" id="h-ann" className="mb-2" />
+          {anns.loading && !anns.data && <ClSkeleton rows={3} label="Loading announcements" />}
+          {anns.error && <ClError message={anns.error.message} onRetry={anns.reload} />}
+          {anns.data && anns.data.length === 0 && (
+            <ClEmpty
+              icon="announce"
+              tone="cl-tone-sand"
+              title="No announcements yet"
+              hint="Messages from Dr. Tahir to this course appear here."
             />
           )}
-          {data && data.notifications.length > 0 && (
-            <ul className="divide-y divide-border-light">
-              {data.notifications.map((notification) => (
-                <li key={notification.id}>
-                  <NotificationRow notification={notification} onRead={reload} />
-                </li>
-              ))}
-            </ul>
+          {anns.data?.map((a) => (
+            <AnnouncementView
+              key={a.id}
+              data={a}
+              author={TEACHER_NAME}
+              avatar={TEACHER_AVATAR}
+              meta={formatDate(a.publishedAt ?? a.createdAt)}
+            />
+          ))}
+        </section>
+      ) : (
+        <section aria-labelledby="h-not" className="cl-panel pb-4">
+          <PanelHead title="Notifications" id="h-not" className="mb-2">
+            {unread > 0 && <span className="cl-muted text-[14px]">{unread} unread</span>}
+          </PanelHead>
+          {loading && <ClSkeleton rows={4} label="Loading notifications" />}
+          {error && <ClError message={error.message} onRetry={reload} />}
+          {data && data.notifications.length === 0 && (
+            <ClEmpty
+              icon="bell"
+              tone="cl-tone-sand"
+              title="Nothing yet"
+              hint="Marks, new recordings and upcoming classes are announced here."
+            />
           )}
-        </Panel>
-      </div>
+          {data?.notifications.map((n) => <NotificationRow key={n.id} notification={n} onRead={reload} />)}
+        </section>
+      )}
     </>
   );
 }
 
-function NotificationRow({
-  notification,
-  onRead,
-}: {
-  notification: AppNotification;
-  onRead: () => void;
-}) {
+function NotificationRow({ notification, onRead }: { notification: AppNotification; onRead: () => void }) {
   const { token } = useSession();
 
   async function markRead() {
@@ -107,41 +132,47 @@ function NotificationRow({
       await api.notifications.markRead(token, notification.id);
       onRead();
     } catch {
-      // Not worth interrupting the read for. The badge corrects itself on the
-      // next load.
+      // Not worth interrupting the read for. The badge corrects itself on the next load.
     }
   }
 
+  const isAnnouncement = notification.type === 'announcement';
   const body = (
-    <div
-      className={cx(
-        'flex items-start gap-3 px-4 py-3 transition-colors duration-[var(--dur-fast)] ease-[var(--ease)] hover:bg-wash-hover',
-        !notification.read && 'bg-wash-hover',
+    <>
+      {isAnnouncement ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={TEACHER_AVATAR} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />
+      ) : (
+        <span className="cl-ic40 cl-tone-sky">
+          <ClIcon name={ICON[notification.type]} small />
+        </span>
       )}
-    >
-      <Icon
-        name={ICON[notification.type]}
-        size={16}
-        className={cx('mt-[2px] shrink-0', notification.read ? 'text-fg-4' : 'text-accent')}
-      />
-      <div className="min-w-0 flex-1">
-        <p className={cx('text-base', notification.read ? 'text-fg-2' : 'font-medium text-fg')}>
-          {notification.title}
-        </p>
-        <p className="mt-1 text-xs text-fg-3">{notification.message}</p>
-      </div>
-      <span className="num shrink-0 text-xxs text-fg-4">{formatRelative(notification.createdAt)}</span>
-    </div>
+      <span className="cl-grow-main">
+        <span className="block text-[14px]">
+          <span className={notification.read ? undefined : 'font-medium'}>
+            {isAnnouncement ? TEACHER_NAME : notification.title}
+          </span>
+          <span className="cl-muted"> · {formatRelative(notification.createdAt)}</span>
+        </span>
+        <span className="cl-sub" style={{ fontSize: 14 }}>
+          {isAnnouncement && <span className="block text-fg">{notification.title}</span>}
+          {notification.message}
+        </span>
+      </span>
+      {!notification.read && (
+        <span className="cl-dot shrink-0" style={{ background: 'var(--cl-blue)' }} role="img" aria-label="Unread" />
+      )}
+    </>
   );
 
-  // `link` is always an in-app deep link, never an absolute URL, so it is
-  // safe to hand straight to next/link.
+  // `link` is always an in-app deep link, never an absolute URL, so it is safe
+  // to hand straight to next/link.
   return notification.link ? (
-    <Link href={notification.link} onClick={markRead}>
+    <Link href={notification.link} onClick={markRead} className="cl-grow items-start">
       {body}
     </Link>
   ) : (
-    <button type="button" onClick={markRead} className="w-full text-start">
+    <button type="button" onClick={markRead} className="cl-grow w-full items-start text-start">
       {body}
     </button>
   );

@@ -10,22 +10,18 @@ import {
   formatDateOnly,
 } from '@/lib/format';
 import type { AssessmentStatus, AssessmentType, WeeklyReportView } from '@/lib/types';
-import {
-  Button,
-  EmptyState,
-  Icon,
-  InlineBanner,
-  Loader,
-  Panel,
-  Score,
-  Tag,
-  cx,
-} from '@/components/ui';
+import { Score } from '@/components/ui';
 import { PageTitle } from '@/components/shell/page-chrome';
+import { ClIcon } from '@/components/shell/classroom';
+import { BackLink, ClEmpty, ClError, ClSkeleton, ClStat, PanelHead } from '@/components/classroom/ui';
 
 /**
  * One group-week's weekly reports (`REM-031`, `D-63`, `D-66`). Admin only,
- * same 403 as the list page.
+ * same 403 as the list page. Redesign V2 "REPORTS" detail: back link, figure
+ * row, the publish action, then one expandable row per student.
+ *
+ * Not drawn: the artifact's notes/strengths fields - the report content the
+ * API returns is attendance and homework only.
  */
 export default function WeeklyReportGroupWeekPage({
   params,
@@ -54,25 +50,46 @@ export default function WeeklyReportGroupWeekPage({
         title={week ? `${week.groupName} - week of ${dateLabel}` : `Week of ${dateLabel}`}
         backHref="/manage/reports"
       />
-      <div className="flex flex-col gap-4 p-6">
-        {loading && (
-          <div className="flex justify-center p-8">
-            <Loader label="Loading weekly reports" />
-          </div>
-        )}
-        {error && (
-          <EmptyState
-            icon="AlertTriangle"
-            title={error.isAuth ? "You don't have access to this page." : error.message}
-            action={error.isAuth ? undefined : <Button onClick={reload}>Try again</Button>}
+      <BackLink href="/manage/reports">All reports</BackLink>
+
+      {loading && !data && (
+        <section className="cl-panel">
+          <ClSkeleton rows={3} label="Loading weekly reports" />
+        </section>
+      )}
+      {error && (
+        <section className="cl-panel">
+          <ClError
+            message={error.isAuth ? "You don't have access to this page." : error.message}
+            onRetry={error.isAuth ? undefined : reload}
           />
-        )}
-        {data && data.length === 0 && (
-          <EmptyState icon="ChartPie" title="No weekly reports yet." />
-        )}
-        {data && data.length > 0 && (
-          <>
-            {published && <InlineBanner tone="green">{published}</InlineBanner>}
+        </section>
+      )}
+      {data && data.length === 0 && (
+        <section className="cl-panel">
+          <ClEmpty icon="doc" tone="cl-tone-sand" title="No weekly reports yet." />
+        </section>
+      )}
+      {data && data.length > 0 && (
+        <>
+          <section aria-labelledby="wr-sum" className="cl-panel">
+            <PanelHead id="wr-sum" title={`Week of ${dateLabel}${week ? ` · ${week.groupName}` : ''}`}>
+              {draftCount === 0 && (
+                <span className="text-[14px]" style={{ color: 'var(--cl-ok)' }}>
+                  Published
+                </span>
+              )}
+            </PanelHead>
+            <div className="cl-stats mb-4">
+              <ClStat value={data.length} label="Reports" />
+              <ClStat value={draftCount} label="Drafts" />
+              <ClStat value={data.length - draftCount} label="Published" />
+            </div>
+            {published && (
+              <p role="status" className="m-0 mb-3 px-2 text-[14px]" style={{ color: 'var(--cl-ok)' }}>
+                {published}
+              </p>
+            )}
             {draftCount > 0 && (
               <PublishPanel
                 groupId={groupId}
@@ -86,16 +103,16 @@ export default function WeeklyReportGroupWeekPage({
                 }}
               />
             )}
-            <Panel bodyClassName="">
-              <div className="flex flex-col divide-y divide-border-light">
-                {data.map((report) => (
-                  <StudentReportRow key={report.id} report={report} />
-                ))}
-              </div>
-            </Panel>
-          </>
-        )}
-      </div>
+          </section>
+
+          <section aria-labelledby="wr-st" className="cl-panel pb-4">
+            <PanelHead id="wr-st" title="Students" />
+            {data.map((report) => (
+              <StudentReportRow key={report.id} report={report} />
+            ))}
+          </section>
+        </>
+      )}
     </>
   );
 }
@@ -137,34 +154,28 @@ function PublishPanel({
 
   return (
     <div className="flex flex-col gap-3">
-      {error && <InlineBanner tone="danger">{error}</InlineBanner>}
+      {error && <ClError message={error} />}
       {!confirming ? (
-        <Button variant="primary" onClick={() => setConfirming(true)} className="self-start">
+        <button type="button" className="cl-btnp self-start" onClick={() => setConfirming(true)}>
           Publish {draftCount} report{draftCount === 1 ? '' : 's'}
-        </Button>
+        </button>
       ) : (
-        <InlineBanner
-          tone="amber"
-          action={
-            <div className="flex items-center gap-2">
-              <Button size="small" variant="tertiary" onClick={() => setConfirming(false)} disabled={busy}>
-                Cancel
-              </Button>
-              <Button size="small" variant="primary" onClick={() => void publish()} disabled={busy}>
-                {busy ? 'Publishing…' : 'Publish'}
-              </Button>
-            </div>
-          }
-        >
-          Publish {draftCount} report{draftCount === 1 ? '' : 's'} for {groupName}, week of{' '}
-          {dateLabel}? Students will be notified. This cannot be undone.
-        </InlineBanner>
+        <div className="cl-soft flex flex-wrap items-center gap-3">
+          <p className="m-0 min-w-[240px] flex-1 text-[14px]">
+            Publish {draftCount} report{draftCount === 1 ? '' : 's'} for {groupName}, week of {dateLabel}? Students will
+            be notified. This cannot be undone.
+          </p>
+          <button type="button" className="cl-btns" onClick={() => setConfirming(false)} disabled={busy}>
+            Cancel
+          </button>
+          <button type="button" className="cl-btnp" onClick={() => void publish()} disabled={busy}>
+            {busy ? 'Publishing…' : 'Publish'}
+          </button>
+        </div>
       )}
     </div>
   );
 }
-
-const STATUS_TONE = { draft: 'amber', published: 'green' } as const;
 
 function StudentReportRow({ report }: { report: WeeklyReportView }) {
   const [open, setOpen] = useState(false);
@@ -172,64 +183,56 @@ function StudentReportRow({ report }: { report: WeeklyReportView }) {
 
   return (
     <div>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className="flex w-full flex-wrap items-center gap-3 px-4 py-3 text-start transition-colors duration-[var(--dur-fast)] ease-[var(--ease)] hover:bg-wash-hover"
-      >
-        <span dir="auto" className="min-w-40 flex-1 truncate font-medium text-fg">
-          {report.studentName}
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="cl-grow w-full text-start">
+        <span className="cl-ic40 cl-tone-sand">
+          <ClIcon name="doc" small />
         </span>
-        <Tag tone={STATUS_TONE[report.status]}>
+        <span className="cl-grow-main">
+          <span dir="auto" className="block truncate">
+            {report.studentName}
+          </span>
+          <span className="cl-sub">
+            Attendance {attendance.present} of {attendance.expected}
+            {(attendance.late > 0 || attendance.absent > 0 || attendance.unmarked > 0) && (
+              <>
+                {' '}
+                ({[
+                  attendance.late > 0 && `${attendance.late} late`,
+                  attendance.absent > 0 && `${attendance.absent} absent`,
+                  attendance.unmarked > 0 && `${attendance.unmarked} unmarked`,
+                ]
+                  .filter(Boolean)
+                  .join(', ')}
+                )
+              </>
+            )}{' '}
+            · Homework {homework.submitted} of {homework.due}
+          </span>
+        </span>
+        <span
+          className="shrink-0 text-[14px]"
+          style={{ color: report.status === 'draft' ? 'var(--cl-warn)' : 'var(--cl-ok)' }}
+        >
           {report.status === 'draft' ? 'Draft' : 'Published'}
-        </Tag>
-        <span className="num shrink-0 text-xs text-fg-3">
-          Attendance {attendance.present} of {attendance.expected}
-          {(attendance.late > 0 || attendance.absent > 0 || attendance.unmarked > 0) && (
-            <span className="text-fg-4">
-              {' '}
-              ({attendance.late > 0 && `${attendance.late} late`}
-              {attendance.late > 0 && (attendance.absent > 0 || attendance.unmarked > 0) && ', '}
-              {attendance.absent > 0 && `${attendance.absent} absent`}
-              {attendance.absent > 0 && attendance.unmarked > 0 && ', '}
-              {attendance.unmarked > 0 && `${attendance.unmarked} unmarked`})
-            </span>
-          )}
         </span>
-        <span className="num shrink-0 text-xs text-fg-3">
-          Homework {homework.submitted} of {homework.due}
+        <span aria-hidden className={open ? 'shrink-0' : 'shrink-0 -rotate-90 rtl:rotate-90'}>
+          <ClIcon name="chevDown" small />
         </span>
-        <Icon
-          name="ChevronDown"
-          size={14}
-          className={cx(
-            'shrink-0 text-fg-4 transition-transform duration-[var(--dur-fast)]',
-            !open && '-rotate-90',
-          )}
-        />
       </button>
 
       {open && (
-        <div className="flex flex-col gap-4 bg-surface-2 px-4 py-4">
+        <div className="cl-soft mx-2 mb-2 flex flex-col gap-4">
           <div className="flex flex-col gap-2">
-            <span className="text-xs font-medium uppercase tracking-[0.04em] text-fg-3">
-              Sessions
-            </span>
+            <span className="cl-label">Sessions</span>
             {attendance.sessions.length === 0 ? (
-              <p className="text-base text-fg-4">No sessions this week.</p>
+              <p className="cl-muted m-0 text-[14px]">No sessions this week.</p>
             ) : (
-              <ul className="flex flex-col divide-y divide-border-light">
+              <ul className="m-0 flex list-none flex-col p-0">
                 {attendance.sessions.map((s) => (
-                  <li
-                    key={s.sessionId}
-                    className="flex flex-wrap items-center justify-between gap-3 py-2 text-base"
-                  >
-                    <span className="min-w-40 flex-1 truncate text-fg">{s.title}</span>
-                    <span className="num shrink-0 text-xs text-fg-3">
-                      {formatDate(s.scheduledAt)}
-                    </span>
-                    <span className="shrink-0 text-xs text-fg-3">
+                  <li key={s.sessionId} className="flex flex-wrap items-center justify-between gap-3 py-2 text-[14px]">
+                    <span className="min-w-40 flex-1 truncate">{s.title}</span>
+                    <span className="cl-muted shrink-0">{formatDate(s.scheduledAt)}</span>
+                    <span className="shrink-0">
                       {s.status === 'present' ? 'Present' : s.status === 'late' ? 'Late' : s.status === 'absent' ? 'Absent' : 'Not marked'}
                     </span>
                   </li>
@@ -239,26 +242,17 @@ function StudentReportRow({ report }: { report: WeeklyReportView }) {
           </div>
 
           <div className="flex flex-col gap-2">
-            <span className="text-xs font-medium uppercase tracking-[0.04em] text-fg-3">
-              Tasks
-            </span>
+            <span className="cl-label">Tasks</span>
             {homework.tasks.length === 0 ? (
-              <p className="text-base text-fg-4">No tasks due this week.</p>
+              <p className="cl-muted m-0 text-[14px]">No tasks due this week.</p>
             ) : (
-              <ul className="flex flex-col divide-y divide-border-light">
+              <ul className="m-0 flex list-none flex-col p-0">
                 {homework.tasks.map((t) => (
-                  <li
-                    key={t.assessmentId}
-                    className="flex flex-wrap items-center justify-between gap-3 py-2 text-base"
-                  >
-                    <span className="min-w-40 flex-1 truncate text-fg">{t.title}</span>
-                    <span className="shrink-0 text-xs text-fg-3">
-                      {ASSESSMENT_TYPE_LABEL[t.type as AssessmentType] ?? t.type}
-                    </span>
-                    <span className="num shrink-0 text-xs text-fg-3">{formatDate(t.dueAt)}</span>
-                    <span className="shrink-0 text-xs text-fg-3">
-                      {ASSESSMENT_STATUS_LABEL[t.status as AssessmentStatus] ?? t.status}
-                    </span>
+                  <li key={t.assessmentId} className="flex flex-wrap items-center justify-between gap-3 py-2 text-[14px]">
+                    <span className="min-w-40 flex-1 truncate">{t.title}</span>
+                    <span className="cl-muted shrink-0">{ASSESSMENT_TYPE_LABEL[t.type as AssessmentType] ?? t.type}</span>
+                    <span className="cl-muted shrink-0">{formatDate(t.dueAt)}</span>
+                    <span className="shrink-0">{ASSESSMENT_STATUS_LABEL[t.status as AssessmentStatus] ?? t.status}</span>
                     <Score value={t.score} of={t.maxScore} />
                   </li>
                 ))}

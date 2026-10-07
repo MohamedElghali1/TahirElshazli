@@ -39,6 +39,7 @@ export function Panel({
   return (
     <section
       {...rest}
+      data-ui="panel"
       className={cx(
         'flex flex-col overflow-hidden rounded-md bg-surface',
         'shadow-[inset_0_0_0_1px_var(--border-light)]',
@@ -46,12 +47,12 @@ export function Panel({
       )}
     >
       {(title || action) && (
-        <header className="flex items-center justify-between gap-2 border-b border-border-light px-4 py-3">
+        <header data-ui="panel-head" className="flex items-center justify-between gap-2 border-b border-border-light px-4 py-3">
           {/* A span, not a heading: a Panel appears at several depths and
               hard-coding <h2> here would put the page's outline at the mercy of
               where someone happened to drop a container. Pass a real heading in
               as `title` when the panel is a landmark. */}
-          <span className="text-md font-semibold leading-body text-fg">{title}</span>
+          <span data-ui="panel-title" className="text-md font-semibold leading-body text-fg">{title}</span>
           {action}
         </header>
       )}

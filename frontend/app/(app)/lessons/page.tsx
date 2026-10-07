@@ -1,12 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
 import { formatDate, formatDuration } from '@/lib/format';
 import type { RecordingWithProgress } from '@/lib/types';
-import { Panel, EmptyState, Loader, Tag, Meter, Button, IconButton, Select, Icon, cx } from '@/components/ui';
+import { Icon } from '@/components/ui';
+import { ClBar, ClChips, ClEmpty, ClError, ClSegmented, ClSkeleton, PanelHead } from '@/components/classroom/ui';
+import { ClIcon } from '@/components/shell/classroom';
 import { PageTitle } from '@/components/shell/page-chrome';
 import { CourseGate } from '@/components/student/course-gate';
 import { useSelectedCourse } from '@/components/shell/course-context';
@@ -15,8 +17,8 @@ import { RecordingPlayer } from '@/components/student/recording-player';
 /**
  * My lessons (`docs/PRODUCT_SPEC.md` §6: `[CHANGED]`, "Recording library,
  * thumbnails by default, grid/list toggle, watched bar"). Course-scoped via
- * the rail's switcher; the curriculum picker alongside the player toggles
- * between a thumbnail grid (the default) and the original dense row list.
+ * the rail's switcher. Redesign V2: a "Now playing" panel over a "Recordings"
+ * panel with a lesson filter; the list/grid toggle stays.
  */
 type ProgressOverride = Pick<RecordingWithProgress, 'watchedSeconds' | 'completed' | 'completedAt'>;
 
@@ -28,7 +30,7 @@ export default function LessonsPage() {
 
   return (
     <>
-      <PageTitle title="My lessons" />
+      <PageTitle title="Recordings" />
       <CourseGate loading={loading} hasCourses={Boolean(courses && courses.length > 0)}>
         {selectedId && <RecordingsList courseId={selectedId} />}
       </CourseGate>
@@ -38,19 +40,17 @@ export default function LessonsPage() {
 
 function RecordingsList({ courseId }: { courseId: string }) {
   const { token } = useSession();
-  const [chapter, setChapter] = useState('');
-  const [topic, setTopic] = useState('');
+  const [lessonFilter, setLessonFilter] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [overrides, setOverrides] = useState<Record<string, ProgressOverride>>({});
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    if (typeof window === 'undefined') return 'grid';
+    if (typeof window === 'undefined') return 'list';
     try {
       const stored = window.localStorage.getItem(VIEW_MODE_KEY);
-      return stored === 'list' || stored === 'grid' ? stored : 'grid';
+      return stored === 'list' || stored === 'grid' ? stored : 'list';
     } catch {
       // A private window with storage disabled just keeps the default.
-      return 'grid';
+      return 'list';
     }
   });
 
@@ -64,21 +64,40 @@ function RecordingsList({ courseId }: { courseId: string }) {
   };
 
   const { data, error, loading, reload } = useApi(
-    (token) =>
-      api.recordings.list(token, courseId, {
-        chapter: chapter || undefined,
-        topic: topic || undefined,
-      }),
-    [courseId, chapter, topic],
+    (token) => api.recordings.list(token, courseId),
+    [courseId],
   );
+  // Lesson titles come from the course outline; the recordings list has no lesson filter.
+  const { data: course } = useApi((token) => api.courses.get(token, courseId), [courseId]);
 
-  const recordings = useMemo(
+  const lessonTitles = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const m of course?.modules ?? []) for (const l of m.lessons) map.set(l.id, l.title);
+    return map;
+  }, [course]);
+  const lessonOf = (r: RecordingWithProgress) => lessonTitles.get(r.lessonId) ?? '';
+
+  const allRecordings = useMemo(
     () => (data?.recordings ?? []).map((r) => ({ ...r, ...overrides[r.id] })),
     [data, overrides],
   );
+  const recordings = useMemo(
+    () => (lessonFilter ? allRecordings.filter((r) => r.lessonId === lessonFilter) : allRecordings),
+    [allRecordings, lessonFilter],
+  );
 
-  const chapters = data?.filters.chapters ?? [];
-  const topics = data?.filters.topics ?? [];
+  const lessonOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const out: { value: string; label: string }[] = [];
+    for (const r of allRecordings) {
+      const label = lessonTitles.get(r.lessonId);
+      if (label && !seen.has(r.lessonId)) {
+        seen.add(r.lessonId);
+        out.push({ value: r.lessonId, label });
+      }
+    }
+    return out;
+  }, [allRecordings, lessonTitles]);
 
   const resumeRecording = useMemo(
     () => recordings.find((r) => !r.completed) ?? recordings[0] ?? null,
@@ -121,489 +140,215 @@ function RecordingsList({ courseId }: { courseId: string }) {
   const completionPercentage =
     recordings.length === 0 ? 0 : Math.round((done / recordings.length) * 100);
 
+  if (loading && !data) {
+    return (
+      <section className="cl-panel" aria-busy>
+        <PanelHead title="Recordings" />
+        <ClSkeleton rows={4} label="Loading recordings" />
+      </section>
+    );
+  }
+  if (error) {
+    return (
+      <section className="cl-panel">
+        <ClError message={error.message} onRetry={reload} />
+      </section>
+    );
+  }
+
+  const filtered = Boolean(lessonFilter);
+
   return (
-    <div className="flex flex-col gap-4 p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-3">
-          <label className="flex items-center gap-2">
-            <span className="text-xs text-fg-3">Chapter</span>
-            <Select
-              value={chapter}
-              onChange={(e) => setChapter(e.target.value)}
-              aria-label="Filter by chapter"
-              className="w-auto min-w-[160px]"
-              options={[{ value: '', label: 'All chapters' }, ...chapters.map((c) => ({ value: c, label: c }))]}
+    <>
+      {selected && (
+        <section className="cl-panel" aria-label="Now playing" style={{ padding: 16 }}>
+          <div className="overflow-hidden rounded-2xl bg-black">
+            <RecordingPlayer
+              recording={selected}
+              initialWatchedSeconds={selected.watchedSeconds}
+              onProgress={(seconds) => handleProgress(selected.id, seconds)}
             />
-          </label>
+          </div>
+          <div className="flex flex-wrap items-start justify-between gap-4 px-2 pb-1 pt-4">
+            <div className="min-w-0">
+              <h2 className="cl-pt cl-pt--sm">{selected.title}</h2>
+              <p className="cl-muted num mt-1 text-[13.5px]">
+                {[lessonOf(selected), formatDate(selected.lessonDate), formatDuration(selected.durationSeconds)]
+                  .filter(Boolean)
+                  .join(' · ')}
+                {selected.completed && <span style={{ color: 'var(--cl-ok)' }}> · Watched</span>}
+              </p>
+              <Link href={`/lessons/${selected.id}`} className="cl-glink mt-2 inline-flex items-center gap-1">
+                Open lesson page
+                <Icon name="ArrowUpRight" size={12} />
+              </Link>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <button type="button" className="cl-btns" disabled={!prev} onClick={() => prev && setSelectedId(prev.id)}>
+                Previous
+              </button>
+              <button type="button" className="cl-btns" disabled={!next} onClick={() => next && setSelectedId(next.id)}>
+                Next
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
 
-          <label className="flex items-center gap-2">
-            <span className="text-xs text-fg-3">Topic</span>
-            <Select
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              aria-label="Filter by topic"
-              className="w-auto min-w-[160px]"
-              options={[{ value: '', label: 'All topics' }, ...topics.map((t) => ({ value: t, label: t }))]}
-            />
-          </label>
-        </div>
-
-        {recordings.length > 0 && (
-          <div className="flex items-center gap-2 text-xs text-fg-3">
-            <span className="num">
-              {done} / {recordings.length} watched
+      <section className="cl-panel" aria-labelledby="rc-h">
+        <PanelHead title="Recordings" id="rc-h">
+          {recordings.length > 0 && (
+            <span className="flex items-center gap-2">
+              <span className="cl-muted num text-[13px]">
+                {done} of {recordings.length} watched
+              </span>
+              <ClBar value={completionPercentage} label="Recordings watched" className="w-20" />
             </span>
-            <Meter value={completionPercentage} width={80} name="Recordings watched" />
+          )}
+          <ClSegmented
+            label="Recordings layout"
+            value={viewMode}
+            onChange={changeViewMode}
+            options={[
+              { value: 'list', label: 'List' },
+              { value: 'grid', label: 'Grid' },
+            ]}
+          />
+        </PanelHead>
+
+        {lessonOptions.length > 0 && (
+          <div className="mb-3">
+            <ClChips
+              label="Filter by lesson"
+              value={lessonFilter}
+              onChange={setLessonFilter}
+              options={[{ value: '', label: 'All lessons' }, ...lessonOptions]}
+            />
           </div>
         )}
 
-        <Button size="small" variant="secondary" icon="List" className="md:hidden" onClick={() => setSidebarOpen(true)}>
-          Curriculum
-        </Button>
-      </div>
-
-      {loading && (
-        <div className="flex justify-center p-12">
-          <Loader label="Loading recordings" />
-        </div>
-      )}
-      {error && (
-        <EmptyState
-          icon="AlertTriangle"
-          title={error.message}
-          action={<Button onClick={reload}>Try again</Button>}
-        />
-      )}
-
-      {data && recordings.length === 0 && (
-        <Panel bodyClassName="">
-          <EmptyState
-            icon="Video"
+        {data && recordings.length === 0 && (
+          <ClEmpty
+            icon="play"
             title="Nothing to watch here"
-            description={
-              chapter || topic
+            hint={
+              filtered
                 ? 'No recordings match that filter. Clear it to see everything.'
                 : 'Recordings are posted after each class and stay available for the course.'
             }
           />
-        </Panel>
-      )}
+        )}
 
-      {data && recordings.length > 0 && (
-        <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-          <Panel bodyClassName="p-4">
-            {selected ? (
-              <div className="flex flex-col gap-4">
-                <RecordingPlayer
-                  recording={selected}
-                  initialWatchedSeconds={selected.watchedSeconds}
-                  onProgress={(seconds) => handleProgress(selected.id, seconds)}
-                />
-
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="text-lg font-medium text-fg">{selected.title}</h2>
-                      <Tag>{selected.chapter}</Tag>
-                      {selected.completed && <Tag tone="green">Watched</Tag>}
-                      <Link
-                        href={`/lessons/${selected.id}`}
-                        className="inline-flex items-center gap-1 text-xs text-fg-3 underline underline-offset-2 hover:text-fg"
-                      >
-                        Open lesson page
-                        <Icon name="ArrowUpRight" size={12} />
-                      </Link>
-                    </div>
-                    <p className="num mt-1 text-xs text-fg-3">
-                      {formatDate(selected.lessonDate)} · {formatDuration(selected.durationSeconds)}
-                    </p>
-                    {selected.topics.length > 0 && (
-                      <p className="mt-2 text-xs text-fg-3">{selected.topics.join(', ')}</p>
-                    )}
-                  </div>
-
-                  <div className="flex shrink-0 items-center gap-2">
-                    <Button
-                      size="small"
-                      variant="secondary"
-                      icon="ChevronLeft"
-                      disabled={!prev}
-                      onClick={() => prev && setSelectedId(prev.id)}
-                    >
-                      Previous
-                    </Button>
-                    <Button
-                      size="small"
-                      variant="secondary"
-                      iconRight="ChevronRight"
-                      disabled={!next}
-                      onClick={() => next && setSelectedId(next.id)}
-                    >
-                      Next
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <EmptyState icon="PlayerPlay" title="Pick a recording" description="Choose a lesson from the list to start watching." />
-            )}
-          </Panel>
-
-          <CurriculumSidebar
-            recordings={recordings}
-            selectedId={selected?.id ?? null}
-            onSelect={(recordingId) => {
-              setSelectedId(recordingId);
-              setSidebarOpen(false);
-            }}
-            open={sidebarOpen}
-            onClose={() => setSidebarOpen(false)}
-            viewMode={viewMode}
-            onChangeViewMode={changeViewMode}
-          />
-        </div>
-      )}
-    </div>
-  );
-}
-
-/**
- * The course curriculum, in lesson order. Sits alongside the player on a
- * desktop viewport (`md:` and up per the system's one breakpoint); below it,
- * a full-screen overlay opened by the "Curriculum" button.
- */
-function CurriculumSidebar({
-  recordings,
-  selectedId,
-  onSelect,
-  open,
-  onClose,
-  viewMode,
-  onChangeViewMode,
-}: {
-  recordings: RecordingWithProgress[];
-  selectedId: string | null;
-  onSelect: (id: string) => void;
-  open: boolean;
-  onClose: () => void;
-  viewMode: ViewMode;
-  onChangeViewMode: (mode: ViewMode) => void;
-}) {
-  const viewToggle = (
-    <div className="flex items-center gap-1">
-      <IconButton
-        icon="Apps"
-        label="Grid view"
-        active={viewMode === 'grid'}
-        onClick={() => onChangeViewMode('grid')}
-      />
-      <IconButton
-        icon="LayoutList"
-        label="List view"
-        active={viewMode === 'list'}
-        onClick={() => onChangeViewMode('list')}
-      />
-    </div>
-  );
-
-  const list =
-    viewMode === 'grid' ? (
-      <CurriculumGrid recordings={recordings} selectedId={selectedId} onSelect={onSelect} />
-    ) : (
-      <CurriculumList recordings={recordings} selectedId={selectedId} onSelect={onSelect} />
-    );
-
-  return (
-    <>
-      <Panel
-        title="Curriculum"
-        action={viewToggle}
-        className="hidden md:block"
-        bodyClassName={cx('max-h-[70vh] overflow-y-auto', viewMode === 'grid' && 'p-3')}
-      >
-        {list}
-      </Panel>
-
-      {open && (
-        <CurriculumDrawer onClose={onClose}>
-          {viewMode === 'grid' ? (
-            <div className="p-3">
-              <CurriculumGrid recordings={recordings} selectedId={selectedId} onSelect={onSelect} />
-            </div>
-          ) : (
-            <CurriculumList recordings={recordings} selectedId={selectedId} onSelect={onSelect} />
-          )}
-        </CurriculumDrawer>
-      )}
+        {viewMode === 'list' ? (
+          <div>
+            {recordings.map((r) => (
+              <RecordingRow key={r.id} recording={r} lesson={lessonOf(r)} selected={r.id === selected?.id} onSelect={setSelectedId} />
+            ))}
+          </div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {recordings.map((r) => (
+              <RecordingTile key={r.id} recording={r} lesson={lessonOf(r)} selected={r.id === selected?.id} onSelect={setSelectedId} />
+            ))}
+          </div>
+        )}
+      </section>
     </>
   );
 }
 
-/**
- * The grid variant of the curriculum picker — thumbnail cards, one column at
- * the sidebar's width. `thumbnailUrl` is null for every recording that exists
- * today (`024_recording_thumbnails.sql`), so the icon fallback is the normal
- * path, not an edge case.
- */
-function CurriculumGrid({
-  recordings,
-  selectedId,
-  onSelect,
-}: {
-  recordings: RecordingWithProgress[];
-  selectedId: string | null;
-  onSelect: (id: string) => void;
-}) {
-  return (
-    <ul className="flex flex-col gap-2" role="list">
-      {recordings.map((recording) => {
-        const watchedPercentage =
-          recording.durationSeconds > 0
-            ? (recording.watchedSeconds / recording.durationSeconds) * 100
-            : 0;
-        return (
-          <li key={recording.id}>
-            <button
-              type="button"
-              onClick={() => onSelect(recording.id)}
-              aria-current={recording.id === selectedId ? 'true' : undefined}
-              className={cx(
-                'flex w-full flex-col gap-2 rounded-md p-2 text-left transition-colors duration-[var(--dur-fast)] ease-[var(--ease)] hover:bg-wash-hover',
-                recording.id === selectedId && 'bg-wash-hover',
-              )}
-            >
-              <span className="relative block aspect-video w-full overflow-hidden rounded-sm bg-surface-3">
-                {recording.thumbnailUrl ? (
-                  // A teacher-supplied external URL, not an optimizable local asset.
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={recording.thumbnailUrl}
-                    alt=""
-                    width={320}
-                    height={180}
-                    loading="lazy"
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <span className="flex h-full w-full items-center justify-center">
-                    <Icon name="Video" size={24} className="text-fg-4" />
-                  </span>
-                )}
-                {recording.completed && (
-                  <span className="absolute end-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-surface shadow-[inset_0_0_0_1px_var(--border-light)]">
-                    <Icon name="CircleCheck" size={14} className="text-status-green-text" />
-                  </span>
-                )}
-              </span>
-              <span className="min-w-0">
-                <span
-                  className={cx(
-                    'block truncate text-xs',
-                    recording.id === selectedId ? 'font-medium text-fg' : 'text-fg-2',
-                  )}
-                >
-                  {recording.title}
-                </span>
-                <span className="num mt-[2px] block text-xxs text-fg-4">
-                  {formatDuration(recording.durationSeconds)}
-                </span>
-                {recording.watchedSeconds > 0 && !recording.completed && (
-                  <span className="mt-1 block">
-                    <Meter value={watchedPercentage} name={`${recording.title} watched`} label={false} />
-                  </span>
-                )}
-              </span>
-            </button>
-          </li>
-        );
-      })}
-    </ul>
-  );
+function watchedPercent(r: RecordingWithProgress) {
+  return r.durationSeconds > 0 ? (r.watchedSeconds / r.durationSeconds) * 100 : 0;
 }
 
-/**
- * The mobile curriculum drawer, as a real modal dialog — focus trap, Escape
- * to close, focus returned to whatever opened it. The only modal in the
- * product so far; the moment a second one lands this belongs in
- * `components/ui/` instead of being copied.
- */
-function CurriculumDrawer({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
-  const panelRef = useRef<HTMLDivElement>(null);
-  const closeRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    const previouslyFocused = document.activeElement as HTMLElement | null;
-    closeRef.current?.focus();
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.stopPropagation();
-        onClose();
-        return;
-      }
-      if (event.key !== 'Tab') return;
-
-      const focusable = panelRef.current?.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-      );
-      if (!focusable || focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      const active = document.activeElement;
-
-      if (event.shiftKey && active === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && active === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('keydown', onKeyDown);
-      previouslyFocused?.focus?.();
-    };
-  }, [onClose]);
-
+function RecordingRow({
+  recording,
+  lesson,
+  selected,
+  onSelect,
+}: {
+  recording: RecordingWithProgress;
+  lesson: string;
+  selected: boolean;
+  onSelect: (id: string) => void;
+}) {
+  const partial = recording.watchedSeconds > 0 && !recording.completed;
   return (
-    <div
-      ref={panelRef}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="curriculum-drawer-title"
-      className="fixed inset-0 z-50 flex flex-col bg-surface md:hidden"
+    <button
+      type="button"
+      className={selected ? 'cl-grow bg-wash-hover' : 'cl-grow'}
+      aria-current={selected ? 'true' : undefined}
+      onClick={() => onSelect(recording.id)}
     >
-      <div className="flex h-8 items-center justify-between border-b border-border-light px-4">
-        <span id="curriculum-drawer-title" className="text-base font-semibold text-fg">
-          Curriculum
+      <span className="cl-ic40 cl-tone-blue">
+        <ClIcon name="play" small />
+      </span>
+      <span className="cl-grow-main">
+        {recording.title}
+        <span className="cl-sub">
+          {[lesson, formatDate(recording.lessonDate)].filter(Boolean).join(' · ')}
         </span>
-        <button
-          ref={closeRef}
-          type="button"
-          onClick={onClose}
-          aria-label="Close curriculum"
-          className="flex h-6 w-6 items-center justify-center rounded-sm text-fg-2 hover:bg-wash-hover"
-        >
-          <Icon name="X" size={16} />
-        </button>
-      </div>
-      <div className="flex-1 overflow-y-auto">{children}</div>
-    </div>
+        {partial && (
+          <ClBar value={watchedPercent(recording)} label={`${recording.title} watched`} className="mt-2 max-w-48" />
+        )}
+      </span>
+      <span className="cl-muted num text-sm">{formatDuration(recording.durationSeconds)}</span>
+      <span className="min-w-[60px] text-end text-[13px]" style={{ color: 'var(--cl-ok)' }}>
+        {recording.completed ? 'Watched' : ''}
+      </span>
+    </button>
   );
 }
 
-function CurriculumList({
-  recordings,
-  selectedId,
+/**
+ * The thumbnail variant. `thumbnailUrl` is null for every recording that exists
+ * today (`024_recording_thumbnails.sql`), so the icon fallback is the normal path.
+ */
+function RecordingTile({
+  recording,
+  lesson,
+  selected,
   onSelect,
 }: {
-  recordings: RecordingWithProgress[];
-  selectedId: string | null;
+  recording: RecordingWithProgress;
+  lesson: string;
+  selected: boolean;
   onSelect: (id: string) => void;
 }) {
-  const chapters = useMemo(() => {
-    const order: string[] = [];
-    const byChapter = new Map<string, RecordingWithProgress[]>();
-    for (const r of recordings) {
-      if (!byChapter.has(r.chapter)) {
-        byChapter.set(r.chapter, []);
-        order.push(r.chapter);
-      }
-      byChapter.get(r.chapter)!.push(r);
-    }
-    return order.map((chapter) => ({ chapter, items: byChapter.get(chapter)! }));
-  }, [recordings]);
-
+  const partial = recording.watchedSeconds > 0 && !recording.completed;
   return (
-    <ul className="divide-y divide-border-light" role="list">
-      {chapters.map(({ chapter, items }) => (
-        <ChapterGroup key={chapter} chapter={chapter} items={items} selectedId={selectedId} onSelect={onSelect} />
-      ))}
-    </ul>
-  );
-}
-
-function ChapterGroup({
-  chapter,
-  items,
-  selectedId,
-  onSelect,
-}: {
-  chapter: string;
-  items: RecordingWithProgress[];
-  selectedId: string | null;
-  onSelect: (id: string) => void;
-}) {
-  const [open, setOpen] = useState(true);
-
-  return (
-    <li>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className="flex w-full items-center justify-between gap-2 px-4 py-2 text-left hover:bg-wash-hover"
-      >
-        <span className="truncate text-xs font-medium uppercase tracking-[0.04em] text-fg-3">
-          {chapter}
+    <button
+      type="button"
+      className={selected ? 'cl-grow flex-col items-stretch gap-2 bg-wash-hover' : 'cl-grow flex-col items-stretch gap-2'}
+      aria-current={selected ? 'true' : undefined}
+      onClick={() => onSelect(recording.id)}
+    >
+      <span className="relative block aspect-video w-full overflow-hidden rounded-xl bg-surface-3">
+        {recording.thumbnailUrl ? (
+          // A teacher-supplied external URL, not an optimizable local asset.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={recording.thumbnailUrl}
+            alt=""
+            width={320}
+            height={180}
+            loading="lazy"
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <span className="cl-muted flex h-full w-full items-center justify-center">
+            <ClIcon name="play" />
+          </span>
+        )}
+      </span>
+      <span className="block min-w-0">
+        <span className="block truncate">{recording.title}</span>
+        <span className="cl-sub num">
+          {[lesson, formatDuration(recording.durationSeconds)].filter(Boolean).join(' · ')}
+          {recording.completed && <span style={{ color: 'var(--cl-ok)' }}> · Watched</span>}
         </span>
-        <Icon
-          name="ChevronDown"
-          size={12}
-          className={cx('shrink-0 text-fg-4 transition-transform duration-[var(--dur-fast)]', !open && '-rotate-90')}
-        />
-      </button>
-      {open && (
-        <ul role="list">
-          {items.map((recording) => (
-            <li key={recording.id}>
-              <button
-                type="button"
-                onClick={() => onSelect(recording.id)}
-                aria-current={recording.id === selectedId ? 'true' : undefined}
-                className={cx(
-                  'flex w-full items-center gap-3 py-2 pe-4 ps-6 text-left transition-colors duration-[var(--dur-fast)] ease-[var(--ease)] hover:bg-wash-hover',
-                  recording.id === selectedId && 'bg-wash-hover',
-                )}
-              >
-                <span aria-hidden className="shrink-0 text-fg-3">
-                  {recording.completed ? (
-                    <Icon name="CircleCheck" size={16} className="text-status-green-text" />
-                  ) : recording.id === selectedId ? (
-                    <Icon name="PlayerPlay" size={14} className="text-accent" />
-                  ) : (
-                    <span className="block h-4 w-4 rounded-full shadow-[inset_0_0_0_1.5px_var(--border-medium)]" />
-                  )}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span
-                    className={cx(
-                      'block truncate text-xs',
-                      recording.id === selectedId ? 'font-medium text-fg' : 'text-fg-2',
-                    )}
-                  >
-                    {recording.title}
-                  </span>
-                  {recording.watchedSeconds > 0 && !recording.completed && (
-                    <span className="mt-[2px] block max-w-[160px]">
-                      <Meter
-                        value={(recording.watchedSeconds / recording.durationSeconds) * 100}
-                        name={`${recording.title} watched`}
-                        label={false}
-                      />
-                    </span>
-                  )}
-                </span>
-                <span className="num shrink-0 text-xxs text-fg-4">
-                  {formatDuration(recording.durationSeconds)}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </li>
+        {partial && <ClBar value={watchedPercent(recording)} label={`${recording.title} watched`} className="mt-2" />}
+      </span>
+    </button>
   );
 }

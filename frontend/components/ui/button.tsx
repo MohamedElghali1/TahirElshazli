@@ -138,6 +138,10 @@ export function Button({
       {...rest}
       type={type}
       aria-pressed={active || undefined}
+      data-ui="button"
+      data-variant={variant}
+      data-size={size}
+      data-accent={accent}
       className={classesFor({ variant, accent, size, active, position, className })}
     >
       {icon && <Icon name={icon} size={14} />}
@@ -165,6 +169,10 @@ export function ButtonLink({
     <Link
       {...rest}
       href={href}
+      data-ui="button"
+      data-variant={variant}
+      data-size={size}
+      data-accent={accent}
       className={classesFor({ variant, accent, size, position, className })}
     >
       {icon && <Icon name={icon} size={14} />}
@@ -224,6 +232,8 @@ export function IconButton({
       type={type}
       aria-label={label}
       aria-pressed={active || undefined}
+      data-ui="icon-button"
+      data-box={size}
       className={cx(
         'inline-flex shrink-0 items-center justify-center border-0 px-1',
         'transition-[background-color,color] duration-[var(--dur-fast)] ease-[var(--ease)]',

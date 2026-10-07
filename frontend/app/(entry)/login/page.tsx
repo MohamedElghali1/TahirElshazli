@@ -7,7 +7,9 @@ import { api, ApiError } from '@/lib/api';
 import { useSession } from '@/lib/session';
 import { resolvePostAuthPath } from '@/lib/roles';
 import { goToGoogle } from '@/lib/google-flow';
-import { AuthAside, AuthShell, Field, FormError, SubmitButton, textLink } from '../_za/auth-shell';
+import { CONTACT } from '@/lib/site-content';
+import { AUTH_UNDERLINE, Decos, Underlined, Wordmark } from '../_te/parts';
+import { Field, FormAlert, GoogleMark, SubmitButton } from '../_te/fields';
 
 export default function LoginPage() {
   const { signIn } = useSession();
@@ -65,76 +67,61 @@ export default function LoginPage() {
   }
 
   return (
-    <AuthShell
-      eyebrow="Welcome back"
-      title="Sign in and pick up where you stopped."
-      lead="Your lessons, notes, past-paper drills and progress are waiting exactly where you left them."
-      aside={
-        <AuthAside
-          heading="Patient. Disciplined. Focused on your result."
-          body="Every lesson is built to strengthen critical thinking, build confidence and prepare you for the exam — and for what comes after it."
-        />
-      }
-    >
-      <form onSubmit={submit} noValidate className="flex flex-col gap-10">
-        <Field
-          label="Email"
-          name="email"
-          type="email"
-          autoComplete="email"
-          placeholder="you@example.com"
-          required
-          autoFocus
-        />
+    <div className="si">
+      <header className="a-head">
+        <Wordmark />
+        <p>
+          New here?{' '}
+          <Link className="tl tl-inline" href="/register">Create an account</Link>
+        </p>
+      </header>
 
-        <Field
-          label="Password"
-          name="password"
-          type="password"
-          autoComplete="current-password"
-          placeholder="Your password"
-          required
-        />
+      <main id="main" className="si-main">
+        <Decos />
 
-        <div className="flex flex-wrap items-center justify-end gap-4">
-          <Link
-            href="/forgot-password"
-            className="text-za-sm text-za-muted-foreground transition-colors duration-300 ease-in-expo hover:text-za-foreground"
-          >
-            Forgot your password?
-          </Link>
+        <div className="si-card bi">
+          <form className="form" onSubmit={submit} noValidate>
+            <div className="fgroup" style={{ marginBottom: 4 }}>
+              <h1 className="auth-h">
+                Welcome <Underlined auth path={AUTH_UNDERLINE}>back</Underlined>
+              </h1>
+              <p className="auth-p">Pick up right where you left off.</p>
+            </div>
+
+            <button type="button" className="btn btn-o btn-block" onClick={continueWithGoogle} disabled={googleBusy}>
+              <GoogleMark />
+              {googleBusy ? 'Opening Google…' : 'Continue with Google'}
+            </button>
+            {googleError ? <div role="status" className="note">{googleError}</div> : null}
+
+            <div className="sep">or</div>
+
+            <Field label="Email" name="email" type="email" autoComplete="username" placeholder="you@example.com" autoFocus />
+            <Field
+              label="Password"
+              name="password"
+              type="password"
+              autoComplete="current-password"
+              placeholder="Your password"
+              aside={<Link className="tl tl-sm" href="/forgot-password">Forgot password?</Link>}
+            />
+
+            {error ? (
+              <FormAlert>
+                {error}{' '}
+                <Link href="/forgot-password" style={{ color: '#8C1D18', fontWeight: 600 }}>Reset your password</Link>.
+              </FormAlert>
+            ) : null}
+
+            <SubmitButton busy={busy} idle="Sign in" working="Signing in…" />
+          </form>
         </div>
 
-        {error ? <FormError>{error}</FormError> : null}
-
-        <SubmitButton disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</SubmitButton>
-      </form>
-
-      <div className="mt-10 flex flex-col gap-3 border-t border-solid border-za-input pt-10">
-        <button
-          type="button"
-          onClick={continueWithGoogle}
-          disabled={googleBusy}
-          className="w-full rounded-full border border-solid border-za-foreground px-8 py-5 text-za-base transition-colors duration-300 ease-in-expo hover:bg-za-foreground hover:text-za-background disabled:cursor-wait disabled:opacity-60"
-        >
-          {googleBusy ? 'Opening Google…' : 'Continue with Google'}
-        </button>
-        <p className="text-za-xs text-za-muted-foreground">
-          For accounts already connected to Google in their settings.
+        <p className="si-help bi" style={{ animationDelay: '200ms' }}>
+          Trouble signing in?{' '}
+          <a className="tl tl-inline" href={CONTACT.whatsappUrl} target="_blank" rel="noopener noreferrer">Message support</a>
         </p>
-        {googleError ? (
-          <p role="status" className="text-za-sm text-za-muted-foreground">
-            {googleError}
-          </p>
-        ) : null}
-      </div>
-
-      <p className="mt-10 text-za-sm text-za-muted-foreground">
-        New here?{' '}
-        <Link href="/register" className={textLink}>
-          Create an account
-        </Link>
-      </p>
-    </AuthShell>
+      </main>
+    </div>
   );
 }

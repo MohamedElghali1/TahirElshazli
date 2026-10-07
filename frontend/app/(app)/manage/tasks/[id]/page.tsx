@@ -1,11 +1,13 @@
 'use client';
 
-import { use } from 'react';
+import { use, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { useApi } from '@/lib/session';
-import { Button, EmptyState, Loader } from '@/components/ui';
 import { PageTitle } from '@/components/shell/page-chrome';
-import { TaskForm } from '../task-form';
+import { BackLink, ClEmpty, ClError, ClSkeleton } from '@/components/classroom/ui';
+import { DeleteTaskModal, TaskForm } from '../task-form';
 
 /**
  * `/manage/tasks/[id]` (`TASK-7`): the same form in edit mode.
@@ -19,23 +21,51 @@ export default function EditTaskPage({ params }: { params: Promise<{ id: string 
   const { id } = use(params);
   const { data, error, loading, reload } = useApi((t) => api.staff.tasks(t), [id]);
   const task = data?.find((t) => t.id === id) ?? null;
+  const router = useRouter();
+  const [deleting, setDeleting] = useState(false);
 
   return (
     <>
       <PageTitle title={task?.title ?? 'Task'} backHref="/manage/tasks" />
-      <div className="p-6">
-        {loading && (
-          <div className="flex justify-center p-8">
-            <Loader label="Loading task" />
-          </div>
-        )}
-        {error && (
-          <EmptyState icon="AlertTriangle" title={error.message} action={<Button onClick={reload}>Try again</Button>} />
-        )}
-        {data && !task && <EmptyState icon="ListDetails" title="Task not found" />}
-        {/* Keyed so a reload after a save re-seeds the form from the server. */}
-        {task && <TaskForm key={`${task.id}`} task={task} />}
-      </div>
+      <BackLink href="/manage/tasks">All tasks</BackLink>
+      {loading && !data && (
+        <section className="cl-panel">
+          <ClSkeleton rows={3} label="Loading task" />
+        </section>
+      )}
+      {error && (
+        <section className="cl-panel">
+          <ClError message={error.message} onRetry={reload} />
+        </section>
+      )}
+      {data && !task && (
+        <section className="cl-panel">
+          <ClEmpty icon="tasks" title="Task not found" />
+        </section>
+      )}
+      {task && (
+        <section className="cl-panel flex flex-wrap items-center gap-3">
+          <span className="cl-muted">Work on this task</span>
+          {task.workType === 'file_upload' && (
+            <Link href={`/manage/tasks/${task.id}/submissions`} className="cl-glink">
+              Submissions
+            </Link>
+          )}
+          {task.workType === 'google_form' && (
+            <Link href={`/manage/tasks/${task.id}/results`} className="cl-glink">
+              Results
+            </Link>
+          )}
+          <button type="button" className="cl-glink cl-glink--danger ms-auto" onClick={() => setDeleting(true)}>
+            Delete
+          </button>
+        </section>
+      )}
+      {task && deleting && (
+        <DeleteTaskModal task={task} onClose={() => setDeleting(false)} onDeleted={() => router.push('/manage/tasks')} />
+      )}
+      {/* Keyed so a reload after a save re-seeds the form from the server. */}
+      {task && <TaskForm key={`${task.id}`} task={task} />}
     </>
   );
 }

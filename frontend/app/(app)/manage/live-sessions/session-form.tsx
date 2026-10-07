@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { useSession } from '@/lib/session';
 import type { LiveSession } from '@/lib/types';
-import { Button, InlineBanner, Loader, Panel, Select, TextArea, TextInput } from '@/components/ui';
+import { ClModal, ClSegmented } from '@/components/classroom/ui';
 
 /** `<input type="datetime-local">`'s own format, read in local time. */
 function toLocalInput(iso: string): string {
@@ -14,13 +14,16 @@ function toLocalInput(iso: string): string {
 }
 
 /**
- * Create or edit a session (`SESS-1`). Drawn as a flat form above the table,
- * matching `manage/tasks/drafts/page.tsx`'s `DraftEditor`.
+ * Create or edit a session (`SESS-1`) — Redesign V2's "session" modal.
  *
  * `groupId` cannot be changed on an edit - `LiveSessionUpdate` deliberately
  * has no `groupId`: moving a session to another group is a delete and a
  * re-create, not a PATCH, because a move would strand the attendance rows
  * keyed on the session (`live-session-repository.interface.ts`).
+ *
+ * The artifact draws a date plus two times; the API takes two full instants
+ * and a session may legitimately cross midnight, so Starts and Ends stay two
+ * `datetime-local` fields.
  */
 export function SessionForm({
   groups,
@@ -80,83 +83,75 @@ export function SessionForm({
   }
 
   return (
-    <Panel
+    <ClModal
+      open
       title={session ? 'Edit session' : 'New session'}
-      action={
-        <Button size="small" variant="tertiary" onClick={onClose}>
-          Close
-        </Button>
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className="cl-btns" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="button" className="cl-btnp" disabled={busy || !canSave} onClick={save}>
+            {busy ? 'Saving…' : 'Save session'}
+          </button>
+        </>
       }
     >
-      <div className="flex flex-col gap-4">
-        {error && <InlineBanner tone="danger">{error}</InlineBanner>}
-        <div className="flex flex-wrap items-end gap-3">
-          <TextInput
-            label="Title"
-            className="min-w-[240px] flex-1"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            maxLength={200}
-          />
-          <Select
-            label="Group"
-            className="w-[200px]"
-            value={groupId}
-            onChange={(e) => setGroupId(e.target.value)}
-            disabled={Boolean(session)}
-            hint={session ? 'Fixed once created' : undefined}
-            options={[
-              { value: '', label: 'Choose a group' },
-              ...groups.map((g) => ({ value: g.id, label: g.name })),
-            ]}
-          />
-        </div>
-        <div className="flex flex-wrap items-end gap-3">
-          <TextInput
-            label="Starts"
-            type="datetime-local"
-            className="w-[220px]"
-            value={scheduledAt}
-            onChange={(e) => setScheduledAt(e.target.value)}
-          />
-          <TextInput
-            label="Ends"
-            type="datetime-local"
-            className="w-[220px]"
-            value={endsAt}
-            onChange={(e) => setEndsAt(e.target.value)}
-          />
-          <TextInput
-            label="Meeting link"
-            className="min-w-[240px] flex-1"
-            value={meetingLink}
-            onChange={(e) => setMeetingLink(e.target.value)}
-            placeholder="https://"
-          />
-        </div>
-        <TextArea
-          label="Description"
-          rows={2}
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          maxLength={2000}
-        />
-        {!session && (
-          <Select
-            label="Visibility"
-            className="w-[220px]"
-            value={publishNow ? 'published' : 'planned'}
-            onChange={(e) => setPublishNow(e.target.value === 'published')}
-            options={[
-              { value: 'published', label: 'Published now' },
-              { value: 'planned', label: 'Save as draft' },
-            ]}
-          />
+      <div className="cl-fgrid">
+        {error && (
+          <div role="alert" className="cl-soft" style={{ color: 'var(--cl-bad)' }}>
+            {error}
+          </div>
         )}
-        <Button variant="primary" className="self-start" disabled={busy || !canSave} onClick={save}>
-          {busy ? <Loader size={3} label="Saving" /> : 'Save session'}
-        </Button>
+        <label className="cl-fl">
+          Title
+          <input className="cl-inp" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
+        </label>
+        <label className="cl-fl">
+          Group{session ? ' (fixed once created)' : ''}
+          <select className="cl-inp" value={groupId} onChange={(e) => setGroupId(e.target.value)} disabled={Boolean(session)}>
+            <option value="">Choose a group</option>
+            {groups.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="cl-f2">
+          <label className="cl-fl">
+            Starts
+            <input className="cl-inp" type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} />
+          </label>
+          <label className="cl-fl">
+            Ends
+            <input className="cl-inp" type="datetime-local" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} />
+          </label>
+        </div>
+        <label className="cl-fl">
+          Meeting link
+          <input className="cl-inp" value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} placeholder="https://" />
+        </label>
+        <label className="cl-fl">
+          Description
+          <textarea className="cl-inp" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} maxLength={2000} />
+        </label>
+        {!session && (
+          <div>
+            <div className="cl-flab">Visibility</div>
+            <ClSegmented
+              label="Visibility"
+              value={publishNow ? 'now' : 'later'}
+              onChange={(v) => setPublishNow(v === 'now')}
+              options={[
+                { value: 'now', label: 'Publish now' },
+                { value: 'later', label: 'Save as draft' },
+              ]}
+            />
+          </div>
+        )}
       </div>
-    </Panel>
+    </ClModal>
   );
 }

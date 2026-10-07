@@ -2,31 +2,16 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { api, ApiError } from '@/lib/api';
+import { useSearchParams } from 'next/navigation';
+import { api, ApiError, mediaSrc } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
 import { formatDate } from '@/lib/format';
 import type { StudentDirectoryEntry, UserStatus } from '@/lib/types';
-import {
-  Button,
-  EmptyState,
-  InlineBanner,
-  Loader,
-  SearchInput,
-  Select,
-  Table,
-  Tag,
-  TextArea,
-  TextInput,
-  type Column,
-  type TagTone,
-} from '@/components/ui';
 import { PageTitle } from '@/components/shell/page-chrome';
+import { ClIcon, initialsOf } from '@/components/shell/classroom';
+import { ClEmpty, ClError, ClModal, ClSkeleton, ClTabs, PanelHead, useToast } from '@/components/classroom/ui';
 
-const STATUS_TONE: Record<UserStatus, TagTone> = {
-  waiting: 'amber',
-  active: 'green',
-  rejected: 'red',
-};
+type View = UserStatus | 'all';
 
 const STATUS_LABEL: Record<UserStatus, string> = {
   waiting: 'Waiting',
@@ -34,192 +19,254 @@ const STATUS_LABEL: Record<UserStatus, string> = {
   rejected: 'Rejected',
 };
 
-const STATUS_FILTER_OPTIONS = [
-  { value: '', label: 'All statuses' },
-  { value: 'waiting', label: 'Waiting' },
+const TABS = [
   { value: 'active', label: 'Active' },
+  { value: 'waiting', label: 'Waiting' },
   { value: 'rejected', label: 'Rejected' },
-];
+  { value: 'all', label: 'All' },
+] as const;
+
+const COLS = '2.4fr 0.9fr 0.7fr 1fr 1.1fr';
 
 /**
  * The student directory, including the registration queue (`PEOPLE-1`,
  * `DOM-4`). Admin only - CLAUDE.md §2.2 puts the full directory under the
  * teacher and gives a TA a per-course roster instead.
  *
- * The backend and `lib/` mirror already carried accept/reject
- * (`registration-approval.service.ts`) - this screen was the only piece that
- * hadn't caught up since unit 4's mechanical port.
+ * Redesign V2, the artifact's STUDENTS: search + "Add student", status tabs,
+ * an active grid, and waiting registrations as rows with a group pick, Decline
+ * and Accept. The artifact's Performance / Attendance columns are not drawn:
+ * the directory route returns neither, so the grid shows the enrolled-course
+ * count and join date the API really gives.
  */
 export default function StudentDirectoryPage() {
-  const [search, setSearch] = useState('');
-  const [status, setStatus] = useState<UserStatus | ''>('');
-  const [decidingId, setDecidingId] = useState<string | null>(null);
+  // The sidebar search sends /manage/students?search=...
+  const initialSearch = useSearchParams().get('search') ?? '';
+  const [search, setSearch] = useState(initialSearch);
+  const [view, setView] = useState<View>(initialSearch ? 'all' : 'active');
+  const [declining, setDeclining] = useState<StudentDirectoryEntry | null>(null);
   const [creating, setCreating] = useState(false);
+  const [picks, setPicks] = useState<Record<string, string>>({});
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [toast, flash] = useToast();
+  const { token } = useSession();
 
   const { data, error, loading, reload } = useApi(
-    (token) => api.admin.students(token, search.trim() || undefined, status || undefined),
-    [search, status],
+    (t) => api.admin.students(t, search.trim() || undefined, view === 'all' ? undefined : view),
+    [search, view],
   );
+  const { data: groups } = useApi((t) => api.admin.groups(t), []);
 
-  const { data: groups } = useApi((token) => api.admin.groups(token), []);
+  async function accept(student: StudentDirectoryEntry) {
+    const groupId = picks[student.id] ?? groups?.[0]?.id ?? '';
+    if (!token || !groupId) return;
+    setBusyId(student.id);
+    setActionError(null);
+    try {
+      await api.admin.acceptRegistration(token, student.id, groupId);
+      flash(`${student.name} accepted`);
+      reload();
+    } catch (cause) {
+      setActionError(cause instanceof ApiError ? cause.message : 'Could not accept this registration.');
+    } finally {
+      setBusyId(null);
+    }
+  }
 
-  const columns: Column<StudentDirectoryEntry>[] = [
-    {
-      label: 'Name',
-      render: (student) => (
-        <Link
-          href={`/manage/students/${student.id}`}
-          className="text-fg underline-offset-4 hover:underline"
-        >
-          {student.name}
-        </Link>
-      ),
-    },
-    { label: 'Email', render: (student) => student.email },
-    {
-      label: 'Status',
-      render: (student) => (
-        <Tag tone={STATUS_TONE[student.status]}>{STATUS_LABEL[student.status]}</Tag>
-      ),
-    },
-    {
-      label: 'Courses',
-      align: 'end',
-      render: (student) => <span className="num">{student.enrolledCourseCount}</span>,
-    },
-    {
-      label: 'Joined',
-      align: 'end',
-      render: (student) => formatDate(student.createdAt),
-    },
-    {
-      label: '',
-      align: 'end',
-      render: (student) =>
-        student.status === 'waiting' ? (
-          <Button size="small" onClick={() => setDecidingId(student.id)}>
-            Decide
-          </Button>
-        ) : null,
-    },
-  ];
-
-  const decidingStudent = data?.find((s) => s.id === decidingId) ?? null;
+  const filtered = Boolean(search.trim());
 
   return (
     <>
       <PageTitle title="Students" />
-      <div className="flex flex-col gap-4 p-6">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div className="flex flex-wrap items-end gap-3">
-            <SearchInput
-              label="Search students"
-              className="max-w-[360px]"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            <Select
-              label="Status"
-              className="w-[160px]"
-              value={status}
-              onChange={(e) => setStatus(e.target.value as UserStatus | '')}
-              options={STATUS_FILTER_OPTIONS}
-            />
-          </div>
-          <Button variant="primary" onClick={() => setCreating((v) => !v)}>
-            {creating ? 'Cancel' : 'Create student'}
-          </Button>
-        </div>
-
-        {creating && (
-          <CreatePanel
-            onClose={() => setCreating(false)}
-            onCreated={() => {
-              setCreating(false);
-              reload();
-            }}
+      <section aria-labelledby="st-h" className="cl-panel">
+        <PanelHead id="st-h" title="Students">
+          <input
+            className="cl-inp w-[240px]"
+            type="search"
+            aria-label="Search students"
+            placeholder="Search by name or email"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
           />
+          <button type="button" className="cl-btnp" onClick={() => setCreating(true)}>
+            <ClIcon name="plus" small />
+            Add student
+          </button>
+        </PanelHead>
+
+        <ClTabs tabs={TABS} value={view} onChange={(v) => setView(v as View)} label="Student status" />
+
+        {actionError && (
+          <p role="alert" className="cl-soft mt-3" style={{ color: 'var(--cl-bad)' }}>
+            {actionError}
+          </p>
         )}
 
-        {decidingStudent && groups && (
-          <DecisionPanel
-            student={decidingStudent}
-            groups={groups}
-            onClose={() => setDecidingId(null)}
-            onDecided={() => {
-              setDecidingId(null);
-              reload();
-            }}
-          />
-        )}
-
-        {loading && (
-          <div className="flex justify-center p-8">
-            <Loader label="Loading students" />
-          </div>
-        )}
+        {loading && !data && !error && <ClSkeleton rows={5} label="Loading students" />}
         {error && (
-          <EmptyState
-            icon="AlertTriangle"
-            title={error.isAuth ? "You don't have access to this page." : error.message}
-            action={error.isAuth ? undefined : <Button onClick={reload}>Try again</Button>}
+          <ClError
+            message={error.isAuth ? "You don't have access to this page." : error.message}
+            onRetry={error.isAuth ? undefined : reload}
           />
         )}
         {data && data.length === 0 && (
-          <EmptyState
-            icon="Users"
-            title={search || status ? 'No matches' : 'No students yet'}
-            description={
-              search || status
-                ? 'No student account matches that filter.'
-                : 'Students who register will be listed here.'
-            }
+          <ClEmpty
+            icon="people"
+            tone="cl-tone-blue"
+            title={filtered ? 'No matches' : view === 'waiting' ? 'No registrations waiting' : 'No students yet'}
+            hint={filtered ? 'No student account matches that search.' : 'Students who register will be listed here.'}
           />
         )}
-        {data && data.length > 0 && (
-          <Table columns={columns} rows={data} rowKey={(student) => student.id} />
+
+        {data && data.length > 0 && view === 'waiting' && (
+          <>
+            <p className="cl-muted mx-1 mb-2 mt-3 text-[13.5px]">
+              Registered students can&apos;t see any course content until you accept them into a group.
+            </p>
+            {data.map((s) => (
+              <div key={s.id} className="cl-grow flex-wrap" style={{ cursor: 'default' }}>
+                <Avatar student={s} />
+                <span className="cl-grow-main min-w-[200px]">
+                  <Link href={`/manage/students/${s.id}`} className="block truncate text-fg no-underline">
+                    {s.name}
+                  </Link>
+                  <span className="cl-sub block truncate">
+                    {s.email} · Registered {formatDate(s.createdAt)}
+                  </span>
+                </span>
+                <label className="cl-muted inline-flex items-center gap-2 text-[13px]">
+                  Group
+                  <select
+                    className="cl-inp"
+                    style={{ height: 34 }}
+                    value={picks[s.id] ?? groups?.[0]?.id ?? ''}
+                    onChange={(e) => setPicks((p) => ({ ...p, [s.id]: e.target.value }))}
+                  >
+                    {(groups ?? []).map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <Link href={`/manage/students/${s.id}`} className="cl-glink">
+                  Edit
+                </Link>
+                <button type="button" className="cl-btns" disabled={busyId === s.id} onClick={() => setDeclining(s)}>
+                  Decline
+                </button>
+                <button
+                  type="button"
+                  className="cl-btnp"
+                  disabled={busyId === s.id || !(picks[s.id] ?? groups?.[0]?.id)}
+                  onClick={() => void accept(s)}
+                >
+                  Accept
+                </button>
+              </div>
+            ))}
+          </>
         )}
-      </div>
+
+        {data && data.length > 0 && view !== 'waiting' && (
+          <div className="mt-2 overflow-x-auto">
+            <div className="cl-gt" role="table" aria-label="Students">
+              <div className="hd" role="row" style={{ gridTemplateColumns: COLS }}>
+                <span>Name</span>
+                <span>Status</span>
+                <span className="r">Courses</span>
+                <span className="r">Joined</span>
+                <span />
+              </div>
+              {data.map((s) => (
+                <div key={s.id} className="rw" role="row" style={{ gridTemplateColumns: COLS }}>
+                  <Link
+                    href={`/manage/students/${s.id}`}
+                    className="inline-flex items-center gap-3 py-1.5 text-fg no-underline hover:no-underline"
+                  >
+                    <Avatar student={s} />
+                    <span className="min-w-0">
+                      <span className="block truncate">{s.name}</span>
+                      <span className="cl-muted block truncate text-[12.5px]">{s.email}</span>
+                    </span>
+                  </Link>
+                  <span
+                    className="text-[13.5px]"
+                    style={{ color: s.status === 'rejected' ? 'var(--cl-bad)' : s.status === 'waiting' ? 'var(--cl-warn)' : 'var(--cl-ok)' }}
+                  >
+                    {STATUS_LABEL[s.status]}
+                  </span>
+                  <span className="r">{s.enrolledCourseCount}</span>
+                  <span className="r cl-muted">{formatDate(s.createdAt)}</span>
+                  <span className="r inline-flex justify-end gap-3.5">
+                    {s.status === 'waiting' && (
+                      <button type="button" className="cl-glink" onClick={() => setView('waiting')}>
+                        Decide
+                      </button>
+                    )}
+                    <Link href={`/manage/students/${s.id}`} className="cl-glink">
+                      Edit
+                    </Link>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
+
+      {creating && (
+        <CreateModal
+          onClose={() => setCreating(false)}
+          onCreated={() => {
+            setCreating(false);
+            flash('Student created — sign-in link sent');
+            reload();
+          }}
+        />
+      )}
+      {declining && (
+        <DeclineModal
+          student={declining}
+          onClose={() => setDeclining(null)}
+          onDone={() => {
+            flash(`${declining.name} declined`);
+            setDeclining(null);
+            reload();
+          }}
+        />
+      )}
+      {toast}
     </>
   );
 }
 
-/**
- * Accept or reject one waiting registration. Accept needs a group - the group
- * decides the course (`registration-approval.service.ts`), so there is no
- * separate course field here. No `Modal` primitive exists yet
- * (`redesign-mapping.md` decision 4 is unbuilt), so this is an inline panel
- * rather than an overlay - the smallest correct thing given what's available.
- */
-function DecisionPanel({
+function Avatar({ student }: { student: StudentDirectoryEntry }) {
+  // The directory route does not return avatarUrl yet (backend gap); shown once it does.
+  const url = (student as StudentDirectoryEntry & { avatarUrl?: string | null }).avatarUrl;
+  return url ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={mediaSrc(url)} alt="" width={32} height={32} className="size-8 shrink-0 rounded-full object-cover" />
+  ) : (
+    <span className="cl-av">{initialsOf(student.name)}</span>
+  );
+}
+
+/** Reject one waiting registration, with the optional reason the API takes. */
+function DeclineModal({
   student,
-  groups,
   onClose,
-  onDecided,
+  onDone,
 }: {
   student: StudentDirectoryEntry;
-  groups: readonly { id: string; name: string }[];
   onClose: () => void;
-  onDecided: () => void;
+  onDone: () => void;
 }) {
   const { token } = useSession();
-  const [groupId, setGroupId] = useState(groups[0]?.id ?? '');
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  async function accept() {
-    if (!token || !groupId) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await api.admin.acceptRegistration(token, student.id, groupId);
-      onDecided();
-    } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : 'Could not accept this registration.');
-      setBusy(false);
-    }
-  }
 
   async function reject() {
     if (!token) return;
@@ -227,7 +274,7 @@ function DecisionPanel({
     setError(null);
     try {
       await api.admin.rejectRegistration(token, student.id, reason.trim() || undefined);
-      onDecided();
+      onDone();
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : 'Could not reject this registration.');
       setBusy(false);
@@ -235,68 +282,53 @@ function DecisionPanel({
   }
 
   return (
-    <div className="flex flex-col gap-4 rounded-lg border border-border-light bg-surface-2 p-4">
-      <div className="flex items-center justify-between">
-        <p className="text-base font-medium text-fg">
-          {student.name} <span className="text-fg-3">· {student.email}</span>
-        </p>
-        <Button size="small" variant="tertiary" onClick={onClose}>
-          Close
-        </Button>
+    <ClModal
+      open
+      title={`Decline ${student.name}?`}
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className="cl-btns" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="button" className="cl-btnp" disabled={busy} onClick={() => void reject()}>
+            {busy ? 'Declining…' : 'Decline registration'}
+          </button>
+        </>
+      }
+    >
+      <div className="cl-fgrid">
+        {error && (
+          <p role="alert" className="cl-soft m-0" style={{ color: 'var(--cl-bad)' }}>
+            {error}
+          </p>
+        )}
+        <p className="cl-muted m-0 text-[13.5px]">{student.email}</p>
+        <label className="cl-fl">
+          Rejection reason (optional)
+          <textarea className="cl-inp" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} />
+        </label>
       </div>
-
-      {error && <InlineBanner tone="danger">{error}</InlineBanner>}
-
-      <div className="flex flex-wrap items-end gap-3">
-        <Select
-          label="Place in group"
-          className="w-[240px]"
-          value={groupId}
-          onChange={(e) => setGroupId(e.target.value)}
-          options={groups.map((g) => ({ value: g.id, label: g.name }))}
-        />
-        <Button variant="primary" disabled={busy || !groupId} onClick={() => void accept()}>
-          Accept
-        </Button>
-      </div>
-
-      <div className="flex flex-wrap items-end gap-3">
-        <TextArea
-          label="Rejection reason (optional)"
-          className="min-w-[240px] flex-1"
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          rows={2}
-        />
-        <Button accent="danger" disabled={busy} onClick={() => void reject()}>
-          Reject
-        </Button>
-      </div>
-    </div>
+    </ClModal>
   );
 }
 
 /**
  * Creates a student directly, already active - no password, a sign-in link
- * is emailed instead (`PEOPLE-3`). Same inline-panel shape as `DecisionPanel`,
- * for the same reason: no `Modal` primitive exists yet.
+ * is emailed instead (`PEOPLE-3`). The artifact's student modal also asks for
+ * group and parent contact; the create route takes only a name and an email,
+ * so those are set afterwards (group on accept/placement, parent on the profile).
  */
-function CreatePanel({
-  onClose,
-  onCreated,
-}: {
-  onClose: () => void;
-  onCreated: () => void;
-}) {
+function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const { token } = useSession();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function submit(event: React.FormEvent<HTMLFormElement>) {
+  async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (!token) return;
+    if (!token || !name.trim() || !email.trim()) return;
     setBusy(true);
     setError(null);
     try {
@@ -309,42 +341,41 @@ function CreatePanel({
   }
 
   return (
-    <form
-      onSubmit={submit}
-      className="flex flex-col gap-4 rounded-lg border border-border-light bg-surface-2 p-4"
+    <ClModal
+      open
+      title="Add student"
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className="cl-btns" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" form="create-student" className="cl-btnp" disabled={busy || !name.trim() || !email.trim()}>
+            {busy ? 'Creating…' : 'Add student'}
+          </button>
+        </>
+      }
     >
-      <div className="flex items-center justify-between">
-        <p className="text-base font-medium text-fg">Create a student</p>
-        <Button size="small" variant="tertiary" onClick={onClose}>
-          Close
-        </Button>
-      </div>
-
-      {error && <InlineBanner tone="danger">{error}</InlineBanner>}
-      <p className="text-base text-fg-3">
-        Creates an active account immediately and emails a sign-in link - no approval queue.
-      </p>
-
-      <div className="flex flex-wrap items-end gap-3">
-        <TextInput
-          label="Full name"
-          className="min-w-[220px]"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-        />
-        <TextInput
-          label="Email"
-          type="email"
-          className="min-w-[220px]"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
-        <Button type="submit" variant="primary" disabled={busy || !name.trim() || !email.trim()}>
-          {busy ? 'Creating…' : 'Create'}
-        </Button>
-      </div>
-    </form>
+      <form id="create-student" onSubmit={submit} className="cl-fgrid">
+        {error && (
+          <p role="alert" className="cl-soft m-0" style={{ color: 'var(--cl-bad)' }}>
+            {error}
+          </p>
+        )}
+        <p className="cl-muted m-0 text-[13.5px]">
+          Creates an active account immediately and emails a sign-in link - no approval queue.
+        </p>
+        <div className="cl-f2">
+          <label className="cl-fl">
+            Full name
+            <input className="cl-inp" value={name} onChange={(e) => setName(e.target.value)} required />
+          </label>
+          <label className="cl-fl">
+            Email
+            <input className="cl-inp" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          </label>
+        </div>
+      </form>
+    </ClModal>
   );
 }

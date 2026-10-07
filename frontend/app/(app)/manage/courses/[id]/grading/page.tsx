@@ -5,8 +5,8 @@ import { api } from '@/lib/api';
 import { useApi } from '@/lib/session';
 import { ASSESSMENT_TYPE_LABEL, formatPercent } from '@/lib/format';
 import type { GradingQueueItem, GradingStatus } from '@/lib/types';
-import { Button, EmptyState, Loader, Panel, Select, Table, Tag } from '@/components/ui';
 import { GradeDialog, GRADING_STATUS_FILTER, SubmissionRow } from '@/components/marking/grading-queue';
+import { ClEmpty, ClError, ClSegmented, ClSkeleton, PanelHead } from '@/components/classroom/ui';
 
 /**
  * The grading queue.
@@ -19,6 +19,8 @@ import { GradeDialog, GRADING_STATUS_FILTER, SubmissionRow } from '@/components/
  * arrive already derived from the server's own timestamps (§5.10); the filter
  * below narrows a server-derived value rather than recomputing one.
  */
+const GRID = '2.4fr 1fr 1fr 1fr 1fr';
+
 export default function CourseGradingPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [status, setStatus] = useState<GradingStatus | ''>('awaiting');
@@ -29,100 +31,77 @@ export default function CourseGradingPage({ params }: { params: Promise<{ id: st
     [id, status],
   );
 
+  const notFound = error?.isNotFound ? 'This course does not exist, or it is not assigned to you.' : null;
+
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <>
       {/* Per-assessment averages across every student - CLAUDE.md §5.6, the
           number that says whether a task was hard or easy. */}
-      <Panel
-        title="Assessment averages"
-        action={
-          // `D-44`: the submissions below are the caller's own groups; these
-          // figures are the whole course's, the same for every viewer.
-          <span className="text-xs text-fg-4">Whole course, every group</span>
-        }
-        bodyClassName=""
-      >
-        {loading && (
-          <div className="flex justify-center p-8">
-            <Loader label="Loading assessment averages" />
-          </div>
-        )}
-        {error && (
-          <EmptyState
-            icon="AlertTriangle"
-            title={
-              error.isNotFound
-                ? 'This course does not exist, or it is not assigned to you.'
-                : error.message
-            }
-            action={error.isNotFound ? undefined : <Button onClick={reload}>Try again</Button>}
-          />
-        )}
+      <section aria-labelledby="gr-avg" className="cl-panel pb-4">
+        <PanelHead id="gr-avg" title="Assessment averages">
+          {/* `D-44`: the submissions below are the caller's own groups; these
+              figures are the whole course's, the same for every viewer. */}
+          <span className="cl-muted text-[13px]">Whole course, every group</span>
+        </PanelHead>
+        {loading && !data && <ClSkeleton rows={3} label="Loading assessment averages" />}
+        {error && <ClError message={notFound ?? error.message} onRetry={error.isNotFound ? undefined : reload} />}
         {data && data.assessments.length === 0 && (
-          <EmptyState
-            icon="ListDetails"
+          <ClEmpty
+            icon="tasks"
+            tone="cl-tone-blue"
             title="No assessments yet"
-            description="Once this course has homework, assignments or quizzes, their cohort averages appear here."
+            hint="Once this course has homework, assignments or quizzes, their cohort averages appear here."
           />
         )}
         {data && data.assessments.length > 0 && (
-          <Table
-            rowKey={(row) => row.assessmentId}
-            rows={data.assessments}
-            columns={[
-              { label: 'Assessment', render: (a) => a.title },
-              { label: 'Type', render: (a) => <Tag tone="gray">{ASSESSMENT_TYPE_LABEL[a.type]}</Tag> },
-              { label: 'Submitted', align: 'end', render: (a) => <span className="num">{a.submissionCount}</span> },
-              { label: 'Graded', align: 'end', render: (a) => <span className="num">{a.gradedCount}</span> },
-              {
-                label: 'Class average',
-                align: 'end',
-                render: (a) => <span className="num text-fg">{formatPercent(a.averageScorePercent)}</span>,
-              },
-            ]}
-          />
-        )}
-      </Panel>
-
-      <Panel
-        title="Submissions"
-        action={
-          <Select
-            aria-label="Filter submissions by status"
-            className="w-auto min-w-[150px]"
-            value={status}
-            onChange={(e) => setStatus(e.target.value as GradingStatus | '')}
-            options={GRADING_STATUS_FILTER}
-          />
-        }
-        bodyClassName=""
-      >
-        {loading && (
-          <div className="flex justify-center p-8">
-            <Loader label="Loading submissions" />
+          <div className="overflow-x-auto">
+            <div className="cl-gt" role="table" aria-label="Assessment averages" style={{ minWidth: 640 }}>
+              <div className="hd" role="row" style={{ gridTemplateColumns: GRID }}>
+                <span>Assessment</span>
+                <span>Type</span>
+                <span className="r">Submitted</span>
+                <span className="r">Graded</span>
+                <span className="r">Class average</span>
+              </div>
+              {data.assessments.map((a) => (
+                <div key={a.assessmentId} className="rw" role="row" style={{ gridTemplateColumns: GRID }}>
+                  <span className="truncate">{a.title}</span>
+                  <span className="cl-muted">{ASSESSMENT_TYPE_LABEL[a.type]}</span>
+                  <span className="r">{a.submissionCount}</span>
+                  <span className="r">{a.gradedCount}</span>
+                  <span className="r">{formatPercent(a.averageScorePercent)}</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
+      </section>
+
+      <section aria-labelledby="gr-sub" className="cl-panel pb-4">
+        <PanelHead id="gr-sub" title="Submissions">
+          <ClSegmented
+            label="Filter submissions by status"
+            value={status}
+            onChange={setStatus}
+            options={GRADING_STATUS_FILTER}
+          />
+        </PanelHead>
+        {loading && !data && <ClSkeleton rows={3} label="Loading submissions" />}
         {data && data.items.length === 0 && (
-          <EmptyState
-            icon="Inbox"
+          <ClEmpty
+            icon="check"
             title={status === 'awaiting' ? 'Nothing waiting' : 'No submissions here'}
-            description={
+            hint={
               status === 'awaiting'
                 ? 'Every submission on this course has been marked.'
                 : 'Work submitted by students on this course will appear here.'
             }
           />
         )}
-        {data && data.items.length > 0 && (
-          <ul className="divide-y divide-border-light">
-            {data.items.map((item) => (
-              <li key={item.submissionId}>
-                <SubmissionRow item={item} onGrade={() => setEditing(item)} onReturned={reload} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </Panel>
+        {data?.items.map((item) => (
+          <SubmissionRow key={item.submissionId} item={item} onGrade={() => setEditing(item)} onReturned={reload} />
+        ))}
+      </section>
 
       {editing && (
         <GradeDialog
@@ -134,6 +113,6 @@ export default function CourseGradingPage({ params }: { params: Promise<{ id: st
           }}
         />
       )}
-    </div>
+    </>
   );
 }

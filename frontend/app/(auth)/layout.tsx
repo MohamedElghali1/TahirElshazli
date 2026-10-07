@@ -30,15 +30,7 @@ export default function AuthLayout({
           </p>
         </div>
 
-        <p className="text-m-body text-fg-4">
-          Not enrolled yet?{' '}
-          <Link
-            href="/courses"
-            className="text-fg-2 underline underline-offset-4 hover:text-fg"
-          >
-            Browse courses
-          </Link>
-        </p>
+        <span />
       </aside>
 
       <main

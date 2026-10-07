@@ -2,22 +2,22 @@
 
 import { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { api } from '@/lib/api';
+import { api, mediaSrc } from '@/lib/api';
 import { useApi } from '@/lib/session';
 import { formatDate, formatFileSize, MATERIAL_CATEGORY_LABEL } from '@/lib/format';
 import type { Material, MaterialCategory } from '@/lib/types';
-import { Panel, Tag, EmptyState, Loader, Button, Icon } from '@/components/ui';
+import { ClIcon } from '@/components/shell/classroom';
+import { ClEmpty, ClError, ClSkeleton, PanelHead } from '@/components/classroom/ui';
 import { PageTitle } from '@/components/shell/page-chrome';
 import { CourseGate } from '@/components/student/course-gate';
+import { CourseHeader } from '@/components/student/course-header';
 import { useSelectedCourse } from '@/components/shell/course-context';
 
 const ORDER: MaterialCategory[] = ['course_notes', 'study_materials', 'important_files'];
 
 /**
- * Materials has no slot in the flat rail (`docs/PRODUCT_SPEC.md` §6 does not
- * list it), but it is real, working, course-scoped functionality — kept
- * reachable by direct link (from Overview's own Materials panel) rather than
- * dropped, per the same precedent slice 4a set for Courses/Blog.
+ * Materials — a tab of the course page (`docs/PRODUCT_SPEC.md` §6 does not
+ * list it in the rail, but it is real, course-scoped functionality).
  */
 export default function MaterialsPage() {
   const { courses, selectedId, loading } = useSelectedCourse();
@@ -27,15 +27,18 @@ export default function MaterialsPage() {
       <PageTitle title="Materials" />
       <CourseGate loading={loading} hasCourses={Boolean(courses && courses.length > 0)}>
         {selectedId && (
-          <Suspense
-            fallback={
-              <div className="flex justify-center p-12">
-                <Loader label="Loading materials" />
-              </div>
-            }
-          >
-            <MaterialsList courseId={selectedId} />
-          </Suspense>
+          <>
+            <CourseHeader />
+            <Suspense
+              fallback={
+                <section className="cl-panel">
+                  <ClSkeleton label="Loading materials" />
+                </section>
+              }
+            >
+              <MaterialsList courseId={selectedId} />
+            </Suspense>
+          </>
         )}
       </CourseGate>
     </>
@@ -45,7 +48,7 @@ export default function MaterialsPage() {
 function MaterialsList({ courseId }: { courseId: string }) {
   const params = useSearchParams();
   // Overview's own Materials panel deep-links with `?category=` (via
-  // `CourseLink`, which sets the rail's course selection in the same click).
+  // `CourseLink`, which sets the course selection in the same click).
   const raw = params.get('category');
   const category = ORDER.includes(raw as MaterialCategory) ? (raw as MaterialCategory) : undefined;
 
@@ -62,85 +65,72 @@ function MaterialsList({ courseId }: { courseId: string }) {
 
   if (loading) {
     return (
-      <div className="flex justify-center p-12">
-        <Loader label="Loading materials" />
-      </div>
+      <section className="cl-panel">
+        <ClSkeleton label="Loading materials" />
+      </section>
     );
   }
 
   if (error) {
     return (
-      <div className="p-6">
-        <EmptyState
-          icon="AlertTriangle"
-          title={error.message}
-          action={<Button onClick={reload}>Try again</Button>}
+      <section className="cl-panel">
+        <ClError message={error.message} onRetry={reload} />
+      </section>
+    );
+  }
+
+  if (total === 0) {
+    return (
+      <section className="cl-panel">
+        <ClEmpty
+          icon="folder"
+          title="Nothing uploaded yet"
+          hint="Course notes, study material and past papers appear here as they are added."
         />
-      </div>
+      </section>
     );
   }
 
   return (
-    <div className="flex flex-col gap-6 p-6">
-      {total === 0 ? (
-        <Panel bodyClassName="">
-          <EmptyState
-            icon="Folder"
-            title="Nothing uploaded yet"
-            description="Course notes, study material and past papers appear here as they are added."
-          />
-        </Panel>
-      ) : (
-        sections
-          .filter((section) => section.items.length > 0)
-          .map((section) => (
-            <Panel
-              key={section.key}
-              title={MATERIAL_CATEGORY_LABEL[section.key]}
-              action={<span className="num text-xs text-fg-3">{section.items.length}</span>}
-              bodyClassName=""
-            >
-              <ul className="divide-y divide-border-light">
-                {section.items.map((material) => (
-                  <li key={material.id}>
-                    <MaterialRow material={material} />
-                  </li>
-                ))}
-              </ul>
-            </Panel>
-          ))
-      )}
-    </div>
+    <>
+      {sections
+        .filter((section) => section.items.length > 0)
+        .map((section) => (
+          <section key={section.key} className="cl-panel" aria-labelledby={`mat-${section.key}`}>
+            <PanelHead id={`mat-${section.key}`} title={MATERIAL_CATEGORY_LABEL[section.key]}>
+              <span className="cl-muted text-[14px]">{section.items.length}</span>
+            </PanelHead>
+            {section.items.map((material) => (
+              <MaterialRow key={material.id} material={material} />
+            ))}
+          </section>
+        ))}
+    </>
   );
 }
 
 function MaterialRow({ material }: { material: Material }) {
   return (
-    <a
-      href={material.fileUrl}
-      target="_blank"
-      rel="noreferrer"
-      className="flex items-center gap-4 px-4 py-3 transition-colors duration-[var(--dur-fast)] ease-[var(--ease)] hover:bg-wash-hover"
-    >
-      <Icon name="FileText" size={16} className="shrink-0 text-fg-3" />
-
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-base text-fg">{material.title}</span>
-          {material.chapter && <Tag>{material.chapter}</Tag>}
-        </div>
-        {material.description && (
-          <p className="mt-1 truncate text-xs text-fg-3">{material.description}</p>
-        )}
-      </div>
-
-      <span className="num hidden shrink-0 text-xs text-fg-3 sm:block">
-        {material.fileType.toUpperCase()} · {formatFileSize(material.fileSizeBytes)}
+    <div className="cl-chip-row">
+      <span className="cl-ic34 cl-ic40 cl-tone-sky">
+        <ClIcon name="doc" small />
       </span>
-      <span className="num hidden shrink-0 text-xs text-fg-4 lg:block">
-        {formatDate(material.uploadedAt)}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">
+          {material.title}
+          {material.chapter && <span className="cl-muted text-[13px]"> · {material.chapter}</span>}
+        </span>
+        <span className="cl-muted block truncate text-[12.5px]">
+          {material.description ? `${material.description} · ` : ''}
+          {material.fileType.toUpperCase()} · {formatFileSize(material.fileSizeBytes)} · {formatDate(material.uploadedAt)}
+        </span>
       </span>
-      <Icon name="ArrowDown" size={16} className="shrink-0 text-fg-2" />
-    </a>
+      <a href={mediaSrc(material.fileUrl)} target="_blank" rel="noreferrer" className="cl-btns">
+        Open
+      </a>
+      <a href={mediaSrc(material.fileUrl)} download className="cl-btns cl-btns--quiet">
+        Download
+      </a>
+    </div>
   );
 }

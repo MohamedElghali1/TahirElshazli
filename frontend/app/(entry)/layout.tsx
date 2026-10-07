@@ -1,29 +1,29 @@
 import { Suspense } from 'react';
-import localFont from 'next/font/local';
-import { MotionConfig } from 'motion/react';
-import { Transition } from './_za/transition';
+import { Caveat, Inter_Tight } from 'next/font/google';
+import './entry.css';
 
 /**
- * Landing, sign in and sign up, on the Za3 landing-page reference design
- * (github.com/alies1m/Za3-Landing-page). Its palette, font and motion are
- * scoped to `.za-theme` and to this route group; no other page sees them.
+ * Home, About, sign in and sign up - the "Tahir Elshazli - Teacher Website"
+ * Claude Design handoff. Its palette and motion live in entry.css, scoped to
+ * `.te`; Inter Tight is the body face and Caveat the handwritten accent.
  */
-const neueMontreal = localFont({
-  src: './_za/neue-montreal.woff2',
-  weight: '400',
-  style: 'normal',
+const interTight = Inter_Tight({
+  variable: '--font-inter-tight',
+  subsets: ['latin'],
+  display: 'swap',
+});
+const caveat = Caveat({
+  variable: '--font-caveat',
+  subsets: ['latin'],
+  weight: ['500', '700'],
   display: 'swap',
 });
 
 export default function EntryLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className={`za-theme min-h-[100dvh] ${neueMontreal.className}`}>
-      <MotionConfig reducedMotion="user">
-        <Transition>
-          {/* Sign in and sign up read `?next=` with `useSearchParams`. */}
-          <Suspense fallback={null}>{children}</Suspense>
-        </Transition>
-      </MotionConfig>
+    <div className={`te ${interTight.variable} ${caveat.variable} min-h-[100dvh]`}>
+      {/* Sign in and sign up read `?next=` with `useSearchParams`. */}
+      <Suspense fallback={null}>{children}</Suspense>
     </div>
   );
 }

@@ -6,151 +6,121 @@ import { api, ApiError } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
 import { formatDate } from '@/lib/format';
 import type { Assistant, AssistantScope, Role } from '@/lib/types';
-import {
-  Button,
-  Checkbox,
-  EmptyState,
-  InlineBanner,
-  Loader,
-  Select,
-  Table,
-  Tag,
-  TextInput,
-  type Column,
-  type TagTone,
-} from '@/components/ui';
 import { PageTitle } from '@/components/shell/page-chrome';
-
-const STATUS_TONE: Record<Assistant['status'], TagTone> = {
-  invited: 'amber',
-  active: 'green',
-};
-
-const ROLE_OPTIONS = [
-  { value: 'assistant', label: 'Assistant' },
-  { value: 'admin', label: 'Admin' },
-];
-
-const SCOPE_OPTIONS = [
-  { value: 'all_groups', label: 'Every group' },
-  { value: 'assigned_groups', label: 'Assigned groups only' },
-];
+import { ClIcon, initialsOf } from '@/components/shell/classroom';
+import { ClEmpty, ClError, ClModal, ClSkeleton, PanelHead, useToast } from '@/components/classroom/ui';
 
 /**
  * Assistants and admins - real accounts and pending invitations, one list
- * (`PEOPLE-4`, `AUTH-4`). The activity column links straight to the existing
- * audit log filtered to that actor (`PEOPLE-5`) - no separate route exists,
- * or needs to.
+ * (`PEOPLE-4`, `AUTH-4`). Redesign V2, the artifact's ASSISTANTS: a row per
+ * person with their reach, "Add assistant" and Edit in a modal. The "last
+ * active" date links straight to the audit log filtered to that actor
+ * (`PEOPLE-5`) - no separate route exists, or needs to.
  */
 export default function AssistantsPage() {
   const [inviting, setInviting] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [toast, flash] = useToast();
 
   const { data, error, loading, reload } = useApi((token) => api.admin.assistants(token), []);
   const { data: groups } = useApi((token) => api.admin.groups(token), []);
 
-  const columns: Column<Assistant>[] = [
-    { label: 'Name', render: (a) => a.name },
-    { label: 'Email', render: (a) => a.email },
-    {
-      label: 'Role',
-      render: (a) => <Tag tone={a.role === 'admin' ? 'violet' : 'gray'}>{a.role}</Tag>,
-    },
-    {
-      label: 'Status',
-      render: (a) => <Tag tone={STATUS_TONE[a.status]}>{a.status}</Tag>,
-    },
-    {
-      label: 'Reach',
-      render: (a) =>
-        a.scope === 'all_groups'
-          ? 'Every group'
-          : `${a.groupIds.length} group${a.groupIds.length === 1 ? '' : 's'}`,
-    },
-    {
-      label: 'Last active',
-      render: (a) =>
-        a.lastSeenAt ? (
-          <Link
-            href={`/manage/activity?actorId=${a.id}`}
-            className="text-fg-3 underline-offset-4 hover:underline"
-          >
-            {formatDate(a.lastSeenAt)}
-          </Link>
-        ) : (
-          '—'
-        ),
-    },
-    {
-      label: '',
-      align: 'end',
-      render: (a) => (
-        <Button size="small" onClick={() => setEditingId(a.id)}>
-          Edit
-        </Button>
-      ),
-    },
-  ];
-
   const editing = data?.find((a) => a.id === editingId) ?? null;
+  const groupName = new Map((groups ?? []).map((g) => [g.id, g.name]));
 
   return (
     <>
       <PageTitle title="Assistants" />
-      <div className="flex flex-col gap-4 p-6">
-        <div className="flex justify-end">
-          <Button variant="primary" onClick={() => setInviting((v) => !v)}>
-            {inviting ? 'Cancel' : 'Invite assistant'}
-          </Button>
-        </div>
+      <section aria-labelledby="as-h" className="cl-panel pb-4">
+        <PanelHead id="as-h" title="Assistants" className="mb-2">
+          <button type="button" className="cl-btnp" onClick={() => setInviting(true)}>
+            <ClIcon name="plus" small />
+            Add assistant
+          </button>
+        </PanelHead>
 
-        {inviting && groups && (
-          <InvitePanel
-            groups={groups}
-            onClose={() => setInviting(false)}
-            onInvited={() => {
-              setInviting(false);
-              reload();
-            }}
-          />
-        )}
-
-        {editing && groups && (
-          <EditPanel
-            assistant={editing}
-            groups={groups}
-            onClose={() => setEditingId(null)}
-            onChanged={() => {
-              setEditingId(null);
-              reload();
-            }}
-          />
-        )}
-
-        {loading && (
-          <div className="flex justify-center p-8">
-            <Loader label="Loading assistants" />
-          </div>
-        )}
+        {loading && !data && !error && <ClSkeleton rows={3} label="Loading assistants" />}
         {error && (
-          <EmptyState
-            icon="AlertTriangle"
-            title={error.isAuth ? "You don't have access to this page." : error.message}
-            action={error.isAuth ? undefined : <Button onClick={reload}>Try again</Button>}
+          <ClError
+            message={error.isAuth ? "You don't have access to this page." : error.message}
+            onRetry={error.isAuth ? undefined : reload}
           />
         )}
         {data && data.length === 0 && (
-          <EmptyState
-            icon="Users"
+          <ClEmpty
+            icon="assistants"
+            tone="cl-tone-blue"
             title="No assistants yet"
-            description="Invite an assistant or admin to help run the course."
+            hint="Invite an assistant or admin to help run the course."
           />
         )}
-        {data && data.length > 0 && (
-          <Table columns={columns} rows={data} rowKey={(a) => a.id} />
-        )}
-      </div>
+        {data?.map((a) => (
+          <div key={a.id} className="cl-grow flex-wrap" style={{ cursor: 'default' }}>
+            <span className="cl-ic40 cl-tone-peach">{initialsOf(a.name)}</span>
+            <span className="cl-grow-main min-w-[200px]">
+              <span className="block truncate">{a.name}</span>
+              <span className="cl-sub block truncate">
+                {a.role === 'admin' ? 'Admin' : 'Assistant'} · {a.email}
+                {a.status === 'invited' && ' · Invitation pending'}
+              </span>
+            </span>
+            <span className="min-w-[150px] text-[13.5px]">
+              <span className="cl-muted block text-[12px]">Assigned groups</span>
+              {a.role === 'admin' || a.scope === 'all_groups'
+                ? 'Every group'
+                : a.groupIds.length === 0
+                  ? '—'
+                  : a.groupIds.map((id) => groupName.get(id) ?? 'Group').join(', ')}
+            </span>
+            <span className="cl-muted min-w-[110px] text-[13px] max-sm:hidden">
+              {a.lastSeenAt ? (
+                <Link href={`/manage/activity?actorId=${a.id}`} className="cl-glink">
+                  Active {formatDate(a.lastSeenAt)}
+                </Link>
+              ) : (
+                '—'
+              )}
+            </span>
+            <button type="button" className="cl-btns" onClick={() => setEditingId(a.id)}>
+              Edit
+            </button>
+          </div>
+        ))}
+      </section>
+
+      {inviting && groups && (
+        <InviteModal
+          groups={groups}
+          onClose={() => setInviting(false)}
+          onInvited={() => {
+            setInviting(false);
+            flash('Invitation sent');
+            reload();
+          }}
+        />
+      )}
+      {editing && groups && (
+        <EditModal
+          assistant={editing}
+          groups={groups}
+          onClose={() => setEditingId(null)}
+          onChanged={(message) => {
+            setEditingId(null);
+            flash(message);
+            reload();
+          }}
+        />
+      )}
+      {toast}
     </>
+  );
+}
+
+function ErrorLine({ message }: { message: string }) {
+  return (
+    <p role="alert" className="cl-soft m-0" style={{ color: 'var(--cl-bad)' }}>
+      {message}
+    </p>
   );
 }
 
@@ -173,31 +143,32 @@ function ReachFields({
   if (role === 'admin') return null;
   return (
     <>
-      <Select
-        label="Reach"
-        className="w-[240px]"
-        value={scope}
-        onChange={(e) => setScope(e.target.value as AssistantScope)}
-        options={SCOPE_OPTIONS}
-      />
+      <label className="cl-fl">
+        Reach
+        <select className="cl-inp" value={scope} onChange={(e) => setScope(e.target.value as AssistantScope)}>
+          <option value="all_groups">Every group</option>
+          <option value="assigned_groups">Assigned groups only</option>
+        </select>
+      </label>
       {scope === 'assigned_groups' && (
-        <div className="flex flex-col gap-2">
-          <p className="text-base text-fg-3">Groups</p>
-          <div className="flex flex-wrap gap-3">
-            {groups.map((g) => (
-              <div key={g.id} className="flex items-center gap-2">
-                <Checkbox
-                  label={g.name}
-                  checked={groupIds.includes(g.id)}
-                  onChange={(checked) =>
-                    setGroupIds(
-                      checked ? [...groupIds, g.id] : groupIds.filter((id) => id !== g.id),
-                    )
-                  }
-                />
-                <span className="text-base text-fg">{g.name}</span>
-              </div>
-            ))}
+        <div>
+          <div className="cl-flab">Groups</div>
+          <div className="cl-chips" role="group" aria-label="Groups">
+            {groups.map((g) => {
+              const on = groupIds.includes(g.id);
+              return (
+                <button
+                  key={g.id}
+                  type="button"
+                  role="checkbox"
+                  aria-checked={on}
+                  className={on ? 'cl-chip on' : 'cl-chip'}
+                  onClick={() => setGroupIds(on ? groupIds.filter((id) => id !== g.id) : [...groupIds, g.id])}
+                >
+                  {g.name}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -205,7 +176,7 @@ function ReachFields({
   );
 }
 
-function InvitePanel({
+function InviteModal({
   groups,
   onClose,
   onInvited,
@@ -244,62 +215,50 @@ function InvitePanel({
   }
 
   return (
-    <form
-      onSubmit={submit}
-      className="flex flex-col gap-4 rounded-lg border border-border-light bg-surface-2 p-4"
+    <ClModal
+      open
+      title="Add assistant"
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className="cl-btns" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" form="invite-form" className="cl-btnp" disabled={busy || !name.trim() || !email.trim()}>
+            {busy ? 'Sending…' : 'Send invitation'}
+          </button>
+        </>
+      }
     >
-      <div className="flex items-center justify-between">
-        <p className="text-base font-medium text-fg">Invite an assistant</p>
-        <Button size="small" variant="tertiary" onClick={onClose}>
-          Close
-        </Button>
-      </div>
-
-      {error && <InlineBanner tone="danger">{error}</InlineBanner>}
-
-      <div className="flex flex-wrap items-end gap-3">
-        <TextInput
-          label="Full name"
-          className="min-w-[220px]"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
+      <form id="invite-form" onSubmit={submit} className="cl-fgrid">
+        {error && <ErrorLine message={error} />}
+        <div className="cl-f2">
+          <label className="cl-fl">
+            Full name
+            <input className="cl-inp" value={name} onChange={(e) => setName(e.target.value)} required />
+          </label>
+          <label className="cl-fl">
+            Email
+            <input className="cl-inp" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          </label>
+        </div>
+        <label className="cl-fl">
+          Role
+          <select className="cl-inp" value={role} onChange={(e) => setRole(e.target.value as Role)}>
+            <option value="assistant">Assistant</option>
+            <option value="admin">Admin</option>
+          </select>
+        </label>
+        <ReachFields
+          role={role}
+          scope={scope}
+          setScope={setScope}
+          groupIds={groupIds}
+          setGroupIds={setGroupIds}
+          groups={groups}
         />
-        <TextInput
-          label="Email"
-          type="email"
-          className="min-w-[220px]"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
-        <Select
-          label="Role"
-          className="w-[160px]"
-          value={role}
-          onChange={(e) => setRole(e.target.value as Role)}
-          options={ROLE_OPTIONS}
-        />
-      </div>
-
-      <ReachFields
-        role={role}
-        scope={scope}
-        setScope={setScope}
-        groupIds={groupIds}
-        setGroupIds={setGroupIds}
-        groups={groups}
-      />
-
-      <Button
-        type="submit"
-        variant="primary"
-        disabled={busy || !name.trim() || !email.trim()}
-        className="self-start"
-      >
-        {busy ? 'Sending…' : 'Send invitation'}
-      </Button>
-    </form>
+      </form>
+    </ClModal>
   );
 }
 
@@ -309,7 +268,7 @@ function InvitePanel({
  * Resend and cancel are offered on the invited row only - an active account
  * is never removed here, see the backend service's own comment.
  */
-function EditPanel({
+function EditModal({
   assistant,
   groups,
   onClose,
@@ -318,7 +277,7 @@ function EditPanel({
   assistant: Assistant;
   groups: readonly { id: string; name: string }[];
   onClose: () => void;
-  onChanged: () => void;
+  onChanged: (message: string) => void;
 }) {
   const { token } = useSession();
   const [scope, setScope] = useState<AssistantScope>(assistant.scope);
@@ -339,7 +298,7 @@ function EditPanel({
         scope,
         groupIds: assistant.role === 'admin' ? [] : groupIds,
       });
-      onChanged();
+      onChanged('Changes saved');
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : 'Could not save this change.');
       setBusy(false);
@@ -366,7 +325,7 @@ function EditPanel({
     setError(null);
     try {
       await api.admin.removeAssistant(token, assistant.id);
-      onChanged();
+      onChanged('Invitation cancelled');
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : 'Could not cancel this invitation.');
       setBusy(false);
@@ -374,43 +333,53 @@ function EditPanel({
   }
 
   return (
-    <div className="flex flex-col gap-4 rounded-lg border border-border-light bg-surface-2 p-4">
-      <div className="flex items-center justify-between">
-        <p className="text-base font-medium text-fg">
-          {assistant.name} <span className="text-fg-3">· {assistant.email}</span>
-        </p>
-        <Button size="small" variant="tertiary" onClick={onClose}>
-          Close
-        </Button>
-      </div>
-
-      {error && <InlineBanner tone="danger">{error}</InlineBanner>}
-      {notice && !error && <InlineBanner tone="green">{notice}</InlineBanner>}
-
-      <ReachFields
-        role={assistant.role}
-        scope={scope}
-        setScope={setScope}
-        groupIds={groupIds}
-        setGroupIds={setGroupIds}
-        groups={groups}
-      />
-
-      <div className="flex flex-wrap items-center gap-3">
-        <Button variant="primary" disabled={busy} onClick={() => void save()}>
-          Save
-        </Button>
-        {assistant.status === 'invited' && (
-          <>
-            <Button disabled={busy} onClick={() => void resend()}>
-              Resend invitation
-            </Button>
-            <Button accent="danger" disabled={busy} onClick={() => void cancel()}>
-              Cancel invitation
-            </Button>
-          </>
+    <ClModal
+      open
+      title={assistant.name}
+      onClose={onClose}
+      footer={
+        <>
+          {assistant.status === 'invited' && (
+            <>
+              <button type="button" className="cl-glink cl-glink--danger me-auto" disabled={busy} onClick={() => void cancel()}>
+                Cancel invitation
+              </button>
+              <button type="button" className="cl-btns" disabled={busy} onClick={() => void resend()}>
+                Resend invitation
+              </button>
+            </>
+          )}
+          <button type="button" className="cl-btns" onClick={onClose}>
+            Close
+          </button>
+          <button type="button" className="cl-btnp" disabled={busy} onClick={() => void save()}>
+            Save changes
+          </button>
+        </>
+      }
+    >
+      <div className="cl-fgrid">
+        {error && <ErrorLine message={error} />}
+        {notice && !error && (
+          <p role="status" className="cl-soft m-0" style={{ color: 'var(--cl-ok)' }}>
+            {notice}
+          </p>
         )}
+        <p className="cl-muted m-0 text-[13.5px]">
+          {assistant.role === 'admin' ? 'Admin' : 'Assistant'} · {assistant.email}
+        </p>
+        {assistant.role === 'admin' && (
+          <p className="cl-muted m-0 text-[13.5px]">Admins reach every group; there is nothing to scope.</p>
+        )}
+        <ReachFields
+          role={assistant.role}
+          scope={scope}
+          setScope={setScope}
+          groupIds={groupIds}
+          setGroupIds={setGroupIds}
+          groups={groups}
+        />
       </div>
-    </div>
+    </ClModal>
   );
 }

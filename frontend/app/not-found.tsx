@@ -1,19 +1,16 @@
-import { EmptyState, ButtonLink } from '@/components/ui';
+import Link from 'next/link';
+import { StatusPage } from '@/components/status-page';
 
-/**
- * The app-level 404 (REM-018). Renders inside the root layout, so the
- * signed-in theme and tokens already apply — no separate document needed
- * (contrast `global-error.tsx`, which does).
- */
+/** The app-level 404 (REM-018), on the entry pages' design. */
 export default function NotFound() {
   return (
-    <div className="flex min-h-[100dvh] items-center justify-center p-4">
-      <EmptyState
-        icon="AlertTriangle"
-        title="Page not found"
-        description="That page does not exist, or has moved."
-        action={<ButtonLink href="/">Go home</ButtonLink>}
-      />
-    </div>
+    <StatusPage code="404" lead="Page not" word="found" message="That page does not exist, or it has moved.">
+      <Link className="btn btn-p" href="/">
+        Go home
+      </Link>
+      <Link className="btn btn-o" href="/login">
+        Sign in
+      </Link>
+    </StatusPage>
   );
 }

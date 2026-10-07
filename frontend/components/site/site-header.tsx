@@ -9,10 +9,7 @@ import { ButtonLink, cx } from '@/components/ui';
 import { Wordmark } from './wordmark';
 
 const NAV = [
-  { href: '/courses', label: 'Courses' },
   { href: '/about', label: 'About' },
-  { href: '/blog', label: 'Blog' },
-  { href: '/contact', label: 'Contact' },
 ] as const;
 
 export function SiteHeader() {
@@ -72,8 +69,8 @@ export function SiteHeader() {
           >
             Sign in
           </Link>
-          <ButtonLink href="/courses" variant="primary" size="medium" className="hidden sm:inline-flex">
-            Browse courses
+          <ButtonLink href="/register" variant="primary" size="medium" className="hidden sm:inline-flex">
+            Join now
           </ButtonLink>
           <button
             type="button"
@@ -105,8 +102,8 @@ export function SiteHeader() {
             >
               Sign in
             </Link>
-            <ButtonLink href="/courses" variant="primary" size="medium" className="mt-3">
-              Browse courses
+            <ButtonLink href="/register" variant="primary" size="medium" className="mt-3">
+              Join now
             </ButtonLink>
           </nav>
         </div>

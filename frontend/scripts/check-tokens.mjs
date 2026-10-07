@@ -32,7 +32,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 
 /** Where tokens are DEFINED. Everything else may only consume them. */
-const TOKEN_SOURCES = ['app/tokens/fig-tokens.css', 'app/tokens/semantic.css', 'app/globals.css'];
+const TOKEN_SOURCES = ['app/tokens/fig-tokens.css', 'app/tokens/semantic.css', 'app/globals.css', 'app/(entry)/entry.css'];
 
 /** Where tokens are USED. */
 const SOURCE_DIRS = ['app', 'components', 'lib'];
@@ -53,7 +53,7 @@ function walk(dir, out = []) {
  * are never written in a stylesheet this script can read. The only allowlist,
  * and it stays short on purpose — every entry is a hole in the check.
  */
-const RUNTIME_DEFINED = ['--font-inter', '--font-geist-mono'];
+const RUNTIME_DEFINED = ['--font-inter', '--font-geist-mono', '--font-inter-tight', '--font-caveat', '--font-gsans', '--font-figtree', '--font-lexend'];
 
 /**
  * Blank out comments before scanning.

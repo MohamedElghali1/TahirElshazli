@@ -4,9 +4,11 @@ import { use } from 'react';
 import { api } from '@/lib/api';
 import { useApi } from '@/lib/session';
 import { formatPercent } from '@/lib/format';
-import type { GroupReportEntry } from '@/lib/types';
-import { Button, EmptyState, Loader, StatNumber, Table, type Column } from '@/components/ui';
 import { PageTitle } from '@/components/shell/page-chrome';
+import { initialsOf } from '@/components/shell/classroom';
+import { ClEmpty, ClError, ClSkeleton, ClStat, PanelHead } from '@/components/classroom/ui';
+
+const COLS = '2.2fr 2fr 0.9fr 0.9fr 1fr';
 
 /**
  * The group report (`GROUP-4`): stats plus a per-student table. Performance
@@ -28,81 +30,71 @@ export default function GroupReportPage({
     [groupId],
   );
 
-  const columns: Column<GroupReportEntry>[] = [
-    { label: 'Name', render: (e) => e.name },
-    { label: 'Email', render: (e) => e.email },
-    {
-      label: 'Submitted',
-      align: 'end',
-      render: (e) => <span className="num">{e.submittedCount}</span>,
-    },
-    {
-      label: 'Graded',
-      align: 'end',
-      render: (e) => <span className="num">{e.gradedCount}</span>,
-    },
-    {
-      label: 'Average',
-      align: 'end',
-      render: (e) => (
-        <span className="num text-fg">{formatPercent(e.averageScorePercent)}</span>
-      ),
-    },
-  ];
-
   return (
     <>
       <PageTitle title={data ? `${data.groupName} — report` : 'Group report'} backHref="/manage/groups" />
-      <div className="flex flex-col gap-5 p-6 print:p-0">
-        {loading && (
-          <div className="flex justify-center p-8">
-            <Loader label="Loading report" />
-          </div>
-        )}
-        {error && (
-          <EmptyState
-            icon="AlertTriangle"
-            title={error.message}
-            action={<Button onClick={reload}>Try again</Button>}
-          />
-        )}
+      {loading && !data && (
+        <section className="cl-panel">
+          <ClSkeleton rows={4} label="Loading report" />
+        </section>
+      )}
+      {error && (
+        <section className="cl-panel">
+          <ClError message={error.message} onRetry={reload} />
+        </section>
+      )}
 
-        {data && (
-          <>
-            <div className="flex items-start justify-between gap-4 print:hidden">
-              <div>
-                <h1 className="text-[20px] font-semibold text-fg">{data.groupName}</h1>
-                <p className="text-base text-fg-3">{data.courseTitle}</p>
-              </div>
-              <Button variant="primary" onClick={() => window.print()}>
+      {data && (
+        <>
+          <section aria-labelledby="gr-rep" className="cl-panel">
+            <PanelHead id="gr-rep" title={data.groupName}>
+              <span className="cl-muted text-[14px]">{data.courseTitle}</span>
+              <button type="button" className="cl-btnp print:hidden" onClick={() => window.print()}>
                 Print / save as PDF
-              </Button>
+              </button>
+            </PanelHead>
+            <div className="cl-stats">
+              <ClStat value={data.memberCount} label="Members" />
+              <ClStat value={data.assessmentCount} label="Assessments set" />
+              <ClStat value={formatPercent(data.averageScorePercent)} label="Average score" />
             </div>
+            <p className="cl-muted mb-0 mt-3 text-[13px]">
+              Average score: every graded submission&apos;s own share, averaged once across the group.
+            </p>
+          </section>
 
-            {/* Shown in the printed output, where the header row above is hidden. */}
-            <div className="hidden print:block">
-              <h1 className="text-[20px] font-semibold text-fg">{data.groupName}</h1>
-              <p className="text-base text-fg-3">{data.courseTitle}</p>
-            </div>
-
-            <div className="flex flex-wrap gap-8">
-              <StatNumber label="Members" value={data.memberCount} />
-              <StatNumber label="Assessments set" value={data.assessmentCount} />
-              <StatNumber
-                label="Average score"
-                value={formatPercent(data.averageScorePercent)}
-                caption="Every graded submission's own share, averaged once across the group."
-              />
-            </div>
-
+          <section aria-labelledby="gr-stu" className="cl-panel">
+            <PanelHead id="gr-stu" title="Students" />
             {data.entries.length === 0 ? (
-              <EmptyState icon="Users" title="Nobody is in this group yet" />
+              <ClEmpty icon="people" tone="cl-tone-blue" title="Nobody is in this group yet" />
             ) : (
-              <Table columns={columns} rows={data.entries} rowKey={(e) => e.studentId} />
+              <div className="overflow-x-auto">
+                <div className="cl-gt" role="table" aria-label="Group report">
+                  <div className="hd" role="row" style={{ gridTemplateColumns: COLS }}>
+                    <span>Name</span>
+                    <span>Email</span>
+                    <span className="r">Submitted</span>
+                    <span className="r">Graded</span>
+                    <span className="r">Average</span>
+                  </div>
+                  {data.entries.map((e) => (
+                    <div key={e.studentId} className="rw" role="row" style={{ gridTemplateColumns: COLS }}>
+                      <span className="inline-flex items-center gap-3">
+                        <span className="cl-av">{initialsOf(e.name)}</span>
+                        <span className="truncate">{e.name}</span>
+                      </span>
+                      <span className="cl-muted truncate">{e.email}</span>
+                      <span className="r">{e.submittedCount}</span>
+                      <span className="r">{e.gradedCount}</span>
+                      <span className="r">{formatPercent(e.averageScorePercent)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
-          </>
-        )}
-      </div>
+          </section>
+        </>
+      )}
     </>
   );
 }

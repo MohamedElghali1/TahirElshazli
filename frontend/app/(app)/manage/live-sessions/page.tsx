@@ -1,26 +1,15 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
 import { useApi, useSession } from '@/lib/session';
 import { addDays, formatTime, formatWeekday, startOfWeek } from '@/lib/format';
 import type { LiveSession } from '@/lib/types';
-import {
-  Button,
-  ButtonLink,
-  EmptyState,
-  IconButton,
-  InlineBanner,
-  Loader,
-  Panel,
-  Select,
-  Table,
-  TableToolbar,
-  Tag,
-  type Column,
-} from '@/components/ui';
 import { PageTitle } from '@/components/shell/page-chrome';
+import { ClIcon } from '@/components/shell/classroom';
+import { ClEmpty, ClError, ClModal, ClRowMenu, ClSkeleton, PanelHead } from '@/components/classroom/ui';
 import { SessionForm } from './session-form';
 
 /**
@@ -32,7 +21,13 @@ import { SessionForm } from './session-form';
  * same way `manage/tasks/page.tsx` builds its own group filter: from data the
  * caller already reaches, here `staff.courses` fanned out through
  * `staff.courseGroups` per course rather than a post-filter over a wider read.
+ *
+ * Redesign V2: the artifact's "Live sessions" panel. It draws a Students
+ * count and an attendance summary per row; the list route returns neither, so
+ * those columns are not drawn (the attendance sheet is one click away).
  */
+const GRID = '2fr 1fr 1.3fr 1fr 1fr 0.7fr 0.8fr 44px';
+
 export default function LiveSessionsPage() {
   const { token } = useSession();
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
@@ -83,6 +78,7 @@ export default function LiveSessionsPage() {
   );
 
   const groupName = new Map((groups ?? []).map((g) => [g.id, g.name]));
+  const confirming = data?.find((s) => s.id === confirmingId) ?? null;
 
   async function cancelSession(session: LiveSession) {
     if (!token) return;
@@ -92,145 +88,161 @@ export default function LiveSessionsPage() {
       setConfirmingId(null);
       reload();
     } catch (cause) {
+      setConfirmingId(null);
       setError(cause instanceof ApiError ? cause.message : 'Could not cancel that session.');
     }
   }
 
   const rangeLabel = `${weekStart.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} – ${addDays(weekStart, 6).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`;
 
-  const columns: Column<LiveSession>[] = [
-    { label: 'Group', render: (s) => groupName.get(s.groupId) ?? '—' },
-    { label: 'Title', render: (s) => s.title },
-    {
-      label: 'When',
-      render: (s) => (
-        <span className="num">
-          {formatWeekday(s.scheduledAt)} {formatTime(s.scheduledAt)}–{formatTime(s.endsAt)}
-        </span>
-      ),
-    },
-    {
-      label: 'Meeting link',
-      render: (s) =>
-        s.meetingLink ? (
-          <a href={s.meetingLink} target="_blank" rel="noopener noreferrer" className="text-accent">
-            Open
-          </a>
-        ) : (
-          '—'
-        ),
-    },
-    {
-      label: 'State',
-      render: (s) => (
-        <Tag tone={s.state === 'published' ? 'green' : 'gray'}>
-          {s.state === 'published' ? 'Published' : 'Draft'}
-        </Tag>
-      ),
-    },
-    {
-      label: '',
-      align: 'end',
-      render: (s) =>
-        confirmingId === s.id ? (
-          <span className="inline-flex items-center gap-2">
-            <Button size="small" variant="primary" accent="danger" onClick={() => cancelSession(s)}>
-              Cancel session
-            </Button>
-            <Button size="small" variant="tertiary" onClick={() => setConfirmingId(null)}>
-              Keep it
-            </Button>
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-2">
-            <ButtonLink
-              size="small"
-              href={`/manage/live-sessions/${s.id}/attendance?groupId=${s.groupId}&title=${encodeURIComponent(s.title)}&scheduledAt=${encodeURIComponent(s.scheduledAt)}`}
-            >
-              Attendance
-            </ButtonLink>
-            <Button size="small" onClick={() => setEditing(s)}>
-              Edit
-            </Button>
-            <Button size="small" variant="tertiary" onClick={() => setConfirmingId(s.id)}>
-              Cancel
-            </Button>
-          </span>
-        ),
-    },
-  ];
-
   return (
     <>
       <PageTitle title="Live sessions" />
-      <div className="flex flex-col gap-4 p-6">
-        {error && <InlineBanner tone="danger">{error}</InlineBanner>}
-        {editing && (
-          <SessionForm
-            groups={groups ?? []}
-            session={editing === 'new' ? null : editing}
-            defaultGroupId={groupId || undefined}
-            onClose={() => setEditing(null)}
-            onSaved={() => {
-              setEditing(null);
-              reload();
-            }}
+      {editing && (
+        <SessionForm
+          groups={groups ?? []}
+          session={editing === 'new' ? null : editing}
+          defaultGroupId={groupId || undefined}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            reload();
+          }}
+        />
+      )}
+      <ClModal
+        open={Boolean(confirming)}
+        title="Cancel this session?"
+        onClose={() => setConfirmingId(null)}
+        footer={
+          <>
+            <button type="button" className="cl-btns" onClick={() => setConfirmingId(null)}>
+              Keep it
+            </button>
+            <button type="button" className="cl-btnp" onClick={() => confirming && void cancelSession(confirming)}>
+              Cancel session
+            </button>
+          </>
+        }
+      >
+        <p className="m-0">{confirming?.title}</p>
+      </ClModal>
+
+      <section aria-labelledby="lv-h" className="cl-panel pb-4">
+        <PanelHead id="lv-h" title="Live sessions">
+          <Link href="/manage/live-sessions/drafts" className="cl-btns">
+            <ClIcon name="schedule" small />
+            Draft timetable
+          </Link>
+          <button type="button" className="cl-btnp" onClick={() => setEditing('new')}>
+            <ClIcon name="plus" small />
+            New session
+          </button>
+        </PanelHead>
+
+        <div className="mb-3 flex flex-wrap items-center gap-3">
+          <select aria-label="Group" className="cl-inp w-[200px]" value={groupId} onChange={(e) => setGroupId(e.target.value)}>
+            <option value="">All groups</option>
+            {(groups ?? []).map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name}
+              </option>
+            ))}
+          </select>
+          <span className="ms-auto inline-flex items-center gap-2">
+            <button
+              type="button"
+              className="cl-gib cl-gib--sm rotate-180 rtl:rotate-0"
+              aria-label="Previous week"
+              onClick={() => setWeekStart((w) => addDays(w, -7))}
+            >
+              <ClIcon name="chevRight" small />
+            </button>
+            <span className="cl-muted min-w-[110px] text-center text-[13px]">{rangeLabel}</span>
+            <button
+              type="button"
+              className="cl-gib cl-gib--sm rtl:rotate-180"
+              aria-label="Next week"
+              onClick={() => setWeekStart((w) => addDays(w, 7))}
+            >
+              <ClIcon name="chevRight" small />
+            </button>
+          </span>
+        </div>
+
+        {error && (
+          <div role="alert" className="cl-soft mb-3" style={{ color: 'var(--cl-bad)' }}>
+            {error}
+          </div>
+        )}
+        {loading && !data && <ClSkeleton rows={3} label="Loading sessions" />}
+        {loadError && <ClError message={loadError.message} onRetry={reload} />}
+        {data && data.length === 0 && (
+          <ClEmpty
+            icon="schedule"
+            tone="cl-tone-blue"
+            title="Nothing scheduled this week"
+            hint="Set a session for a group you hold and it appears here."
           />
         )}
-        <Panel padded={false}>
-          <TableToolbar
-            filters={
-              <Select
-                aria-label="Group"
-                className="w-[200px]"
-                value={groupId}
-                onChange={(e) => setGroupId(e.target.value)}
-                options={[{ value: '', label: 'All groups' }, ...(groups ?? []).map((g) => ({ value: g.id, label: g.name }))]}
-              />
-            }
-            actions={
-              <span className="inline-flex items-center gap-2">
-                <IconButton
-                  icon="ChevronLeft"
-                  label="Previous week"
-                  onClick={() => setWeekStart((w) => addDays(w, -7))}
-                />
-                <span className="num min-w-[110px] text-center text-xs text-fg-3">{rangeLabel}</span>
-                <IconButton
-                  icon="ChevronRight"
-                  label="Next week"
-                  onClick={() => setWeekStart((w) => addDays(w, 7))}
-                />
-                <Button size="small" variant="primary" icon="Plus" onClick={() => setEditing('new')}>
-                  New session
-                </Button>
-              </span>
-            }
-          />
-          {loading && !data && (
-            <div className="flex justify-center p-8">
-              <Loader label="Loading sessions" />
+        {data && data.length > 0 && (
+          <div className="overflow-x-auto">
+            <div className="cl-gt" role="table" aria-label="Sessions" style={{ minWidth: 860 }}>
+              <div className="hd" role="row" style={{ gridTemplateColumns: GRID }}>
+                <span>Session</span>
+                <span>Date</span>
+                <span>Time</span>
+                <span>Group</span>
+                <span>Status</span>
+                <span>Link</span>
+                <span>Attendance</span>
+                <span />
+              </div>
+              {data.map((s) => (
+                <div key={s.id} className="rw" role="row" style={{ gridTemplateColumns: GRID }}>
+                  <span className="truncate">{s.title}</span>
+                  <span className="cl-muted">
+                    {formatWeekday(s.scheduledAt)}{' '}
+                    {new Date(s.scheduledAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+                  </span>
+                  <span className="cl-muted">
+                    {formatTime(s.scheduledAt)} – {formatTime(s.endsAt)}
+                  </span>
+                  <span className="cl-muted truncate">{groupName.get(s.groupId) ?? '—'}</span>
+                  <span className="inline-flex items-center gap-2 text-[14px]">
+                    <span className="cl-dot" style={{ background: s.state === 'published' ? 'var(--cl-ok)' : 'var(--cl-warn)' }} />
+                    {s.state === 'published' ? 'Published' : 'Draft'}
+                  </span>
+                  <span>
+                    {s.meetingLink ? (
+                      <a href={s.meetingLink} target="_blank" rel="noopener noreferrer" className="cl-glink">
+                        Open
+                      </a>
+                    ) : (
+                      '—'
+                    )}
+                  </span>
+                  <Link
+                    href={`/manage/live-sessions/${s.id}/attendance?groupId=${s.groupId}&title=${encodeURIComponent(s.title)}&scheduledAt=${encodeURIComponent(s.scheduledAt)}`}
+                    className="cl-glink"
+                  >
+                    Open
+                  </Link>
+                  <span className="r">
+                    <ClRowMenu
+                      label={`Actions for ${s.title}`}
+                      items={[
+                        { label: 'Edit', onSelect: () => setEditing(s) },
+                        { label: 'Cancel session', danger: true, onSelect: () => setConfirmingId(s.id) },
+                      ]}
+                    />
+                  </span>
+                </div>
+              ))}
             </div>
-          )}
-          {loadError && (
-            <EmptyState icon="AlertTriangle" title={loadError.message} action={<Button onClick={reload}>Try again</Button>} />
-          )}
-          {data && (
-            <Table
-              columns={columns}
-              rows={data}
-              rowKey={(s) => s.id}
-              empty={
-                <EmptyState
-                  icon="CalendarEvent"
-                  title="Nothing scheduled this week"
-                  description="Set a session for a group you hold and it appears here."
-                />
-              }
-            />
-          )}
-        </Panel>
-      </div>
+          </div>
+        )}
+      </section>
     </>
   );
 }

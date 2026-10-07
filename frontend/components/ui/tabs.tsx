@@ -61,6 +61,7 @@ export function TabList({
     <div
       {...rest}
       role="tablist"
+      data-ui="tabs"
       aria-label={label}
       className={cx(
         'flex items-stretch gap-1 border-b border-border-light',
@@ -85,6 +86,7 @@ export function TabList({
             key={id}
             href={tab.href}
             role="tab"
+            data-ui="tab"
             aria-selected={active}
             className={tabClasses(active)}
           >
@@ -95,6 +97,7 @@ export function TabList({
             key={id}
             type="button"
             role="tab"
+            data-ui="tab"
             aria-selected={active}
             onClick={() => onChange?.(id)}
             className={tabClasses(active)}

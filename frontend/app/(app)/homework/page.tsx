@@ -1,250 +1,205 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useApi } from '@/lib/session';
 import {
-  ASSESSMENT_STATUS_CHIP,
   ASSESSMENT_STATUS_LABEL,
   ASSESSMENT_TYPE_LABEL,
   formatDate,
+  formatRelative,
   isQuizWork,
 } from '@/lib/format';
-import type { AssessmentListItem, AssessmentType } from '@/lib/types';
-import { Panel, EmptyState, Loader, Tag, Button, cx, type TagTone } from '@/components/ui';
+import type { AssessmentDetail, AssessmentListItem } from '@/lib/types';
 import { PageTitle } from '@/components/shell/page-chrome';
+import { ClIcon } from '@/components/shell/classroom';
+import { ClEmpty, ClError, ClSkeleton, PanelHead } from '@/components/classroom/ui';
 import { CourseGate } from '@/components/student/course-gate';
+import { CourseHeader } from '@/components/student/course-header';
 import { useSelectedCourse } from '@/components/shell/course-context';
 
 /**
- * Homework (`docs/PRODUCT_SPEC.md` §6: `[CHANGED]`, "Homework only — no quiz
- * appears here". Four attempt states — `STU-4`). Course-scoped via the rail's
- * switcher.
+ * The course's Stream (`docs/PRODUCT_SPEC.md` §6, `STU-4`). One flat list,
+ * newest first: homework, assignments and quizzes together, each row carrying
+ * its own status. Course-scoped via the course picker.
  *
- * The split is by **work type**, not by the `type` label, and the two are
- * different axes. `workType` is how a task is delivered — `file_upload`,
- * `link`, `google_form` — and §6 defines the Quizzes page as the `google_form`
- * one, so that is what this page excludes (`isQuizWork`, `lib/format.ts`).
- * `type` is what a task is *called* — homework, assignment, quiz — and the
- * filter tabs below still offer all three, because a task labelled "quiz" that
- * is handed in as a file upload is delivered here and has nowhere else to go.
+ * `google_form` work (`isQuizWork`) has no in-app hand-in: its row keeps the
+ * quizzes page's behaviour - an "Open quiz" link out to the form and the
+ * synced result - so it needs the detail's `work` block, fetched alongside.
  *
- * The four states are the server's (`assessments.service.ts:computeStatus`),
- * derived from stored timestamps and the submission row on every read. They are
- * grouped here and never recomputed — §6's "status is computed server-side".
+ * Statuses are the server's (`assessments.service.ts:computeStatus`), shown
+ * and never recomputed.
  */
 
-// `ASSESSMENT_STATUS_CHIP` (`lib/format.ts`, untouched by the redesign) still
-// speaks the legacy tone name `'neutral'` — the new `Tag` scale calls it `'gray'`.
-const TONE: Record<string, TagTone> = {
-  neutral: 'gray',
-  blue: 'blue',
-  amber: 'amber',
-  green: 'green',
-  red: 'red',
-  violet: 'violet',
-};
-
-const TYPES: { value: AssessmentType | 'all'; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'homework', label: 'Homework' },
-  { value: 'assignment', label: 'Assignments' },
-  { value: 'quiz', label: 'Quizzes' },
-];
+interface StreamItem {
+  item: AssessmentListItem;
+  /** Present for quiz work that is open to the student. */
+  detail: AssessmentDetail | null;
+}
 
 export default function HomeworkPage() {
   const { courses, selectedId, loading } = useSelectedCourse();
 
   return (
     <>
-      <PageTitle title="Homework" />
+      <PageTitle title="Stream" />
       <CourseGate loading={loading} hasCourses={Boolean(courses && courses.length > 0)}>
-        {selectedId && <HomeworkList courseId={selectedId} />}
+        {selectedId && (
+          <>
+            <CourseHeader />
+            <HomeworkList courseId={selectedId} />
+          </>
+        )}
       </CourseGate>
     </>
   );
 }
 
 function HomeworkList({ courseId }: { courseId: string }) {
-  const [type, setType] = useState<AssessmentType | 'all'>('all');
-
   const { data, error, loading, reload } = useApi(
-    (token) => api.assessments.list(token, courseId, type === 'all' ? undefined : { type }),
-    [courseId, type],
+    async (token): Promise<StreamItem[]> => {
+      const list = await api.assessments.list(token, courseId);
+      return Promise.all(
+        list.map(async (item) => ({
+          item,
+          detail:
+            isQuizWork(item.workType) && item.status !== 'locked'
+              ? await api.assessments.get(token, item.id).catch(() => null)
+              : null,
+        })),
+      );
+    },
+    [courseId],
   );
 
-  // Server-derived status (§5.10) is grouped here, never recomputed.
-  //
-  // `google_form` work is excluded: `docs/PRODUCT_SPEC.md` §6 says this page is
-  // "**Homework only** — no quiz appears here", and `/quizzes` selects exactly
-  // the same work type (`quizzes/page.tsx`). One list endpoint serves both
-  // screens, so without this filter every Google Form task appeared on BOTH —
-  // and it read differently on each, because a form is submitted on Google and
-  // never reaches `corrected` here. A student would have seen the same task
-  // twice and been invited to do it again from the wrong one.
-  const groups = useMemo(() => {
-    const open: AssessmentListItem[] = [];
-    const waiting: AssessmentListItem[] = [];
-    const done: AssessmentListItem[] = [];
-    for (const item of data ?? []) {
-      if (isQuizWork(item.workType)) continue;
-      if (item.status === 'available') open.push(item);
-      else if (item.status === 'submitted') waiting.push(item);
-      else done.push(item);
-    }
-    return { open, waiting, done };
+  const rows = useMemo(() => {
+    const at = (i: AssessmentListItem) => new Date(i.availableFrom || i.dueAt).getTime();
+    return [...(data ?? [])].sort((a, b) => at(b.item) - at(a.item));
   }, [data]);
 
   return (
-    <div className="flex flex-col gap-6 p-6">
-      <div role="tablist" aria-label="Filter by type" className="flex flex-wrap gap-1">
-        {TYPES.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            role="tab"
-            aria-selected={type === option.value}
-            onClick={() => setType(option.value)}
-            className={cx(
-              'h-6 rounded-md px-3 text-xs transition-colors duration-[var(--dur-fast)] ease-[var(--ease)]',
-              type === option.value
-                ? 'bg-wash-hover font-medium text-fg'
-                : 'text-fg-3 hover:bg-wash-hover hover:text-fg',
-            )}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
+    <section className="cl-panel" aria-labelledby="stream-h">
+      <PanelHead id="stream-h" title="Stream" />
 
-      {loading && (
-        <Panel title="Work" bodyClassName="">
-          <div className="flex justify-center p-8">
-            <Loader label="Loading homework" />
-          </div>
-        </Panel>
-      )}
+      {loading && <ClSkeleton label="Loading homework" />}
+      {error && <ClError message={error.message} onRetry={reload} />}
 
-      {error && (
-        <EmptyState
-          icon="AlertTriangle"
-          title={error.message}
-          action={<Button onClick={reload}>Try again</Button>}
+      {data && data.length === 0 && (
+        <ClEmpty
+          icon="pen"
+          tone="cl-tone-peach"
+          title="Nothing set yet"
+          hint="Homework, assignments and quizzes appear here as they are published."
         />
       )}
 
-      {data && data.length === 0 && (
-        <Panel title="Work" bodyClassName="">
-          <EmptyState
-            icon="Clipboard"
-            title="Nothing set yet"
-            description={
-              type === 'all'
-                ? 'Homework, assignments and quizzes appear here as they are published.'
-                : 'Nothing of this type has been set on the course yet.'
-            }
-          />
-        </Panel>
-      )}
-
-      {data && data.length > 0 && (
-        <div className="flex flex-col gap-6">
-          <Group
-            title="Open now"
-            items={groups.open}
-            emptyBody="Nothing is open for submission right now."
-          />
-          <Group
-            title="Submitted, waiting on marking"
-            items={groups.waiting}
-            emptyBody="Nothing is waiting to be marked."
-          />
-          <Group title="Marked and locked" items={groups.done} emptyBody="Nothing here yet." />
-        </div>
-      )}
-    </div>
+      {rows.map((r) => (
+        <AssessmentRow key={r.item.id} item={r.item} detail={r.detail} />
+      ))}
+    </section>
   );
 }
 
-function Group({
-  title,
-  items,
-  emptyBody,
-}: {
-  title: string;
-  items: AssessmentListItem[];
-  emptyBody: string;
-}) {
-  return (
-    <Panel
-      title={title}
-      action={<span className="num text-xs text-fg-3">{items.length}</span>}
-      bodyClassName=""
-    >
-      {items.length === 0 ? (
-        <div className="px-4 py-6">
-          <p className="text-base text-fg-4">{emptyBody}</p>
-        </div>
-      ) : (
-        <ul className="divide-y divide-border-light">
-          {items.map((item) => (
-            <li key={item.id}>
-              <AssessmentRow item={item} />
-            </li>
-          ))}
-        </ul>
-      )}
-    </Panel>
-  );
+/** "Corrected · 17 / 20"; an unmarked score is an em-dash, never 0. */
+function markedText(score: number | null, max: number): string {
+  return `${ASSESSMENT_STATUS_LABEL.corrected} · ${score ?? '—'} / ${max}`;
 }
 
-function AssessmentRow({ item }: { item: AssessmentListItem }) {
+function statusOf(item: AssessmentListItem): { text: string; color?: string } {
+  if (item.status === 'locked') return { text: ASSESSMENT_STATUS_LABEL.locked };
+  if (item.status === 'available') {
+    return item.isOverdue
+      ? { text: 'Missing', color: 'var(--cl-bad)' }
+      : { text: `Due ${formatDate(item.dueAt)}` };
+  }
+  if (item.status === 'submitted') return { text: 'Handed in', color: 'var(--cl-ok)' };
+  return { text: markedText(item.score, item.maxScore), color: 'var(--cl-ok)' };
+}
+
+function AssessmentRow({ item, detail }: { item: AssessmentListItem; detail: AssessmentDetail | null }) {
   const locked = item.status === 'locked';
+  const quiz = item.type === 'quiz';
+  const form = detail?.work.kind === 'google_form' ? detail.work : null;
 
-  const row = (
-    <div
-      className={cx(
-        'flex items-center gap-4 px-4 py-3 transition-colors duration-[var(--dur-fast)] ease-[var(--ease)]',
-        locked ? 'opacity-60' : 'hover:bg-wash-hover',
-      )}
-    >
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-base font-medium text-fg">{item.title}</span>
-          <Tag tone={TONE[ASSESSMENT_STATUS_CHIP[item.status]] ?? 'gray'}>
-            {ASSESSMENT_STATUS_LABEL[item.status]}
-          </Tag>
-          {item.isOverdue && item.status === 'available' && <Tag tone="red">Past due</Tag>}
-        </div>
-        <p className="mt-1 truncate text-xs text-fg-3">
-          {ASSESSMENT_TYPE_LABEL[item.type]}
-          {item.topics.length > 0 && ` · ${item.topics.join(', ')}`}
-        </p>
-      </div>
-
-      <div className="hidden shrink-0 text-end sm:block">
-        <div className="num text-xs text-fg-3">Due {formatDate(item.dueAt)}</div>
-      </div>
-
-      <div className="w-[72px] shrink-0 text-end">
-        {item.score === null ? (
-          <span className="num text-xs text-fg-4">—</span>
-        ) : (
-          <span className="num text-base text-fg">
-            {item.score}
-            <span className="text-fg-4">/{item.maxScore}</span>
+  // Quiz work: the quizzes page's states, from the server's work block.
+  let right: React.ReactNode = null;
+  if (form) {
+    if (form.score !== null) {
+      right = (
+        <span className="text-[14px]" style={{ color: 'var(--cl-ok)' }}>
+          {markedText(form.score, form.maxScore ?? item.maxScore)}
+        </span>
+      );
+    } else if (form.completed) {
+      right = (
+        <span className="text-[13px]" style={{ color: 'var(--cl-ok)' }}>
+          Handed in — waiting on Google to mark it
+          {form.lastSyncedAt && <span className="cl-muted"> · synced {formatRelative(form.lastSyncedAt)}</span>}
+        </span>
+      );
+    } else if (item.status === 'available') {
+      right = (
+        <span className="flex flex-col items-end gap-1.5">
+          <span className="text-[13px]" style={item.isOverdue ? { color: 'var(--cl-bad)' } : undefined}>
+            {item.isOverdue ? 'Missing' : ASSESSMENT_STATUS_LABEL.available}
           </span>
-        )}
-      </div>
-    </div>
-  );
+          <a href={form.formUrl || '#'} target="_blank" rel="noreferrer" className="cl-btnp">
+            Open quiz
+          </a>
+        </span>
+      );
+    }
+  }
+  if (!right) {
+    const st = statusOf(item);
+    right = (
+      <span className="text-[14px]" style={st.color ? { color: st.color } : undefined}>
+        {st.text}
+      </span>
+    );
+  }
 
-  // A locked assessment is not a link. The detail endpoint would refuse it,
-  // and a dead-end navigation is worse than an inert row.
-  return locked ? (
-    <div aria-disabled>{row}</div>
-  ) : (
-    <Link href={`/homework/${item.id}`}>{row}</Link>
+  const main = (
+    <>
+      <span className={`cl-ic40 ${quiz ? 'cl-tone-blue' : 'cl-tone-peach'}`}>
+        <ClIcon name={quiz ? 'quiz' : 'pen'} small />
+      </span>
+      <span className="cl-grow-main">
+        {item.title}
+        <span className="cl-sub">
+          {ASSESSMENT_TYPE_LABEL[item.type]} · posted {formatDate(item.availableFrom)} · due {formatDate(item.dueAt)}
+          {item.topics.length > 0 && ` · ${item.topics.join(', ')}`}
+        </span>
+      </span>
+    </>
+  );
+  const rightBox = <span className="shrink-0 text-end">{right}</span>;
+
+  // A locked assessment is not a link (the detail endpoint would refuse it).
+  if (locked) {
+    return (
+      <div className="cl-grow" aria-disabled style={{ opacity: 0.6, cursor: 'default' }}>
+        {main}
+        {rightBox}
+      </div>
+    );
+  }
+  // An open quiz holds its own "Open quiz" link, so the row cannot itself be one.
+  if (form && right && item.status === 'available' && !form.completed && form.score === null) {
+    return (
+      <div className="cl-grow" style={{ cursor: 'default' }}>
+        <Link href={`/homework/${item.id}`} className="flex min-w-0 flex-1 items-center gap-4">
+          {main}
+        </Link>
+        {rightBox}
+      </div>
+    );
+  }
+  return (
+    <Link href={`/homework/${item.id}`} className="cl-grow">
+      {main}
+      {rightBox}
+    </Link>
   );
 }

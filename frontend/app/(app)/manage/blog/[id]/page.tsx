@@ -280,16 +280,6 @@ function PostForm({ post, onSaved }: { post: StaffBlogPost; onSaved: () => void 
               Saved.
             </span>
           )}
-          {post.isLive && (
-            <a
-              href={`/blog/${post.slug}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-base text-fg underline underline-offset-4"
-            >
-              View it live
-            </a>
-          )}
         </div>
         {error && <InlineBanner tone="danger">{error}</InlineBanner>}
       </form>
